@@ -1,7 +1,7 @@
 import multer from 'multer';
 import sharp from 'sharp';
 import { Request, Response, NextFunction } from 'express';
-import crypto from 'crypto';
+import { randomBytes, createHash, randomUUID } from 'node:crypto';
 import path from 'path';
 import fs from 'fs/promises';
 import { z } from 'zod';
@@ -19,6 +19,12 @@ const DocumentUploadSchema = z.object({
   jobId: z.number(),
   sessionId: z.string(),
   participantId: z.string(),
+});
+
+const NotaryStampUploadSchema = z.object({
+  notaryId: z.string(),
+  state: z.string(),
+  commission: z.string().optional(),
 });
 
 interface ProcessedUpload {
@@ -269,12 +275,20 @@ async function processImage(
   // Apply watermark for notary stamps
   if (uploadType === 'stamp' && UPLOAD_CONFIG.security.watermarkNotaryStamps) {
     const watermarkText = `NOTARY STAMP - ${new Date().toISOString().split('T')[0]}`;
+    const currentMetadata = await sharp(processed).metadata();
+    const imageWidth = currentMetadata.width || 400;
+    const imageHeight = currentMetadata.height || 400;
+    
+    // Make watermark responsive to image size (max 80% of width, 10% of height)
+    const watermarkWidth = Math.min(Math.floor(imageWidth * 0.8), 300);
+    const watermarkHeight = Math.min(Math.floor(imageHeight * 0.1), 20);
+    const fontSize = Math.max(Math.floor(watermarkHeight * 0.5), 6);
     
     processed = await sharp(processed)
       .composite([{
         input: Buffer.from(`
-          <svg width="400" height="20">
-            <text x="10" y="15" font-family="Arial" font-size="10" fill="rgba(128,128,128,0.5)">
+          <svg width="${watermarkWidth}" height="${watermarkHeight}" xmlns="http://www.w3.org/2000/svg">
+            <text x="5" y="${watermarkHeight - 2}" font-family="Arial" font-size="${fontSize}" fill="rgba(128,128,128,0.3)">
               ${watermarkText}
             </text>
           </svg>
@@ -308,14 +322,14 @@ async function processImage(
 // Generate secure filename and checksum
 function generateSecureFilename(originalName: string, uploadType: string): string {
   const timestamp = Date.now();
-  const randomId = crypto.randomBytes(16).toString('hex');
+  const randomId = randomBytes(16).toString('hex');
   const extension = path.extname(originalName).toLowerCase();
   
   return `${uploadType}_${timestamp}_${randomId}${extension}`;
 }
 
 async function generateChecksum(buffer: Buffer): Promise<string> {
-  return crypto.createHash('sha256').update(buffer).digest('hex');
+  return createHash('sha256').update(buffer).digest('hex');
 }
 
 // Main upload processors
@@ -374,7 +388,7 @@ export async function handleSignatureUpload(req: Request, res: Response, next: N
 
     // Create response data
     const uploadResult: ProcessedUpload = {
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       originalName: req.file.originalname,
       processedPath: processedPath.replace(process.cwd(), ''),
       thumbnailPath: thumbnailPath?.replace(process.cwd(), ''),
@@ -471,7 +485,7 @@ export async function handleDocumentUpload(req: Request, res: Response, next: Ne
 
     // Create response data
     const uploadResult: ProcessedUpload = {
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       originalName: req.file.originalname,
       processedPath: processedPath.replace(process.cwd(), ''),
       mimeType: req.file.mimetype,
@@ -511,11 +525,16 @@ export async function handleNotaryStampUpload(req: Request, res: Response, next:
       return res.status(400).json({ error: 'No stamp image uploaded' });
     }
 
-    const { notaryId, state, commission } = req.body;
-    
-    if (!notaryId || !state) {
-      return res.status(400).json({ error: 'Notary ID and state are required' });
+    // Validate request data
+    const validationResult = NotaryStampUploadSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({ 
+        error: 'Invalid upload data', 
+        details: validationResult.error.errors 
+      });
     }
+
+    const { notaryId, state, commission } = validationResult.data;
 
     // Enhanced security scan for notary stamps
     const securityScan = await scanFileForMalware(req.file.buffer, req.file.originalname);
@@ -547,7 +566,7 @@ export async function handleNotaryStampUpload(req: Request, res: Response, next:
     const checksum = await generateChecksum(processedStamp.processed);
 
     const uploadResult: ProcessedUpload = {
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       originalName: req.file.originalname,
       processedPath: processedPath.replace(process.cwd(), ''),
       mimeType: req.file.mimetype,

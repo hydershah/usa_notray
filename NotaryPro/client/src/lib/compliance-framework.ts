@@ -607,28 +607,32 @@ export class ComplianceFramework {
     passed: number;
     failed: number;
     warnings: number;
-    categories: Record<string, { passed: number; failed: number; warnings: number }>;
+    pending: number;
+    categories: Record<string, { passed: number; failed: number; warnings: number; pending: number }>;
   } {
     const summary = {
       totalChecks: this.complianceChecks.length,
       passed: 0,
       failed: 0,
       warnings: 0,
-      categories: {} as Record<string, { passed: number; failed: number; warnings: number }>
+      pending: 0,
+      categories: {} as Record<string, { passed: number; failed: number; warnings: number; pending: number }>
     };
 
     this.complianceChecks.forEach(check => {
-      summary[check.status]++;
+      if (check.status === 'passed') summary.passed++;
+      else if (check.status === 'failed') summary.failed++;
+      else if (check.status === 'warning') summary.warnings++;
+      else if (check.status === 'pending') summary.pending++;
       
       if (!summary.categories[check.category]) {
-        summary.categories[check.category] = { passed: 0, failed: 0, warnings: 0 };
+        summary.categories[check.category] = { passed: 0, failed: 0, warnings: 0, pending: 0 };
       }
       
-      if (check.status === 'warning') {
-        summary.categories[check.category].warnings++;
-      } else {
-        summary.categories[check.category][check.status]++;
-      }
+      if (check.status === 'passed') summary.categories[check.category].passed++;
+      else if (check.status === 'failed') summary.categories[check.category].failed++;
+      else if (check.status === 'warning') summary.categories[check.category].warnings++;
+      else if (check.status === 'pending') summary.categories[check.category].pending++;
     });
 
     return summary;

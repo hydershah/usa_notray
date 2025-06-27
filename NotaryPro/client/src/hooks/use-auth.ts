@@ -31,8 +31,8 @@ export function useAuth() {
     }
   };
 
-  const logout = () => {
-    authApi.logout();
+  const logout = async () => {
+    await authApi.logout();
     setUser(null);
     setIsAuthenticated(false);
   };

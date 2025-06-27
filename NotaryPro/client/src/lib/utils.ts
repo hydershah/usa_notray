@@ -63,3 +63,15 @@ export function formatRole(role: string): string {
       return role.charAt(0).toUpperCase() + role.slice(1);
   }
 }
+
+export function getUserDisplayName(user: any): string {
+  if (!user) return 'Unknown';
+  
+  // Prioritize first name + last name if both are available
+  if (user.firstName && user.lastName) {
+    return `${user.firstName} ${user.lastName}`.trim();
+  }
+  
+  // Fall back to username
+  return user.username || 'Unknown User';
+}

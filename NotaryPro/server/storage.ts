@@ -9,6 +9,7 @@ import {
   invoices,
   paymentSchedules,
   closingTypes,
+  systemSettings,
   type User, 
   type InsertUser,
   type TitleCompany,
@@ -28,7 +29,9 @@ import {
   type PaymentSchedule,
   type InsertPaymentSchedule,
   type ClosingType,
-  type InsertClosingType
+  type InsertClosingType,
+  type SystemSetting,
+  type InsertSystemSetting
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, desc, asc } from "drizzle-orm";
@@ -39,6 +42,7 @@ export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUsersByEmail(email: string): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined>;
   deleteUser(id: number): Promise<boolean>;
@@ -67,6 +71,7 @@ export interface IStorage {
   updateSigner(id: number, signer: Partial<InsertSigner>): Promise<Signer | undefined>;
   deleteSigner(id: number): Promise<boolean>;
   getSignersByJobId(jobId: number): Promise<Signer[]>;
+  getSignerByInvitationToken(token: string): Promise<Signer | undefined>;
 
   // Job participant operations
   getJobParticipant(id: number): Promise<JobParticipant | undefined>;
@@ -118,6 +123,12 @@ export interface IStorage {
   deleteClosingType(id: number): Promise<boolean>;
   getClosingTypes(): Promise<ClosingType[]>;
   getActiveClosingTypes(): Promise<ClosingType[]>;
+
+  // System settings operations
+  getSystemSetting(key: string): Promise<SystemSetting | undefined>;
+  setSystemSetting(key: string, value: string, type?: string, description?: string): Promise<SystemSetting>;
+  getSystemSettings(): Promise<SystemSetting[]>;
+  deleteSystemSetting(key: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -135,6 +146,10 @@ export class DatabaseStorage implements IStorage {
   async getUserByUsername(username: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.username, username));
     return user || undefined;
+  }
+
+  async getUsersByEmail(email: string): Promise<User[]> {
+    return await db.select().from(users).where(eq(users.email, email));
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
@@ -284,6 +299,11 @@ export class DatabaseStorage implements IStorage {
 
   async getSignersByJobId(jobId: number): Promise<Signer[]> {
     return await db.select().from(signers).where(eq(signers.jobId, jobId)).orderBy(asc(signers.id));
+  }
+
+  async getSignerByInvitationToken(token: string): Promise<Signer | undefined> {
+    const [signer] = await db.select().from(signers).where(eq(signers.invitationToken, token));
+    return signer || undefined;
   }
 
   // Job participant operations
@@ -541,6 +561,55 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(closingTypes)
       .where(eq(closingTypes.isActive, true))
       .orderBy(asc(closingTypes.name));
+  }
+
+  // System settings operations
+  async getSystemSetting(key: string): Promise<SystemSetting | undefined> {
+    const [setting] = await db.select().from(systemSettings).where(eq(systemSettings.key, key));
+    return setting || undefined;
+  }
+
+  async setSystemSetting(key: string, value: string, type: string = 'string', description?: string): Promise<SystemSetting> {
+    // Check if setting exists
+    const existing = await this.getSystemSetting(key);
+    
+    if (existing) {
+      // Update existing setting
+      const [updated] = await db
+        .update(systemSettings)
+        .set({ 
+          value, 
+          type, 
+          description: description || existing.description,
+          updatedAt: new Date()
+        })
+        .where(eq(systemSettings.key, key))
+        .returning();
+      return updated;
+    } else {
+      // Create new setting
+      const [created] = await db
+        .insert(systemSettings)
+        .values({ key, value, type, description })
+        .returning();
+      return created;
+    }
+  }
+
+  async getSystemSettings(): Promise<SystemSetting[]> {
+    return await db.select().from(systemSettings).orderBy(asc(systemSettings.key));
+  }
+
+  async deleteSystemSetting(key: string): Promise<boolean> {
+    const [setting] = await db.select().from(systemSettings).where(eq(systemSettings.key, key));
+    
+    // Prevent deletion of protected settings
+    if (setting?.isProtected) {
+      return false;
+    }
+    
+    const result = await db.delete(systemSettings).where(eq(systemSettings.key, key));
+    return result.rowCount !== null && result.rowCount > 0;
   }
 }
 

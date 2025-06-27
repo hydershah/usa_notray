@@ -23,20 +23,21 @@ import {
   Search,
   Plus 
 } from 'lucide-react';
+import { type Job } from '@shared/schema';
 
 interface JobTableProps {
   onCreateJob: () => void;
 }
 
 export function JobTable({ onCreateJob }: JobTableProps) {
-  const [selectedJob, setSelectedJob] = useState<any>(null);
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: jobs = [], isLoading } = useQuery({
+  const { data: jobs = [], isLoading } = useQuery<Job[]>({
     queryKey: ['/api/jobs'],
   });
 
@@ -61,7 +62,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
     },
   });
 
-  const filteredJobs = jobs.filter((job: any) => {
+  const filteredJobs = jobs.filter((job) => {
     const matchesStatus = statusFilter === 'all' || job.jobStatus === statusFilter;
     const matchesSearch = searchTerm === '' || 
       job.internalReference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -71,7 +72,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
     return matchesStatus && matchesSearch;
   });
 
-  const handleViewDetails = async (job: any) => {
+  const handleViewDetails = async (job: Job) => {
     try {
       const response = await apiRequest('GET', `/api/jobs/${job.id}`);
       const jobDetails = await response.json();
@@ -183,7 +184,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredJobs.map((job: any) => (
+                  {filteredJobs.map((job) => (
                     <TableRow key={job.id}>
                       <TableCell>
                         <div>

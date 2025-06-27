@@ -26,16 +26,17 @@ import { CompanyForm } from '@/components/company/company-form';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { Plus, Edit, Trash2 } from 'lucide-react';
+import { type TitleCompany } from '@shared/schema';
 
 export default function TitleCompanies() {
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [selectedCompany, setSelectedCompany] = useState<any>(null);
+  const [selectedCompany, setSelectedCompany] = useState<TitleCompany | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [companyToDelete, setCompanyToDelete] = useState<any>(null);
+  const [companyToDelete, setCompanyToDelete] = useState<TitleCompany | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: companies = [], isLoading } = useQuery({
+  const { data: companies = [], isLoading } = useQuery<TitleCompany[]>({
     queryKey: ['/api/companies'],
   });
 
@@ -113,12 +114,12 @@ export default function TitleCompanies() {
     setIsFormOpen(true);
   };
 
-  const handleEditCompany = (company: any) => {
+  const handleEditCompany = (company: TitleCompany) => {
     setSelectedCompany(company);
     setIsFormOpen(true);
   };
 
-  const handleDeleteCompany = (company: any) => {
+  const handleDeleteCompany = (company: TitleCompany) => {
     setCompanyToDelete(company);
     setIsDeleteDialogOpen(true);
   };
@@ -171,7 +172,7 @@ export default function TitleCompanies() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {companies.map((company: any) => (
+                  {companies.map((company) => (
                     <TableRow key={company.id}>
                       <TableCell className="font-medium">{company.companyName}</TableCell>
                       <TableCell>{company.contactName}</TableCell>

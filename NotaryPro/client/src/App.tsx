@@ -21,6 +21,8 @@ const LiveSigning = React.lazy(() => import("@/pages/live-signing"));
 const DocumentTagging = React.lazy(() => import("@/pages/document-tagging"));
 const Payments = React.lazy(() => import("@/pages/payments"));
 const ClosingTypes = React.lazy(() => import("@/pages/closing-types"));
+const GuestSignerPage = React.lazy(() => import("@/pages/guest-signer"));
+const EmailSettingsPage = React.lazy(() => import("@/pages/email-settings"));
 
 // Profile component
 function Profile() {
@@ -103,6 +105,13 @@ function Router() {
         {isAuthenticated ? <Redirect to="/dashboard" /> : <Login />}
       </Route>
 
+      {/* Guest signer access route - public */}
+      <Route path="/sign/:token">
+        <React.Suspense fallback={<div>Loading...</div>}>
+          <GuestSignerPage />
+        </React.Suspense>
+      </Route>
+
       {/* Protected routes */}
       <Route path="/dashboard">
         <ProtectedRoute>
@@ -168,6 +177,14 @@ function Router() {
         <ProtectedRoute allowedRoles={['admin']}>
           <React.Suspense fallback={<div>Loading...</div>}>
             <ClosingTypes />
+          </React.Suspense>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/email-settings">
+        <ProtectedRoute allowedRoles={['admin']}>
+          <React.Suspense fallback={<div>Loading...</div>}>
+            <EmailSettingsPage />
           </React.Suspense>
         </ProtectedRoute>
       </Route>

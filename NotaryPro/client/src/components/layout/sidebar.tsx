@@ -11,7 +11,8 @@ import {
   FileText,
   DollarSign,
   Settings,
-  User
+  User,
+  Mail
 } from 'lucide-react';
 
 const menuItems = [
@@ -76,6 +77,13 @@ const menuItems = [
     label: 'Closing Types',
     icon: Settings,
     path: '/closing-types',
+    roles: ['admin']
+  },
+  {
+    id: 'email-settings',
+    label: 'Email Settings',
+    icon: Mail,
+    path: '/email-settings',
     roles: ['admin']
   },
   {

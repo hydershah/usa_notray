@@ -158,7 +158,9 @@ export function NotaryStampManager({ notaryId, onStampSelect }: NotaryStampManag
       });
 
       if (response.ok) {
-        const newStampData = await response.json();
+        const responseData = await response.json();
+        console.log('Upload response:', responseData);
+        const newStampData = responseData.stamp || responseData;
         setStamps(prev => [...prev, newStampData]);
         
         // Reset form
@@ -175,10 +177,12 @@ export function NotaryStampManager({ notaryId, onStampSelect }: NotaryStampManag
 
         toast({
           title: "Stamp Uploaded",
-          description: "Your notary stamp has been uploaded and is pending verification",
+          description: responseData.message || "Your notary stamp has been uploaded and is pending verification",
         });
       } else {
-        throw new Error('Upload failed');
+        const errorData = await response.json().catch(() => ({ message: 'Upload failed' }));
+        console.error('Upload error response:', errorData);
+        throw new Error(errorData.message || 'Upload failed');
       }
     } catch (error) {
       console.error('Error uploading stamp:', error);

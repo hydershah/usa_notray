@@ -2,14 +2,20 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import { fileURLToPath } from 'url';
-import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [
     react(),
-    runtimeErrorOverlay(),
+    // Only load runtime error overlay in Replit environment
+    ...(process.env.REPL_ID !== undefined
+      ? [
+          await import("@replit/vite-plugin-runtime-error-modal").then((m) =>
+            m.default(),
+          ),
+        ]
+      : []),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [
@@ -36,5 +42,10 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
+    port: 3000,
+    proxy: {
+      '/api': 'http://localhost:3000',
+    },
   },
+  publicDir: 'client/public',
 });

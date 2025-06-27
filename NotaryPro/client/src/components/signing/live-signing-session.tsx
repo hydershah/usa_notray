@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
+import { getUserDisplayName } from '@/lib/utils';
 import { 
   Users, FileText, Video, Mic, MicOff, VideoOff, 
   Play, Square, Share2, Download, CheckCircle, XCircle, 
@@ -22,6 +23,8 @@ import { ProfessionalSignatureCapture } from './professional-signature-capture';
 import { NotaryStampManager } from '../user/notary-stamp-manager';
 import { VouchedIdentityVerification } from '../verification/vouched-identity-verification';
 import { EnhancedVideoRecorder } from '../video/enhanced-video-recorder';
+import { EnhancedPDFViewer, EnhancedPDFViewerRef } from './enhanced-pdf-viewer';
+import { WherebyIntegration } from '../video/whereby-integration';
 
 interface Participant {
   id: string;
@@ -65,6 +68,12 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
   const [recordingTime, setRecordingTime] = useState(0);
   const [sessionToken, setSessionToken] = useState<string>('');
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [roomUrl, setRoomUrl] = useState<string>('');
+  const [showWherebyVideo, setShowWherebyVideo] = useState(false);
+  const [recordingStarted, setRecordingStarted] = useState(false);
+  const [isDataLoading, setIsDataLoading] = useState(true);
+  const videoRecorderRef = useRef<any>(null);
+  const pdfViewerRef = useRef<EnhancedPDFViewerRef>(null);
 
   // Document states
   const [documentTags, setDocumentTags] = useState<DocumentTag[]>([]);
@@ -84,141 +93,53 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
 
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isGuestSession, setIsGuestSession] = useState(false);
+  const [guestSessionData, setGuestSessionData] = useState<any>(null);
 
   // Enhanced system states
-  const [showVideoRecorder, setShowVideoRecorder] = useState(false);
-  const [showIdentityVerification, setShowIdentityVerification] = useState(false);
   const [identityVerified, setIdentityVerified] = useState<Record<string, boolean>>({});
 
   const [sessionRecordingId, setSessionRecordingId] = useState<string>('');
   const [showProfessionalSignature, setShowProfessionalSignature] = useState(false);
   const [showNotaryStampModal, setShowNotaryStampModal] = useState(false);
   const [availableStamps, setAvailableStamps] = useState<any[]>([]);
+  const [availableUserSignatures, setAvailableUserSignatures] = useState<{
+    signature?: any;
+    initial?: any;
+  }>({});
+  const [userSignatures, setUserSignatures] = useState<any[]>([]);
+  const [notaryStamps, setNotaryStamps] = useState<any[]>([]);
   const [jobDocuments, setJobDocuments] = useState<any[]>([]);
   const [currentDocument, setCurrentDocument] = useState<any>(null);
   const [loadingDocuments, setLoadingDocuments] = useState(true);
   const [currentSignatureType, setCurrentSignatureType] = useState<'signature' | 'initial' | 'witness'>('signature');
   const [uploadingDocument, setUploadingDocument] = useState(false);
 
-  // Enhanced PDF handling state
-  const [pdfDocument, setPdfDocument] = useState<any>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(0);
-  const [pdfScale, setPdfScale] = useState(1.0);
-  const [pdfLoading, setPdfLoading] = useState(false);
-  const [pdfError, setPdfError] = useState<string | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
-  const [pdfViewerType, setPdfViewerType] = useState<'canvas' | 'iframe'>('canvas');
-
   // PDF.js worker setup
   useEffect(() => {
-    // Set up PDF.js worker
+    // Set up enhanced PDF.js worker
     if (typeof window !== 'undefined') {
       const pdfjsLib = (window as any).pdfjsLib;
       if (pdfjsLib) {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        // Worker is already loaded via script tag in index.html
+        console.log('PDF.js already loaded, version:', pdfjsLib.version);
+        // Ensure worker is properly configured
+        if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
+        }
       }
     }
   }, []);
 
-  // Load and render PDF using PDF.js
-  const loadPdfDocument = async (pdfUrl: string) => {
-    setPdfLoading(true);
-    setPdfError(null);
-    
-    try {
-      const pdfjsLib = (window as any).pdfjsLib;
-      if (!pdfjsLib) {
-        throw new Error('PDF.js not loaded. Loading fallback...');
-      }
+  // Enhanced PDF viewer handles all PDF operations now
 
-      const loadingTask = pdfjsLib.getDocument(pdfUrl);
-      const pdf = await loadingTask.promise;
-      
-      setPdfDocument(pdf);
-      setTotalPages(pdf.numPages);
-      setCurrentPage(1);
-      
-      toast({
-        title: "PDF Loaded Successfully",
-        description: `${pdf.numPages} pages ready for signing`,
-      });
-      
-      // Render first page
-      await renderPdfPage(pdf, 1);
-    } catch (error) {
-      console.error('PDF loading error:', error);
-      setPdfError(error instanceof Error ? error.message : 'Failed to load PDF');
-      
-      // Fallback to iframe viewer
-      setPdfViewerType('iframe');
-      toast({
-        title: "Using Fallback Viewer",
-        description: "PDF.js failed, using browser PDF viewer",
-        variant: "destructive",
-      });
-    } finally {
-      setPdfLoading(false);
-    }
-  };
-
-  // Render a specific PDF page to canvas
-  const renderPdfPage = async (pdf: any, pageNumber: number) => {
-    if (!canvasRef.current) return;
-
-    try {
-      const page = await pdf.getPage(pageNumber);
-      const viewport = page.getViewport({ scale: pdfScale });
-      
-      const canvas = canvasRef.current;
-      const context = canvas.getContext('2d');
-      
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-      
-      const renderContext = {
-        canvasContext: context,
-        viewport: viewport,
-      };
-      
-      await page.render(renderContext).promise;
-      
-      // Update overlay dimensions to match canvas
-      if (overlayRef.current) {
-        overlayRef.current.style.width = `${viewport.width}px`;
-        overlayRef.current.style.height = `${viewport.height}px`;
-      }
-    } catch (error) {
-      console.error('Error rendering PDF page:', error);
-      setPdfError('Failed to render PDF page');
-    }
-  };
-
-  // PDF navigation functions
-  const goToPage = async (pageNumber: number) => {
-    if (pdfDocument && pageNumber >= 1 && pageNumber <= totalPages) {
-      setCurrentPage(pageNumber);
-      await renderPdfPage(pdfDocument, pageNumber);
-    }
-  };
-
-  const zoomIn = async () => {
-    const newScale = Math.min(pdfScale * 1.2, 3.0);
-    setPdfScale(newScale);
-    if (pdfDocument) {
-      await renderPdfPage(pdfDocument, currentPage);
-    }
-  };
-
-  const zoomOut = async () => {
-    const newScale = Math.max(pdfScale / 1.2, 0.5);
-    setPdfScale(newScale);
-    if (pdfDocument) {
-      await renderPdfPage(pdfDocument, currentPage);
-    }
-  };
-
+  // COORDINATE SYSTEM NOTE:
+  // The current implementation has coordinate transformation issues between browser view and PDF generation:
+  // 1. Browser coordinates (Y=0 at top) vs PDF coordinates (Y=0 at bottom)
+  // 2. Display scaling between HTML templates and actual PDF dimensions
+  // 3. For best results, use actual PDF documents instead of template documents
+  // 4. The EnhancedPDFViewer (used for actual PDFs) has proper coordinate handling
+  
   // Generate signed PDF
   const generateSignedPdf = async () => {
     try {
@@ -238,9 +159,64 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
       
       console.log('Generating signed PDF with:', {
         documentId: currentDocument.id,
-        signaturesCount: documentSignatures.length,
-        currentPage,
-        scale: pdfScale
+        signaturesCount: documentSignatures.length
+      });
+
+      // Direct coordinate mapping with simple offset
+      const signaturesData = documentSignatures.map(sig => {
+        // Get page container dimensions
+        const pageContainer = document.querySelector('[data-document-container]') as HTMLElement;
+        const pageWidth = pageContainer?.scrollWidth || 612;
+        const pageHeight = pageContainer?.scrollHeight || 792;
+        
+        // Simple direct mapping - just use browser coordinates with offset
+        // This is much easier to tune and understand
+        const X_OFFSET = 0;      // Adjust left/right
+        const Y_OFFSET = 0;      // Adjust up/down (negative = move up in PDF)
+        
+        // Apply offsets directly to browser coordinates
+        const pdfX = sig.x + X_OFFSET;
+        const pdfY = sig.y + Y_OFFSET;
+        
+        console.log('Direct coordinate mapping:', {
+          signatureId: sig.id,
+          type: sig.type,
+          browserCoords: { x: sig.x, y: sig.y },
+          pdfCoords: { x: pdfX, y: pdfY },
+          offsets: { X_OFFSET, Y_OFFSET },
+          note: 'Using direct browser coordinates with simple offset'
+        });
+        
+        // Fix stamp content if it contains URLs or invalid text
+        let finalContent = sig.content;
+        let finalSignatureImage = sig.signatureImage;
+        
+        if (sig.type === 'stamp') {
+          // If content contains URL or placeholder text, generate proper notary content
+          if (!finalContent || finalContent.includes('/api/') || finalContent.includes('Thanks for your business') || finalContent === 'NOTARY STAMP') {
+            finalContent = generateSignatureContent('stamp', sig.participantId);
+          }
+          
+          // Don't send image URLs for stamps - let server handle text rendering
+          if (finalSignatureImage && finalSignatureImage.includes('/api/')) {
+            finalSignatureImage = undefined;
+          }
+        }
+        
+        return {
+          id: sig.id,
+          type: sig.type,
+          x: pdfX,
+          y: pdfY,
+          width: sig.width,
+          height: sig.height,
+          page: sig.page || 1,
+          participantId: sig.participantId,
+          participantName: sig.participantName,
+          content: finalContent,
+          signatureImage: finalSignatureImage,
+          signedAt: sig.signedAt
+        };
       });
 
       const response = await fetch(`/api/jobs/${jobId}/documents/${currentDocument.id}/sign`, {
@@ -250,9 +226,10 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          signatures: documentSignatures,
-          page: currentPage,
-          scale: pdfScale
+          signatures: signaturesData,
+          page: 1,
+          documentId: currentDocument.id,
+          jobId: jobId
         }),
       });
 
@@ -270,13 +247,37 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
           
           toast({
             title: "Document Signed Successfully",
-            description: `Generated signed PDF with ${result.signatureCount} signature(s)`,
+            description: `Generated signed PDF with ${result.signatureCount || documentSignatures.length} signature(s)`,
           });
           
-          // Return the signed PDF URL
-          return result.signedPdfUrl;
+          // Try multiple possible response formats
+          const signedPdfUrl = result.signedPdfUrl || 
+                              result.url || 
+                              result.downloadUrl || 
+                              result.signedDocumentUrl ||
+                              `/api/jobs/${jobId}/documents/${currentDocument.id}/download?signed=true` ||
+                              `/api/jobs/${jobId}/download/signed`;
+          
+          return signedPdfUrl;
         } catch (jsonError) {
           console.error('JSON parsing error:', jsonError);
+          
+          // If response is not JSON, it might be the PDF itself
+          // Check if it's a blob response
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/pdf')) {
+            // Convert text back to blob
+            const blob = new Blob([responseText], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            
+            toast({
+              title: "Document Signed Successfully",
+              description: `Generated signed PDF with ${documentSignatures.length} signature(s)`,
+            });
+            
+            return url;
+          }
+          
           console.log('Response was not valid JSON:', responseText.substring(0, 500));
           throw new Error('Server returned invalid JSON response');
         }
@@ -540,27 +541,111 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [selectedSignature]);
 
+  // Load user's signatures from dashboard
+  const loadUserSignatures = async (userId: number, token: string) => {
+    try {
+      const response = await fetch(`/api/users/${userId}/signatures`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const signaturesData = await response.json();
+        // Store user signatures for automatic placement
+        const userSignatures = {
+          signature: signaturesData.find((sig: any) => sig.type === 'signature' && sig.isActive),
+          initial: signaturesData.find((sig: any) => sig.type === 'initial' && sig.isActive)
+        };
+        setAvailableUserSignatures(userSignatures);
+        setUserSignatures(signaturesData);
+        
+        console.log('Loaded user signatures from dashboard:', userSignatures);
+      } else {
+        console.log('No signatures found in dashboard');
+      }
+    } catch (error) {
+      console.error('Error loading user signatures:', error);
+    }
+  };
+
+  // Load user's notary stamps from dashboard
+  const loadUserNotaryStamps = async (userId: number, token: string) => {
+    try {
+      const response = await fetch(`/api/notary/${userId}/stamps`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const stampsData = await response.json();
+        // Convert to the format expected by availableStamps
+        const formattedStamps = stampsData.map((stamp: any) => ({
+          processedPath: stamp.imageUrl,
+          metadata: {
+            uploadTime: stamp.uploadedAt,
+            isActive: stamp.isActive,
+            isVerified: stamp.isVerified,
+            commissionNumber: stamp.commissionNumber,
+            state: stamp.state,
+            county: stamp.county
+          }
+        }));
+        setAvailableStamps(formattedStamps);
+        setNotaryStamps(stampsData);
+        
+        if (formattedStamps.length > 0) {
+          console.log(`Loaded ${formattedStamps.length} notary stamps from dashboard`);
+        }
+      } else {
+        console.log('No stamps found in dashboard, user can upload during session');
+      }
+    } catch (error) {
+      console.error('Error loading user notary stamps:', error);
+      // Don't show error toast here as stamps are optional
+    }
+  };
+
   // Initialize session and verify access
   useEffect(() => {
     const initializeSession = async () => {
       try {
         // Get current user from localStorage
         const userData = localStorage.getItem('user');
-        if (!userData) {
+        const token = localStorage.getItem('token');
+        
+        if (!userData || !token) {
           toast({
             title: "Authentication Required",
-            description: "Please log in to access this session",
+            description: "Please log in first to access the live signing session. Redirecting to login page...",
             variant: "destructive",
           });
-          setTimeout(() => onCancel(), 100);
+          
+          // Redirect to login page instead of canceling
+          setTimeout(() => {
+            window.location.href = '/login';
+          }, 2000);
           return;
         }
         
         const user = JSON.parse(userData);
         setCurrentUser(user);
         
+        // Create a display name for the user
+        const displayName = getUserDisplayName(user);
+        
+        // Load user's signatures from dashboard
+        await loadUserSignatures(user.id, token);
+        
+        // Load user's notary stamps from dashboard if they are a notary
+        if (user.role === 'notary' || user.role === 'admin') {
+          await loadUserNotaryStamps(user.id, token);
+        }
+        
         // Load job participants from the job data
-        const token = localStorage.getItem('token');
         const jobResponse = await fetch(`/api/jobs/${jobId}`, {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -570,35 +655,163 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
         if (jobResponse.ok) {
           const jobData = await jobResponse.json();
           
-          // Create participants list from job data
-          const jobParticipants: Participant[] = [
-            {
-              id: user.id.toString(),
-              name: user.username,
-              email: user.email,
-              role: user.role as 'notary' | 'signer' | 'witness' | 'title_agent',
-              isConnected: true,
-              hasAgreed: false
-            }
-          ];
+          // Create participants list from real job data
+          const jobParticipants: Participant[] = [];
           
-          // Add notary if different from current user
-          if (jobData.notaryId && jobData.notaryId !== user.id) {
-            jobParticipants.push({
-              id: jobData.notaryId.toString(),
-              name: 'Assigned Notary',
-              email: 'notary@company.com',
-              role: 'notary',
-              isConnected: false,
-              hasAgreed: false
+          // Add current user as a participant
+          jobParticipants.push({
+            id: user.id.toString(),
+            name: displayName,
+            email: user.email,
+            role: user.role as 'notary' | 'signer' | 'witness' | 'title_agent',
+            isConnected: true,
+            hasAgreed: false
+          });
+          
+          // Fetch actual signers for this job
+          if (jobData.signers && jobData.signers.length > 0) {
+            jobData.signers.forEach((signer: any) => {
+              // Don't duplicate if signer is the current user
+              if (signer.signerEmail !== user.email) {
+                jobParticipants.push({
+                  id: signer.id.toString(),
+                  name: signer.signerName,
+                  email: signer.signerEmail,
+                  role: 'signer',
+                  isConnected: false,
+                  hasAgreed: false
+                });
+              }
             });
+          } else {
+            // Try to fetch signers from the separate signers API endpoint
+            try {
+              const signersResponse = await fetch(`/api/jobs/${jobId}/signers`, {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                }
+              });
+              
+              if (signersResponse.ok) {
+                const signers = await signersResponse.json();
+                console.log('Loaded signers from API:', signers);
+                
+                signers.forEach((signer: any) => {
+                  // Don't duplicate if signer is the current user
+                  if (signer.signerEmail !== user.email) {
+                    jobParticipants.push({
+                      id: signer.id.toString(),
+                      name: signer.signerName,
+                      email: signer.signerEmail,
+                      role: 'signer',
+                      isConnected: signer.signingStatus === 'completed',
+                      hasAgreed: signer.signingStatus === 'completed',
+                      signatureData: signer.signatureData
+                    });
+                  }
+                });
+              }
+            } catch (error) {
+              console.log('Could not fetch signers:', error);
+            }
           }
           
-          // Add title company representative if different
+          // Fetch job participants (notaries, witnesses, etc.)
+          try {
+            const participantsResponse = await fetch(`/api/jobs/${jobId}/participants`, {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            });
+            
+            if (participantsResponse.ok) {
+              const participants = await participantsResponse.json();
+              
+              for (const participant of participants) {
+                // Check if participant is not already in the list
+                if (!jobParticipants.find(p => p.email === participant.email)) {
+                  let participantName = participant.email.split('@')[0];
+                  let isConnected = participant.inviteStatus === 'accepted';
+                  let hasAgreed = false;
+                  
+                  // Check if this participant is the current user
+                  if (participant.userId === user.id) {
+                    participantName = displayName;
+                    isConnected = true; // Current user is always connected
+                  } else if (participant.userId) {
+                    // For other users with accounts, try to fetch their details
+                    try {
+                      const userResponse = await fetch(`/api/users/${participant.userId}`, {
+                        headers: {
+                          'Authorization': `Bearer ${token}`,
+                          'Content-Type': 'application/json'
+                        }
+                      });
+                      
+                      if (userResponse.ok) {
+                        const userData = await userResponse.json();
+                        participantName = userData.firstName && userData.lastName 
+                          ? `${userData.firstName} ${userData.lastName}`
+                          : userData.username || participantName;
+                      }
+                    } catch (error) {
+                      console.log(`Could not fetch details for user ${participant.userId}`);
+                    }
+                  }
+                  
+                  jobParticipants.push({
+                    id: participant.userId?.toString() || `participant-${participant.id}`,
+                    name: participantName,
+                    email: participant.email,
+                    role: participant.role as 'notary' | 'signer' | 'witness' | 'title_agent',
+                    isConnected: isConnected,
+                    hasAgreed: hasAgreed
+                  });
+                }
+              }
+            }
+          } catch (error) {
+            console.log('No additional participants found for this job');
+          }
+          
+          // Add the assigned notary if exists and different from current user
+          if (jobData.notaryId && jobData.notaryId !== user.id) {
+            // Fetch notary details
+            try {
+              const notaryResponse = await fetch(`/api/users/${jobData.notaryId}`, {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                }
+              });
+              
+              if (notaryResponse.ok) {
+                const notaryData = await notaryResponse.json();
+                const notaryName = notaryData.firstName && notaryData.lastName 
+                  ? `${notaryData.firstName} ${notaryData.lastName}`
+                  : notaryData.username;
+                  
+                jobParticipants.push({
+                  id: notaryData.id.toString(),
+                  name: notaryName,
+                  email: notaryData.email,
+                  role: 'notary',
+                  isConnected: false,
+                  hasAgreed: false
+                });
+              }
+            } catch (error) {
+              console.log('Could not fetch notary details');
+            }
+          }
+          
+          // Add title company representative if exists
           if (jobData.titleCompany && user.role !== 'title_company') {
             jobParticipants.push({
               id: 'title_rep',
-              name: jobData.titleCompany,
+              name: `${jobData.titleCompany} Representative`,
               email: 'contact@titlecompany.com',
               role: 'title_agent',
               isConnected: false,
@@ -606,6 +819,7 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
             });
           }
           
+          console.log('Loaded participants:', jobParticipants);
           setParticipants(jobParticipants);
           setIsAuthorized(true);
           
@@ -621,61 +835,30 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
         }
       } catch (error) {
         console.error('Session initialization error:', error);
-        // Fallback for development
-        const fallbackUser = { id: 1, username: 'Demo User', email: 'demo@example.com', role: 'signer' as const };
-        setCurrentUser(fallbackUser);
-        setParticipants([
-          {
-            id: '1',
-            name: fallbackUser.username,
-            email: fallbackUser.email,
-            role: fallbackUser.role as 'notary' | 'signer' | 'witness' | 'title_agent',
-            isConnected: true,
-            hasAgreed: false
-          },
-          {
-            id: '2',
-            name: 'Notary Public',
-            email: 'notary@company.com',
-            role: 'notary',
-            isConnected: true,
-            hasAgreed: false
-          }
-        ]);
-        setIsAuthorized(true);
+        toast({
+          title: "Error Loading Session",
+          description: "Failed to load session data. Please try again.",
+          variant: "destructive",
+        });
+        setTimeout(() => onCancel(), 2000);
+      } finally {
+        setIsDataLoading(false);
       }
     };
     
     initializeSession();
   }, [jobId]);
 
-  // Load PDF when component mounts and document changes
-  useEffect(() => {
-    if (pdfViewerType === 'canvas' && currentDocument?.type === 'pdf' && currentDocument?.name?.toLowerCase().endsWith('.pdf')) {
-      const baseUrl = currentDocument.url || 
-                     currentDocument.previewUrl || 
-                     `/api/jobs/${jobId}/documents/${currentDocument.id}/preview`;
-      
-      const token = localStorage.getItem('token');
-      const isApiEndpoint = baseUrl.startsWith('/api/');
-      const pdfUrl = isApiEndpoint && token 
-        ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
-        : baseUrl;
-      
-      if (pdfUrl) {
-        loadPdfDocument(pdfUrl);
-      }
-    }
-  }, [currentDocument, pdfViewerType, jobId]);
+
 
   // Render document content based on type
   const renderDocumentContent = () => {
-    if (loadingDocuments) {
+    if (isDataLoading || loadingDocuments) {
       return (
         <div className="flex items-center justify-center h-full">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-            <p className="text-gray-600">Loading documents...</p>
+            <p className="text-gray-600">{isDataLoading ? 'Loading session data...' : 'Loading documents...'}</p>
           </div>
         </div>
       );
@@ -702,9 +885,9 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
       // Add authentication token for API endpoints
       const token = localStorage.getItem('token');
       const isApiEndpoint = baseUrl.startsWith('/api/');
-      const pdfUrl = isApiEndpoint && token 
-        ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
-        : baseUrl;
+      
+      // For preview endpoints, don't add token to URL as it will be sent in headers
+      const pdfUrl = currentDocument.previewUrl || baseUrl;
       
       console.log('Attempting to load PDF:', {
         documentName: currentDocument.name,
@@ -713,280 +896,129 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
         baseUrl: baseUrl,
         pdfUrl: pdfUrl,
         documentType: currentDocument.type,
-        hasToken: !!token
+        hasToken: !!token,
+        previewUrl: currentDocument.previewUrl,
+        downloadUrl: currentDocument.url
       });
       
       return (
         <div className="h-full w-full bg-gray-100 relative">
-          {/* Enhanced PDF Header with controls */}
-          <div className="bg-white border-b px-4 py-2 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-blue-600" />
-              <span className="font-medium text-gray-900">{currentDocument.name}</span>
-              <Badge variant="outline" className="ml-2">PDF</Badge>
-              {totalPages > 0 && (
-                <Badge variant="secondary" className="ml-2">
-                  Page {currentPage} of {totalPages}
-                </Badge>
-              )}
-            </div>
-            
-            {/* PDF Controls */}
-            <div className="flex items-center gap-2">
-              {pdfViewerType === 'canvas' && totalPages > 1 && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => goToPage(currentPage - 1)}
-                    disabled={currentPage <= 1}
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => goToPage(currentPage + 1)}
-                    disabled={currentPage >= totalPages}
-                  >
-                    Next
-                  </Button>
-                </>
-              )}
+          {/* Enhanced PDF Viewer with advanced notary signing features */}
+          <EnhancedPDFViewer
+            ref={pdfViewerRef}
+            pdfUrl={pdfUrl}
+            jobId={jobId}
+            currentDocument={currentDocument}
+            initialAnnotations={documentSignatures.map(tag => ({
+              id: tag.id,
+              type: tag.type,
+              x: tag.x,
+              y: tag.y,
+              width: tag.width,
+              height: tag.height,
+              content: tag.content || '',
+              pageNumber: tag.page || 1, // Default to page 1 if not specified
+              participantId: tag.participantId,
+              timestamp: tag.signedAt || new Date().toISOString(),
+              isImage: tag.type === 'signature' && !!tag.signatureImage,
+            }))}
+            userSignatures={userSignatures}
+            notaryStamps={notaryStamps}
+            onSignatureAdd={(signature) => {
+              // Convert enhanced PDF viewer signature to DocumentTag format
+              const documentTag: DocumentTag = {
+                id: signature.id,
+                type: signature.type,
+                x: signature.x,
+                y: signature.y,
+                width: signature.width,
+                height: signature.height,
+                participantId: currentUser?.id || 'unknown',
+                participantName: getUserDisplayName(currentUser),
+                isPlaced: true,
+                content: signature.content,
+                signedAt: signature.timestamp,
+                signatureImage: signature.type === 'signature' ? signature.content : undefined,
+                page: signature.pageNumber,
+              };
               
-              <div className="text-sm text-gray-600">
-                Ready for signing
-              </div>
-            </div>
-          </div>
+              setDocumentSignatures(prev => [...prev, documentTag]);
+              
+              toast({
+                title: "Signature Added",
+                description: `${signature.type.charAt(0).toUpperCase() + signature.type.slice(1)} added to page ${signature.pageNumber}`,
+              });
+            }}
+            onDocumentSave={(modifiedPdf) => {
+              // Handle document save with embedded signatures
+              saveCompletedDocument();
+            }}
+            readOnly={sessionMode !== 'signing'}
+          />
           
-          {/* Enhanced PDF Viewer */}
-          <div className="h-full w-full overflow-auto" style={{ height: 'calc(100% - 60px)' }}>
-            {pdfLoading && (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                  <p className="text-gray-600">Loading PDF...</p>
-                </div>
-              </div>
-            )}
+          <div className="absolute bottom-4 right-4 flex gap-2 z-30">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const downloadUrl = `/api/jobs/${jobId}/documents/${currentDocument.id}/download?token=${encodeURIComponent(token || '')}`;
+                window.open(downloadUrl, '_blank');
+              }}
+              className="bg-white shadow-lg"
+            >
+              <Download className="w-4 h-4 mr-1" />
+              Download Original
+            </Button>
             
-            {pdfError && pdfViewerType === 'canvas' && (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center">
-                  <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-2" />
-                  <p className="text-gray-600 mb-4">Failed to load PDF with PDF.js</p>
-                  <Button
-                    onClick={() => setPdfViewerType('iframe')}
-                    variant="outline"
-                  >
-                    Try Fallback Viewer
-                  </Button>
-                </div>
-              </div>
-            )}
-            
-            {pdfViewerType === 'canvas' && !pdfLoading && !pdfError && (
-              <div className="relative flex justify-center">
-                {/* PDF Canvas */}
-                <div className="relative">
-                  <canvas
-                    ref={canvasRef}
-                    className="shadow-lg border border-gray-300"
-                    style={{ maxWidth: '100%', height: 'auto' }}
-                  />
-                  
-                  {/* Interactive Signature Overlay */}
-                  <div
-                    ref={overlayRef}
-                    className="absolute top-0 left-0 pointer-events-auto"
-                    data-document-container
-                    onClick={(e) => handleDocumentClick(e)}
-                    style={{ cursor: pendingSignature ? 'crosshair' : 'default' }}
-                  >
-                    {documentSignatures
-                      .filter(sig => sig.page === currentPage || !sig.page)
-                      .map((signature) => (
-                      <div
-                        key={signature.id}
-                        className={`absolute border-2 pointer-events-auto cursor-move ${
-                          selectedSignature?.id === signature.id
-                            ? 'border-blue-500 bg-blue-50 bg-opacity-50'
-                            : 'border-gray-300 bg-white bg-opacity-75'
-                        } ${canEditSignature(signature) ? 'hover:border-blue-400' : ''}`}
-                        style={{
-                          left: `${signature.x * pdfScale}px`,
-                          top: `${signature.y * pdfScale}px`,
-                          width: `${signature.width * pdfScale}px`,
-                          height: `${signature.height * pdfScale}px`,
-                          zIndex: selectedSignature?.id === signature.id ? 20 : 10,
-                        }}
-                        onMouseDown={(e) => handleSignatureMouseDown(signature, e)}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (canEditSignature(signature)) {
-                            setSelectedSignature(signature);
-                          }
-                        }}
-                      >
-                        <div className="w-full h-full flex items-center justify-center p-1">
-                          {signature.type === 'signature' && signature.signatureImage ? (
-                            <img 
-                              src={signature.signatureImage} 
-                              alt="Signature" 
-                              className="max-w-full max-h-full object-contain"
-                              onError={(e) => {
-                                console.error('Failed to load signature image:', signature.signatureImage);
-                                e.currentTarget.style.display = 'none';
-                                const fallback = e.currentTarget.nextElementSibling as HTMLElement;
-                                if (fallback) fallback.style.display = 'block';
-                              }}
-                            />
-                          ) : null}
-                          <span 
-                            className={`text-xs font-medium text-center ${signature.signatureImage ? 'hidden' : 'block'}`}
-                            style={{ 
-                              fontSize: `${Math.min((signature.width * pdfScale) / 8, (signature.height * pdfScale) / 2, 12)}px`,
-                              lineHeight: '1.2'
-                            }}
-                          >
-                            {signature.content || `${signature.type.toUpperCase()}`}
-                          </span>
-                        </div>
-                        
-                        {/* Resize handles for selected signatures */}
-                        {selectedSignature?.id === signature.id && canEditSignature(signature) && (
-                          <>
-                            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-blue-500 border border-white cursor-se-resize"></div>
-                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 border border-white cursor-pointer"
-                                 onClick={(e) => {
-                                   e.stopPropagation();
-                                   handleDeleteSignature(signature.id);
-                                 }}
-                                 title="Delete signature">
-                              <span className="text-white text-xs leading-none">×</span>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                
-                {/* PDF Controls */}
-                <div className="absolute top-4 left-4 flex flex-col gap-2 z-30">
-                  <div className="bg-white rounded-lg shadow-lg p-2 flex gap-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={zoomOut}
-                      title="Zoom Out"
-                    >
-                      <ZoomOut className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={zoomIn}
-                      title="Zoom In"
-                    >
-                      <ZoomIn className="w-4 h-4" />
-                    </Button>
-                    <span className="text-xs px-2 py-1 bg-gray-100 rounded">
-                      {Math.round(pdfScale * 100)}%
-                    </span>
-                  </div>
-                  
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setPdfViewerType('iframe')}
-                    className="bg-white shadow-lg"
-                  >
-                    <FileText className="w-3 h-3 mr-1" />
-                    Browser View
-                  </Button>
-                </div>
-              </div>
-            )}
-            
-            {pdfViewerType === 'iframe' && (
-              <div className="w-full h-full relative">
-                <iframe
-                  src={`${pdfUrl}#toolbar=1&navpanes=1&scrollbar=1&view=FitH`}
-                  className="w-full h-full border-0"
-                  title={currentDocument.name}
-                  allow="fullscreen"
-                  onLoad={() => {
-                    toast({
-                      title: "PDF Loaded",
-                      description: "Using browser PDF viewer. Limited signing features.",
-                    });
-                  }}
-                  onError={() => {
-                    toast({
-                      title: "PDF Loading Failed",
-                      description: "Unable to load PDF",
-                      variant: "destructive",
-                    });
-                  }}
-                />
-                
-                <div className="absolute top-4 left-4 z-20">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setPdfViewerType('canvas')}
-                    className="bg-white shadow-lg"
-                  >
-                    <FileText className="w-3 h-3 mr-1" />
-                    PDF.js View
-                  </Button>
-                </div>
-              </div>
-            )}
-            
-            {/* Enhanced action buttons */}
-            <div className="absolute bottom-4 right-4 flex gap-2 z-30">
+            {documentSignatures.length > 0 && (
               <Button
                 size="sm"
-                variant="outline"
-                onClick={() => {
-                  const downloadUrl = `/api/jobs/${jobId}/documents/${currentDocument.id}/download?token=${encodeURIComponent(token || '')}`;
-                  window.open(downloadUrl, '_blank');
+                variant="default"
+                onClick={async () => {
+                  try {
+                    // Show loading state
+                    toast({
+                      title: "Generating Signed PDF",
+                      description: "Please wait while we create your signed document...",
+                    });
+                    
+                    // Generate the signed PDF with embedded signatures
+                    const signedPdfUrl = await generateSignedPdf();
+                    
+                    if (signedPdfUrl) {
+                      // Download the signed PDF
+                      const token = localStorage.getItem('token');
+                      const downloadUrl = signedPdfUrl.startsWith('http') 
+                        ? signedPdfUrl 
+                        : `${window.location.origin}${signedPdfUrl}`;
+                      
+                      // Create a temporary link to download
+                      const link = document.createElement('a');
+                      link.href = downloadUrl;
+                      link.download = `${currentDocument.name.replace('.pdf', '')}_signed.pdf`;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      
+                      toast({
+                        title: "Download Started",
+                        description: "Your signed document is being downloaded.",
+                      });
+                    }
+                  } catch (error) {
+                    console.error('Error downloading signed PDF:', error);
+                    toast({
+                      title: "Download Failed",
+                      description: "Failed to download the signed document. Please try again.",
+                      variant: "destructive",
+                    });
+                  }
                 }}
-                className="bg-white shadow-lg"
+                className="bg-green-600 hover:bg-green-700 text-white shadow-lg"
               >
                 <Download className="w-4 h-4 mr-1" />
-                Download Original
+                Download Signed
               </Button>
-              
-              {documentSignatures.length > 0 && (
-                <Button
-                  size="sm"
-                  variant="default"
-                  onClick={async () => {
-                    const signedPdfUrl = await generateSignedPdf();
-                    if (signedPdfUrl) {
-                      window.open(signedPdfUrl, '_blank');
-                    }
-                  }}
-                  className="bg-green-600 hover:bg-green-700 text-white shadow-lg"
-                >
-                  <Download className="w-4 h-4 mr-1" />
-                  Download Signed
-                </Button>
-              )}
-            </div>
-            
-            {/* Debug info (only in development) */}
-            {process.env.NODE_ENV === 'development' && (
-              <div className="absolute top-2 right-2 bg-black bg-opacity-75 text-white text-xs p-2 rounded z-30">
-                <div>Viewer: {pdfViewerType}</div>
-                <div>Scale: {Math.round(pdfScale * 100)}%</div>
-                <div>Page: {currentPage}/{totalPages}</div>
-                <div>Signatures: {documentSignatures.length}</div>
-              </div>
             )}
           </div>
         </div>
@@ -1218,54 +1250,95 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
   // Start live signing session
   const startSession = async (mode: 'signing') => {
     try {
-      // Skip identity verification for demo purposes
-      // const unverifiedParticipants = participants.filter(p => 
-      //   p.role === 'signer' && !identityVerified[p.id]
-      // );
-      
-      // if (unverifiedParticipants.length > 0) {
-      //   toast({
-      //     title: "Identity Verification Required",
-      //     description: "All signers must verify their identity before signing can begin",
-      //     variant: "destructive",
-      //   });
-      //   setShowIdentityVerification(true);
-      //   return;
-      // }
-
-      // Try to get media access, but don't fail if it's not available
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: true, 
-          audio: true 
-        });
-        setIsVideoEnabled(true);
-        setIsAudioEnabled(true);
-        
-        // Start enhanced video recording system only if media is available
-        setShowVideoRecorder(true);
-        setIsRecording(true);
-      } catch (mediaError) {
-        console.warn('Media access denied or not available:', mediaError);
-        // Continue without video/audio recording
-        setIsVideoEnabled(false);
-        setIsAudioEnabled(false);
-        setIsRecording(false);
-        
+      const token = localStorage.getItem('token');
+      if (!token) {
         toast({
-          title: "Media Access Limited",
-          description: "Session started without video recording. You can still sign documents.",
+          title: "Authentication Required",
+          description: "Please log in to start the session",
+          variant: "destructive",
         });
+        return;
+      }
+
+      // Check if all required participants are connected
+      const requiredParticipants = participants.filter(p => 
+        p.role === 'signer' || p.role === 'notary'
+      );
+      const disconnectedParticipants = requiredParticipants.filter(p => !p.isConnected);
+      
+      // IMPORTANT: Always check for disconnected participants, don't allow admin override
+      if (disconnectedParticipants.length > 0) {
+        toast({
+          title: "Waiting for Participants",
+          description: `${disconnectedParticipants.length} participant(s) need to join before starting. All signers and notaries must be present.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Create a video session for live video calls
+      try {
+        const videoSessionResponse = await fetch(`/api/jobs/${jobId}/video-session`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            sessionType: 'live-signing',
+            participants: participants.map(p => ({
+              id: p.id,
+              name: p.name,
+              email: p.email,
+              role: p.role
+            }))
+          })
+        });
+
+        if (videoSessionResponse.ok) {
+          const sessionData = await videoSessionResponse.json();
+          setSessionToken(sessionData.sessionToken || sessionData.roomName);
+          setRoomUrl(sessionData.roomUrl);
+          setShowWherebyVideo(true);
+          console.log('Video session created:', sessionData);
+        }
+      } catch (error) {
+        console.log('Video session creation failed, continuing without video');
+      }
+
+      // Update job status to indicate signing in progress
+      try {
+        await fetch(`/api/jobs/${jobId}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            jobStatus: 'in_progress',
+            sessionStartedAt: new Date().toISOString(),
+            sessionStartedBy: currentUser?.id
+          })
+        });
+      } catch (error) {
+        console.error('Failed to update job status');
       }
       
       setRecordingTime(0);
       setSessionStarted(true);
       setSessionMode('signing');
+      setIsRecording(true); // Always start recording
+      setRecordingStarted(true);
       
-      // Session started successfully
+      // Notify all participants that session has started
+      setParticipants(prev => prev.map(p => ({
+        ...p,
+        isConnected: p.id === currentUser?.id?.toString() ? true : p.isConnected
+      })));
+      
       toast({
         title: "Live Signing Session Started",
-        description: "You can now sign the documents using the tools on the right.",
+        description: "Recording has started automatically. All participants must remain connected.",
       });
     } catch (error) {
       console.error('Session start error:', error);
@@ -1306,19 +1379,39 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
     }
   };
 
-  // Generate actual signature content based on type
+  // Generate actual signature content based on type and participant data
   const generateSignatureContent = (type: string, participantId: string) => {
     const participant = participants.find(p => p.id === participantId);
     const currentDate = new Date();
     
     switch (type) {
       case 'signature':
-        // In production, this would capture actual signature via canvas/stylus
-        return participant?.name || 'Digital Signature';
+        // Use actual signature data if available
+        if (participant?.signatureData) {
+          return participant.signatureData;
+        }
+        // Check if user has a stored signature
+        if (participantId === currentUser?.id?.toString() && availableUserSignatures.signature) {
+          return availableUserSignatures.signature.imageUrl || availableUserSignatures.signature.data;
+        }
+        // Return participant name for text-based signature
+        return participant?.name || getUserDisplayName(currentUser);
+        
       case 'initial':
+        // Use actual initial data if available
+        if (participantId === currentUser?.id?.toString() && availableUserSignatures.initial) {
+          return availableUserSignatures.initial.imageUrl || availableUserSignatures.initial.data;
+        }
         // Generate initials from participant name
-        const initials = participant?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'XX';
-        return initials;
+        const name = participant?.name || getUserDisplayName(currentUser);
+        const initials = name.split(' ')
+          .filter(n => n.length > 0)
+          .map(n => n[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 3); // Max 3 characters for initials
+        return initials || 'N/A';
+        
       case 'date':
         // Current date in legal format
         return currentDate.toLocaleDateString('en-US', { 
@@ -1326,11 +1419,23 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
           month: 'long', 
           day: 'numeric' 
         });
+        
       case 'stamp':
-        // Notary stamp with current date and commission info
-        return `NOTARY SEAL\n${currentDate.toLocaleDateString()}\n${participant?.name || 'Notary Public'}`;
+        // Use actual notary stamp if available
+        if (availableStamps.length > 0 && (currentUser?.role === 'notary' || currentUser?.role === 'admin')) {
+          const activeStamp = availableStamps.find(stamp => stamp.metadata?.isActive);
+          if (activeStamp?.processedPath) {
+            return activeStamp.processedPath;
+          }
+        }
+        // Fallback to text-based notary stamp
+        const notaryName = participant?.name || getUserDisplayName(currentUser);
+        const notaryState = 'California'; // This should come from user profile
+        return `NOTARY SEAL\n${notaryState}\n${notaryName}\nCommission #12345678\nExpires: 12/31/2025`;
+        
       case 'text':
-        return participant?.name || 'Participant Name';
+        return participant?.name || getUserDisplayName(currentUser);
+        
       default:
         return '';
     }
@@ -1344,8 +1449,6 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
     }));
     
     // Identity verification completed
-    
-    setShowIdentityVerification(false);
     toast({
       title: "Identity Verified",
       description: `Identity verified with ${verificationData.confidence}% confidence`,
@@ -1475,8 +1578,12 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
     formData.append('commission', 'Active'); // Would come from user profile
 
     try {
-      const response = await fetch('/api/upload/notary-stamp', {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/uploads/notary-stamp', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
         body: formData,
       });
 
@@ -1488,12 +1595,14 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
           description: "Your notary stamp has been uploaded successfully",
         });
       } else {
-        throw new Error('Upload failed');
+        const errorData = await response.json().catch(() => ({ message: 'Upload failed' }));
+        throw new Error(errorData.message || 'Upload failed');
       }
     } catch (error) {
+      console.error('Stamp upload error:', error);
       toast({
         title: "Upload Failed",
-        description: "Failed to upload notary stamp. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to upload notary stamp. Please try again.",
         variant: "destructive",
       });
     }
@@ -1617,12 +1726,18 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
     // If there's a pending signature from the right panel, place it
     if (pendingSignature) {
       const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+      const scrollContainer = e.currentTarget as HTMLElement;
+      const scrollTop = scrollContainer.scrollTop;
+      const scrollLeft = scrollContainer.scrollLeft;
       
-      // Adjust coordinates for PDF scale and scroll
-      const adjustedX = pdfViewerType === 'canvas' ? x / pdfScale : x;
-      const adjustedY = pdfViewerType === 'canvas' ? y / pdfScale : y;
+      // Get raw browser coordinates
+      const rawX = e.clientX - rect.left + scrollLeft;
+      const rawY = e.clientY - rect.top + scrollTop;
+      
+      // For now, use raw coordinates but we'll need to adjust for PDF coordinate system
+      // The server will handle the Y-axis flip (browser Y=0 at top, PDF Y=0 at bottom)
+      const adjustedX = rawX;
+      const adjustedY = rawY;
       
       const newSignature: DocumentTag = {
         id: `sig_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -1632,12 +1747,12 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
         width: pendingSignature.width || 120,
         height: pendingSignature.height || 40,
         participantId: pendingSignature.participantId || currentUser?.id?.toString() || '',
-        participantName: pendingSignature.participantName || currentUser?.username || 'Unknown',
+        participantName: pendingSignature.participantName || getUserDisplayName(currentUser),
         isPlaced: true,
         content: pendingSignature.content || '',
         signedAt: new Date().toISOString(),
         signatureImage: pendingSignature.signatureImage || '',
-        page: currentPage // Add page number for multi-page PDFs
+        page: 1 // Add page number for multi-page PDFs
       };
       
       setDocumentSignatures(prev => [...prev, newSignature]);
@@ -1645,92 +1760,207 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
       
       toast({
         title: "Signature Placed",
-        description: `${newSignature.type} placed on page ${currentPage}`,
+        description: `${newSignature.type} placed on page 1`,
       });
     }
   };
 
   const handleComplete = async () => {
-    const allSigned = participants.filter(p => p.role === 'signer').every(p => p.hasAgreed);
-    if (!allSigned) {
+    // Check if all required signatures are collected
+    const signers = participants.filter(p => p.role === 'signer');
+    const unsignedParticipants = signers.filter(p => !p.hasAgreed);
+    
+    if (unsignedParticipants.length > 0) {
       toast({
         title: "Incomplete Signatures",
-        description: "All signers must complete their signatures before finishing",
+        description: `${unsignedParticipants.length} signer(s) still need to complete their signatures`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Check if notary has applied their stamp (if required)
+    const notaryParticipant = participants.find(p => p.role === 'notary');
+    const hasNotaryStamp = documentSignatures.some(sig => sig.type === 'stamp');
+    
+    if (notaryParticipant && !hasNotaryStamp && currentUser?.role !== 'admin') {
+      toast({
+        title: "Notary Stamp Required",
+        description: "The notary must apply their official stamp before completing",
         variant: "destructive",
       });
       return;
     }
 
     try {
-      // Save completed document with signatures
+      // Stop recording if active
+      if (isRecording) {
+        setIsRecording(false);
+        
+        // Save recording metadata
+        if (sessionToken) {
+          await fetch(`/api/jobs/${jobId}/video-session/recording`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              recordingUrl: sessionRecordingId,
+              duration: recordingTime,
+              participants: participants.map(p => ({
+                id: p.id,
+                name: p.name,
+                role: p.role,
+                signedAt: p.hasAgreed ? new Date().toISOString() : null
+              }))
+            })
+          });
+        }
+      }
+
+      // Generate and save the signed PDF
+      const signedPdfUrl = await generateSignedPdf();
+      
+      if (!signedPdfUrl) {
+        throw new Error('Failed to generate signed PDF');
+      }
+
+      // Save session completion data
       await saveCompletedDocument();
+      
+      // Update job status to completed
+      const token = localStorage.getItem('token');
+      await fetch(`/api/jobs/${jobId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jobStatus: 'completed',
+          completedAt: new Date().toISOString(),
+          completedBy: currentUser?.id,
+          notarizedFile: signedPdfUrl
+        })
+      });
+
+      // End video session
+      if (sessionToken) {
+        await fetch(`/api/jobs/${jobId}/video-session`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          }
+        });
+      }
       
       toast({
         title: "Session Complete",
-        description: "All signatures collected and document saved successfully",
+        description: "All signatures collected and documents notarized successfully",
       });
-      onComplete();
+      
+      // Small delay before redirecting
+      setTimeout(() => {
+        onComplete();
+      }, 1500);
     } catch (error) {
       console.error('Error completing session:', error);
       toast({
         title: "Completion Error",
-        description: "Session completed but there was an error saving the document",
+        description: error instanceof Error ? error.message : "Failed to complete the session. Please try again.",
         variant: "destructive",
       });
-      onComplete(); // Still complete the session even if saving fails
     }
   };
 
   const saveCompletedDocument = async () => {
     try {
-      const completedDocument = {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Authentication token not found');
+      }
+
+      // Prepare session data
+      const sessionData = {
         jobId: jobId,
         documentId: currentDocument?.id || 'main-document',
         documentName: currentDocument?.name || 'Signed Document',
         completedAt: new Date().toISOString(),
+        sessionDuration: recordingTime,
+        sessionToken: sessionToken,
         participants: participants.map(p => ({
           id: p.id,
           name: p.name,
           email: p.email,
           role: p.role,
           hasAgreed: p.hasAgreed,
+          signedAt: p.hasAgreed ? new Date().toISOString() : null,
           signatureData: p.signatureData
         })),
         signatures: documentSignatures.map(sig => ({
           id: sig.id,
           type: sig.type,
+          participantId: sig.participantId,
+          participantName: sig.participantName,
+          page: sig.page || 1,
           x: sig.x,
           y: sig.y,
           width: sig.width,
           height: sig.height,
-          participantId: sig.participantId,
-          participantName: sig.participantName,
-          content: sig.content,
-          signatureImage: sig.signatureImage,
-          signedAt: sig.signedAt
+          signedAt: sig.signedAt,
+          content: sig.content
         })),
-        sessionData: {
-          sessionId: `session_${Date.now()}`,
-          recordingId: sessionRecordingId,
-          startTime: sessionStarted ? new Date().toISOString() : undefined,
-          endTime: new Date().toISOString(),
-          duration: recordingTime
-        }
+        notaryDetails: currentUser?.role === 'notary' || currentUser?.role === 'admin' ? {
+          notaryId: currentUser.id,
+          notaryName: getUserDisplayName(currentUser),
+          notaryEmail: currentUser.email,
+          notarizedAt: new Date().toISOString(),
+          commissionNumber: 'Active', // Would come from user profile
+          state: 'CA' // Would come from user profile
+        } : null
       };
 
-      // Save to localStorage for demo purposes
-      const existingCompletedDocs = localStorage.getItem(`completed_documents_${jobId}`) || '[]';
-      const completedDocs = JSON.parse(existingCompletedDocs);
-      completedDocs.push(completedDocument);
-      localStorage.setItem(`completed_documents_${jobId}`, JSON.stringify(completedDocs));
+      // Save session data
+      const response = await fetch(`/api/jobs/${jobId}/session-complete`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(sessionData),
+      });
 
-      // Also save to global completed documents for all users
-      const globalCompletedDocs = localStorage.getItem('all_completed_documents') || '[]';
-      const allDocs = JSON.parse(globalCompletedDocs);
-      allDocs.push(completedDocument);
-      localStorage.setItem('all_completed_documents', JSON.stringify(allDocs));
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to save session data');
+      }
 
-      console.log('Completed document saved:', completedDocument);
+      const result = await response.json();
+      console.log('Session saved successfully:', result);
+
+      // Update signers status in database
+      for (const participant of participants.filter(p => p.role === 'signer')) {
+        if (participant.hasAgreed) {
+          try {
+            await fetch(`/api/signers/${participant.id}`, {
+              method: 'PUT',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                signingStatus: 'completed',
+                signedAt: new Date().toISOString()
+              })
+            });
+          } catch (error) {
+            console.error(`Failed to update signer ${participant.id} status:`, error);
+          }
+        }
+      }
+
     } catch (error) {
       console.error('Error saving completed document:', error);
       throw error;
@@ -1740,23 +1970,28 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
 
 
   return (
-    <div className="h-screen bg-gray-50 flex flex-col">
+    <div className="flex flex-col h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b px-6 py-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Live Notary Session</h1>
-          <p className="text-sm text-gray-600">Job #{jobId} • {currentDocument?.name || 'Loading...'}</p>
-        </div>
-        <div className="flex items-center space-x-4">
+      <div className="bg-white border-b px-4 py-3 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Live Notary Session - Job #{jobId}</h2>
+        <div className="flex items-center gap-3">
           {!sessionStarted ? (
             <>
-              <div className="flex items-center space-x-2 text-sm text-gray-600">
+              <div className="flex items-center gap-2 text-sm">
                 <Users className="w-4 h-4" />
-                <span>{participants.filter(p => p.isConnected).length}/{participants.length} connected</span>
+                <span className={participants.filter(p => p.isConnected).length === participants.length ? 'text-green-600' : 'text-orange-600'}>
+                  {participants.filter(p => p.isConnected).length}/{participants.length} connected
+                </span>
               </div>
-              <Button onClick={() => startSession('signing')} className="px-4">
+              <Button 
+                onClick={() => startSession('signing')} 
+                className="px-4"
+                disabled={participants.filter(p => p.isConnected).length < participants.length}
+              >
                 <Play className="w-4 h-4 mr-2" />
-                Start Live Signing Session
+                {participants.filter(p => p.isConnected).length < participants.length 
+                  ? 'Waiting for all participants...' 
+                  : 'Start Live Signing Session'}
               </Button>
             </>
           ) : (
@@ -1783,63 +2018,91 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
 
       {/* Main Content */}
       <div className="flex-1 flex">
-        {/* Left Panel - Video Participants */}
-        <div className="w-80 bg-white border-r flex flex-col">
-          {/* Video Participants */}
-          <div className="p-4 border-b">
-            <h3 className="font-medium text-sm mb-3 flex items-center">
-              <Video className="w-4 h-4 mr-2" />
-              Participants ({participants.filter(p => p.isConnected).length}/{participants.length})
-            </h3>
-            <div className="space-y-3">
-              {participants.map((participant) => (
-                <div key={participant.id} className="relative">
-                  <div className="bg-gray-900 rounded-lg aspect-video relative overflow-hidden">
-                    {participant.isConnected ? (
-                      <video
-                        autoPlay
-                        muted={participant.id !== '1'}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center text-white text-xs">
-                        <div className="text-center">
-                          <VideoOff className="w-6 h-6 mx-auto mb-1" />
-                          <p>Offline</p>
-                        </div>
-                      </div>
-                    )}
-                    <div className="absolute bottom-1 left-1 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
-                      {participant.name.split(' ')[0]}
-                    </div>
-                    <div className={`absolute top-1 right-1 w-3 h-3 rounded-full ${participant.isConnected ? 'bg-green-500' : 'bg-gray-400'}`} />
-                  </div>
-                  <div className="text-xs text-center mt-1 text-gray-600 capitalize">
-                    {participant.role.replace('_', ' ')}
-                  </div>
-                </div>
-              ))}
+        {/* Left Panel - Video Recording & Participants */}
+        <div className="w-96 bg-white border-r flex flex-col">
+          {/* Integrated Video Recording - Always visible when session starts */}
+          {sessionStarted && (
+            <div className="p-4 border-b">
+              <EnhancedVideoRecorder
+                ref={videoRecorderRef}
+                jobId={jobId}
+                onRecordingStart={(recordingId) => {
+                  setSessionRecordingId(recordingId);
+                  setIsRecording(true);
+                }}
+                onRecordingComplete={handleRecordingComplete}
+                autoStart={true} // Start recording automatically
+              />
             </div>
-            
-            <div className="mt-4 pt-3 border-t">
-              <div className="flex justify-center space-x-2">
-                <Button
-                  variant={isVideoEnabled ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setIsVideoEnabled(!isVideoEnabled)}
-                >
-                  {isVideoEnabled ? <Video className="w-3 h-3" /> : <VideoOff className="w-3 h-3" />}
-                </Button>
-                <Button
-                  variant={isAudioEnabled ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setIsAudioEnabled(!isAudioEnabled)}
-                >
-                  {isAudioEnabled ? <Mic className="w-3 h-3" /> : <MicOff className="w-3 h-3" />}
-                </Button>
+          )}
+
+          {/* Live Video Participants */}
+          {showWherebyVideo && roomUrl ? (
+            <div className="flex-1 overflow-y-auto p-4">
+              <WherebyIntegration
+                roomUrl={roomUrl}
+                jobId={jobId}
+                userId={currentUser?.id || 0}
+                userName={getUserDisplayName(currentUser)}
+                userRole={currentUser?.role || 'signer'}
+                onParticipantJoin={(participant) => {
+                  // Update participant connection status
+                  setParticipants(prev => prev.map(p => {
+                    if (p.email === participant.email || p.name === participant.displayName) {
+                      return { ...p, isConnected: true };
+                    }
+                    return p;
+                  }));
+                }}
+                onParticipantLeave={(participant) => {
+                  // Update participant connection status
+                  setParticipants(prev => prev.map(p => {
+                    if (p.email === participant.email || p.name === participant.displayName) {
+                      return { ...p, isConnected: false };
+                    }
+                    return p;
+                  }));
+                }}
+              />
+            </div>
+          ) : (
+            <div className="p-4">
+              <h3 className="font-medium text-sm mb-3 flex items-center">
+                <Video className="w-4 h-4 mr-2" />
+                Participants ({participants.filter(p => p.isConnected).length}/{participants.length})
+              </h3>
+              <div className="space-y-3">
+                {participants.map((participant) => (
+                  <div key={participant.id} className="relative">
+                    <div className="bg-gray-900 rounded-lg aspect-video relative overflow-hidden">
+                      {!sessionStarted ? (
+                        <div className="absolute inset-0 flex items-center justify-center text-white text-xs">
+                          <div className="text-center">
+                            <VideoOff className="w-6 h-6 mx-auto mb-1" />
+                            <p>{participant.isConnected ? 'Ready' : 'Waiting to join...'}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center text-white text-xs">
+                          <div className="text-center">
+                            <Video className="w-6 h-6 mx-auto mb-1" />
+                            <p>Video feed active</p>
+                          </div>
+                        </div>
+                      )}
+                      <div className="absolute bottom-1 left-1 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
+                        {participant.name.split(' ')[0]}
+                      </div>
+                      <div className={`absolute top-1 right-1 w-3 h-3 rounded-full ${participant.isConnected ? 'bg-green-500' : 'bg-gray-400'}`} />
+                    </div>
+                    <div className="text-xs text-center mt-1 text-gray-600 capitalize">
+                      {participant.role.replace('_', ' ')}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          </div>
+          )}
 
           {/* Signature Collection */}
           <div className="flex-1 p-4">
@@ -1989,43 +2252,143 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
                 
                 const draggedType = e.dataTransfer.getData('text/plain');
                 if (draggedType) {
-                  const currentParticipant = participants.find(p => p.role === 'signer') || participants[0];
+                  let currentParticipant = participants.find(p => p.role === 'signer') || participants[0];
                   
-                  // For signatures and initials, show professional capture modal
-                  if (draggedType === 'signature' || draggedType === 'initial') {
-                    setPendingSignature({
-                      id: Date.now().toString(),
-                      type: draggedType as 'signature' | 'initial',
-                      x: x,
-                      y: y,
-                      width: draggedType === 'signature' ? 150 : 80,
-                      height: draggedType === 'signature' ? 60 : 40,
-                      participantId: currentParticipant.id,
-                      participantName: currentParticipant.name,
-                      isPlaced: true,
-                      signedAt: new Date().toISOString()
+                  // Safety check: if no participant is available, use current user as fallback
+                  if (!currentParticipant) {
+                    const fallbackParticipant = {
+                      id: currentUser?.id?.toString() || '1',
+                      name: currentUser ? getUserDisplayName(currentUser) : 'Current User',
+                      email: currentUser?.email || 'unknown@example.com',
+                      role: 'signer' as const,
+                      isConnected: true,
+                      hasAgreed: false
+                    };
+                    
+                    toast({
+                      title: "Participant Loading",
+                      description: "Using current user for signing. Please wait for all participants to load.",
+                      variant: "default",
                     });
-                    setCurrentSignatureType(draggedType as 'signature' | 'initial');
-                    setShowProfessionalSignature(true);
-                    return;
+                    
+                    // Add fallback participant if participants list is empty
+                    if (participants.length === 0) {
+                      setParticipants([fallbackParticipant]);
+                    }
+                    
+                    // Use the fallback participant
+                    currentParticipant = fallbackParticipant;
                   }
                   
-                  // For notary stamp, show stamp selection modal
+                  // For signatures and initials, check if user has saved ones from dashboard
+                  if (draggedType === 'signature' || draggedType === 'initial') {
+                    const availableSignature = availableUserSignatures[draggedType as 'signature' | 'initial'];
+                    
+                    if (availableSignature && availableSignature.imageUrl) {
+                      // Directly place the saved signature without showing modal
+                      const newSignature: DocumentTag = {
+                        id: Date.now().toString(),
+                        type: draggedType as 'signature' | 'initial',
+                        content: availableSignature.name || (draggedType === 'signature' ? 'Signature' : 'Initials'),
+                        x: x,
+                        y: y,
+                        width: draggedType === 'signature' ? 150 : 80,
+                        height: draggedType === 'signature' ? 60 : 40,
+                        participantId: currentParticipant.id,
+                        participantName: currentParticipant.name,
+                        isPlaced: true,
+                        signedAt: new Date().toISOString(),
+                        signatureImage: availableSignature.imageUrl
+                      };
+                      
+                      setDocumentSignatures(prev => [...prev, newSignature]);
+                      
+                      toast({
+                        title: `${draggedType === 'signature' ? 'Signature' : 'Initials'} Applied`,
+                        description: `Your saved ${draggedType} has been placed on the document`,
+                      });
+                      
+                      setTimeout(() => {
+                        setIsDocumentSynced(true);
+                        setTimeout(() => setIsDocumentSynced(false), 2000);
+                      }, 500);
+                      
+                      return;
+                    } else {
+                      // No saved signature available, show professional capture modal
+                      setPendingSignature({
+                        id: Date.now().toString(),
+                        type: draggedType as 'signature' | 'initial',
+                        x: x,
+                        y: y,
+                        width: draggedType === 'signature' ? 150 : 80,
+                        height: draggedType === 'signature' ? 60 : 40,
+                        participantId: currentParticipant.id,
+                        participantName: currentParticipant.name,
+                        isPlaced: true,
+                        signedAt: new Date().toISOString()
+                      });
+                      setCurrentSignatureType(draggedType as 'signature' | 'initial');
+                      setShowProfessionalSignature(true);
+                      return;
+                    }
+                  }
+                  
+                  // For notary stamp, check if active stamp exists in dashboard
                   if (draggedType === 'stamp') {
-                    setPendingSignature({
-                      id: Date.now().toString(),
-                      type: 'stamp',
-                      x: x,
-                      y: y,
-                      width: 120,
-                      height: 80,
-                      participantId: currentParticipant.id,
-                      participantName: currentParticipant.name,
-                      isPlaced: true,
-                      signedAt: new Date().toISOString()
-                    });
-                    setShowNotaryStampModal(true);
-                    return;
+                    // Check if user has stamps loaded from dashboard
+                    const activeStamp = availableStamps.find(stamp => 
+                      stamp.metadata?.isActive && stamp.metadata?.isVerified
+                    );
+                    
+                    if (activeStamp) {
+                      // Directly place the active stamp without showing modal
+                      const newStamp: DocumentTag = {
+                        id: Date.now().toString(),
+                        type: 'stamp',
+                        content: generateSignatureContent('stamp', currentParticipant.id),
+                        x: x,
+                        y: y,
+                        width: 120,
+                        height: 80,
+                        participantId: currentParticipant.id,
+                        participantName: currentParticipant.name,
+                        isPlaced: true,
+                        signedAt: new Date().toISOString(),
+                        signatureImage: activeStamp.processedPath
+                      };
+                      
+                      setDocumentSignatures(prev => [...prev, newStamp]);
+                      
+                      toast({
+                        title: "Notary Stamp Applied",
+                        description: "Your verified notary stamp has been placed on the document",
+                      });
+                      
+                      setTimeout(() => {
+                        setIsDocumentSynced(true);
+                        setTimeout(() => setIsDocumentSynced(false), 2000);
+                      }, 500);
+                      
+                      return;
+                    } else {
+                      // No active stamp available, show selection/upload modal
+                      setPendingSignature({
+                        id: Date.now().toString(),
+                        type: 'stamp',
+                        x: x,
+                        y: y,
+                        width: 120,
+                        height: 80,
+                        participantId: currentParticipant.id,
+                        participantName: currentParticipant.name,
+                        isPlaced: true,
+                        content: generateSignatureContent('stamp', currentParticipant.id), // Use proper stamp content
+                        signedAt: new Date().toISOString()
+                      });
+                      setShowNotaryStampModal(true);
+                      return;
+                    }
                   }
                   
                   // For other fields (date, text), use generated content
@@ -2067,11 +2430,11 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
               {documentSignatures.map((signature) => (
                 <div
                   key={signature.id}
-                  className={`absolute border-2 border-solid shadow-sm transition-all ${
+                  className={`absolute transition-all ${
                     selectedSignature?.id === signature.id 
-                      ? 'border-blue-600 bg-blue-50 z-20' 
-                      : 'border-green-600 bg-green-50 z-15'
-                  } ${canEditSignature(signature) ? 'hover:border-blue-400 hover:bg-blue-25' : ''} opacity-95`}
+                      ? 'z-20' 
+                      : 'z-15'
+                  } opacity-95`}
                   style={{
                     left: `${signature.x}px`,
                     top: `${signature.y}px`,
@@ -2090,7 +2453,7 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
                   <div className="flex items-center justify-center h-full text-xs font-medium text-green-800 px-2 text-center leading-tight">
                     <div className="w-full">
                       {signature.type === 'signature' && (
-                        signature.signatureImage && signature.signatureImage.startsWith('data:image/') ? (
+                        signature.signatureImage ? (
                           <img 
                             src={signature.signatureImage} 
                             alt="Signature"
@@ -2101,7 +2464,7 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
                         )
                       )}
                       {signature.type === 'initial' && (
-                        signature.signatureImage && signature.signatureImage.startsWith('data:image/') ? (
+                        signature.signatureImage ? (
                           <img 
                             src={signature.signatureImage} 
                             alt="Initials"
@@ -2115,7 +2478,7 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
                         <div className="text-xs leading-none text-green-900">{signature.content}</div>
                       )}
                       {signature.type === 'stamp' && (
-                        signature.signatureImage && signature.signatureImage.startsWith('data:image/') ? (
+                        signature.signatureImage ? (
                           <img 
                             src={signature.signatureImage} 
                             alt="Stamp"
@@ -2185,6 +2548,35 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
                 </Button>
               </div>
               
+              {/* Dashboard Status */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-700">
+                  Dashboard Status:
+                </label>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span>Signature:</span>
+                    <span className={availableUserSignatures.signature ? 'text-green-600' : 'text-gray-400'}>
+                      {availableUserSignatures.signature ? '✓ Ready' : '○ Not Set'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Initials:</span>
+                    <span className={availableUserSignatures.initial ? 'text-green-600' : 'text-gray-400'}>
+                      {availableUserSignatures.initial ? '✓ Ready' : '○ Not Set'}
+                    </span>
+                  </div>
+                  {(currentUser?.role === 'notary' || currentUser?.role === 'admin') && (
+                    <div className="flex items-center justify-between">
+                      <span>Notary Stamp:</span>
+                      <span className={availableStamps.some(s => s.metadata?.isActive) ? 'text-green-600' : 'text-gray-400'}>
+                        {availableStamps.some(s => s.metadata?.isActive) ? '✓ Ready' : '○ Not Set'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
               <div className="space-y-2">
                 <label className="text-xs font-medium text-gray-700">
                   Drag to Document to Sign:
@@ -2193,16 +2585,24 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
                   <div
                     draggable
                     onDragStart={(e) => e.dataTransfer.setData('text/plain', 'signature')}
-                    className="p-2 border border-green-300 bg-green-50 rounded cursor-move hover:bg-green-100 text-xs text-center"
+                    className="p-2 border border-green-300 bg-green-50 rounded cursor-move hover:bg-green-100 text-xs text-center relative"
+                    title={availableUserSignatures.signature ? 'Will use your saved signature from dashboard' : 'Will prompt for new signature'}
                   >
                     ✍️ Sign Here
+                    {availableUserSignatures.signature && (
+                      <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border border-white"></div>
+                    )}
                   </div>
                   <div
                     draggable
                     onDragStart={(e) => e.dataTransfer.setData('text/plain', 'initial')}
-                    className="p-2 border border-green-300 bg-green-50 rounded cursor-move hover:bg-green-100 text-xs text-center"
+                    className="p-2 border border-green-300 bg-green-50 rounded cursor-move hover:bg-green-100 text-xs text-center relative"
+                    title={availableUserSignatures.initial ? 'Will use your saved initials from dashboard' : 'Will prompt for new initials'}
                   >
                     ✓ Initial Here
+                    {availableUserSignatures.initial && (
+                      <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border border-white"></div>
+                    )}
                   </div>
                   <div
                     draggable
@@ -2222,9 +2622,13 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
                   <div
                     draggable
                     onDragStart={(e) => e.dataTransfer.setData('text/plain', 'stamp')}
-                    className="p-2 border border-blue-300 bg-blue-50 rounded cursor-move hover:bg-blue-100 text-xs text-center col-span-2"
+                    className="p-2 border border-blue-300 bg-blue-50 rounded cursor-move hover:bg-blue-100 text-xs text-center col-span-2 relative"
+                    title={availableStamps.some(s => s.metadata?.isActive) ? 'Will use your active notary stamp from dashboard' : 'Will show stamp selection'}
                   >
                     🔘 Notary Stamp
+                    {availableStamps.some(s => s.metadata?.isActive) && (
+                      <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2341,7 +2745,10 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
                 type="text"
                 value={capturedSignature}
                 onChange={(e) => setCapturedSignature(e.target.value)}
-                placeholder={pendingSignature.type === 'signature' ? 'John Doe' : 'JD'}
+                placeholder={pendingSignature.type === 'signature' 
+                  ? (currentUser ? getUserDisplayName(currentUser) : 'Your full name')
+                  : (currentUser ? getUserDisplayName(currentUser).split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'YI')
+                }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 autoFocus
               />
@@ -2383,37 +2790,6 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
         </div>
       )}
 
-      {/* Enhanced Video Recording System */}
-      {showVideoRecorder && sessionStarted && (
-        <div className="fixed bottom-4 right-4 z-40">
-          <EnhancedVideoRecorder
-            sessionId={`session_${Date.now()}`}
-            jobId={jobId}
-            participants={participants.map(p => p.name)}
-            onRecordingStart={handleRecordingStart}
-            onRecordingStop={handleRecordingComplete}
-            autoStart={true}
-            legalCompliance={true}
-          />
-        </div>
-      )}
-
-      {/* Identity Verification Modal */}
-      {showIdentityVerification && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <VouchedIdentityVerification
-            sessionId={`session_${Date.now()}`}
-            participantId={currentUser?.id?.toString() || '1'}
-            participantName={currentUser?.username || 'Demo User'}
-            onVerificationComplete={handleIdentityVerification}
-            onVerificationFailed={handleIdentityVerificationFailed}
-            requireKBA={true}
-            requireLiveness={true}
-            acceptedDocuments={['drivers_license', 'passport', 'state_id']}
-          />
-        </div>
-      )}
-
       {/* Notary Stamp Selection Modal */}
       {showNotaryStampModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -2424,7 +2800,7 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
             {availableStamps.length > 0 ? (
               <div className="space-y-4 mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Select from your uploaded stamps:
+                  Select from your dashboard stamps:
                 </label>
                 <div className="grid grid-cols-2 gap-3 max-h-60 overflow-y-auto">
                   {availableStamps.map((stamp, index) => (
@@ -2447,8 +2823,8 @@ export function LiveSigningSession({ jobId, onComplete, onCancel }: LiveSigningS
               </div>
             ) : (
               <div className="text-center text-gray-500 mb-6">
-                <p className="mb-2">No notary stamps uploaded yet.</p>
-                <p className="text-xs">Upload your first notary stamp below.</p>
+                <p className="mb-2">No notary stamps found in your dashboard.</p>
+                <p className="text-xs">Upload your first notary stamp below or manage stamps in your profile.</p>
               </div>
             )}
             

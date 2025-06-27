@@ -6,6 +6,17 @@ export interface User {
   email: string;
   role: string;
   privileges: string[];
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  address?: string;
+  twoFactorEnabled?: boolean;
+  emailVerified?: boolean;
+  lastLoginAt?: string;
+  lastLoginIP?: string;
+  apiKey?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface LoginCredentials {
@@ -30,9 +41,18 @@ export const authApi = {
     return data;
   },
 
-  logout: () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+  logout: async () => {
+    try {
+      // Call server logout endpoint
+      await apiRequest('POST', '/api/auth/logout');
+    } catch (error) {
+      console.warn('Server logout failed:', error);
+      // Continue with local logout even if server call fails
+    } finally {
+      // Always clear local storage
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+    }
   },
 
   getStoredUser: (): User | null => {

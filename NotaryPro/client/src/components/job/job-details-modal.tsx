@@ -340,26 +340,123 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
         {job.signers && job.signers.length > 0 && (
           <Card className="mt-6">
             <CardHeader>
-              <CardTitle className="text-lg">Signers</CardTitle>
+              <CardTitle className="text-lg">Signers & Invitations</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
                 {job.signers.map((signer: any) => (
-                  <div key={signer.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center">
-                      <div className="h-10 w-10 bg-gray-200 rounded-full flex items-center justify-center mr-3">
-                        <User className="h-5 w-5 text-gray-600" />
+                  <div key={signer.id} className="p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center">
+                        <div className="h-10 w-10 bg-gray-200 rounded-full flex items-center justify-center mr-3">
+                          <User className="h-5 w-5 text-gray-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{signer.signerName}</p>
+                          <p className="text-sm text-gray-600">
+                            {signer.signerEmail} • {signer.signerPhoneNumber}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{signer.signerName}</p>
-                        <p className="text-sm text-gray-600">
-                          {signer.signerEmail} • {signer.signerPhoneNumber}
-                        </p>
+                      <Badge className={getRoleColor(signer.signerRole)}>
+                        {formatRole(signer.signerRole)}
+                      </Badge>
+                    </div>
+                    
+                    {/* Invitation Management */}
+                    <div className="flex items-center justify-between pt-3 border-t border-gray-200">
+                      <div className="flex items-center space-x-2">
+                        <Badge 
+                          className={signer.invitationSentAt ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}
+                        >
+                          {signer.invitationSentAt ? "✅ Invitation Sent" : "⏳ Pending"}
+                        </Badge>
+                        {signer.invitationSentAt && (
+                          <span className="text-xs text-gray-500">
+                            {new Date(signer.invitationSentAt).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const invitationLink = `${window.location.origin}/sign/${signer.invitationToken || 'demo-token'}`;
+                            navigator.clipboard.writeText(invitationLink);
+                            toast({
+                              title: "Link Copied",
+                              description: "Invitation link copied to clipboard.",
+                            });
+                          }}
+                          title="Copy invitation link"
+                        >
+                          📋 Copy Link
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            try {
+                              // Call resend invitation API
+                              const response = await fetch(`/api/signers/${signer.id}/resend-invitation`, {
+                                method: 'POST',
+                                headers: {
+                                  'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                                  'Content-Type': 'application/json'
+                                }
+                              });
+                              
+                              if (response.ok) {
+                                toast({
+                                  title: "Invitation Sent",
+                                  description: `Invitation resent to ${signer.signerEmail}`,
+                                });
+                              } else {
+                                throw new Error('Failed to resend invitation');
+                              }
+                            } catch (error) {
+                              toast({
+                                variant: "destructive",
+                                title: "Resend Failed",
+                                description: "Could not resend invitation. Please try again.",
+                              });
+                            }
+                          }}
+                          title="Resend invitation email"
+                        >
+                          📧 Resend
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            if (signer.invitationToken) {
+                              window.open(`/sign/${signer.invitationToken}`, '_blank');
+                            } else {
+                              toast({
+                                variant: "destructive",
+                                title: "No Token",
+                                description: "No invitation token found for this signer.",
+                              });
+                            }
+                          }}
+                          title="Test invitation link"
+                        >
+                          🔗 Test
+                        </Button>
                       </div>
                     </div>
-                    <Badge className={getRoleColor(signer.signerRole)}>
-                      {formatRole(signer.signerRole)}
-                    </Badge>
+                    
+                    {/* Invitation Link Display */}
+                    {signer.invitationToken && (
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <div className="text-xs text-gray-600 mb-1">Invitation Link:</div>
+                        <code className="text-xs bg-gray-100 px-2 py-1 rounded block break-all">
+                          {window.location.origin}/sign/{signer.invitationToken}
+                        </code>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

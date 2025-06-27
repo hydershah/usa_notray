@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -28,7 +29,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
-import { ArrowLeft, ArrowRight, Plus, Trash2, Upload, FileText, CheckCircle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Plus, Trash2, Upload, FileText, CheckCircle, AlertCircle } from 'lucide-react';
 import { type TitleCompany, type ClosingType, type User } from '@shared/schema';
 
 const jobSchema = z.object({
@@ -36,11 +37,13 @@ const jobSchema = z.object({
   closingType: z.string().min(1, 'Closing type is required'),
   internalReference: z.string().optional(),
   kbaRequired: z.boolean().default(false),
-  propertyAddressOne: z.string().min(1, 'Property address is required'),
+  propertyAddressOne: z.string().min(1, 'Property address is required').min(5, 'Address must be at least 5 characters'),
   propertyAddressTwo: z.string().optional(),
-  propertyCity: z.string().min(1, 'City is required'),
-  propertyState: z.string().min(1, 'State is required'),
-  propertyZipCode: z.string().min(1, 'ZIP code is required'),
+  propertyCity: z.string().min(1, 'City is required').min(2, 'City must be at least 2 characters'),
+  propertyState: z.string().min(1, 'State is required').length(2, 'Please select a valid state'),
+  propertyZipCode: z.string()
+    .min(1, 'ZIP code is required')
+    .regex(/^\d{5}(-\d{4})?$/, 'Invalid ZIP code format (12345 or 12345-6789)'),
   notaryOption: z.enum(['assign', 'auto']),
   selectedNotary: z.string().optional(),
   selectedDate: z.string().optional(),
@@ -48,9 +51,12 @@ const jobSchema = z.object({
 });
 
 const signerSchema = z.object({
-  signerName: z.string().min(1, 'Signer name is required'),
-  signerEmail: z.string().email('Valid email is required'),
-  signerPhoneNumber: z.string().min(1, 'Phone number is required'),
+  signerName: z.string().min(1, 'Signer name is required').min(2, 'Name must be at least 2 characters'),
+  signerEmail: z.string().min(1, 'Email is required').email('Valid email is required'),
+  signerPhoneNumber: z.string()
+    .min(1, 'Phone number is required')
+    .regex(/^[\d\s\-\(\)\+]+$/, 'Invalid phone number format')
+    .min(10, 'Phone number must be at least 10 digits'),
   signerRole: z.string().min(1, 'Signer role is required'),
 });
 
@@ -72,12 +78,15 @@ const steps = [
   { id: 2, title: 'Signers', description: 'Add signers to the job' },
   { id: 3, title: 'Schedule', description: 'Set appointment details' },
   { id: 4, title: 'Documents', description: 'Upload required files' },
+  { id: 5, title: 'Review', description: 'Review and submit' },
 ];
 
 export function JobWizard() {
   const [currentStep, setCurrentStep] = useState(1);
   const [signers, setSigners] = useState<SignerFormData[]>([]);
+  const [signerErrors, setSignerErrors] = useState<Record<number, Record<string, string>>>({});
   const [documents, setDocuments] = useState<DocumentFile[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -135,8 +144,108 @@ export function JobWizard() {
     },
   });
 
-  const handleNext = () => {
-    setCurrentStep(prev => Math.min(prev + 1, steps.length));
+  const validateStep = async (step: number) => {
+    switch (step) {
+      case 1:
+        // Validate client information
+        const fieldsToValidate = [
+          'titleCompany', 'closingType', 'propertyAddressOne', 
+          'propertyCity', 'propertyState', 'propertyZipCode'
+        ] as const;
+        
+        const results = await Promise.all(
+          fieldsToValidate.map(field => form.trigger(field))
+        );
+        
+        if (!results.every(result => result)) {
+          toast({
+            variant: "destructive",
+            title: "Validation Error",
+            description: "Please fill in all required fields correctly.",
+          });
+          return false;
+        }
+        return true;
+
+      case 2:
+        // Validate signers
+        if (signers.length === 0) {
+          toast({
+            variant: "destructive",
+            title: "No Signers",
+            description: "Please add at least one signer.",
+          });
+          return false;
+        }
+
+        // Validate each signer
+        const invalidSigners: number[] = [];
+        signers.forEach((signer, index) => {
+          try {
+            signerSchema.parse(signer);
+          } catch (error) {
+            invalidSigners.push(index + 1);
+          }
+        });
+
+        if (invalidSigners.length > 0) {
+          toast({
+            variant: "destructive",
+            title: "Invalid Signer Information",
+            description: `Please check signer(s): ${invalidSigners.join(', ')}`,
+          });
+          return false;
+        }
+        return true;
+
+      case 3:
+        // Schedule validation is optional for now
+        return true;
+
+      case 4:
+        // Validate documents
+        if (documents.length === 0) {
+          toast({
+            variant: "destructive",
+            title: "No Documents",
+            description: "Please upload at least one document.",
+          });
+          return false;
+        }
+        return true;
+
+      case 5:
+        // Review step - validate all previous steps
+        const allFieldsValid = await form.trigger();
+        if (!allFieldsValid) {
+          toast({
+            variant: "destructive",
+            title: "Missing Information",
+            description: "Please complete all required fields.",
+          });
+          return false;
+        }
+        
+        if (signers.length === 0 || documents.length === 0) {
+          toast({
+            variant: "destructive",
+            title: "Incomplete Job",
+            description: "Please add signers and documents before submitting.",
+          });
+          return false;
+        }
+        return true;
+
+      default:
+        return true;
+    }
+  };
+
+  const handleNext = async () => {
+    const isValid = await validateStep(currentStep);
+    if (isValid) {
+      setCurrentStep(prev => Math.min(prev + 1, steps.length));
+    }
   };
 
   const handlePrevious = () => {
@@ -160,22 +269,80 @@ export function JobWizard() {
     setSigners(prev => prev.map((signer, i) => 
       i === index ? { ...signer, [field]: value } : signer
     ));
+    
+    // Clear error for this field when user starts typing
+    setSignerErrors(prev => ({
+      ...prev,
+      [index]: {
+        ...prev[index],
+        [field]: ''
+      }
+    }));
+  };
+
+  const validateSigner = (signer: SignerFormData, index: number) => {
+    const errors: Record<string, string> = {};
+    
+    try {
+      signerSchema.parse(signer);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        error.errors.forEach(err => {
+          if (err.path[0]) {
+            errors[err.path[0] as string] = err.message;
+          }
+        });
+      }
+    }
+    
+    setSignerErrors(prev => ({
+      ...prev,
+      [index]: errors
+    }));
+    
+    return Object.keys(errors).length === 0;
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files) {
-      const newDocuments: DocumentFile[] = Array.from(files).map(file => ({
-        id: Math.random().toString(36).substring(2) + Date.now().toString(36),
-        file,
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        isRequired: true,
-        documentType: 'original' as const,
-      }));
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+      const invalidFiles: string[] = [];
       
-      setDocuments(prev => [...prev, ...newDocuments]);
+      const validFiles = Array.from(files).filter(file => {
+        if (file.size > maxSize) {
+          invalidFiles.push(`${file.name} (exceeds 10MB)`);
+          return false;
+        }
+        if (!allowedTypes.includes(file.type)) {
+          invalidFiles.push(`${file.name} (invalid type, only PDF/JPG/PNG allowed)`);
+          return false;
+        }
+        return true;
+      });
+
+      if (invalidFiles.length > 0) {
+        toast({
+          variant: "destructive",
+          title: "Invalid Files",
+          description: `The following files were rejected: ${invalidFiles.join(', ')}`,
+        });
+      }
+
+      if (validFiles.length > 0) {
+        const newDocuments: DocumentFile[] = validFiles.map(file => ({
+          id: Math.random().toString(36).substring(2) + Date.now().toString(36),
+          file,
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          isRequired: true,
+          documentType: 'original' as const,
+        }));
+        
+        setDocuments(prev => [...prev, ...newDocuments]);
+      }
     }
     // Clear the input to allow re-selecting the same file
     event.target.value = '';
@@ -192,6 +359,52 @@ export function JobWizard() {
   };
 
   const handleSubmit = async (data: JobFormData) => {
+    // Prevent double submission
+    if (isSubmitting) return;
+    
+    // Validate all steps before submitting
+    let allValid = true;
+    
+    // Validate signers
+    if (signers.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Signers",
+        description: "Please add at least one signer.",
+      });
+      setCurrentStep(2);
+      return;
+    }
+    
+    signers.forEach((signer, index) => {
+      if (!validateSigner(signer, index)) {
+        allValid = false;
+      }
+    });
+    
+    if (!allValid) {
+      toast({
+        variant: "destructive",
+        title: "Invalid Signer Information",
+        description: "Please fix signer information errors.",
+      });
+      setCurrentStep(2);
+      return;
+    }
+    
+    // Validate documents
+    if (documents.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Documents",
+        description: "Please upload at least one document.",
+      });
+      setCurrentStep(4);
+      return;
+    }
+    
+    setIsSubmitting(true);
+    
     const formData = new FormData();
     
     // Add job data
@@ -214,7 +427,11 @@ export function JobWizard() {
       }));
     });
     
-    createJobMutation.mutate(formData);
+    try {
+      await createJobMutation.mutateAsync(formData);
+    } catch (error) {
+      setIsSubmitting(false);
+    }
   };
 
   const progress = (currentStep / steps.length) * 100;
@@ -238,10 +455,16 @@ export function JobWizard() {
               <div key={step.id} className={`flex items-center ${
                 currentStep >= step.id ? 'text-primary font-medium' : ''
               }`}>
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs mr-2 ${
-                  currentStep >= step.id ? 'bg-primary text-white' : 'bg-gray-200'
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs mr-2 transition-all ${
+                  currentStep > step.id ? 'bg-green-500 text-white' : 
+                  currentStep === step.id ? 'bg-primary text-white ring-2 ring-primary ring-offset-2' : 
+                  'bg-gray-200'
                 }`}>
-                  {step.id}
+                  {currentStep > step.id ? (
+                    <CheckCircle className="w-4 h-4" />
+                  ) : (
+                    step.id
+                  )}
                 </div>
                 <span className="hidden sm:inline">{step.title}</span>
               </div>
@@ -413,11 +636,56 @@ export function JobWizard() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
+                              <SelectItem value="AL">Alabama</SelectItem>
+                              <SelectItem value="AK">Alaska</SelectItem>
+                              <SelectItem value="AZ">Arizona</SelectItem>
+                              <SelectItem value="AR">Arkansas</SelectItem>
                               <SelectItem value="CA">California</SelectItem>
-                              <SelectItem value="TX">Texas</SelectItem>
+                              <SelectItem value="CO">Colorado</SelectItem>
+                              <SelectItem value="CT">Connecticut</SelectItem>
+                              <SelectItem value="DE">Delaware</SelectItem>
                               <SelectItem value="FL">Florida</SelectItem>
+                              <SelectItem value="GA">Georgia</SelectItem>
+                              <SelectItem value="HI">Hawaii</SelectItem>
+                              <SelectItem value="ID">Idaho</SelectItem>
+                              <SelectItem value="IL">Illinois</SelectItem>
+                              <SelectItem value="IN">Indiana</SelectItem>
+                              <SelectItem value="IA">Iowa</SelectItem>
+                              <SelectItem value="KS">Kansas</SelectItem>
+                              <SelectItem value="KY">Kentucky</SelectItem>
+                              <SelectItem value="LA">Louisiana</SelectItem>
+                              <SelectItem value="ME">Maine</SelectItem>
+                              <SelectItem value="MD">Maryland</SelectItem>
+                              <SelectItem value="MA">Massachusetts</SelectItem>
+                              <SelectItem value="MI">Michigan</SelectItem>
+                              <SelectItem value="MN">Minnesota</SelectItem>
+                              <SelectItem value="MS">Mississippi</SelectItem>
+                              <SelectItem value="MO">Missouri</SelectItem>
+                              <SelectItem value="MT">Montana</SelectItem>
+                              <SelectItem value="NE">Nebraska</SelectItem>
+                              <SelectItem value="NV">Nevada</SelectItem>
+                              <SelectItem value="NH">New Hampshire</SelectItem>
+                              <SelectItem value="NJ">New Jersey</SelectItem>
+                              <SelectItem value="NM">New Mexico</SelectItem>
                               <SelectItem value="NY">New York</SelectItem>
+                              <SelectItem value="NC">North Carolina</SelectItem>
+                              <SelectItem value="ND">North Dakota</SelectItem>
+                              <SelectItem value="OH">Ohio</SelectItem>
+                              <SelectItem value="OK">Oklahoma</SelectItem>
+                              <SelectItem value="OR">Oregon</SelectItem>
+                              <SelectItem value="PA">Pennsylvania</SelectItem>
+                              <SelectItem value="RI">Rhode Island</SelectItem>
+                              <SelectItem value="SC">South Carolina</SelectItem>
+                              <SelectItem value="SD">South Dakota</SelectItem>
+                              <SelectItem value="TN">Tennessee</SelectItem>
+                              <SelectItem value="TX">Texas</SelectItem>
+                              <SelectItem value="UT">Utah</SelectItem>
+                              <SelectItem value="VT">Vermont</SelectItem>
+                              <SelectItem value="VA">Virginia</SelectItem>
                               <SelectItem value="WA">Washington</SelectItem>
+                              <SelectItem value="WV">West Virginia</SelectItem>
+                              <SelectItem value="WI">Wisconsin</SelectItem>
+                              <SelectItem value="WY">Wyoming</SelectItem>
                             </SelectContent>
                           </Select>
                           <FormMessage />
@@ -477,40 +745,66 @@ export function JobWizard() {
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
-                            <Label>Signer Name</Label>
+                            <Label className={signerErrors[index]?.signerName ? 'text-destructive' : ''}>
+                              Signer Name *
+                            </Label>
                             <Input
                               value={signer.signerName}
                               onChange={(e) => handleSignerChange(index, 'signerName', e.target.value)}
                               placeholder="Enter signer name"
+                              className={signerErrors[index]?.signerName ? 'border-destructive' : ''}
+                              onBlur={() => validateSigner(signer, index)}
                             />
+                            {signerErrors[index]?.signerName && (
+                              <p className="text-sm text-destructive mt-1">{signerErrors[index].signerName}</p>
+                            )}
                           </div>
                           
                           <div>
-                            <Label>Email</Label>
+                            <Label className={signerErrors[index]?.signerEmail ? 'text-destructive' : ''}>
+                              Email *
+                            </Label>
                             <Input
                               type="email"
                               value={signer.signerEmail}
                               onChange={(e) => handleSignerChange(index, 'signerEmail', e.target.value)}
                               placeholder="Enter email"
+                              className={signerErrors[index]?.signerEmail ? 'border-destructive' : ''}
+                              onBlur={() => validateSigner(signer, index)}
                             />
+                            {signerErrors[index]?.signerEmail && (
+                              <p className="text-sm text-destructive mt-1">{signerErrors[index].signerEmail}</p>
+                            )}
                           </div>
                           
                           <div>
-                            <Label>Phone Number</Label>
+                            <Label className={signerErrors[index]?.signerPhoneNumber ? 'text-destructive' : ''}>
+                              Phone Number *
+                            </Label>
                             <Input
                               value={signer.signerPhoneNumber}
                               onChange={(e) => handleSignerChange(index, 'signerPhoneNumber', e.target.value)}
-                              placeholder="Enter phone number"
+                              placeholder="(123) 456-7890"
+                              className={signerErrors[index]?.signerPhoneNumber ? 'border-destructive' : ''}
+                              onBlur={() => validateSigner(signer, index)}
                             />
+                            {signerErrors[index]?.signerPhoneNumber && (
+                              <p className="text-sm text-destructive mt-1">{signerErrors[index].signerPhoneNumber}</p>
+                            )}
                           </div>
                           
                           <div>
-                            <Label>Role</Label>
+                            <Label className={signerErrors[index]?.signerRole ? 'text-destructive' : ''}>
+                              Role *
+                            </Label>
                             <Select
                               value={signer.signerRole}
-                              onValueChange={(value) => handleSignerChange(index, 'signerRole', value)}
+                              onValueChange={(value) => {
+                                handleSignerChange(index, 'signerRole', value);
+                                validateSigner({ ...signer, signerRole: value }, index);
+                              }}
                             >
-                              <SelectTrigger>
+                              <SelectTrigger className={signerErrors[index]?.signerRole ? 'border-destructive' : ''}>
                                 <SelectValue placeholder="Select role" />
                               </SelectTrigger>
                               <SelectContent>
@@ -520,6 +814,9 @@ export function JobWizard() {
                                 <SelectItem value="buyer">Buyer</SelectItem>
                               </SelectContent>
                             </Select>
+                            {signerErrors[index]?.signerRole && (
+                              <p className="text-sm text-destructive mt-1">{signerErrors[index].signerRole}</p>
+                            )}
                           </div>
                         </div>
                       </Card>
@@ -656,7 +953,7 @@ export function JobWizard() {
                   </div>
                   <input
                     type="file"
-                    accept=".pdf,.doc,.docx"
+                    accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
                     multiple
                     onChange={handleFileUpload}
                     className="hidden"
@@ -734,6 +1031,141 @@ export function JobWizard() {
               </div>
             )}
 
+            {/* Step 5: Review */}
+            {currentStep === 5 && (
+              <div className="space-y-6">
+                <h3 className="text-lg font-medium">Review Job Details</h3>
+                <p className="text-sm text-gray-600">Please review all the information before submitting</p>
+                
+                {/* Client Information Summary */}
+                <Card className="p-4">
+                  <h4 className="font-medium mb-3 flex items-center">
+                    <CheckCircle className="h-5 w-5 text-green-500 mr-2" />
+                    Client Information
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600">Title Company:</span>
+                      <p className="font-medium">{form.watch('titleCompany') || 'Not specified'}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Closing Type:</span>
+                      <p className="font-medium">{form.watch('closingType') || 'Not specified'}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Internal Reference:</span>
+                      <p className="font-medium">{form.watch('internalReference') || 'None'}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">KBA Required:</span>
+                      <p className="font-medium">{form.watch('kbaRequired') ? 'Yes' : 'No'}</p>
+                    </div>
+                    <div className="md:col-span-2">
+                      <span className="text-gray-600">Property Address:</span>
+                      <p className="font-medium">
+                        {form.watch('propertyAddressOne')}
+                        {form.watch('propertyAddressTwo') && `, ${form.watch('propertyAddressTwo')}`}
+                        <br />
+                        {form.watch('propertyCity')}, {form.watch('propertyState')} {form.watch('propertyZipCode')}
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+
+                {/* Signers Summary */}
+                <Card className="p-4">
+                  <h4 className="font-medium mb-3 flex items-center">
+                    <CheckCircle className="h-5 w-5 text-green-500 mr-2" />
+                    Signers ({signers.length})
+                  </h4>
+                  {signers.length > 0 ? (
+                    <div className="space-y-2">
+                      {signers.map((signer, index) => (
+                        <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                          <div className="text-sm">
+                            <p className="font-medium">{signer.signerName}</p>
+                            <p className="text-gray-600">{signer.signerEmail} • {signer.signerPhoneNumber}</p>
+                          </div>
+                          <Badge>{signer.signerRole}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">No signers added</p>
+                  )}
+                </Card>
+
+                {/* Schedule Summary */}
+                <Card className="p-4">
+                  <h4 className="font-medium mb-3 flex items-center">
+                    <CheckCircle className="h-5 w-5 text-green-500 mr-2" />
+                    Schedule
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600">Notary Option:</span>
+                      <p className="font-medium">{form.watch('notaryOption') === 'assign' ? 'Specific Notary' : 'Auto Assignment'}</p>
+                    </div>
+                    {form.watch('notaryOption') === 'assign' && form.watch('selectedNotary') && (
+                      <div>
+                        <span className="text-gray-600">Selected Notary:</span>
+                        <p className="font-medium">
+                          {notaries.find(n => n.id.toString() === form.watch('selectedNotary'))?.username || 'Not found'}
+                        </p>
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-gray-600">Date:</span>
+                      <p className="font-medium">{form.watch('selectedDate') || 'Not scheduled'}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Time:</span>
+                      <p className="font-medium">{form.watch('selectedTime') || 'Not scheduled'}</p>
+                    </div>
+                  </div>
+                </Card>
+
+                {/* Documents Summary */}
+                <Card className="p-4">
+                  <h4 className="font-medium mb-3 flex items-center">
+                    <CheckCircle className="h-5 w-5 text-green-500 mr-2" />
+                    Documents ({documents.length})
+                  </h4>
+                  {documents.length > 0 ? (
+                    <div className="space-y-2">
+                      {documents.map((doc) => (
+                        <div key={doc.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                          <div className="flex items-center space-x-2 text-sm">
+                            <FileText className="h-4 w-4 text-blue-500" />
+                            <span className="font-medium">{doc.name}</span>
+                            <span className="text-gray-500">({formatFileSize(doc.size)})</span>
+                          </div>
+                          <Badge variant={doc.isRequired ? "default" : "secondary"}>
+                            {doc.isRequired ? 'Required' : 'Optional'}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">No documents uploaded</p>
+                  )}
+                </Card>
+
+                {/* Final Check */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-start space-x-3">
+                    <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5" />
+                    <div className="text-sm">
+                      <p className="font-medium text-blue-900">Please confirm all information is correct</p>
+                      <p className="text-blue-700 mt-1">
+                        Once submitted, this job will be created and notifications will be sent to all signers.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Navigation */}
             <div className="flex justify-between pt-6">
               <Button
@@ -754,10 +1186,17 @@ export function JobWizard() {
               ) : (
                 <Button 
                   type="submit" 
-                  disabled={createJobMutation.isPending}
+                  disabled={createJobMutation.isPending || isSubmitting}
                   className="bg-success hover:bg-success/90"
                 >
-                  {createJobMutation.isPending ? 'Creating...' : 'Create Job'}
+                  {createJobMutation.isPending || isSubmitting ? (
+                    <div className="flex items-center">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Creating Job...
+                    </div>
+                  ) : (
+                    'Create Job'
+                  )}
                 </Button>
               )}
             </div>

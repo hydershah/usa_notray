@@ -35,36 +35,94 @@ export default function Profile() {
     loadUserProfile();
   }, []);
 
-  const loadUserProfile = () => {
-    // Get user data from localStorage
-    const userData = localStorage.getItem('user');
-    if (userData) {
-      const user = JSON.parse(userData);
-      setCurrentUser(user);
-      setFormData({
-        username: user.username || '',
-        email: user.email || '',
-        firstName: user.firstName || '',
-        lastName: user.lastName || '',
-        phone: user.phone || '',
-        address: user.address || ''
+  const loadUserProfile = async () => {
+    try {
+      // Try to load from API first
+      const response = await fetch('/api/profile', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
       });
+
+      if (response.ok) {
+        const user = await response.json();
+        setCurrentUser(user);
+        setFormData({
+          username: user.username || '',
+          email: user.email || '',
+          firstName: user.firstName || '',
+          lastName: user.lastName || '',
+          phone: user.phone || '',
+          address: user.address || ''
+        });
+      } else {
+        // Fallback to localStorage if API fails
+        const userData = localStorage.getItem('user');
+        if (userData) {
+          const user = JSON.parse(userData);
+          setCurrentUser(user);
+          setFormData({
+            username: user.username || '',
+            email: user.email || '',
+            firstName: user.firstName || '',
+            lastName: user.lastName || '',
+            phone: user.phone || '',
+            address: user.address || ''
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+      // Fallback to localStorage
+      const userData = localStorage.getItem('user');
+      if (userData) {
+        const user = JSON.parse(userData);
+        setCurrentUser(user);
+        setFormData({
+          username: user.username || '',
+          email: user.email || '',
+          firstName: user.firstName || '',
+          lastName: user.lastName || '',
+          phone: user.phone || '',
+          address: user.address || ''
+        });
+      }
     }
   };
 
   const handleSaveProfile = async () => {
     try {
-      // In a real app, this would make an API call
-      const updatedUser = { ...currentUser, ...formData };
-      localStorage.setItem('user', JSON.stringify(updatedUser));
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      const response = await fetch('/api/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(formData)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update profile');
+      }
+
+      const updatedUser = await response.json();
+      
+      // Update both state and localStorage
       setCurrentUser(updatedUser);
+      localStorage.setItem('user', JSON.stringify(updatedUser));
       setIsEditing(false);
       
       toast({
         title: "Profile Updated",
-        description: "Your profile has been saved successfully",
+        description: "Your profile has been saved successfully and will be reflected in live signing sessions",
       });
     } catch (error) {
+      console.error('Update profile error:', error);
       toast({
         title: "Update Failed",
         description: "Failed to update profile. Please try again.",

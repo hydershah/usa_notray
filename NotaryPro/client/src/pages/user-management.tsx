@@ -567,10 +567,11 @@ export default function UserManagement() {
       a.click();
       URL.revokeObjectURL(url);
     } else {
-      // For PDF export, we'd typically use a library like jsPDF
+      // PDF export requires jsPDF library
       toast({
-        title: "Export Started",
-        description: "PDF export functionality would be implemented here.",
+        variant: "destructive",
+        title: "PDF Export Not Available",
+        description: "PDF export functionality requires jsPDF library. Please install it using: npm install jspdf @types/jspdf",
       });
     }
   };
@@ -1195,44 +1196,66 @@ export default function UserManagement() {
               Send an email invitation to a new user with a pre-assigned role.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <label className="text-sm font-medium">Email Address</label>
-              <Input
-                type="email"
-                placeholder="user@example.com"
-                className="mt-1"
-              />
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            const formData = new FormData(e.currentTarget);
+            const email = formData.get('email') as string;
+            const role = formData.get('role') as string;
+            const message = formData.get('message') as string;
+            
+            if (!email || !role) {
+              toast({
+                variant: "destructive",
+                title: "Error",
+                description: "Please fill in all required fields.",
+              });
+              return;
+            }
+            
+            inviteUserMutation.mutate({ email, role, message });
+          }}>
+            <div className="space-y-4 py-4">
+              <div>
+                <label className="text-sm font-medium">Email Address *</label>
+                <Input
+                  name="email"
+                  type="email"
+                  placeholder="user@example.com"
+                  className="mt-1"
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Role *</label>
+                <select 
+                  name="role" 
+                  required
+                  className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <option value="">Select role</option>
+                  <option value="title_company">Title Company</option>
+                  <option value="notary">Notary</option>
+                  <option value="client">Client</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Custom Message (Optional)</label>
+                <Input
+                  name="message"
+                  placeholder="Welcome to our platform..."
+                  className="mt-1"
+                />
+              </div>
             </div>
-            <div>
-              <label className="text-sm font-medium">Role</label>
-              <Select>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Select role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="title_company">Title Company</SelectItem>
-                  <SelectItem value="notary">Notary</SelectItem>
-                  <SelectItem value="client">Client</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsInviteModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={inviteUserMutation.isPending}>
+                {inviteUserMutation.isPending ? "Sending..." : "Send Invitation"}
+              </Button>
             </div>
-            <div>
-              <label className="text-sm font-medium">Custom Message (Optional)</label>
-              <Input
-                placeholder="Welcome to our platform..."
-                className="mt-1"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setIsInviteModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button disabled={inviteUserMutation.isPending}>
-              {inviteUserMutation.isPending ? "Sending..." : "Send Invitation"}
-            </Button>
-          </div>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -1498,49 +1521,70 @@ export default function UserManagement() {
               Update the role for {roleEditUser?.username}. This will change their system permissions immediately.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <label className="text-sm font-medium">Current Role</label>
-              <div className="mt-1">
-                <Badge className={getRoleColor(roleEditUser?.role || '')}>
-                  {formatRole(roleEditUser?.role || '')}
-                </Badge>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            const formData = new FormData(e.currentTarget);
+            const newRole = formData.get('newRole') as string;
+            
+            if (!newRole || !roleEditUser) {
+              toast({
+                variant: "destructive",
+                title: "Error",
+                description: "Please select a new role.",
+              });
+              return;
+            }
+            
+            updateUserMutation.mutate({ 
+              id: roleEditUser.id, 
+              data: { role: newRole } 
+            });
+            setIsRoleEditOpen(false);
+          }}>
+            <div className="space-y-4 py-4">
+              <div>
+                <label className="text-sm font-medium">Current Role</label>
+                <div className="mt-1">
+                  <Badge className={getRoleColor(roleEditUser?.role || '')}>
+                    {formatRole(roleEditUser?.role || '')}
+                  </Badge>
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium">New Role</label>
+                <select 
+                  name="newRole" 
+                  defaultValue={roleEditUser?.role}
+                  required
+                  className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <option value="admin">Admin</option>
+                  <option value="title_company">Title Company</option>
+                  <option value="notary">Notary</option>
+                  <option value="client">Client</option>
+                </select>
+              </div>
+              <div className="bg-blue-50 p-3 rounded-lg">
+                <h4 className="font-medium text-sm mb-2">New permissions will include:</h4>
+                <ul className="text-sm space-y-1">
+                  {getRolePermissions(roleEditUser?.role || '').map((permission, index) => (
+                    <li key={index} className="flex items-center gap-2">
+                      <CheckCircle className="w-3 h-3 text-green-500" />
+                      {permission}
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
-            <div>
-              <label className="text-sm font-medium">New Role</label>
-              <Select defaultValue={roleEditUser?.role}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Select new role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="title_company">Title Company</SelectItem>
-                  <SelectItem value="notary">Notary</SelectItem>
-                  <SelectItem value="client">Client</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsRoleEditOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={updateUserMutation.isPending}>
+                {updateUserMutation.isPending ? "Updating..." : "Update Role"}
+              </Button>
             </div>
-            <div className="bg-blue-50 p-3 rounded-lg">
-              <h4 className="font-medium text-sm mb-2">New permissions will include:</h4>
-              <ul className="text-sm space-y-1">
-                {getRolePermissions(roleEditUser?.role || '').map((permission, index) => (
-                  <li key={index} className="flex items-center gap-2">
-                    <CheckCircle className="w-3 h-3 text-green-500" />
-                    {permission}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setIsRoleEditOpen(false)}>
-              Cancel
-            </Button>
-            <Button disabled={updateUserMutation.isPending}>
-              {updateUserMutation.isPending ? "Updating..." : "Update Role"}
-            </Button>
-          </div>
+          </form>
         </DialogContent>
       </Dialog>
     </MainLayout>

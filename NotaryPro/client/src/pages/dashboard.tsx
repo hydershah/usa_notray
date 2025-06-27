@@ -11,17 +11,26 @@ import {
   Users, 
   User 
 } from 'lucide-react';
+import { type Job } from '@shared/schema';
+
+interface DashboardStats {
+  totalJobs: number;
+  completedJobs: number;
+  pendingJobs: number;
+  openJobs: number;
+  activeNotaries: number;
+}
 
 export default function Dashboard() {
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ['/api/dashboard/stats'],
   });
 
-  const { data: recentJobs, isLoading: jobsLoading } = useQuery({
+  const { data: recentJobs = [], isLoading: jobsLoading } = useQuery<Job[]>({
     queryKey: ['/api/jobs'],
   });
 
-  const recentJobsSlice = recentJobs?.slice(0, 5) || [];
+  const recentJobsSlice = recentJobs.slice(0, 5);
 
   return (
     <MainLayout>
@@ -106,7 +115,7 @@ export default function Dashboard() {
                 ) : recentJobsSlice.length === 0 ? (
                   <div className="text-center py-4 text-gray-500">No recent jobs</div>
                 ) : (
-                  recentJobsSlice.map((job: any) => (
+                  recentJobsSlice.map((job) => (
                     <div key={job.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                       <div>
                         <p className="font-medium text-gray-900">
