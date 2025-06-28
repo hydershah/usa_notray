@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <title>NotaryPro - Professional Digital Notary Services</title>
+    
+    <!-- Google Fonts for Signatures -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;700&family=Great+Vibes&family=Pacifico&family=Allura&display=swap" rel="stylesheet">
+    
+    <!-- Enhanced PDF viewer libraries for notary signing -->
+    <!-- PDF.js with enhanced features -->
+    
+    <!-- Signature Pad for better signature capture -->
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad@5.0.3/dist/signature_pad.umd.min.js"></script>
+    
+    <!-- Fabric.js for advanced canvas interactions and annotations -->
+    <script src="https://unpkg.com/fabric@5.3.0/dist/fabric.min.js"></script>
+    
+    <!-- PDF-lib for client-side PDF manipulation -->
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    
+    <!-- Process polyfill for browser compatibility with Node.js modules -->
+    <script>
+      // Polyfill for process global that some packages expect
+      if (typeof global === 'undefined') {
+        window.global = globalThis;
+      }
+      if (typeof process === 'undefined') {
+        window.process = {
+          env: {},
+          platform: 'browser',
+          version: '18.0.0',
+          nextTick: function(callback) {
+            setTimeout(callback, 0);
+          }
+        };
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <!-- This is a replit script which adds a banner on the top of the page when opened in development mode outside the replit environment -->
+    <script type="text/javascript" src="https://replit.com/public/js/replit-dev-banner.js"></script>
+  </body>
+</html>
