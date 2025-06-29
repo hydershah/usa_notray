@@ -9,17 +9,21 @@ To set up email functionality with Hostinger hosting, you need to configure the 
 Create a `.env` file in the project root with these settings:
 
 ```bash
-# Hostinger SMTP Configuration (SSL - Recommended)
+# Professional SMTP Configuration (SSL - Recommended)
 SMTP_HOST=smtp.hostinger.com
 SMTP_PORT=465
-SMTP_USER=mail@digitalexpert.agency
-SMTP_PASS=Coaches@1$
+SMTP_USER=your-email@yourdomain.com
+SMTP_PASS=your-secure-password
 
-# Alternative Hostinger SMTP (STARTTLS)
+# Alternative SMTP (STARTTLS)
 # SMTP_HOST=mail.hostinger.com
 # SMTP_PORT=587
-# SMTP_USER=mail@digitalexpert.agency
-# SMTP_PASS=Coaches@1$
+# SMTP_USER=your-email@yourdomain.com
+# SMTP_PASS=your-secure-password
+
+# Professional branding
+FROM_EMAIL=noreply@yourdomain.com
+FROM_NAME=Your Company Name
 ```
 
 ### Step-by-Step Setup

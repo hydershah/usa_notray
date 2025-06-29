@@ -1,0 +1,254 @@
+Editor Design Requirements
+The purpose of the editor is to take PDF files provided by a client and overlay text, signatures and
+notary stamp images onto the PDF to generate a new PDF. Then attach the notary’s digital
+certificate (from Identrust) onto the completed PDF files(s). it should be able to handle up to 50
+PDF files in a session.
+The editor will link with other parts of the overall application to collect inputs and handle the output
+of the file
+
+Contents
+Inputs for the editor ..................................................................................................................2
+Prior to Session Start ................................................................................................................3
+Tagging .....................................................................................................................................4
+Hotkeys ................................................................................................................................4
+Active User . Switching Users ................................................................................................5
+Session Start ............................................................................................................................6
+Video Conferencing ..................................................................................................................8
+Chat Feature ............................................................................................................................8
+Verifying Identification ..............................................................................................................8
+Conducting the Meeting ............................................................................................................9
+Collaborative Viewing............................................................................................................9
+Synchronization of Screens ...................................................................................................9
+The Notary Seal................................................................................................................... 10
+Completing a Document ..................................................................................................... 11
+The New PDF ...................................................................................................................... 11
+The Digital Certificate .......................................................................................................... 11
+Uploading Documents During Session .................................................................................... 11
+Change Signature ................................................................................................................... 11
+The Notary Log ....................................................................................................................... 12
+The Audit Trail ......................................................................................................................... 12
+The Video ............................................................................................................................... 12
+
+Inputs for the editor
+Inputs required by the editor:
+•
+•
+
+•
+•
+
+•
+
+PDF Files (up to 50 – usually no more that 10)
+Signers names and email addresses – up to 8
+o Image file for signature
+o Image file for initials
+o Copy of Identification document (driver’s license, passport, etc.)
+o Signer’s digital signing certificate (private CA, no password)
+o Address of signer (for the notary log)
+Observer names and email addresses
+Assigned Notary
+o Notary Name
+o Signature image
+o Initials Image
+o Seal or Stamp Image
+o Notary Commission Number
+o Notary Expiration Date
+o Notary Disclosure (text – 250 characters)
+o Notary State
+o Notary Certificate (PFX File)
+o Notary Certificate password
+o Notary Log File Name
+Video Session ID (we had been using Whereby.com)
+
+Prior to Session Start
+Prior to beginning the session, the signers are sent an email with the link to the video session and
+the schedule start time. They are also prompted to complete the ID verification and, if required,
+the knowledge-based authentication (KBA). Finally, they are prompted to create the signatures
+and initials, which are stored in a TRANSPARENT gif file.
+The notary is assigned by the system prior to the start of the session, as well. They will be
+registered, and all of their required info will already be in the database.
+The video session will be created when the initial order is processed, and the video links will be sent
+to all parties. That video session ID will be sent with the invitation emails.
+The documents to be signed are uploaded either by the signer or by the person placing the order.
+They must be in PDF format. We may add a document converter at a later time.
+The signers must have their ID verification done through the automated system and approved
+before they are allowed to join a session. When the session starts, ID is already complete.
+
+Tagging
+Tagging is the process of preparing the documents for the notary session. This is done either by
+the notary or by an administrator. The process looks the same for both. This is where the
+preparer marks where information needs to be added in the notary session.
+Tagging is typically done in a separate “tagging session” prior to the meeting start time. The docs
+are fully prepped before meeting with the signers.
+Tagging can also be done DURING the notary session. If there is information that needs to be
+completed that was not pre-tagged, the notary can add tags while in the session.
+Tags are specific to each user and color coded. The tags indicate what information in required or
+what will happen when the tag is clicked.
+Here are the types of tags
+For Signers
+A - Name
+S – Signature
+I – Initials
+For Notaries
+A - Name
+N - Commission Number
+X - Commission Expiration Date
+O – Disclosure line
+S – Signature
+E – Seal
+W – Whiteout (creates a box that will cover any of the original PDF but sit below any tags that have
+been placed)
+Universal
+These tags are not assigned to any specific user. Any user can select these tags and complete the
+operation
+T – Text
+D - Date
+
+Hotkeys
+Hot keys are keyboard shortcuts that allow the notary to quickly place tags or information the
+document during either a tagging session or a notary session. The letters next to the tags above are
+the specific hotkeys for those elements
+
+Active User . Switching Users
+To place a tag for a particular user or for the notary, that users must be made active. The tag color
+will correspond to the active user. To switch between users, the number keys and apostrophe will
+be used.
+“`” - Notary
+1 – Primary Signer
+2 – Second Signer
+Etc.
+This allows the notary to switch quickly from one participant to another using just the left hand on
+the keyboard.
+This screen shot shows a tagging session with a few tags in place. There is no video on this screen
+because this is typically done prior to starting the notary session.
+
+Session Start
+When signers click the link, they are allowed to test their video connection and are held in a waiting
+area.
+When the notary starts the session, he will see who is in the waiting area and will permit them to
+join.
+When the signer’s join, their video will appear in the upper-left corner of the screen – one on top of
+the other.
+The right side of the screen will have the menu.
+
+Video Conferencing
+Because this is an online notarization, the notary and the signers must be able to see and
+communicate with each other. To facilitate this, we currently have a Whereby.com, but I am open
+to other platforms if they are easier or more efficient.
+Prior to starting the session, while in the waiting room, the signers will be able to test their audio /
+video capabilities.
+Whereby provides a video storage service. We can either use that or set up video storage on our
+own server. I’m open to whatever is most cost-effective and easy to implement.
+
+Chat Feature
+This can either be part of the video API – as it is with whereby – or a separate function within the
+editor. I’m open to either implementation. There are customization advantages having a separate
+function, but that can be added later.
+Chat is typically used when a signer is having difficulty getting his audio and video to work.
+than that, use is pretty limited.
+
+Other
+
+Verifying Identification
+Although the ID verification is done prior to the meeting, the notary must still check the ID in
+session and approve it. This is done with a Popup box that allows the notary to see the ID that was
+uploaded prior to the session and approve or reject it.
+If rejected, the signer will receive an email prompting them to redo the ID verification. The session
+cannot continue until the notary approves the ID.
+This must be done for every signer prior the meeting being completed.
+
+Conducting the Meeting
+The notary conducts the meeting, provides instructions and witnesses the signers completing each
+tag in the session.
+The notary will also complete his own signatures and seals and any other information requires.
+Elements are “overlaid” on the PDF and will be integrated into the final PDF upon completion of the
+editing session.
+Notary can add new tags or delete tags in the session, as needed.
+
+The signers can do NOTHING without a tag. They have no ability to add text or signatures unless
+the notary places a tag first. This ensures that the notary is in control of the session and knows
+what is going on at all times.
+
+Collaborative Viewing
+Each participant has their own view of the document(s). They can scroll independently and are not
+reliant on the notary to move a page.
+Actions taken are automatically updated on all other participant screen when an image is place, or
+a text line is COMPLETED. (if you try to sync every letter, server bandwidth will be a problem)
+
+Synchronization of Screens
+The notary has the ability to place all users on the same page with a single click on the left menu.
+This is necessary because signers may be reading ahead and the notary will no know which page
+they are viewing. Synchronization places everyone on the same document in the same location.
+
+The Notary Seal
+When the notary places a seal, he must indicate the type of notarization being done and the signer
+it pertains to. This information is not written on the document or the seal, but must be stored in the
+database for the notary log.
+A popup box will appear that shows two input selector:
+A drop-down menu will allow the notary to choose the type of notarization
+▪ JURAT
+▪ Acknowledgment
+▪ Copy Certification
+The list of possible notarization types is part of the notary’s profile. Notaries in
+different states may have a different list. The drop-down corresponds to the state
+laws where they are commissioned.
+A checkbox list to choose the signers that this notarization applies to.
+
+For EACH SIGNER, that is selected, an entry will be made in the temporary notary log database
+containing the type of notarization and all the signer’s information.
+Once the session is complete, all of the entries from the temp database will be stored in the
+notary’s permanent log file.
+The audit trail temporary log is also updated with just the Notarization type, page number, and a
+time/date stamp
+
+Completing a Document
+A document cannot be completed until all tags on that document have been used. If they are any
+open tags, the notary must either delete them or have the appropriate user complete them.
+
+The New PDF
+When a document is completed, the notary will select “COMPLETE DOCUMENT” from the menu.
+This will lock the file from further editing. It will also merge all of the elements from tags back into
+the original document and produce a new PDF file.
+The new PDF file will have the same name with “-complete” appended to it.
+
+The Digital Certificate
+Once all documents are completed and the session is done, the notary’s digital certificate will be
+affixed to the PDF, rendering it tamper-evident.
+
+Uploading Documents During Session
+Occasionally, documents get changed during a session. Either the company changes the
+document or a new required document is added. To facilitate this, there needs to be an “upload”
+document function in the signing session. This will allow either the notary or the signer to add a
+new document to the session without ending and restarting the session.
+
+Change Signature
+In some use cases, there are specific requirement for how a signature must appear on a document.
+The signer may be required to include a title in the signature or sign with a middle initial in some
+locations.
+Therefore, we must have way for the signer to re-create their signature while in the session. The
+new signature will not affect where the signature has already been completed, but will affect all
+new applications of that signers signatures moving forward.
+It is also possible that multiple signatures – more than two – may be required for the same person.
+Changing the signature always changes “future” signatures but not existing signatures for that user.
+
+The Notary Log
+The notary is required to maintain a log of all notary sessions that have been completed. It
+contains an entry for SEAL that is placed on every document. It documents whenever a
+notarization is done and must be maintained indefinitely.
+A separate function will allow the notary to edit the log when not in a session.
+While in the session, the notary log must be updated before the session ends.
+The most logical what to handle this is to store all of the notary log entries in a temporary database
+and then append them to the notary log file when the session is completed. During the session,
+the notary may place a seal, make a mistake and delete or change it. Only the final version will be
+in the log.
+
+The Audit Trail
+An audit trail is created and stored as a PDF for each session. It contains the log of every signature
+and seal placed, where it was placed, by who, and when. It is retained for 10 years with the video.
+
+The Video
+The video of the session must be retained for 10 years. It should be accessible from the portal for
+the first six months, then it can be moved to an off-line storage medium, which is likely more costeffective.
+
+

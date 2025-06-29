@@ -10,8 +10,8 @@ async function testSMTPDetailed() {
       port: 465,
       secure: true,
       auth: {
-        user: "hello@xymax.co",
-        pass: "Coaches@1$"
+        user: process.env.SMTP_USER || "",
+        pass: process.env.SMTP_PASS || ""
       }
     },
     {
@@ -20,8 +20,8 @@ async function testSMTPDetailed() {
       port: 587,
       secure: false,
       auth: {
-        user: "hello@xymax.co",
-        pass: "Coaches@1$"
+        user: process.env.SMTP_USER || "",
+        pass: process.env.SMTP_PASS || ""
       },
       tls: {
         rejectUnauthorized: false
@@ -47,7 +47,7 @@ async function testSMTPDetailed() {
       // Send test email with detailed logging
       console.log("\n2️⃣ Sending test email...");
       const info = await transporter.sendMail({
-        from: '"USA Notary Test" <hello@xymax.co>',
+        from: `"USA Notary Test" <${process.env.SMTP_USER || "test@example.com"}>`,
         to: "test@gmail.com, test@yahoo.com", // Try multiple providers
         subject: `SMTP Test - ${new Date().toISOString()}`,
         text: "This is a plain text test email",
@@ -82,7 +82,7 @@ async function testSMTPDetailed() {
   
   console.log("\n\n💡 Troubleshooting Tips:");
   console.log("1. Check if your Hostinger account has email sending enabled");
-  console.log("2. Verify that hello@xymax.co exists in Hostinger Email");
+  console.log("2. Verify that your email address exists in your hosting Email");
   console.log("3. Check if there are any sending limits on your account");
   console.log("4. Try logging into webmail.hostinger.com with these credentials");
   console.log("5. Contact Hostinger support to check if outbound SMTP is blocked");

@@ -1,5 +1,5 @@
 import React from "react";
-import { Switch, Route, Redirect } from "wouter";
+import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -17,12 +17,15 @@ import Jobs from "@/pages/jobs";
 import CreateJob from "@/pages/create-job";
 import TitleCompanies from "@/pages/title-companies";
 import UserManagement from "@/pages/user-management";
-const LiveSigning = React.lazy(() => import("@/pages/live-signing"));
-const DocumentTagging = React.lazy(() => import("@/pages/document-tagging"));
+import NotaryManagement from "@/pages/notary-management";
+const Calendar = React.lazy(() => import("@/pages/calendar"));
 const Payments = React.lazy(() => import("@/pages/payments"));
 const ClosingTypes = React.lazy(() => import("@/pages/closing-types"));
-const GuestSignerPage = React.lazy(() => import("@/pages/guest-signer"));
 const EmailSettingsPage = React.lazy(() => import("@/pages/email-settings"));
+const EmailTemplateManagement = React.lazy(() => import("@/pages/email-template-management"));
+const CompanyRegistration = React.lazy(() => import("@/pages/company-registration"));
+const NotaryProfileCompletion = React.lazy(() => import("@/components/notary/NotaryProfileCompletion"));
+const SetPasswordPage = React.lazy(() => import("@/pages/set-password"));
 
 // Profile component
 function Profile() {
@@ -72,6 +75,14 @@ function Profile() {
 // Protected Route wrapper component
 function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles?: string[] }) {
   const { isAuthenticated, user, isLoading } = useAuth();
+  const [, setLocation] = useLocation();
+
+  // Redirect immediately when not authenticated
+  React.useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      setLocation('/login');
+    }
+  }, [isLoading, isAuthenticated, setLocation]);
 
   if (isLoading) {
     return (
@@ -85,7 +96,8 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode;
   }
 
   if (!isAuthenticated) {
-    return <Redirect to="/login" />;
+    // Return null to prevent rendering while redirecting
+    return null;
   }
 
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {
@@ -96,23 +108,44 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode;
 }
 
 function Router() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoggingOut } = useAuth();
 
   return (
     <Switch>
       {/* Public routes */}
       <Route path="/login">
-        {isAuthenticated ? <Redirect to="/dashboard" /> : <Login />}
+        {(isAuthenticated && !isLoggingOut) ? <Redirect to="/dashboard" /> : <Login />}
       </Route>
 
-      {/* Guest signer access route - public */}
-      <Route path="/sign/:token">
-        <React.Suspense fallback={<div>Loading...</div>}>
-          <GuestSignerPage />
-        </React.Suspense>
+      {/* Password setup route - public */}
+      <Route path="/set-password">
+        {(isAuthenticated && !isLoggingOut) ? <Redirect to="/dashboard" /> : 
+          <React.Suspense fallback={<div>Loading...</div>}>
+            <SetPasswordPage />
+          </React.Suspense>
+        }
       </Route>
+
+      {/* Company registration route - public */}
+      <Route path="/register-company">
+        {(isAuthenticated && !isLoggingOut) ? <Redirect to="/dashboard" /> : 
+          <React.Suspense fallback={<div>Loading...</div>}>
+            <CompanyRegistration />
+          </React.Suspense>
+        }
+      </Route>
+
+
 
       {/* Protected routes */}
+      <Route path="/notary/profile/complete">
+        <ProtectedRoute allowedRoles={['notary']}>
+          <React.Suspense fallback={<div>Loading...</div>}>
+            <NotaryProfileCompletion />
+          </React.Suspense>
+        </ProtectedRoute>
+      </Route>
+
       <Route path="/dashboard">
         <ProtectedRoute>
           <Dashboard />
@@ -131,8 +164,16 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      <Route path="/calendar">
+        <ProtectedRoute allowedRoles={['admin', 'notary']}>
+          <React.Suspense fallback={<div>Loading...</div>}>
+            <Calendar />
+          </React.Suspense>
+        </ProtectedRoute>
+      </Route>
+
       <Route path="/create-job">
-        <ProtectedRoute allowedRoles={['admin', 'title_company']}>
+        <ProtectedRoute>
           <CreateJob />
         </ProtectedRoute>
       </Route>
@@ -149,21 +190,9 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
-      <Route path="/live-signing">
-        <ProtectedRoute>
-          <React.Suspense fallback={<div>Loading...</div>}>
-            <LiveSigning />
-          </React.Suspense>
-        </ProtectedRoute>
-      </Route>
 
-      <Route path="/document-tagging">
-        <ProtectedRoute allowedRoles={['admin', 'title_company', 'notary']}>
-          <React.Suspense fallback={<div>Loading...</div>}>
-            <DocumentTagging />
-          </React.Suspense>
-        </ProtectedRoute>
-      </Route>
+
+
 
       <Route path="/payments">
         <ProtectedRoute allowedRoles={['admin', 'title_company', 'notary']}>
@@ -189,9 +218,17 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      <Route path="/email-templates">
+        <ProtectedRoute allowedRoles={['admin']}>
+          <React.Suspense fallback={<div>Loading...</div>}>
+            <EmailTemplateManagement />
+          </React.Suspense>
+        </ProtectedRoute>
+      </Route>
+
       <Route path="/notary-management">
         <ProtectedRoute allowedRoles={['admin']}>
-          <Dashboard />
+          <NotaryManagement />
         </ProtectedRoute>
       </Route>
 
@@ -203,7 +240,7 @@ function Router() {
 
       {/* Default redirect */}
       <Route path="/">
-        {isAuthenticated ? <Redirect to="/dashboard" /> : <Redirect to="/login" />}
+        {(isAuthenticated && !isLoggingOut) ? <Redirect to="/dashboard" /> : <Redirect to="/login" />}
       </Route>
 
       {/* 404 fallback */}

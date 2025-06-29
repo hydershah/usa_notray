@@ -1,4 +1,4 @@
-import { eq, desc, and, or, asc } from "drizzle-orm";
+import { eq, desc, and, or, asc, sql } from "drizzle-orm";
 import {
   users,
   titleCompanies,
@@ -10,26 +10,47 @@ import {
   paymentSchedules,
   closingTypes,
   jobDocuments,
+  companies,
+  notaryStamps,
+  notaryAvailability,
+  notaryTimeSlots,
+  notaryWorkingHours,
+  calendarEvents,
+  notaryAssignmentLog,
   InsertUser,
   InsertTitleCompany,
   InsertJob,
   InsertSigner,
   InsertJobParticipant,
   InsertJobDocument,
+  InsertPayment,
+  InsertInvoice,
+  InsertPaymentSchedule,
+  InsertClosingType,
+  InsertCompany,
+  InsertNotaryStamp,
+  InsertNotaryAvailability,
+  InsertNotaryTimeSlots,
+  InsertNotaryWorkingHours,
+  InsertCalendarEvents,
+  InsertNotaryAssignmentLog,
   User,
   TitleCompany,
   Job,
   Signer,
   JobParticipant,
   JobDocument,
-  InsertPayment,
   Payment,
-  InsertInvoice,
   Invoice,
-  InsertPaymentSchedule,
   PaymentSchedule,
-  InsertClosingType,
-  ClosingType
+  ClosingType,
+  Company,
+  NotaryStamp,
+  NotaryAvailability,
+  NotaryTimeSlots,
+  NotaryWorkingHours,
+  CalendarEvents,
+  NotaryAssignmentLog
 } from "@shared/schema";
 import { db } from "./db";
 import bcrypt from "bcrypt";
@@ -46,7 +67,39 @@ export interface IStorage {
   getUsers(): Promise<User[]>;
   getNotaryUsers(): Promise<User[]>;
 
-  // Title company operations
+  // Enhanced user queries
+  getUsersByRole(role: string): Promise<User[]>;
+  getUsersByCompany(companyId: number): Promise<User[]>;
+  getUsersByApprovalStatus(status: string): Promise<User[]>;
+  getActiveNotaries(): Promise<User[]>;
+  getNotariesByQualifications(requiresNSA?: boolean, requiresSpanish?: boolean): Promise<User[]>;
+
+  // User approval operations
+  approveUser(userId: number, approvedBy: number, notes?: string): Promise<User | undefined>;
+  rejectUser(userId: number, approvedBy: number, notes: string): Promise<User | undefined>;
+  requestUserUpdate(userId: number, approvedBy: number, notes: string): Promise<User | undefined>;
+
+  // Company operations - Comprehensive
+  getCompany(id: number): Promise<Company | undefined>;
+  getCompanyByName(name: string): Promise<Company | undefined>;
+  createCompany(company: InsertCompany): Promise<Company>;
+  updateCompany(id: number, company: Partial<InsertCompany>): Promise<Company | undefined>;
+  deleteCompany(id: number): Promise<boolean>;
+  getCompanies(): Promise<Company[]>;
+  getActiveCompanies(): Promise<Company[]>;
+  getCompaniesByStatus(status: string): Promise<Company[]>;
+
+  // Company-user association operations
+  addUserToCompany(userId: number, companyId: number, role: string): Promise<boolean>;
+  removeUserFromCompany(userId: number): Promise<boolean>;
+  updateUserCompanyRole(userId: number, role: string): Promise<boolean>;
+  addAuthorizedUser(companyId: number, userId: number): Promise<boolean>;
+  removeAuthorizedUser(companyId: number, userId: number): Promise<boolean>;
+
+  // Company registration workflow
+  registerCompany(companyData: InsertCompany, managerData: InsertUser): Promise<{ company: Company; manager: User }>;
+
+  // Legacy title company operations (for backward compatibility)
   getTitleCompany(id: number): Promise<TitleCompany | undefined>;
   createTitleCompany(company: InsertTitleCompany): Promise<TitleCompany>;
   updateTitleCompany(id: number, company: Partial<InsertTitleCompany>): Promise<TitleCompany | undefined>;
@@ -177,7 +230,203 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(users).where(eq(users.role, 'notary')).orderBy(asc(users.username));
   }
 
-  // Title company operations
+  // Enhanced user queries
+  async getUsersByRole(role: string): Promise<User[]> {
+    return await db.select().from(users).where(eq(users.role, role)).orderBy(asc(users.username));
+  }
+
+  async getUsersByCompany(companyId: number): Promise<User[]> {
+    return await db.select().from(users).where(eq(users.companyId, companyId)).orderBy(asc(users.username));
+  }
+
+  async getUsersByApprovalStatus(status: string): Promise<User[]> {
+    return await db.select().from(users).where(eq(users.approvalStatus, status)).orderBy(asc(users.username));
+  }
+
+  async getActiveNotaries(): Promise<User[]> {
+    return await db.select().from(users).where(
+      and(
+        eq(users.role, 'notary'),
+        eq(users.isActive, true),
+        eq(users.approvalStatus, 'approved')
+      )
+    ).orderBy(asc(users.username));
+  }
+
+  async getNotariesByQualifications(requiresNSA?: boolean, requiresSpanish?: boolean): Promise<User[]> {
+    let conditions = [
+      eq(users.role, 'notary'),
+      eq(users.isActive, true),
+      eq(users.approvalStatus, 'approved')
+    ];
+    
+    if (requiresNSA) {
+      conditions.push(eq(users.isNotarySigningAgent, true));
+    }
+    if (requiresSpanish) {
+      conditions.push(eq(users.isSpanishSpeaking, true));
+    }
+    
+    return await db.select().from(users).where(and(...conditions)).orderBy(asc(users.username));
+  }
+
+  // User approval operations
+  async approveUser(userId: number, approvedBy: number, notes?: string): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({
+        approvalStatus: 'approved',
+        approvedBy: approvedBy,
+        approvalNotes: notes,
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return user || undefined;
+  }
+
+  async rejectUser(userId: number, approvedBy: number, notes: string): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({
+        approvalStatus: 'rejected',
+        approvedBy: approvedBy,
+        approvalNotes: notes,
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return user || undefined;
+  }
+
+  async requestUserUpdate(userId: number, approvedBy: number, notes: string): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({
+        approvalStatus: 'pending',
+        approvedBy: approvedBy,
+        approvalNotes: notes,
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return user || undefined;
+  }
+
+  // Company operations - Comprehensive
+  async getCompany(id: number): Promise<Company | undefined> {
+    const [company] = await db.select().from(companies).where(eq(companies.id, id));
+    return company || undefined;
+  }
+
+  async getCompanyByName(name: string): Promise<Company | undefined> {
+    const [company] = await db.select().from(companies).where(eq(companies.companyName, name));
+    return company || undefined;
+  }
+
+  async createCompany(insertCompany: InsertCompany): Promise<Company> {
+    const [company] = await db
+      .insert(companies)
+      .values(insertCompany)
+      .returning();
+    return company;
+  }
+
+  async updateCompany(id: number, updateData: Partial<InsertCompany>): Promise<Company | undefined> {
+    const [company] = await db
+      .update(companies)
+      .set(updateData)
+      .where(eq(companies.id, id))
+      .returning();
+    return company || undefined;
+  }
+
+  async deleteCompany(id: number): Promise<boolean> {
+    const result = await db.delete(companies).where(eq(companies.id, id));
+    return (result.rowCount || 0) > 0;
+  }
+
+  async getCompanies(): Promise<Company[]> {
+    return await db.select().from(companies).orderBy(asc(companies.companyName));
+  }
+
+  async getActiveCompanies(): Promise<Company[]> {
+    return await db.select().from(companies).where(eq(companies.status, 'active')).orderBy(asc(companies.companyName));
+  }
+
+  async getCompaniesByStatus(status: string): Promise<Company[]> {
+    return await db.select().from(companies).where(eq(companies.status, status)).orderBy(asc(companies.companyName));
+  }
+
+  // Company-user association operations
+  async addUserToCompany(userId: number, companyId: number, companyRole: string): Promise<boolean> {
+    const result = await db
+      .update(users)
+      .set({
+        companyId: companyId,
+        companyRole: companyRole,
+      })
+      .where(eq(users.id, userId));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  async removeUserFromCompany(userId: number): Promise<boolean> {
+    const result = await db
+      .update(users)
+      .set({
+        companyId: null,
+        companyRole: null,
+      })
+      .where(eq(users.id, userId));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  async updateUserCompanyRole(userId: number, companyRole: string): Promise<boolean> {
+    const result = await db
+      .update(users)
+      .set({
+        companyRole: companyRole,
+      })
+      .where(eq(users.id, userId));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  async addAuthorizedUser(companyId: number, userId: number): Promise<boolean> {
+    const result = await db
+      .update(companies)
+      .set({
+        authorizedUserIds: sql`array_append(${companies.authorizedUserIds}, ${userId})`,
+      })
+      .where(eq(companies.id, companyId));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  async removeAuthorizedUser(companyId: number, userId: number): Promise<boolean> {
+    const result = await db
+      .update(companies)
+      .set({
+        authorizedUserIds: sql`array_remove(${companies.authorizedUserIds}, ${userId})`,
+      })
+      .where(eq(companies.id, companyId));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  // Company registration workflow
+  async registerCompany(companyData: InsertCompany, managerData: InsertUser): Promise<{ company: Company; manager: User }> {
+    const [company] = await db
+      .insert(companies)
+      .values(companyData)
+      .returning();
+    const [manager] = await db
+      .insert(users)
+      .values({
+        ...managerData,
+        password: await bcrypt.hash(managerData.password, 10),
+        companyId: company.id,
+        role: 'manager',
+      })
+      .returning();
+    return { company, manager };
+  }
+
+  // Legacy title company operations (for backward compatibility)
   async getTitleCompany(id: number): Promise<TitleCompany | undefined> {
     const [company] = await db.select().from(titleCompanies).where(eq(titleCompanies.id, id));
     return company || undefined;

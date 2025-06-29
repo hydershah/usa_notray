@@ -10,8 +10,8 @@ async function testEmailConnection() {
   console.log("📧 Testing Email Configuration:");
   const smtpHost = process.env.SMTP_HOST || 'smtp.hostinger.com';
   const smtpPort = parseInt(process.env.SMTP_PORT || '465');
-  const smtpUser = process.env.SMTP_USER || 'hello@xymax.co';
-  const smtpPass = process.env.SMTP_PASS || 'Coaches@1$';
+  const smtpUser = process.env.SMTP_USER || '';
+  const smtpPass = process.env.SMTP_PASS || '';
   
   console.log(`Host: ${smtpHost}`);
   console.log(`Port: ${smtpPort}`);

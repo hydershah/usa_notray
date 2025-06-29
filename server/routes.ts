@@ -1,15 +1,27 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { db } from "./db";
+import { registerCompanyRoutes } from "./company-routes";
+import { registerUserManagementRoutes } from "./user-management-routes";
+import { registerNotaryProfileRoutes } from "./notary-profile-routes";
+import { registerApprovalWorkflowRoutes } from "./approval-workflow-routes";
+import { registerFeeRoutes } from "./fee-routes";
+import { notificationService } from "./notification-service";
+import { verifyToken } from "./auth";
+import { eq, and, gte, lte, desc, inArray } from "drizzle-orm";
+import { randomNotaryService, NotaryQualifications, TimeSlotRequest } from "./random-notary-service";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import multer from "multer";
 import nodemailer from "nodemailer";
+import crypto from "crypto";
 import path from "path";
 import fs from "fs";
 import { 
   insertUserSchema, 
-  insertTitleCompanySchema, 
+  insertTitleCompanySchema,
+  insertCompanySchema, 
   insertJobSchema, 
   insertSignerSchema,
   insertPaymentSchema,
@@ -20,7 +32,32 @@ import {
   type Invoice,
   type Job,
   type User,
-  type NotaryStamp
+  type NotaryStamp,
+  type Company,
+  // Calendar tables
+  notaryTimeSlots,
+  calendarEvents,
+  notaryWorkingHours,
+  notaryAvailability,
+  users,
+  jobs,
+  signers,
+  jobParticipants,
+  jobDocuments,
+  notaryStamps,
+  payments,
+  paymentSchedules,
+  closingTypes,
+  systemSettings,
+  notaryAssignmentLog,
+  titleCompanies,
+  companies,
+  insertJobParticipantSchema,
+  insertJobDocumentSchema,
+  insertPaymentScheduleSchema,
+  insertSystemSettingSchema,
+  insertNotaryAssignmentLogSchema,
+  passwordResetTokens,
 } from "@shared/schema";
 
 // Import enhanced upload handlers
@@ -38,7 +75,7 @@ import passport from 'passport';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { z } from 'zod';
 import { DrizzleError } from 'drizzle-orm';
-import { verifyToken } from './auth.js';
+// Note: verifyToken is defined below instead of importing
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 
@@ -58,33 +95,22 @@ const upload = multer({
   }
 });
 
-// Email configuration
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER || 'your-email@gmail.com',
-    pass: process.env.SMTP_PASS || 'your-app-password'
-  }
-});
+// Import the professional email service
+import { emailService } from './lib/email-service';
 
-// Middleware to verify JWT token
-const verifyToken = (req: any, res: any, next: any) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  
-  if (!token) {
-    return res.status(401).json({ message: 'No token provided' });
-  }
-
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
-    req.user = decoded;
-    next();
-  } catch (error) {
-    return res.status(401).json({ message: 'Invalid token' });
-  }
-};
+// Import email template routes
+import {
+  getAllTemplates,
+  getTemplate,
+  getTemplateVariables,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate,
+  previewTemplate,
+  sendTestEmail,
+  getEmailLogs,
+  getTemplateCategories
+} from './email-template-routes';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -228,6 +254,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get users that can be signers (for job creation)
+  app.get('/api/users/signers', verifyToken, async (req: any, res) => {
+    try {
+      // Check if user has permission to access this endpoint
+      const userCanCreateJob = 
+        req.user.role === 'admin' ||
+        req.user.role === 'title_company' ||
+        (req.user.role === 'notary' && req.user.notaryType === 'subscriber');
+
+      if (!userCanCreateJob) {
+        return res.status(403).json({ 
+          message: 'Access denied. Only administrators, title companies, and subscriber notaries can access signers.' 
+        });
+      }
+
+      // Get users who can be signers (clients, customers, and other non-notary users)
+      const signerUsers = await db
+        .select({
+          id: users.id,
+          username: users.username,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+          phoneNumber: users.phoneNumber,
+          role: users.role,
+          isActive: users.isActive
+        })
+        .from(users)
+        .where(
+          and(
+            eq(users.isActive, true),
+            // Include clients, customers, and title company users, but exclude admins and notaries
+            inArray(users.role, ['client', 'customer', 'title_company'])
+          )
+        )
+        .orderBy(users.firstName, users.lastName, users.username);
+
+      res.json(signerUsers);
+    } catch (error) {
+      console.error('Get signer users error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
   app.put('/api/users/:id', verifyToken, async (req: any, res) => {
     try {
       if (req.user.role !== 'admin') {
@@ -323,6 +393,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         email: user.email,
         firstName: user.firstName || '',
         lastName: user.lastName || '',
+        fullName: user.fullName || '',
         role: user.role,
         title: user.title || 'Notary Public',
         commissionNumber: user.commissionNumber || '',
@@ -334,6 +405,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         initialData: user.initialData || '',
         phoneNumber: user.phoneNumber || '',
         address: user.address || '',
+        isActive: user.isActive,
+        isNotarySigningAgent: user.isNotarySigningAgent,
+        isSpanishSpeaking: user.isSpanishSpeaking,
+        notaryType: user.notaryType,
       };
 
       res.json(profile);
@@ -356,7 +431,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const profileData = req.body;
       
       // Update user with new profile data
-      const updatedUser = await storage.updateUser(userId, {
+      const updateData: any = {
         firstName: profileData.firstName,
         lastName: profileData.lastName,
         title: profileData.title,
@@ -367,7 +442,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         disclosure: profileData.disclosure,
         phoneNumber: profileData.phoneNumber,
         address: profileData.address,
-      });
+        isActive: profileData.isActive,
+        isNotarySigningAgent: profileData.isNotarySigningAgent,
+        isSpanishSpeaking: profileData.isSpanishSpeaking,
+        notaryType: profileData.notaryType,
+      };
+
+      // Auto-generate fullName from firstName and lastName if provided
+      if (profileData.firstName || profileData.lastName) {
+        const fullName = [profileData.firstName, profileData.lastName].filter(Boolean).join(' ').trim();
+        if (fullName) {
+          updateData.fullName = fullName;
+        }
+      }
+
+      const updatedUser = await storage.updateUser(userId, updateData);
 
       if (!updatedUser) {
         return res.status(404).json({ message: 'User not found' });
@@ -411,10 +500,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Title company routes
+  // Title company routes - Updated to use enhanced companies table
   app.get('/api/companies', verifyToken, async (req, res) => {
     try {
-      const companies = await storage.getTitleCompanies();
+      const companies = await storage.getCompanies();
       res.json(companies);
     } catch (error) {
       console.error('Get companies error:', error);
@@ -428,8 +517,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const companyData = insertTitleCompanySchema.parse(req.body);
-      const company = await storage.createTitleCompany(companyData);
+      const companyData = insertCompanySchema.parse(req.body);
+      const company = await storage.createCompany(companyData);
       res.status(201).json(company);
     } catch (error) {
       console.error('Create company error:', error);
@@ -446,7 +535,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = parseInt(req.params.id);
       const updateData = req.body;
 
-      const company = await storage.updateTitleCompany(companyId, updateData);
+      const company = await storage.updateCompany(companyId, updateData);
       if (!company) {
         return res.status(404).json({ message: 'Company not found' });
       }
@@ -465,7 +554,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const companyId = parseInt(req.params.id);
-      const deleted = await storage.deleteTitleCompany(companyId);
+      const deleted = await storage.deleteCompany(companyId);
       
       if (!deleted) {
         return res.status(404).json({ message: 'Company not found' });
@@ -522,6 +611,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/jobs', verifyToken, upload.array('documents', 10), async (req: any, res) => {
     try {
+      // Check if user has permission to create jobs
+      const userCanCreateJob = 
+        req.user.role === 'admin' ||
+        req.user.role === 'title_company' ||
+        (req.user.role === 'notary' && req.user.notaryType === 'subscriber');
+
+      if (!userCanCreateJob) {
+        return res.status(403).json({ 
+          message: 'Access denied. Only administrators, title companies, and subscriber notaries can create jobs.' 
+        });
+      }
+
       const jobData = {
         ...req.body,
         userId: req.user.id,
@@ -533,6 +634,134 @@ export async function registerRoutes(app: Express): Promise<Server> {
       delete jobData.notarizedFile;
 
       const job = await storage.createJob(jobData);
+
+      // Handle notary assignment logic based on the business requirements
+      let assignedNotary = null;
+      if (jobData.notaryOption === 'auto' && !jobData.selectedNotary) {
+        // Check if title company has a preferred notary
+        const titleCompany = await db
+          .select()
+          .from(companies)
+          .where(eq(companies.companyName, jobData.titleCompany))
+          .limit(1);
+
+        if (titleCompany.length > 0 && titleCompany[0].preferredNotaryId) {
+          // Use preferred notary if available and active
+          const preferredNotary = await db
+            .select()
+            .from(users)
+            .where(
+              and(
+                eq(users.id, titleCompany[0].preferredNotaryId),
+                eq(users.isActive, true),
+                eq(users.role, 'notary')
+              )
+            )
+            .limit(1);
+
+          if (preferredNotary.length > 0) {
+            assignedNotary = preferredNotary[0];
+            await storage.updateJob(job.id, {
+              notaryId: assignedNotary.id,
+              selectedNotary: assignedNotary.id.toString(),
+              jobStatus: 'open', // Keep as open until notary approves
+              notaryApprovalStatus: 'assigned_pending_approval'
+            });
+
+            // Log the preferred assignment
+            await db.insert(notaryAssignmentLog).values({
+              jobId: job.id,
+              notaryId: assignedNotary.id,
+              assignmentType: 'preferred',
+              assignmentStatus: 'assigned'
+            });
+
+            // Send job assignment notification to notary (requires approval)
+            try {
+              await notificationService.sendJobAssignmentNotification(job.id, assignedNotary.id);
+            } catch (notificationError) {
+              console.error('Failed to send job assignment notification:', notificationError);
+            }
+
+            // Create calendar event for the assigned notary if date and time are provided
+            if (jobData.selectedDate && jobData.selectedTime) {
+              try {
+                const startDateTime = new Date(`${jobData.selectedDate} ${jobData.selectedTime}`);
+                const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour duration
+                
+                await db.insert(calendarEvents).values({
+                  notaryId: assignedNotary.id,
+                  title: `Notarization Job #${job.id}`,
+                  description: `Job for ${jobData.titleCompany} - ${jobData.closingType}\nProperty: ${jobData.propertyAddressOne}, ${jobData.propertyCity}, ${jobData.propertyState}`,
+                  startDateTime,
+                  endDateTime,
+                  location: `${jobData.propertyAddressOne}, ${jobData.propertyCity}, ${jobData.propertyState} ${jobData.propertyZipCode}`,
+                  eventType: 'job',
+                  jobId: job.id,
+                  isAllDay: false
+                });
+              } catch (error) {
+                console.warn('Failed to create calendar event for preferred notary assignment:', error);
+              }
+            }
+          }
+        }
+
+        // If no preferred notary or preferred notary not available, use random assignment
+        if (!assignedNotary) {
+          // Update job to mark it for random assignment (will be completed when time is selected)
+          await storage.updateJob(job.id, {
+            isRandomAssignment: true,
+            requiresNSA: jobData.requiresNSA === 'true' || false,
+            requiresSpanishSpeaking: jobData.requiresSpanishSpeaking === 'true' || false
+          });
+        }
+      } else if (jobData.notaryOption === 'assign' && jobData.selectedNotary) {
+        // Manual assignment
+        const selectedNotaryId = parseInt(jobData.selectedNotary);
+        await storage.updateJob(job.id, {
+          notaryId: selectedNotaryId,
+          jobStatus: 'open', // Keep as open until notary approves
+          notaryApprovalStatus: 'assigned_pending_approval'
+        });
+
+        // Log the manual assignment
+        await db.insert(notaryAssignmentLog).values({
+          jobId: job.id,
+          notaryId: selectedNotaryId,
+          assignmentType: 'manual',
+          assignmentStatus: 'assigned'
+        });
+
+        // Send job assignment notification to notary (requires approval)
+        try {
+          await notificationService.sendJobAssignmentNotification(job.id, selectedNotaryId);
+        } catch (notificationError) {
+          console.error('Failed to send job assignment notification:', notificationError);
+        }
+
+        // Create calendar event for the assigned notary if date and time are provided
+        if (jobData.selectedDate && jobData.selectedTime) {
+          try {
+            const startDateTime = new Date(`${jobData.selectedDate} ${jobData.selectedTime}`);
+            const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour duration
+            
+            await db.insert(calendarEvents).values({
+              notaryId: selectedNotaryId,
+              title: `Notarization Job #${job.id}`,
+              description: `Job for ${jobData.titleCompany} - ${jobData.closingType}\nProperty: ${jobData.propertyAddressOne}, ${jobData.propertyCity}, ${jobData.propertyState}`,
+              startDateTime,
+              endDateTime,
+              location: `${jobData.propertyAddressOne}, ${jobData.propertyCity}, ${jobData.propertyState} ${jobData.propertyZipCode}`,
+              eventType: 'job',
+              jobId: job.id,
+              isAllDay: false
+            });
+          } catch (error) {
+            console.warn('Failed to create calendar event for manual notary assignment:', error);
+          }
+        }
+      }
 
       // Handle multiple document uploads
       if (req.files && req.files.length > 0) {
@@ -569,39 +798,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (req.body.signers) {
         const signers = JSON.parse(req.body.signers);
         for (const signerData of signers) {
+          // Check if user already exists
+          const [existingUser] = await db.select()
+            .from(users)
+            .where(eq(users.email, signerData.signerEmail));
+
+          let userId;
+          if (!existingUser) {
+            // Create new user account for the signer
+            const hashedPassword = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
+            const [newUser] = await db.insert(users).values({
+              username: signerData.signerEmail,
+              email: signerData.signerEmail,
+              password: hashedPassword, // Temporary password, will be reset
+              role: 'signer',
+              firstName: signerData.signerName.split(' ')[0] || '',
+              lastName: signerData.signerName.split(' ').slice(1).join(' ') || '',
+              phoneNumber: signerData.signerPhoneNumber || '',
+              isVerified: false, // Account not verified yet
+              verificationStatus: 'pending', // Pending verification
+              accountSetupComplete: false, // Password needs to be set
+              createdAt: new Date()
+            }).returning();
+            userId = newUser.id;
+          } else {
+            userId = existingUser.id;
+          }
+
+          // Create signer record linked to user
           await storage.createSigner({
             ...signerData,
-            jobId: job.id
+            jobId: job.id,
+            userId: userId,
+            invitationToken: crypto.randomUUID()
           });
-        }
 
-        // Send email notifications to signers
-        try {
-          for (const signer of signers) {
-            await transporter.sendMail({
-              from: process.env.SMTP_USER || 'noreply@usanotary.com',
-              to: signer.signerEmail,
-              subject: 'New Notarization Job Assigned',
-              html: `
-                <h2>New Notarization Job</h2>
-                <p>Dear ${signer.signerName},</p>
-                <p>You have been assigned to a new notarization job:</p>
-                <ul>
-                  <li><strong>Job Reference:</strong> ${job.internalReference || 'N/A'}</li>
-                  <li><strong>Title Company:</strong> ${job.titleCompany}</li>
-                  <li><strong>Closing Type:</strong> ${job.closingType}</li>
-                  <li><strong>Property Address:</strong> ${job.propertyAddressOne}, ${job.propertyCity}, ${job.propertyState} ${job.propertyZipCode}</li>
-                  <li><strong>Scheduled Date:</strong> ${job.selectedDate || 'TBD'}</li>
-                  <li><strong>Scheduled Time:</strong> ${job.selectedTime || 'TBD'}</li>
-                </ul>
-                <p>Please contact us if you have any questions.</p>
-                <p>Best regards,<br>USA Notary Team</p>
-              `
-            });
-          }
-        } catch (emailError) {
-          console.error('Email sending error:', emailError);
-          // Don't fail the job creation if email fails
+          // Generate password reset token for account setup
+          const passwordResetToken = crypto.randomUUID();
+          const tokenExpiry = new Date();
+          tokenExpiry.setHours(tokenExpiry.getHours() + 24); // 24 hour expiry
+
+          // Store password reset token
+          await db.insert(passwordResetTokens).values({
+            userId: userId,
+            token: passwordResetToken,
+            expiresAt: tokenExpiry,
+            used: false
+          });
+
+          // NOTE: Signer notifications will be sent after notary approval
+          // Account setup emails are deferred until notary approves the job
+          console.log(`Signer account created for ${signerData.signerEmail} - notifications will be sent after notary approval`);
         }
       }
 
@@ -1025,7 +1272,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Whereby video session routes
+  // Mock video session routes (Whereby API removed)
   app.post('/api/jobs/:jobId/video-session', verifyToken, async (req: any, res) => {
     try {
       const jobId = parseInt(req.params.jobId);
@@ -1035,84 +1282,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'Job not found' });
       }
 
-      // Create a meeting using Whereby REST API
-      const wherebyApiKey = process.env.WHEREBY_API_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmFwcGVhci5pbiIsImF1ZCI6Imh0dHBzOi8vYXBpLmFwcGVhci5pbi92MSIsImV4cCI6OTAwNzE5OTI1NDc0MDk5MSwiaWF0IjoxNzUxMTAwMDQyLCJvcmdhbml6YXRpb25JZCI6MzE4OTcwLCJqdGkiOiJiYzFmMTAxYi01YmFkLTQ1MTYtYmJiMC04MTZmMDVjMDYyZDgifQ.jcE8YyfLQmys0XgpJYe-fK_DIr4uI_uW7TywuRmOH8M';
+      console.log('Creating mock video session for job:', jobId);
       
       // Calculate end time (2 hours from now for notary sessions)
       const endDate = new Date();
       endDate.setHours(endDate.getHours() + 2);
 
-      // Validate startTrigger value
-      const validStartTriggers = ['none', 'prompt', 'automatic', 'automatic-2nd-participant', null];
-      const startTrigger = 'none'; // For notary sessions, manual start is preferred
-      
-      if (!validStartTriggers.includes(startTrigger)) {
-        throw new Error(`Invalid startTrigger value: ${startTrigger}. Valid values are: ${validStartTriggers.join(', ')}`);
-      }
-
-      const meetingPayload = {
-        endDate: endDate.toISOString(),
-        roomNamePrefix: `notary-${jobId}`,
-        roomNamePattern: 'human-short',
-        roomMode: 'normal', // For up to 4 participants, use 'group' for more
-        isLocked: false, // Allow participants to join freely
-        startTrigger: startTrigger, // Validated startTrigger value
-        recording: {
-          type: 'local',       // Enable local recording for development
-          destination: null     // No cloud destination required for local recording
-        },
-        fields: ['hostRoomUrl'] // Get host-specific URL if needed
-      };
-
-      const wherebyResponse = await fetch('https://api.whereby.dev/v1/meetings', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${wherebyApiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(meetingPayload)
-      });
-
-      if (!wherebyResponse.ok) {
-        const errorData = await wherebyResponse.json().catch(() => ({}));
-        console.error('Whereby API error:', errorData);
-        throw new Error(`Whereby API error: ${wherebyResponse.status}`);
-      }
-
-      const meetingData = await wherebyResponse.json();
-      
-      // Store session details
-      const sessionData = {
+      // Create mock session data
+      const mockRoomUrl = `https://mock-video.example.com/notary-session-${jobId}-${Date.now()}`;
+      const mockSessionData = {
         jobId,
-        meetingId: meetingData.meetingId,
-        roomUrl: meetingData.roomUrl,
-        roomName: meetingData.roomName,
-        hostRoomUrl: meetingData.hostRoomUrl,
-        endDate: meetingData.endDate,
+        meetingId: `mock-${jobId}-${Date.now()}`,
+        roomUrl: mockRoomUrl,
+        roomName: `notary-session-${jobId}`,
+        hostRoomUrl: mockRoomUrl,
+        endDate: endDate.toISOString(),
         createdBy: req.user.id,
         createdAt: new Date().toISOString(),
         isActive: true,
-        participants: req.body.participants || []
+        participants: req.body.participants || [],
+        mockMode: true
       };
 
-      console.log('Whereby meeting created successfully:', {
-        meetingId: meetingData.meetingId,
-        roomName: meetingData.roomName,
-        endDate: meetingData.endDate
+      console.log('Mock video session created:', {
+        meetingId: mockSessionData.meetingId,
+        roomName: mockSessionData.roomName,
+        endDate: mockSessionData.endDate
       });
-
+      
+      console.log('Sending mock room URL to client:', mockRoomUrl);
+      
       res.json({
         success: true,
-        roomUrl: meetingData.roomUrl,
-        roomName: meetingData.roomName,
-        meetingId: meetingData.meetingId,
-        sessionToken: meetingData.roomName,
-        sessionData
+        roomUrl: mockRoomUrl,
+        roomName: mockSessionData.roomName,
+        meetingId: mockSessionData.meetingId,
+        sessionToken: mockSessionData.roomName,
+        sessionData: mockSessionData
       });
     } catch (error) {
-      console.error('Create video session error:', error);
+      console.error('Create mock video session error:', error);
       res.status(500).json({ 
-        message: 'Failed to create video session',
+        message: 'Failed to create mock video session',
         error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
@@ -1192,26 +1403,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { meetingId } = req.body;
       
       if (meetingId) {
-        // Delete the meeting from Whereby if meetingId is provided
-        const wherebyApiKey = process.env.WHEREBY_API_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmFwcGVhci5pbiIsImF1ZCI6Imh0dHBzOi8vYXBpLmFwcGVhci5pbi92MSIsImV4cCI6OTAwNzE5OTI1NDc0MDk5MSwiaWF0IjoxNzUxMTAwMDQyLCJvcmdhbml6YXRpb25JZCI6MzE4OTcwLCJqdGkiOiJiYzFmMTAxYi01YmFkLTQ1MTYtYmJiMC04MTZmMDVjMDYyZDgifQ.jcE8YyfLQmys0XgpJYe-fK_DIr4uI_uW7TywuRmOH8M';
-        
-        try {
-          const deleteResponse = await fetch(`https://api.whereby.dev/v1/meetings/${meetingId}`, {
-            method: 'DELETE',
-            headers: {
-              'Authorization': `Bearer ${wherebyApiKey}`,
-            }
-          });
-          
-          if (deleteResponse.ok) {
-            console.log(`Whereby meeting ${meetingId} deleted successfully`);
-          } else {
-            console.warn(`Failed to delete Whereby meeting ${meetingId}: ${deleteResponse.status}`);
-          }
-        } catch (deleteError) {
-          console.error('Error deleting Whereby meeting:', deleteError);
-          // Continue with session cleanup even if Whereby delete fails
-        }
+        console.log(`Mock video session ${meetingId} cleanup - no external API calls needed`);
       }
       
       // Update job status to completed if needed
@@ -1219,25 +1411,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (job && job.jobStatus === 'in_progress') {
         await storage.updateJob(jobId, {
           jobStatus: 'completed',
-          completedAt: new Date().toISOString(),
+          completedAt: new Date(),
           completedBy: req.user.id
         });
       }
       
-      console.log(`Video session ended for job ${jobId}`);
+      console.log(`Mock video session ended for job ${jobId}`);
       
       res.json({
         success: true,
-        message: 'Video session ended successfully',
+        message: 'Mock video session ended successfully',
         jobStatus: 'completed'
       });
     } catch (error) {
-      console.error('End video session error:', error);
-      res.status(500).json({ message: 'Failed to end video session' });
+      console.error('End mock video session error:', error);
+      res.status(500).json({ message: 'Failed to end mock video session' });
     }
   });
 
-  // Get session recordings for compliance
+  // Get mock session recordings for compliance
   app.get('/api/jobs/:jobId/recordings', verifyToken, async (req: any, res) => {
     try {
       const jobId = parseInt(req.params.jobId);
@@ -1252,44 +1444,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Fetch recordings from Whereby API
-      const wherebyApiKey = process.env.WHEREBY_API_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmFwcGVhci5pbiIsImF1ZCI6Imh0dHBzOi8vYXBpLmFwcGVhci5pbi92MSIsImV4cCI6OTAwNzE5OTI1NDc0MDk5MSwiaWF0IjoxNzUxMTAwMDQyLCJvcmdhbml6YXRpb25JZCI6MzE4OTcwLCJqdGkiOiJiYzFmMTAxYi01YmFkLTQ1MTYtYmJiMC04MTZmMDVjMDYyZDgifQ.jcE8YyfLQmys0XgpJYe-fK_DIr4uI_uW7TywuRmOH8M';
+      console.log(`Getting mock recordings for job ${jobId}`);
       
-      try {
-        const recordingsResponse = await fetch('https://api.whereby.dev/v1/recordings?limit=50', {
-          headers: {
-            'Authorization': `Bearer ${wherebyApiKey}`,
-          }
-        });
-
-        if (recordingsResponse.ok) {
-          const recordingsData = await recordingsResponse.json();
-          
-          // Filter recordings for this job (in real implementation, you'd store meeting IDs)
-          // For now, return all recent recordings for demo purposes
-          res.json({
-            success: true,
-            jobId,
-            recordings: recordingsData.results || [],
-            message: 'Recordings retrieved successfully'
-          });
-        } else {
-          throw new Error(`Whereby recordings API error: ${recordingsResponse.status}`);
+      // Return mock recordings data
+      const mockRecordings = [
+        {
+          id: `mock-recording-${jobId}`,
+          name: `Notary Session ${jobId}`,
+          duration: '15:23',
+          createdAt: new Date().toISOString(),
+          status: 'completed',
+          downloadUrl: null, // No actual recordings in mock mode
+          type: 'mock'
         }
-      } catch (apiError) {
-        console.error('Whereby recordings API error:', apiError);
-        
-        // Return placeholder data if API fails
-        res.json({
-          success: true,
-          jobId,
-          recordings: [],
-          message: 'No recordings found for this session'
-        });
-      }
+      ];
+      
+      res.json({
+        success: true,
+        jobId,
+        recordings: mockRecordings,
+        message: 'Mock recordings retrieved (no actual recordings available)'
+      });
     } catch (error) {
-      console.error('Get recordings error:', error);
-      res.status(500).json({ message: 'Failed to retrieve recordings' });
+      console.error('Get mock recordings error:', error);
+      res.status(500).json({ message: 'Failed to retrieve mock recordings' });
     }
   });
 
@@ -1979,6 +2157,1025 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Internal server error' });
     }
   });
+
+  // Calendar Management API
+
+  // Get notary time slots
+app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
+    try {
+      const { month, year } = req.query;
+      const notaryId = req.user?.id;
+
+      if (req.user?.role !== 'notary' && req.user?.role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      let query = db
+        .select()
+        .from(notaryTimeSlots)
+        .where(eq(notaryTimeSlots.notaryId, notaryId))
+        .orderBy(notaryTimeSlots.date, notaryTimeSlots.startTime);
+
+      // Filter by month/year if provided
+      if (month && year) {
+        const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
+        const endDate = new Date(parseInt(year), parseInt(month), 0).toISOString().split('T')[0];
+        query = query.where(
+          and(
+            gte(notaryTimeSlots.date, startDate),
+            lte(notaryTimeSlots.date, endDate)
+          )
+        );
+      }
+
+      const timeSlots = await query;
+      res.json(timeSlots);
+    } catch (error) {
+      console.error('Error fetching time slots:', error);
+      res.status(500).json({ error: 'Failed to fetch time slots' });
+    }
+  });
+
+  // Create time slot
+  app.post('/api/calendar/time-slots', verifyToken, async (req, res) => {
+    try {
+      const notaryId = req.user?.id;
+      const { date, startTime, endTime, status, blockReason } = req.body;
+
+      if (req.user?.role !== 'notary' && req.user?.role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const newSlot = await db
+        .insert(notaryTimeSlots)
+        .values({
+          notaryId,
+          date,
+          startTime,
+          endTime,
+          status: status || 'available',
+          blockReason,
+          isManualBlock: status === 'blocked'
+        })
+        .returning();
+
+      res.json(newSlot[0]);
+    } catch (error) {
+      console.error('Error creating time slot:', error);
+      res.status(500).json({ error: 'Failed to create time slot' });
+    }
+  });
+
+  // Update time slot
+  app.put('/api/calendar/time-slots/:id', verifyToken, async (req, res) => {
+    try {
+      const notaryId = req.user?.id;
+      const slotId = parseInt(req.params.id);
+      const updates = req.body;
+
+      if (req.user?.role !== 'notary' && req.user?.role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      // Verify slot belongs to the notary
+      const existingSlot = await db
+        .select()
+        .from(notaryTimeSlots)
+        .where(
+          and(
+            eq(notaryTimeSlots.id, slotId),
+            eq(notaryTimeSlots.notaryId, notaryId)
+          )
+        );
+
+      if (existingSlot.length === 0) {
+        return res.status(404).json({ error: 'Time slot not found' });
+      }
+
+      const updatedSlot = await db
+        .update(notaryTimeSlots)
+        .set({ ...updates, updatedAt: new Date() })
+        .where(eq(notaryTimeSlots.id, slotId))
+        .returning();
+
+      res.json(updatedSlot[0]);
+    } catch (error) {
+      console.error('Error updating time slot:', error);
+      res.status(500).json({ error: 'Failed to update time slot' });
+    }
+  });
+
+  // Delete time slot
+  app.delete('/api/calendar/time-slots/:id', verifyToken, async (req, res) => {
+    try {
+      const notaryId = req.user?.id;
+      const slotId = parseInt(req.params.id);
+
+      if (req.user?.role !== 'notary' && req.user?.role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      // Verify slot belongs to the notary and is not booked
+      const existingSlot = await db
+        .select()
+        .from(notaryTimeSlots)
+        .where(
+          and(
+            eq(notaryTimeSlots.id, slotId),
+            eq(notaryTimeSlots.notaryId, notaryId)
+          )
+        );
+
+      if (existingSlot.length === 0) {
+        return res.status(404).json({ error: 'Time slot not found' });
+      }
+
+      if (existingSlot[0].status === 'booked') {
+        return res.status(400).json({ error: 'Cannot delete booked time slot' });
+      }
+
+      await db
+        .delete(notaryTimeSlots)
+        .where(eq(notaryTimeSlots.id, slotId));
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error deleting time slot:', error);
+      res.status(500).json({ error: 'Failed to delete time slot' });
+    }
+  });
+
+  // Get calendar events
+  app.get('/api/calendar/events', verifyToken, async (req, res) => {
+    try {
+      const { month, year } = req.query;
+      const notaryId = req.user?.id;
+
+      if (req.user?.role !== 'notary' && req.user?.role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      let query = db
+        .select()
+        .from(calendarEvents)
+        .where(eq(calendarEvents.notaryId, notaryId))
+        .orderBy(calendarEvents.startDateTime);
+
+      // Filter by month/year if provided
+      if (month && year) {
+        const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+        const endDate = new Date(parseInt(year), parseInt(month), 0);
+        
+        query = query.where(
+          and(
+            gte(calendarEvents.startDateTime, startDate),
+            lte(calendarEvents.startDateTime, endDate)
+          )
+        );
+      }
+
+      const events = await query;
+      res.json(events);
+    } catch (error) {
+      console.error('Error fetching events:', error);
+      res.status(500).json({ error: 'Failed to fetch events' });
+    }
+  });
+
+  // Create calendar event
+  app.post('/api/calendar/events', verifyToken, async (req, res) => {
+    try {
+      const notaryId = req.user?.id;
+      const { title, description, startDateTime, endDateTime, location, eventType, isAllDay } = req.body;
+
+      if (req.user?.role !== 'notary' && req.user?.role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const newEvent = await db
+        .insert(calendarEvents)
+        .values({
+          notaryId,
+          title,
+          description,
+          startDateTime: new Date(startDateTime),
+          endDateTime: new Date(endDateTime),
+          location,
+          eventType: eventType || 'personal',
+          isAllDay: isAllDay || false
+        })
+        .returning();
+
+      res.json(newEvent[0]);
+    } catch (error) {
+      console.error('Error creating event:', error);
+      res.status(500).json({ error: 'Failed to create event' });
+    }
+  });
+
+  // Get working hours
+  app.get('/api/calendar/working-hours', verifyToken, async (req, res) => {
+    try {
+      const notaryId = req.user?.id;
+
+      if (req.user?.role !== 'notary' && req.user?.role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const workingHours = await db
+        .select()
+        .from(notaryWorkingHours)
+        .where(eq(notaryWorkingHours.notaryId, notaryId))
+        .orderBy(notaryWorkingHours.dayOfWeek);
+
+      res.json(workingHours);
+    } catch (error) {
+      console.error('Error fetching working hours:', error);
+      res.status(500).json({ error: 'Failed to fetch working hours' });
+    }
+  });
+
+  // Update working hours
+  app.put('/api/calendar/working-hours', verifyToken, async (req, res) => {
+    try {
+      const notaryId = req.user?.id;
+      const { workingHours } = req.body;
+
+      if (req.user?.role !== 'notary' && req.user?.role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      // Delete existing working hours
+      await db
+        .delete(notaryWorkingHours)
+        .where(eq(notaryWorkingHours.notaryId, notaryId));
+
+      // Insert new working hours
+      if (workingHours && workingHours.length > 0) {
+        const hoursToInsert = workingHours
+          .filter((h: any) => h.isActive)
+          .map((h: any) => ({
+            notaryId,
+            dayOfWeek: h.dayOfWeek,
+            startTime: h.startTime,
+            endTime: h.endTime,
+            isActive: h.isActive
+          }));
+
+        if (hoursToInsert.length > 0) {
+          await db.insert(notaryWorkingHours).values(hoursToInsert);
+        }
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error updating working hours:', error);
+      res.status(500).json({ error: 'Failed to update working hours' });
+    }
+  });
+
+  // Get available notaries for a specific date/time
+  app.get('/api/calendar/available-notaries', verifyToken, async (req, res) => {
+    try {
+      const { date, startTime, endTime } = req.query;
+
+      if (!date || !startTime || !endTime) {
+        return res.status(400).json({ error: 'Date, start time, and end time are required' });
+      }
+
+      // Get notaries with available time slots
+      const availableNotaries = await db
+        .select({
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+          timeSlots: notaryTimeSlots
+        })
+        .from(users)
+        .leftJoin(notaryTimeSlots, 
+          and(
+            eq(users.id, notaryTimeSlots.notaryId),
+            eq(notaryTimeSlots.date, date as string),
+            eq(notaryTimeSlots.status, 'available'),
+            gte(notaryTimeSlots.startTime, startTime as string),
+            lte(notaryTimeSlots.endTime, endTime as string)
+          )
+        )
+        .where(
+          and(
+            eq(users.role, 'notary'),
+            eq(users.isActive, true)
+          )
+        );
+
+      // Group by notary
+      const groupedNotaries = availableNotaries.reduce((acc: any, row) => {
+        if (!acc[row.id]) {
+          acc[row.id] = {
+            id: row.id,
+            firstName: row.firstName,
+            lastName: row.lastName,
+            email: row.email,
+            availableSlots: []
+          };
+        }
+        if (row.timeSlots) {
+          acc[row.id].availableSlots.push(row.timeSlots);
+        }
+        return acc;
+      }, {});
+
+      res.json(Object.values(groupedNotaries).filter((n: any) => n.availableSlots.length > 0));
+    } catch (error) {
+      console.error('Error fetching available notaries:', error);
+      res.status(500).json({ error: 'Failed to fetch available notaries' });
+    }
+  });
+
+  // Get all available notaries (for notary change functionality)
+  app.get('/api/notaries/available', verifyToken, async (req, res) => {
+    try {
+      if (req.user.role !== 'admin' && req.user.role !== 'title_company') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const availableNotaries = await db
+        .select({
+          id: users.id,
+          username: users.username,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+          isNotarySigningAgent: users.isNotarySigningAgent,
+          isSpanishSpeaking: users.isSpanishSpeaking,
+          notaryType: users.notaryType,
+          maxConcurrentJobs: users.maxConcurrentJobs
+        })
+        .from(users)
+        .where(
+          and(
+            eq(users.role, 'notary'),
+            eq(users.isActive, true)
+            // Removed the restrictive notaryType filter - include all active notaries
+          )
+        )
+        .orderBy(users.firstName, users.lastName, users.username);
+
+      res.json(availableNotaries);
+    } catch (error) {
+      console.error('Error fetching available notaries:', error);
+      res.status(500).json({ error: 'Failed to fetch available notaries' });
+    }
+  });
+
+  // Book a time slot for a job
+  app.post('/api/calendar/book-slot', verifyToken, async (req, res) => {
+    try {
+      const { slotId, jobId } = req.body;
+
+      if (!slotId || !jobId) {
+        return res.status(400).json({ error: 'Slot ID and Job ID are required' });
+      }
+
+      // Verify the slot is available
+      const slot = await db
+        .select()
+        .from(notaryTimeSlots)
+        .where(
+          and(
+            eq(notaryTimeSlots.id, slotId),
+            eq(notaryTimeSlots.status, 'available')
+          )
+        );
+
+      if (slot.length === 0) {
+        return res.status(400).json({ error: 'Time slot is not available' });
+      }
+
+      // Update the slot status to booked
+      await db
+        .update(notaryTimeSlots)
+        .set({ 
+          status: 'booked',
+          jobId,
+          updatedAt: new Date()
+        })
+        .where(eq(notaryTimeSlots.id, slotId));
+
+      // Create a calendar event for the job
+      await db
+        .insert(calendarEvents)
+        .values({
+          notaryId: slot[0].notaryId,
+          title: `Notarization Job #${jobId}`,
+          description: 'Scheduled notarization appointment',
+          startDateTime: new Date(`${slot[0].date} ${slot[0].startTime}`),
+          endDateTime: new Date(`${slot[0].date} ${slot[0].endTime}`),
+          eventType: 'job',
+          jobId,
+          isAllDay: false
+        });
+
+      res.json({ success: true, message: 'Time slot booked successfully' });
+    } catch (error) {
+      console.error('Error booking time slot:', error);
+      res.status(500).json({ error: 'Failed to book time slot' });
+    }
+  });
+
+  // Random Notary Assignment API
+
+  // Get aggregated availability for qualified notaries
+  app.get('/api/random-notary/availability/:date', verifyToken, async (req: any, res) => {
+    try {
+      const { date } = req.params;
+      const { requiresNSA, requiresSpanishSpeaking, excludeNotaryIds } = req.query;
+
+      if (req.user.role !== 'admin' && req.user.role !== 'title_company') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const qualifications: NotaryQualifications = {
+        requiresNSA: requiresNSA === 'true',
+        requiresSpanishSpeaking: requiresSpanishSpeaking === 'true'
+      };
+
+      const excludeIds = excludeNotaryIds ? 
+        (Array.isArray(excludeNotaryIds) ? excludeNotaryIds : [excludeNotaryIds]).map((id: string) => parseInt(id)) : 
+        [];
+
+      const availability = await randomNotaryService.aggregateAvailability(qualifications, date, excludeIds);
+      res.json(availability);
+    } catch (error) {
+      console.error('Error getting notary availability:', error);
+      res.status(500).json({ error: 'Failed to get notary availability' });
+    }
+  });
+
+  // Get qualified notaries for a job
+  app.get('/api/random-notary/qualified', verifyToken, async (req: any, res) => {
+    try {
+      const { requiresNSA, requiresSpanishSpeaking, excludeNotaryIds } = req.query;
+
+      if (req.user.role !== 'admin' && req.user.role !== 'title_company') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const qualifications: NotaryQualifications = {
+        requiresNSA: requiresNSA === 'true',
+        requiresSpanishSpeaking: requiresSpanishSpeaking === 'true'
+      };
+
+      const excludeIds = excludeNotaryIds ? 
+        (Array.isArray(excludeNotaryIds) ? excludeNotaryIds : [excludeNotaryIds]).map((id: string) => parseInt(id)) : 
+        [];
+
+      const qualifiedNotaries = await randomNotaryService.getQualifiedNotaries(qualifications, excludeIds);
+      res.json(qualifiedNotaries);
+    } catch (error) {
+      console.error('Error getting qualified notaries:', error);
+      res.status(500).json({ error: 'Failed to get qualified notaries' });
+    }
+  });
+
+  // Select random notary for a specific time slot
+  app.post('/api/random-notary/select', verifyToken, async (req: any, res) => {
+    try {
+      const { qualifications, timeSlot, excludeNotaryIds } = req.body;
+
+      if (req.user.role !== 'admin' && req.user.role !== 'title_company') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      if (!qualifications || !timeSlot) {
+        return res.status(400).json({ error: 'Qualifications and time slot are required' });
+      }
+
+      const selectedNotary = await randomNotaryService.selectRandomNotary(
+        qualifications, 
+        timeSlot, 
+        excludeNotaryIds || []
+      );
+
+      if (!selectedNotary) {
+        return res.status(404).json({ error: 'No qualified notaries available for the selected time slot' });
+      }
+
+      res.json(selectedNotary);
+    } catch (error) {
+      console.error('Error selecting random notary:', error);
+      res.status(500).json({ error: 'Failed to select random notary' });
+    }
+  });
+
+  // Assign notary to job (supports random, preferred, and manual assignment)
+  app.post('/api/random-notary/assign', verifyToken, async (req: any, res) => {
+    try {
+      const { jobId, notaryId, timeSlot, assignmentType } = req.body;
+
+      if (req.user.role !== 'admin' && req.user.role !== 'title_company') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      if (!jobId || !notaryId || !timeSlot) {
+        return res.status(400).json({ error: 'Job ID, notary ID, and time slot are required' });
+      }
+
+      const success = await randomNotaryService.assignNotaryToJob(
+        jobId, 
+        notaryId, 
+        timeSlot, 
+        assignmentType || 'manual'
+      );
+
+      if (success) {
+        res.json({ success: true, message: 'Notary assigned successfully' });
+      } else {
+        res.status(500).json({ error: 'Failed to assign notary to job' });
+      }
+    } catch (error) {
+      console.error('Error assigning notary to job:', error);
+      res.status(500).json({ error: 'Failed to assign notary to job' });
+    }
+  });
+
+  // Handle notary rejection
+  app.post('/api/random-notary/reject', verifyToken, async (req: any, res) => {
+    try {
+      const { jobId, rejectionReason } = req.body;
+      const notaryId = req.user.id;
+
+      if (req.user.role !== 'notary') {
+        return res.status(403).json({ error: 'Only notaries can reject assignments' });
+      }
+
+      if (!jobId) {
+        return res.status(400).json({ error: 'Job ID is required' });
+      }
+
+      const newNotary = await randomNotaryService.handleNotaryRejection(
+        jobId, 
+        notaryId, 
+        rejectionReason
+      );
+
+      if (newNotary) {
+        res.json({ 
+          success: true, 
+          message: 'Assignment rejected and new notary assigned',
+          newNotary 
+        });
+      } else {
+        // Send priority alert to admin
+        await randomNotaryService.sendPriorityAlert(
+          jobId,
+          `No available notaries found for job ${jobId} after rejection by notary ${notaryId}`
+        );
+
+        res.json({ 
+          success: true, 
+          message: 'Assignment rejected. Admin has been notified to manually assign a notary.',
+          requiresManualAssignment: true
+        });
+      }
+    } catch (error) {
+      console.error('Error handling notary rejection:', error);
+      res.status(500).json({ error: 'Failed to handle notary rejection' });
+    }
+  });
+
+  // Get assignment history for a job
+  app.get('/api/random-notary/assignment-history/:jobId', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.jobId);
+
+      if (req.user.role !== 'admin' && req.user.role !== 'title_company') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const assignmentHistory = await db
+        .select({
+          id: notaryAssignmentLog.id,
+          notaryId: notaryAssignmentLog.notaryId,
+          assignmentType: notaryAssignmentLog.assignmentType,
+          assignmentStatus: notaryAssignmentLog.assignmentStatus,
+          assignedAt: notaryAssignmentLog.assignedAt,
+          respondedAt: notaryAssignmentLog.respondedAt,
+          rejectionReason: notaryAssignmentLog.rejectionReason,
+          notaryName: users.username,
+          notaryFirstName: users.firstName,
+          notaryLastName: users.lastName,
+          notaryEmail: users.email
+        })
+        .from(notaryAssignmentLog)
+        .leftJoin(users, eq(notaryAssignmentLog.notaryId, users.id))
+        .where(eq(notaryAssignmentLog.jobId, jobId))
+        .orderBy(desc(notaryAssignmentLog.assignedAt));
+
+      res.json(assignmentHistory);
+    } catch (error) {
+      console.error('Error getting assignment history:', error);
+      res.status(500).json({ error: 'Failed to get assignment history' });
+    }
+  });
+
+  // Check if title company has preferred notary
+  app.get('/api/title-companies/:companyName/preferred-notary', verifyToken, async (req: any, res) => {
+    try {
+      const { companyName } = req.params;
+
+      const company = await db
+        .select({
+          id: companies.id,
+          companyName: companies.companyName,
+          preferredNotaryId: companies.preferredNotaryId,
+          preferredNotaryName: users.username,
+          preferredNotaryFirstName: users.firstName,
+          preferredNotaryLastName: users.lastName,
+          preferredNotaryEmail: users.email,
+          preferredNotaryActive: users.isActive
+        })
+        .from(companies)
+        .leftJoin(users, eq(companies.preferredNotaryId, users.id))
+        .where(eq(companies.companyName, companyName))
+        .limit(1);
+
+      if (company.length === 0) {
+        return res.status(404).json({ error: 'Title company not found' });
+      }
+
+      res.json(company[0]);
+    } catch (error) {
+      console.error('Error getting preferred notary:', error);
+      res.status(500).json({ error: 'Failed to get preferred notary' });
+    }
+  });
+
+  // Email Settings API Routes
+  app.get('/api/settings/email', verifyToken, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const settingsData = await db.select().from(systemSettings).where(
+        inArray(systemSettings.key, [
+          'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 
+          'smtp_secure', 'from_email', 'from_name'
+        ])
+      );
+
+      const settings: any = {};
+      settingsData.forEach(setting => {
+        // Don't expose password in plain text
+        if (setting.key === 'smtp_pass') {
+          settings[setting.key] = setting.value ? '••••••••' : '';
+        } else {
+          settings[setting.key] = setting.value;
+        }
+      });
+
+      res.json(settings);
+    } catch (error) {
+      console.error('Get email settings error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.put('/api/settings/email', verifyToken, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const { smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure, from_email, from_name } = req.body;
+
+      const emailSettings = [
+        { key: 'smtp_host', value: smtp_host, description: 'SMTP server hostname' },
+        { key: 'smtp_port', value: smtp_port, description: 'SMTP server port' },
+        { key: 'smtp_user', value: smtp_user, description: 'SMTP username/email' },
+        { key: 'smtp_secure', value: smtp_secure, description: 'Use SSL/TLS for SMTP' },
+        { key: 'from_email', value: from_email, description: 'From email address' },
+        { key: 'from_name', value: from_name, description: 'From display name' }
+      ];
+
+      // Only update password if it's not the masked value
+      if (smtp_pass && smtp_pass !== '••••••••') {
+        emailSettings.push({ 
+          key: 'smtp_pass', 
+          value: smtp_pass, 
+          description: 'SMTP password' 
+        });
+      }
+
+      // Update or insert each setting
+      for (const setting of emailSettings) {
+        const existing = await db.select()
+          .from(systemSettings)
+          .where(eq(systemSettings.key, setting.key))
+          .limit(1);
+
+        if (existing.length > 0) {
+          await db.update(systemSettings)
+            .set({
+              value: setting.value,
+              description: setting.description,
+              updatedAt: new Date()
+            })
+            .where(eq(systemSettings.key, setting.key));
+        } else {
+          await db.insert(systemSettings).values({
+            key: setting.key,
+            value: setting.value,
+            type: 'string',
+            description: setting.description,
+            isProtected: false
+          });
+        }
+      }
+
+      // Clear email service cache to force reload of new settings
+      emailService.clearCache();
+      console.log('Email settings updated and cache cleared');
+
+      res.json({ message: 'Email settings updated successfully' });
+    } catch (error) {
+      console.error('Update email settings error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/settings/email/test', verifyToken, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const { testEmail } = req.body;
+      if (!testEmail) {
+        return res.status(400).json({ message: 'Test email address is required' });
+      }
+
+      const result = await emailService.testConfiguration(testEmail);
+      res.json({ message: result });
+    } catch (error) {
+      console.error('Email test error:', error);
+      res.status(500).json({ message: error instanceof Error ? error.message : 'Email test failed' });
+    }
+  });
+
+  // Resend signer invitation
+  app.post('/api/signers/:id/resend-invitation', verifyToken, async (req: any, res) => {
+    try {
+      const signerId = parseInt(req.params.id);
+
+      // Get signer details
+      const [signer] = await db.select({
+        signer: signers,
+        job: jobs
+      })
+      .from(signers)
+      .leftJoin(jobs, eq(signers.jobId, jobs.id))
+      .where(eq(signers.id, signerId));
+
+      if (!signer) {
+        return res.status(404).json({ message: 'Signer not found' });
+      }
+
+      // Generate new invitation token if needed
+      const invitationToken = signer.signer.invitationToken || crypto.randomUUID();
+      
+      if (!signer.signer.invitationToken) {
+        await db.update(signers)
+          .set({ 
+            invitationToken,
+            invitationSentAt: new Date()
+          })
+          .where(eq(signers.id, signerId));
+      } else {
+        await db.update(signers)
+          .set({ invitationSentAt: new Date() })
+          .where(eq(signers.id, signerId));
+      }
+
+      // Send professional email invitation
+      await emailService.sendSignerInvitation({
+        signerName: signer.signer.signerName,
+        signerEmail: signer.signer.signerEmail,
+        signerRole: signer.signer.signerRole,
+        invitationToken,
+        titleCompany: signer.job?.titleCompany || 'Unknown Company',
+        closingType: signer.job?.closingType || 'Document Signing',
+        propertyAddress: signer.job ? 
+          `${signer.job.propertyAddressOne}, ${signer.job.propertyCity}, ${signer.job.propertyState} ${signer.job.propertyZipCode}` : 
+          undefined,
+        scheduledDate: signer.job?.selectedDate,
+        scheduledTime: signer.job?.selectedTime
+      });
+
+      res.json({ message: 'Invitation resent successfully' });
+    } catch (error) {
+      console.error('Resend invitation error:', error);
+      res.status(500).json({ message: 'Failed to resend invitation' });
+    }
+  });
+
+  // Register enhanced user management and company routes
+  registerUserManagementRoutes(app);
+  registerCompanyRoutes(app);
+  registerApprovalWorkflowRoutes(app);
+  registerNotaryProfileRoutes(app);
+  registerFeeRoutes(app);
+
+  // Password reset and setup routes
+  app.post('/api/auth/validate-password-reset-token', async (req, res) => {
+    try {
+      const { token } = req.body;
+      
+      if (!token) {
+        return res.status(400).json({ message: 'Token is required' });
+      }
+
+      // Find the password reset token
+      const [resetToken] = await db.select({
+        token: passwordResetTokens,
+        user: users
+      })
+      .from(passwordResetTokens)
+      .leftJoin(users, eq(passwordResetTokens.userId, users.id))
+      .where(eq(passwordResetTokens.token, token));
+
+      if (!resetToken) {
+        return res.status(404).json({ message: 'Invalid token' });
+      }
+
+      // Check if token is expired
+      if (new Date() > resetToken.token.expiresAt) {
+        return res.status(400).json({ message: 'Token has expired' });
+      }
+
+      // Check if token is already used
+      if (resetToken.token.used) {
+        return res.status(400).json({ message: 'Token has already been used' });
+      }
+
+      // Return user info for display
+      res.json({
+        valid: true,
+        user: {
+          name: `${resetToken.user.firstName || ''} ${resetToken.user.lastName || ''}`.trim() || resetToken.user.username,
+          email: resetToken.user.email,
+          role: resetToken.user.role
+        }
+      });
+    } catch (error) {
+      console.error('Token validation error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/auth/set-password', async (req, res) => {
+    try {
+      const { token, password } = req.body;
+      
+      if (!token || !password) {
+        return res.status(400).json({ message: 'Token and password are required' });
+      }
+
+      // Find the password reset token
+      const [resetToken] = await db.select()
+        .from(passwordResetTokens)
+        .where(eq(passwordResetTokens.token, token));
+
+      if (!resetToken) {
+        return res.status(404).json({ message: 'Invalid token' });
+      }
+
+      // Check if token is expired
+      if (new Date() > resetToken.expiresAt) {
+        return res.status(400).json({ message: 'Token has expired' });
+      }
+
+      // Check if token is already used
+      if (resetToken.used) {
+        return res.status(400).json({ message: 'Token has already been used' });
+      }
+
+      // Hash the new password
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // Update user password and mark account setup as complete
+      await db.update(users)
+        .set({ 
+          password: hashedPassword,
+          accountSetupComplete: true,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, resetToken.userId));
+
+      // Mark token as used
+      await db.update(passwordResetTokens)
+        .set({ used: true })
+        .where(eq(passwordResetTokens.id, resetToken.id));
+
+      res.json({ message: 'Password set successfully' });
+    } catch (error) {
+      console.error('Password setup error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // EVS Verification route
+  app.post('/api/verification/evs-verify', verifyToken, upload.fields([
+    { name: 'frontImage', maxCount: 1 },
+    { name: 'backImage', maxCount: 1 },
+    { name: 'selfieImage', maxCount: 1 }
+  ]), async (req: any, res) => {
+    try {
+      const { userId } = req.body;
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+
+      if (!files.frontImage || !files.selfieImage) {
+        return res.status(400).json({ message: 'Front image and selfie are required' });
+      }
+
+      // TODO: Integrate with actual EVS Solutions API
+      // For now, we'll simulate the verification process
+      
+      // Simulate processing delay
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Simulate verification result (95% success rate)
+      const isSuccessful = Math.random() > 0.05;
+      const confidence = Math.floor(Math.random() * 20) + 80; // 80-100%
+
+      if (isSuccessful) {
+        // Update user verification status
+        await db.update(users)
+          .set({ 
+            isVerified: true,
+            verificationStatus: 'verified',
+            idType: 'drivers_license', // This would come from EVS API
+            idNumber: 'D123456789', // This would come from EVS API  
+            idExpirationDate: '2028-12-31', // This would come from EVS API
+            updatedAt: new Date()
+          })
+          .where(eq(users.id, parseInt(userId)));
+
+        res.json({
+          success: true,
+          status: 'verified',
+          confidence: confidence,
+          message: 'Identity successfully verified',
+          verificationId: `evs_${Date.now()}`,
+          verifiedAt: new Date().toISOString()
+        });
+      } else {
+        // Update user verification status as failed
+        await db.update(users)
+          .set({ 
+            isVerified: false,
+            verificationStatus: 'failed',
+            updatedAt: new Date()
+          })
+          .where(eq(users.id, parseInt(userId)));
+
+        res.status(400).json({
+          success: false,
+          status: 'failed',
+          message: 'Identity verification failed. Please ensure your documents are clear and try again.',
+          reasons: ['Low image quality', 'Document not readable']
+        });
+      }
+
+      // Clean up uploaded files
+      const cleanupFiles = [...(files.frontImage || []), ...(files.backImage || []), ...(files.selfieImage || [])];
+      cleanupFiles.forEach(file => {
+        try {
+          fs.unlinkSync(file.path);
+        } catch (error) {
+          console.warn('Failed to delete uploaded file:', file.path);
+        }
+      });
+
+    } catch (error) {
+      console.error('EVS verification error:', error);
+      res.status(500).json({ message: 'Verification service error' });
+    }
+  });
+
+  // Email Template Management Routes
+  app.get('/api/email-templates', verifyToken, getAllTemplates);
+  app.get('/api/email-templates/variables/all', verifyToken, getTemplateVariables);
+  app.get('/api/email-templates/categories/all', verifyToken, getTemplateCategories);
+  app.get('/api/email-templates/logs/all', verifyToken, getEmailLogs);
+  app.get('/api/email-templates/:template_key', verifyToken, getTemplate);
+  app.post('/api/email-templates', verifyToken, createTemplate);
+  app.put('/api/email-templates/:id', verifyToken, updateTemplate);
+  app.delete('/api/email-templates/:id', verifyToken, deleteTemplate);
+  app.post('/api/email-templates/:template_key/preview', verifyToken, previewTemplate);
+  app.post('/api/email-templates/send-test', verifyToken, sendTestEmail);
 
   const httpServer = createServer(app);
   return httpServer;

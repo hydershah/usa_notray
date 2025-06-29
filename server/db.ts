@@ -29,6 +29,33 @@ export const supabase = createClient(
   SUPABASE_ANON_KEY
 );
 
-// PostgreSQL connection for Drizzle ORM (backend operations)
-export const pool = new Pool({ connectionString: DATABASE_URL });
+// PostgreSQL connection pool with proper scaling configuration
+export const pool = new Pool({ 
+  connectionString: DATABASE_URL,
+  // Connection pool settings for production scaling
+  max: 20, // Maximum number of connections in the pool
+  min: 2,  // Minimum number of connections to maintain
+  idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
+  connectionTimeoutMillis: 5000, // Timeout for new connections
+  acquireTimeoutMillis: 5000, // Timeout for acquiring connection from pool
+  // Enable connection reuse and health checks
+  allowExitOnIdle: false,
+  // Statement timeout to prevent long-running queries from blocking
+  statement_timeout: 60000, // 60 seconds
+  query_timeout: 60000, // 60 seconds
+});
+
+// Pool event handlers for monitoring and debugging
+pool.on('connect', (client) => {
+  console.log(`Database connection established. Total connections: ${pool.totalCount}`);
+});
+
+pool.on('acquire', (client) => {
+  console.log(`Connection acquired from pool. Active: ${pool.totalCount - pool.idleCount}`);
+});
+
+pool.on('error', (err, client) => {
+  console.error('Database pool error:', err);
+});
+
 export const db = drizzle({ client: pool, schema });

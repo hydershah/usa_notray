@@ -143,7 +143,10 @@ export default function UserManagement() {
         user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.role?.toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesRole = roleFilter === 'all' || user.role === roleFilter;
+      const matchesRole = roleFilter === 'all' || 
+        user.role === roleFilter ||
+        (roleFilter === 'notary_contractor' && user.role === 'notary' && user.notaryType === 'contractor') ||
+        (roleFilter === 'notary_subscriber' && user.role === 'notary' && user.notaryType === 'subscriber');
       const matchesStatus = statusFilter === 'all' || 
         (statusFilter === 'active' && user.isActive !== false) ||
         (statusFilter === 'inactive' && user.isActive === false);
@@ -219,7 +222,7 @@ export default function UserManagement() {
 
   const updateUserMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
-      const response = await apiRequest('PUT', `/api/users/${id}`, data);
+      const response = await apiRequest('PATCH', `/api/users/${id}/quick-update`, data);
       return response.json();
     },
     onSuccess: () => {
@@ -265,7 +268,7 @@ export default function UserManagement() {
 
   const toggleUserStatusMutation = useMutation({
     mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
-      const response = await apiRequest('PUT', `/api/users/${id}`, { isActive });
+      const response = await apiRequest('PATCH', `/api/users/${id}/status`, { isActive });
       return response.json();
     },
     onSuccess: () => {
@@ -308,7 +311,7 @@ export default function UserManagement() {
 
   const bulkRoleChangeMutation = useMutation({
     mutationFn: async ({ userIds, role }: { userIds: number[]; role: string }) => {
-      await Promise.all(userIds.map(id => apiRequest('PUT', `/api/users/${id}`, { role })));
+      await Promise.all(userIds.map(id => apiRequest('PATCH', `/api/users/${id}/quick-update`, { role })));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
@@ -373,7 +376,7 @@ export default function UserManagement() {
 
   const toggle2FAMutation = useMutation({
     mutationFn: async ({ userId, enabled }: { userId: number; enabled: boolean }) => {
-      const response = await apiRequest('PUT', `/api/users/${userId}/2fa`, { enabled });
+      const response = await apiRequest('PATCH', `/api/users/${userId}/quick-update`, { mfaEnabled: enabled });
       return response.json();
     },
     onSuccess: () => {
@@ -605,14 +608,19 @@ export default function UserManagement() {
     return completion;
   };
 
-  const getRolePermissions = (role: string): string[] => {
+  const getRolePermissions = (role: string, notaryType?: string): string[] => {
     switch (role) {
       case 'admin':
         return ['Full system access', 'User management', 'System settings', 'All documents'];
       case 'title_company':
         return ['Create jobs', 'Manage signers', 'View documents', 'Company settings'];
       case 'notary':
-        return ['Accept jobs', 'Sign documents', 'Schedule appointments', 'View assigned jobs'];
+        const baseNotaryPerms = ['Accept jobs', 'Sign documents', 'Schedule appointments', 'View assigned jobs'];
+        if (notaryType === 'subscriber') {
+          return [...baseNotaryPerms, 'Create jobs', 'Manage own clients'];
+        } else {
+          return [...baseNotaryPerms, 'Jobs assigned by admin only'];
+        }
       case 'client':
         return ['View assigned documents', 'Sign documents', 'Basic profile'];
       default:
@@ -706,7 +714,9 @@ export default function UserManagement() {
                     <SelectItem value="all">All Roles</SelectItem>
                     <SelectItem value="admin">Admin</SelectItem>
                     <SelectItem value="title_company">Title Company</SelectItem>
-                    <SelectItem value="notary">Notary</SelectItem>
+                    <SelectItem value="notary">All Notaries</SelectItem>
+                    <SelectItem value="notary_contractor">Notary - Contractor</SelectItem>
+                    <SelectItem value="notary_subscriber">Notary - Subscriber</SelectItem>
                     <SelectItem value="client">Client</SelectItem>
                   </SelectContent>
                 </Select>
@@ -858,9 +868,16 @@ export default function UserManagement() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline" className={getRoleColor(user.role)}>
-                              {formatRole(user.role)}
-                            </Badge>
+                            <div className="flex flex-col gap-1">
+                              <Badge variant="outline" className={getRoleColor(user.role)}>
+                                {formatRole(user.role)}
+                              </Badge>
+                              {user.role === 'notary' && user.notaryType && (
+                                <Badge variant="secondary" className="text-xs">
+                                  {user.notaryType === 'contractor' ? 'Contractor' : 'Subscriber'}
+                                </Badge>
+                              )}
+                            </div>
                             <Tooltip>
                               <TooltipTrigger>
                                 <Button variant="ghost" size="sm" onClick={() => handleEditRole(user)}>
@@ -871,10 +888,15 @@ export default function UserManagement() {
                                 <div className="text-sm">
                                   <div className="font-medium">Permissions:</div>
                                   <ul className="list-disc list-inside">
-                                    {getRolePermissions(user.role).map((perm, i) => (
+                                    {getRolePermissions(user.role, user.notaryType).map((perm, i) => (
                                       <li key={i}>{perm}</li>
                                     ))}
                                   </ul>
+                                  {user.role === 'notary' && (
+                                    <div className="mt-2 text-xs text-gray-500">
+                                      Type: {user.notaryType === 'contractor' ? 'Contractor (Admin assigns jobs)' : 'Subscriber (Can create jobs)'}
+                                    </div>
+                                  )}
                                 </div>
                               </TooltipContent>
                             </Tooltip>
@@ -938,12 +960,28 @@ export default function UserManagement() {
                         </TableCell>
                         <TableCell>
                           <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <Progress value={getProfileCompletion(user)} className="w-16 h-2" />
-                              <span className="text-xs text-gray-600">{getProfileCompletion(user)}%</span>
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-gray-600">Overall Progress</span>
+                              <span className="text-sm font-medium">{getProfileCompletion(user)}%</span>
                             </div>
-                            <div className="text-xs text-gray-500">
-                              {getProfileCompletion(user) === 100 ? 'Complete' : 'Incomplete'}
+                            <Progress value={getProfileCompletion(user)} className="h-2" />
+                            <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                              <div className="flex items-center gap-1">
+                                {user.username ? <CheckCircle className="w-3 h-3 text-green-500" /> : <XCircle className="w-3 h-3 text-red-500" />}
+                                Username
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {user.email ? <CheckCircle className="w-3 h-3 text-green-500" /> : <XCircle className="w-3 h-3 text-red-500" />}
+                                Email
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {user.emailVerified !== false ? <CheckCircle className="w-3 h-3 text-green-500" /> : <XCircle className="w-3 h-3 text-red-500" />}
+                                Email Verified
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {user.twoFactorEnabled ? <CheckCircle className="w-3 h-3 text-green-500" /> : <XCircle className="w-3 h-3 text-red-500" />}
+                                Two-Factor Auth
+                              </div>
                             </div>
                           </div>
                         </TableCell>
@@ -1385,7 +1423,7 @@ export default function UserManagement() {
                 <h3 className="font-medium text-sm text-gray-900 mb-3">Role Permissions</h3>
                 <div className="bg-gray-50 rounded-lg p-3">
                   <ul className="text-sm space-y-1">
-                    {getRolePermissions(userForDetails.role).map((permission, index) => (
+                    {getRolePermissions(userForDetails.role, userForDetails.notaryType).map((permission, index) => (
                       <li key={index} className="flex items-center gap-2">
                         <CheckCircle className="w-3 h-3 text-green-500" />
                         {permission}
@@ -1567,7 +1605,7 @@ export default function UserManagement() {
               <div className="bg-blue-50 p-3 rounded-lg">
                 <h4 className="font-medium text-sm mb-2">New permissions will include:</h4>
                 <ul className="text-sm space-y-1">
-                  {getRolePermissions(roleEditUser?.role || '').map((permission, index) => (
+                  {getRolePermissions(roleEditUser?.role || '', roleEditUser?.notaryType).map((permission, index) => (
                     <li key={index} className="flex items-center gap-2">
                       <CheckCircle className="w-3 h-3 text-green-500" />
                       {permission}

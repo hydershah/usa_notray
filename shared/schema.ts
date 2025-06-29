@@ -1,34 +1,187 @@
-import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// Users table
+// Users table - Enhanced for comprehensive user management
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   email: text("email").notNull().unique(),
   password: text("password").notNull(),
-  role: text("role").notNull().default("client"), // 'admin', 'notary', 'title_company', 'client'
+  role: text("role").notNull().default("client"), // 'admin', 'notary', 'title_company', 'client', 'company_manager', 'signer', 'witness', 'observer'
   privileges: text("privileges").array(), // Array of specific privileges for granular control
   createdAt: timestamp("created_at").defaultNow(),
-  // Profile fields
+  
+  // Universal Profile fields (required for all users)
   firstName: text("first_name"),
   lastName: text("last_name"),
-  phoneNumber: text("phone_number"),
+  fullName: text("full_name"), // Combined first and last name for easier searching
+  phoneNumber: text("phone_number"), // Cell phone from requirements
+  
+  // Address fields (required for signers to start sessions)
+  address1: text("address_1"), // Must be completed to start a signing session
+  address2: text("address_2"), // Must be completed to start a signing session
+  city: text("city"), // Must be completed to start a signing session
+  state: text("state"), // Must be completed to start a signing session
+  zipCode: text("zip_code"), // Must be completed to start a signing session
+  
+  // Legacy address field for backward compatibility
   address: text("address"),
+  
+  // Company association
+  companyId: integer("company_id").references(() => companies.id),
+  companyRole: text("company_role"), // 'manager', 'user', 'authorized_user'
+  
   // Notary-specific fields
   title: text("title"),
   commissionNumber: text("commission_number"),
   commissionExpiration: text("commission_expiration"),
-  state: text("state"),
-  county: text("county"),
+  county: text("county_parish"), // County/Parish from requirements
   disclosure: text("disclosure"),
-  signatureData: text("signature_data"), // Base64 encoded signature image
-  initialData: text("initial_data"), // Base64 encoded initial image
+  signatureData: text("signature_data"), // Base64 encoded signature image (GIF)
+  initialData: text("initial_data"), // Base64 encoded initial image (GIF)
+  notaryType: text("notary_type"), // 'contractor' or 'subscriber' for notary role
+  isActive: boolean("is_active").default(true), // For admin to activate/deactivate users
+  
+  // Account Balance and Financial Management for Subscribers/Contractors
+  accountBalance: integer("account_balance").default(0), // Balance in cents
+  minimumBalance: integer("minimum_balance").default(2500), // $25.00 minimum for subscribers in cents
+  availableBalance: integer("available_balance").default(0), // Available balance after pending transactions
+  pendingBalance: integer("pending_balance").default(0), // Contractor pending payments in cents
+  totalEarnings: integer("total_earnings").default(0), // Total lifetime earnings in cents
+  totalSpent: integer("total_spent").default(0), // Total lifetime spending in cents
+  stripeCustomerId: text("stripe_customer_id"), // Stripe customer ID for payment processing
+  
+  // Notary qualifications for random assignment
+  isNotarySigningAgent: boolean("is_notary_signing_agent").default(false), // NSA qualification
+  notarySigningAgentExpiration: text("nsa_expiration_date"), // NSA expiration date
+  isSpanishSpeaking: boolean("is_spanish_speaking").default(false), // Spanish speaking capability
+  foreignLanguages: text("foreign_languages").array(), // Array of languages: Spanish, Italian, French, Portuguese, German, Mandarin
+  maxConcurrentJobs: integer("max_concurrent_jobs").default(1), // How many jobs they can handle at once
+  
+  // Enhanced Notary Profile Fields (from requirements)
+  nameOnCommission: text("name_on_commission"),
+  commissionAddress1: text("commission_address_1"),
+  commissionAddress2: text("commission_address_2"),
+  commissionCity: text("commission_city"),
+  commissionState: text("commission_state"),
+  commissionZipCode: text("commission_zip_code"),
+  commissionCounty: text("commission_county"),
+  
+  // Document uploads and certifications (file paths)
+  notaryCommissionFile: text("notary_commission_file"), // File upload path
+  eoInsuranceCompany: text("eo_insurance_company"),
+  eoInsuranceAmount: integer("eo_insurance_amount"), // Amount in cents
+  eoInsuranceExpiration: text("eo_insurance_expiration"),
+  eoInsuranceFile: text("eo_insurance_file"), // File upload path
+  publicCertificateExpiration: text("public_certificate_expiration"),
+  publicCertificateFile: text("public_certificate_file"), // File upload path
+  publicCertificatePassword: text("public_certificate_password"),
+  bondCompanyName: text("bond_company_name"),
+  bondAmount: integer("bond_amount"), // Amount in cents
+  bondExpiration: text("bond_expiration"),
+  bondFile: text("bond_file"), // File upload path
+  signingAgentCertified: boolean("signing_agent_certified").default(false),
+  signingAgentExpirationDate: text("signing_agent_expiration_date"),
+  signingAgentFile: text("signing_agent_file"), // File upload path
+  
+  // ID Verification fields (populated by ID verification tool)
+  idType: text("id_type"), // 'drivers_license', 'passport', 'state_id_card'
+  idNumber: text("id_number"), // From ID verification tool
+  idExpirationDate: text("id_expiration_date"), // From ID verification tool
+  idIssueDate: text("id_issue_date"), // From ID verification tool
+  
+  // Digital Certificate
+  digitalCertificateFile: text("digital_certificate_file"), // PFX file path
+  digitalCertificateExpiration: text("digital_certificate_expiration"),
+  
+  // Admin approval system for notaries
+  approvalStatus: text("approval_status").default("pending"), // 'pending', 'approved', 'rejected', 'requires_update'
+  approvedBy: integer("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  lastProfileUpdate: timestamp("last_profile_update").defaultNow(),
+  approvalNotes: text("approval_notes"),
+  
+  // Notification and status fields
+  isNotificationsEnabled: boolean("is_notifications_enabled").default(true),
+  lastLoginAt: timestamp("last_login_at"),
+  
+  // MFA and Security
+  mfaEnabled: boolean("mfa_enabled").default(false),
+  mfaSecret: text("mfa_secret"),
+  googleId: text("google_id"), // For Google login capability
+  
+  // Timestamps
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Title companies table
+// Companies table - Enhanced for comprehensive company management  
+export const companies = pgTable("companies", {
+  id: serial("id").primaryKey(),
+  // Primary company information
+  companyName: text("company_name").notNull(),
+  
+  // Primary user (company manager) - created during initial registration
+  primaryUserName: text("primary_user_name").notNull(),
+  primaryUserEmail: text("primary_user_email").notNull(),
+  // Note: primaryUserPassword handled in users table
+  
+  // Company address
+  address1: text("address_1").notNull(),
+  address2: text("address_2"),
+  city: text("city").notNull(),
+  state: text("state").notNull(),
+  zipCode: text("zip_code").notNull(),
+  
+  // Billing address (optional - defaults to company address if not provided)
+  billingAddress1: text("billing_address_1"),
+  billingAddress2: text("billing_address_2"),
+  billingCity: text("billing_city"),
+  billingState: text("billing_state"),
+  billingZipCode: text("billing_zip_code"),
+  
+  // Payment method
+  paymentMethod: text("payment_method").notNull(), // 'invoiced', 'qualia', 'pre_pay'
+  
+  // Contact and operational information  
+  contactName: text("contact_name").notNull(),
+  email: text("email").notNull(),
+  phoneNumber: text("phone_number"),
+  
+  // Status and preferences
+  status: text("status").notNull().default("active"), // 'active', 'inactive', 'suspended'
+  preferredNotaryId: integer("preferred_notary_id").references(() => users.id), // Default notary for this company
+  
+  // Company manager (primary user who can manage the company)
+  companyManagerId: integer("company_manager_id").references(() => users.id),
+  
+  // Authorized users (array of user IDs who can place orders for the company)
+  authorizedUserIds: integer("authorized_user_ids").array().default([]),
+  
+  // Billing and subscription information
+  subscriptionPlan: text("subscription_plan"), // For future subscription features
+  billingCycle: text("billing_cycle"), // 'monthly', 'yearly'
+  nextBillingDate: timestamp("next_billing_date"),
+  
+  // Company settings
+  defaultClosingType: text("default_closing_type"),
+  allowUserSelfRegistration: boolean("allow_user_self_registration").default(false),
+  requiresApprovalForNewUsers: boolean("requires_approval_for_new_users").default(true),
+  
+  // Approval fields
+  approvedBy: integer("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  approvalNotes: text("approval_notes"),
+
+  // Audit fields
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: integer("created_by").references(() => users.id),
+  lastModifiedBy: integer("last_modified_by").references(() => users.id),
+});
+
+// Title companies table - Keep for backward compatibility, but mark as legacy
 export const titleCompanies = pgTable("title_companies", {
   id: serial("id").primaryKey(),
   companyName: text("company_name").notNull(),
@@ -36,7 +189,10 @@ export const titleCompanies = pgTable("title_companies", {
   email: text("email").notNull(),
   city: text("city").notNull(),
   status: text("status").notNull().default("active"), // 'active', 'inactive'
+  preferredNotaryId: integer("preferred_notary_id").references(() => users.id), // Default notary for this company
   createdAt: timestamp("created_at").defaultNow(),
+  // Migration flag to identify which companies have been migrated to the new system
+  migratedToCompaniesTable: boolean("migrated_to_companies_table").default(false),
 });
 
 // Jobs table
@@ -61,17 +217,49 @@ export const jobs = pgTable("jobs", {
   userId: integer("user_id").references(() => users.id),
   sessionToken: text("session_token"),
   scheduledAt: timestamp("scheduled_at"),
+  completedAt: timestamp("completed_at"),
+  completedBy: integer("completed_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
+  // Random notary assignment fields
+  requiresNSA: boolean("requires_nsa").default(false), // Job requires Notary Signing Agent
+  requiresSpanishSpeaking: boolean("requires_spanish_speaking").default(false), // Job requires Spanish speaking notary
+  assignmentAttempts: integer("assignment_attempts").default(0), // Track how many random assignments tried
+  rejectedNotaries: text("rejected_notaries").array().default([]), // IDs of notaries who rejected this job
+  isRandomAssignment: boolean("is_random_assignment").default(false), // Track if this job uses random assignment
+  notaryId: integer("notary_id").references(() => users.id), // Assigned notary ID (cleaner than selectedNotary string)
+  // Approval workflow fields
+  notaryApprovalStatus: text("notary_approval_status").default("pending_assignment").notNull(), // 'pending_assignment', 'assigned_pending_approval', 'approved', 'rejected', 'approved_with_conditions'
+  notaryApprovedAt: timestamp("notary_approved_at"),
+  notaryApprovalNotes: text("notary_approval_notes"),
+  notaryApprovalConditions: text("notary_approval_conditions"),
+  signerNotificationsSent: boolean("signer_notifications_sent").default(false),
+  signerNotificationsSentAt: timestamp("signer_notifications_sent_at"),
+});
+
+// Password reset tokens table
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  used: boolean("used").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // Signers table
 export const signers = pgTable("signers", {
   id: serial("id").primaryKey(),
   jobId: integer("job_id").references(() => jobs.id),
+  userId: integer("user_id").references(() => users.id), // Link to user account
   signerName: text("signer_name").notNull(),
   signerEmail: text("signer_email").notNull(),
   signerPhoneNumber: text("signer_phone_number").notNull(),
   signerRole: text("signer_role").notNull(), // 'borrower', 'co-borrower', 'seller', 'buyer'
+  invitationToken: text("invitation_token"),
+  invitationSentAt: timestamp("invitation_sent_at"),
+  accessType: text("access_type").default("registered"), // Now all signers get registered accounts
+  guestVerificationStatus: text("guest_verification_status").default("pending"), // 'pending', 'verified', 'failed'
+  signingStatus: text("signing_status").default("pending"), // 'pending', 'in_progress', 'completed', 'declined'
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -107,9 +295,93 @@ export const jobDocuments = pgTable("job_documents", {
 });
 
 // Relations
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ one, many }) => ({
   jobs: many(jobs),
   uploadedDocuments: many(jobDocuments),
+  notaryStamps: many(notaryStamps),
+  notaryAvailability: many(notaryAvailability),
+  notaryTimeSlots: many(notaryTimeSlots),
+  notaryWorkingHours: many(notaryWorkingHours),
+  calendarEvents: many(calendarEvents),
+  assignmentLogs: many(notaryAssignmentLog),
+  passwordResetTokens: many(passwordResetTokens),
+  signers: many(signers),
+  jobNotifications: many(jobNotifications),
+  approvalQueue: many(notaryApprovalQueue),
+  // Financial relationships
+  accountTransactions: many(accountTransactions),
+  contractorPayments: many(contractorPayments),
+  subscriberJobFeeBreakdowns: many(jobFeeBreakdowns, {
+    relationName: "SubscriberNotary"
+  }),
+  stripeWebhookEvents: many(stripeWebhookEvents),
+  // Company relationships
+  company: one(companies, {
+    fields: [users.companyId],
+    references: [companies.id]
+  }),
+  managedCompanies: many(companies, {
+    relationName: "CompanyManager"
+  }),
+  createdCompanies: many(companies, {
+    relationName: "CompanyCreator"
+  }),
+  modifiedCompanies: many(companies, {
+    relationName: "CompanyModifier"
+  }),
+  preferredByCompanies: many(companies, {
+    relationName: "PreferredNotary"
+  }),
+  // Legacy title companies
+  preferredByTitleCompanies: many(titleCompanies, {
+    relationName: "PreferredNotary"
+  }),
+  // Approval relationships
+  approvedUsers: many(users, {
+    relationName: "ApprovedBy"
+  }),
+  approver: one(users, {
+    fields: [users.approvedBy],
+    references: [users.id],
+    relationName: "ApprovedBy"
+  }),
+}));
+
+export const companiesRelations = relations(companies, ({ one, many }) => ({
+  preferredNotary: one(users, {
+    fields: [companies.preferredNotaryId],
+    references: [users.id],
+    relationName: "PreferredNotary"
+  }),
+  companyManager: one(users, {
+    fields: [companies.companyManagerId],
+    references: [users.id],
+    relationName: "CompanyManager"
+  }),
+  approvedBy: one(users, {
+    fields: [companies.approvedBy],
+    references: [users.id],
+    relationName: "CompanyApprover"
+  }),
+  createdBy: one(users, {
+    fields: [companies.createdBy],
+    references: [users.id],
+    relationName: "CompanyCreator"
+  }),
+  lastModifiedBy: one(users, {
+    fields: [companies.lastModifiedBy],
+    references: [users.id],
+    relationName: "CompanyModifier"
+  }),
+  users: many(users),
+}));
+
+export const titleCompaniesRelations = relations(titleCompanies, ({ one }) => ({
+  preferredNotary: one(users, {
+    fields: [titleCompanies.preferredNotaryId],
+    references: [users.id],
+    relationName: "PreferredNotary"
+  }),
 }));
 
 export const jobsRelations = relations(jobs, ({ one, many }) => ({
@@ -117,15 +389,27 @@ export const jobsRelations = relations(jobs, ({ one, many }) => ({
     fields: [jobs.userId],
     references: [users.id],
   }),
+  assignedNotary: one(users, {
+    fields: [jobs.notaryId],
+    references: [users.id],
+    relationName: "AssignedNotary"
+  }),
   signers: many(signers),
   participants: many(jobParticipants),
   documents: many(jobDocuments),
+  assignmentLogs: many(notaryAssignmentLog),
+  notifications: many(jobNotifications),
+  approvalQueue: many(notaryApprovalQueue),
 }));
 
 export const signersRelations = relations(signers, ({ one }) => ({
   job: one(jobs, {
     fields: [signers.jobId],
     references: [jobs.id],
+  }),
+  user: one(users, {
+    fields: [signers.userId],
+    references: [users.id],
   }),
 }));
 
@@ -266,6 +550,277 @@ export const systemSettings = pgTable("system_settings", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Notary Stamps table
+export const notaryStamps = pgTable("notary_stamps", {
+  id: serial("id").primaryKey(),
+  notaryId: integer("notary_id").references(() => users.id).notNull(),
+  stampType: text("stamp_type").notNull(), // 'notary', 'jurat', 'acknowledgment', 'custom'
+  stampData: text("stamp_data"), // Base64 encoded stamp image or SVG data
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const notaryStampsRelations = relations(notaryStamps, ({ one }) => ({
+  notary: one(users, {
+    fields: [notaryStamps.notaryId],
+    references: [users.id],
+  }),
+}));
+
+// Calendar/Availability System
+export const notaryAvailability = pgTable("notary_availability", {
+  id: serial("id").primaryKey(),
+  notaryId: integer("notary_id").references(() => users.id).notNull(),
+  date: text("date").notNull(), // YYYY-MM-DD format
+  startTime: text("start_time").notNull(), // HH:MM format
+  endTime: text("end_time").notNull(), // HH:MM format
+  isRecurring: boolean("is_recurring").default(false),
+  recurringPattern: text("recurring_pattern"), // 'daily', 'weekly', 'monthly'
+  recurringDays: text("recurring_days").array(), // ['monday', 'tuesday', etc.]
+  recurringEndDate: text("recurring_end_date"), // YYYY-MM-DD format
+  timezone: text("timezone").default("America/Los_Angeles"),
+  maxConcurrentJobs: integer("max_concurrent_jobs").default(1),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const notaryTimeSlots = pgTable("notary_time_slots", {
+  id: serial("id").primaryKey(),
+  notaryId: integer("notary_id").references(() => users.id).notNull(),
+  date: text("date").notNull(), // YYYY-MM-DD format
+  startTime: text("start_time").notNull(), // HH:MM format
+  endTime: text("end_time").notNull(), // HH:MM format
+  status: text("status").default("available").notNull(), // 'available', 'busy', 'blocked', 'booked'
+  jobId: integer("job_id").references(() => jobs.id), // Reference to job if booked
+  blockReason: text("block_reason"), // Reason for manual block (vacation, personal, etc.)
+  timezone: text("timezone").default("America/Los_Angeles"),
+  isManualBlock: boolean("is_manual_block").default(false), // true if manually blocked by notary
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const notaryWorkingHours = pgTable("notary_working_hours", {
+  id: serial("id").primaryKey(),
+  notaryId: integer("notary_id").references(() => users.id).notNull(),
+  dayOfWeek: integer("day_of_week").notNull(), // 0=Sunday, 1=Monday, etc.
+  startTime: text("start_time").notNull(), // HH:MM format
+  endTime: text("end_time").notNull(), // HH:MM format
+  isActive: boolean("is_active").default(true),
+  timezone: text("timezone").default("America/Los_Angeles"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Calendar events for notary personal tracking
+export const calendarEvents = pgTable("calendar_events", {
+  id: serial("id").primaryKey(),
+  notaryId: integer("notary_id").references(() => users.id).notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  startDateTime: timestamp("start_date_time").notNull(),
+  endDateTime: timestamp("end_date_time").notNull(),
+  location: text("location"),
+  eventType: text("event_type").default("personal").notNull(), // 'personal', 'job', 'appointment', 'vacation'
+  isAllDay: boolean("is_all_day").default(false),
+  jobId: integer("job_id").references(() => jobs.id), // If event is related to a job
+  reminders: jsonb("reminders"), // Array of reminder settings
+  isRecurring: boolean("is_recurring").default(false),
+  recurringPattern: jsonb("recurring_pattern"), // Recurring pattern details
+  googleEventId: text("google_event_id"), // For future Google Calendar integration
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Notary assignment log for tracking assignment history
+export const notaryAssignmentLog = pgTable("notary_assignment_log", {
+  id: serial("id").primaryKey(),
+  jobId: integer("job_id").references(() => jobs.id).notNull(),
+  notaryId: integer("notary_id").references(() => users.id).notNull(),
+  assignmentType: text("assignment_type").notNull(), // 'manual', 'random', 'preferred'
+  assignmentStatus: text("assignment_status").notNull(), // 'assigned', 'accepted', 'rejected', 'completed'
+  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
+  respondedAt: timestamp("responded_at"),
+  rejectionReason: text("rejection_reason"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Job notifications table for enhanced notification system
+export const jobNotifications = pgTable("job_notifications", {
+  id: serial("id").primaryKey(),
+  jobId: integer("job_id").references(() => jobs.id).notNull(),
+  recipientId: integer("recipient_id").references(() => users.id).notNull(),
+  recipientEmail: text("recipient_email").notNull(),
+  notificationType: text("notification_type").notNull(), // 'job_assignment', 'approval_request', 'approval_granted', 'signer_invite', 'job_reminder', 'job_completed'
+  status: text("status").default("pending").notNull(), // 'pending', 'sent', 'failed', 'opened', 'clicked'
+  subject: text("subject").notNull(),
+  message: text("message").notNull(),
+  metadata: jsonb("metadata"), // Additional notification data
+  sentAt: timestamp("sent_at"),
+  openedAt: timestamp("opened_at"),
+  clickedAt: timestamp("clicked_at"),
+  errorMessage: text("error_message"),
+  retryCount: integer("retry_count").default(0),
+  maxRetries: integer("max_retries").default(3),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Notary approval queue table for better tracking
+export const notaryApprovalQueue = pgTable("notary_approval_queue", {
+  id: serial("id").primaryKey(),
+  jobId: integer("job_id").references(() => jobs.id).notNull(),
+  notaryId: integer("notary_id").references(() => users.id).notNull(),
+  titleCompany: text("title_company").notNull(),
+  priority: text("priority").default("normal").notNull(), // 'low', 'normal', 'high', 'urgent'
+  deadline: timestamp("deadline"),
+  specialInstructions: text("special_instructions"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  uniqueJobNotary: unique("unique_job_notary").on(table.jobId, table.notaryId)
+}));
+
+// Fee Configuration Table - Define the fee structure from business requirements
+export const feeConfigurations = pgTable("fee_configurations", {
+  id: serial("id").primaryKey(),
+  feeType: text("fee_type").notNull(), // 'platform_base', 'additional_id', 'extended_time', 'title_closing_seller', 'title_closing_buyer', 'title_closing_buyer_loans', 'single_document', 'additional_document', 'additional_signer_single', 'additional_signer_title', 'witness_provided', 'witness_client_provided'
+  amount: integer("amount").notNull(), // Amount in cents
+  currency: text("currency").default("USD").notNull(),
+  description: text("description").notNull(),
+  isActive: boolean("is_active").default(true),
+  applicableToRole: text("applicable_to_role"), // 'subscriber', 'contractor', 'both'
+  metadata: jsonb("metadata"), // Additional configuration like duration limits, thresholds, etc.
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Account Transactions Table - Track all balance changes
+export const accountTransactions = pgTable("account_transactions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  transactionType: text("transaction_type").notNull(), // 'deposit', 'withdrawal', 'fee_deduction', 'contractor_payment', 'platform_fee', 'refund'
+  amount: integer("amount").notNull(), // Amount in cents (positive for credits, negative for debits)
+  balanceBefore: integer("balance_before").notNull(), // Account balance before transaction
+  balanceAfter: integer("balance_after").notNull(), // Account balance after transaction
+  description: text("description").notNull(),
+  jobId: integer("job_id").references(() => jobs.id), // Associated job if applicable
+  paymentMethod: text("payment_method"), // 'stripe', 'bank_transfer', 'manual'
+  stripeTransactionId: text("stripe_transaction_id"), // Stripe payment intent/transfer ID
+  status: text("status").default("pending").notNull(), // 'pending', 'completed', 'failed', 'cancelled'
+  metadata: jsonb("metadata"), // Additional transaction details
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Contractor Payments Table - Track the 55% payments and delayed payment status
+export const contractorPayments = pgTable("contractor_payments", {
+  id: serial("id").primaryKey(),
+  contractorId: integer("contractor_id").references(() => users.id).notNull(),
+  jobId: integer("job_id").references(() => jobs.id).notNull(),
+  totalJobFee: integer("total_job_fee").notNull(), // Total amount charged to client in cents
+  contractorPercentage: integer("contractor_percentage").default(55).notNull(), // Percentage contractor receives (default 55%)
+  contractorAmount: integer("contractor_amount").notNull(), // Amount contractor will receive (55% of total)
+  platformFee: integer("platform_fee").notNull(), // Platform fee (45% of total)
+  paymentStatus: text("payment_status").default("pending").notNull(), // 'pending', 'paid_by_client', 'available_for_payout', 'paid_to_contractor', 'failed'
+  clientPaymentDate: timestamp("client_payment_date"), // When client paid the invoice
+  availableForPayoutDate: timestamp("available_for_payout_date"), // When payment becomes available for contractor
+  paidToContractorDate: timestamp("paid_to_contractor_date"), // When contractor was actually paid
+  stripeTransferId: text("stripe_transfer_id"), // Stripe transfer ID for contractor payment
+  delayReason: text("delay_reason"), // Reason for payment delay (e.g., "Waiting for title company payment")
+  estimatedPayoutDate: timestamp("estimated_payout_date"), // Estimated date when payment will be available
+  invoiceNumber: text("invoice_number"), // Client invoice number reference
+  metadata: jsonb("metadata"), // Additional payment details
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Job Fee Breakdown Table - Track how fees are calculated for each job
+export const jobFeeBreakdowns = pgTable("job_fee_breakdowns", {
+  id: serial("id").primaryKey(),
+  jobId: integer("job_id").references(() => jobs.id).notNull(),
+  subscriberNotaryId: integer("subscriber_notary_id").references(() => users.id), // If subscriber created the job
+  basePlatformFee: integer("base_platform_fee").default(1000), // $10.00 in cents
+  idVerificationCount: integer("id_verification_count").default(1),
+  additionalIdFees: integer("additional_id_fees").default(0), // $2.00 per additional ID
+  sessionDuration: integer("session_duration"), // Actual session duration in minutes
+  extendedTimeFees: integer("extended_time_fees").default(0), // $5.00 per 10 minutes over 20
+  totalSubscriberFees: integer("total_subscriber_fees").notNull(), // Total fees charged to subscriber
+  witnessProvided: boolean("witness_provided").default(false),
+  witnessFee: integer("witness_fee").default(0), // $10.00 if provided, $5.00 if client provided
+  feeBreakdown: jsonb("fee_breakdown"), // Detailed breakdown of all fees
+  deductedAt: timestamp("deducted_at"), // When fees were deducted from subscriber account
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Stripe Webhook Events Table - Track Stripe events for audit
+export const stripeWebhookEvents = pgTable("stripe_webhook_events", {
+  id: serial("id").primaryKey(),
+  stripeEventId: text("stripe_event_id").notNull().unique(),
+  eventType: text("event_type").notNull(), // payment_intent.succeeded, transfer.created, etc.
+  processed: boolean("processed").default(false),
+  userId: integer("user_id").references(() => users.id), // Associated user if applicable
+  transactionId: integer("transaction_id").references(() => accountTransactions.id), // Associated transaction if applicable
+  eventData: jsonb("event_data").notNull(), // Full Stripe event data
+  processingError: text("processing_error"), // Error message if processing failed
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Financial Management Relations
+export const feeConfigurationsRelations = relations(feeConfigurations, ({ many }) => ({
+  jobFeeBreakdowns: many(jobFeeBreakdowns),
+}));
+
+export const accountTransactionsRelations = relations(accountTransactions, ({ one, many }) => ({
+  user: one(users, {
+    fields: [accountTransactions.userId],
+    references: [users.id],
+  }),
+  job: one(jobs, {
+    fields: [accountTransactions.jobId],
+    references: [jobs.id],
+  }),
+  stripeWebhookEvents: many(stripeWebhookEvents),
+}));
+
+export const contractorPaymentsRelations = relations(contractorPayments, ({ one }) => ({
+  contractor: one(users, {
+    fields: [contractorPayments.contractorId],
+    references: [users.id],
+  }),
+  job: one(jobs, {
+    fields: [contractorPayments.jobId],
+    references: [jobs.id],
+  }),
+}));
+
+export const jobFeeBreakdownsRelations = relations(jobFeeBreakdowns, ({ one }) => ({
+  job: one(jobs, {
+    fields: [jobFeeBreakdowns.jobId],
+    references: [jobs.id],
+  }),
+  subscriberNotary: one(users, {
+    fields: [jobFeeBreakdowns.subscriberNotaryId],
+    references: [users.id],
+    relationName: "SubscriberNotary"
+  }),
+}));
+
+export const stripeWebhookEventsRelations = relations(stripeWebhookEvents, ({ one }) => ({
+  user: one(users, {
+    fields: [stripeWebhookEvents.userId],
+    references: [users.id],
+  }),
+  transaction: one(accountTransactions, {
+    fields: [stripeWebhookEvents.transactionId],
+    references: [accountTransactions.id],
+  }),
+}));
+
 // Schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -273,6 +828,14 @@ export const insertUserSchema = createInsertSchema(users).omit({
 });
 
 export const selectUserSchema = createSelectSchema(users);
+
+export const insertCompanySchema = createInsertSchema(companies).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const selectCompanySchema = createSelectSchema(companies);
 
 export const insertTitleCompanySchema = createInsertSchema(titleCompanies).omit({
   id: true,
@@ -349,9 +912,119 @@ export const insertSystemSettingSchema = createInsertSchema(systemSettings).omit
 });
 export const selectSystemSettingSchema = createSelectSchema(systemSettings);
 
+export const insertNotaryStampSchema = createInsertSchema(notaryStamps).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const selectNotaryStampSchema = createSelectSchema(notaryStamps);
+
+// Calendar/Availability Relations
+export const notaryAvailabilityRelations = relations(notaryAvailability, ({ one }) => ({
+  notary: one(users, {
+    fields: [notaryAvailability.notaryId],
+    references: [users.id],
+  }),
+}));
+
+export const notaryTimeSlotsRelations = relations(notaryTimeSlots, ({ one }) => ({
+  notary: one(users, {
+    fields: [notaryTimeSlots.notaryId],
+    references: [users.id],
+  }),
+  job: one(jobs, {
+    fields: [notaryTimeSlots.jobId],
+    references: [jobs.id],
+  }),
+}));
+
+export const notaryWorkingHoursRelations = relations(notaryWorkingHours, ({ one }) => ({
+  notary: one(users, {
+    fields: [notaryWorkingHours.notaryId],
+    references: [users.id],
+  }),
+}));
+
+export const calendarEventsRelations = relations(calendarEvents, ({ one }) => ({
+  notary: one(users, {
+    fields: [calendarEvents.notaryId],
+    references: [users.id],
+  }),
+  job: one(jobs, {
+    fields: [calendarEvents.jobId],
+    references: [jobs.id],
+  }),
+}));
+
+// Calendar/Availability Schemas
+export const insertNotaryAvailabilitySchema = createInsertSchema(notaryAvailability).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const selectNotaryAvailabilitySchema = createSelectSchema(notaryAvailability);
+
+export const insertNotaryTimeSlotsSchema = createInsertSchema(notaryTimeSlots).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const selectNotaryTimeSlotsSchema = createSelectSchema(notaryTimeSlots);
+
+export const insertNotaryWorkingHoursSchema = createInsertSchema(notaryWorkingHours).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const selectNotaryWorkingHoursSchema = createSelectSchema(notaryWorkingHours);
+
+export const insertCalendarEventsSchema = createInsertSchema(calendarEvents).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const selectCalendarEventsSchema = createSelectSchema(calendarEvents);
+
+export const insertNotaryAssignmentLogSchema = createInsertSchema(notaryAssignmentLog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const selectNotaryAssignmentLogSchema = createSelectSchema(notaryAssignmentLog);
+
+export const insertJobNotificationSchema = createInsertSchema(jobNotifications).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const selectJobNotificationSchema = createSelectSchema(jobNotifications);
+
+export const insertNotaryApprovalQueueSchema = createInsertSchema(notaryApprovalQueue).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const selectNotaryApprovalQueueSchema = createSelectSchema(notaryApprovalQueue);
+
+export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTokens).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const selectPasswordResetTokenSchema = createSelectSchema(passwordResetTokens);
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+export type InsertCompany = z.infer<typeof insertCompanySchema>;
+export type Company = typeof companies.$inferSelect;
 export type InsertTitleCompany = z.infer<typeof insertTitleCompanySchema>;
 export type TitleCompany = typeof titleCompanies.$inferSelect;
 export type InsertJob = z.infer<typeof insertJobSchema>;
@@ -372,3 +1045,140 @@ export type InsertClosingType = z.infer<typeof insertClosingTypeSchema>;
 export type ClosingType = typeof closingTypes.$inferSelect;
 export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
 export type SystemSetting = typeof systemSettings.$inferSelect;
+export type InsertNotaryStamp = z.infer<typeof insertNotaryStampSchema>;
+export type NotaryStamp = typeof notaryStamps.$inferSelect;
+
+// Calendar/Availability Types
+export type InsertNotaryAvailability = z.infer<typeof insertNotaryAvailabilitySchema>;
+export type NotaryAvailability = typeof notaryAvailability.$inferSelect;
+export type InsertNotaryTimeSlots = z.infer<typeof insertNotaryTimeSlotsSchema>;
+export type NotaryTimeSlots = typeof notaryTimeSlots.$inferSelect;
+export type InsertNotaryWorkingHours = z.infer<typeof insertNotaryWorkingHoursSchema>;
+export type NotaryWorkingHours = typeof notaryWorkingHours.$inferSelect;
+export type InsertCalendarEvents = z.infer<typeof insertCalendarEventsSchema>;
+export type CalendarEvents = typeof calendarEvents.$inferSelect;
+export type InsertNotaryAssignmentLog = z.infer<typeof insertNotaryAssignmentLogSchema>;
+export type NotaryAssignmentLog = typeof notaryAssignmentLog.$inferSelect;
+export type InsertJobNotification = z.infer<typeof insertJobNotificationSchema>;
+export type JobNotification = typeof jobNotifications.$inferSelect;
+export type InsertNotaryApprovalQueue = z.infer<typeof insertNotaryApprovalQueueSchema>;
+export type NotaryApprovalQueue = typeof notaryApprovalQueue.$inferSelect;
+export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+
+export const notaryAssignmentLogRelations = relations(notaryAssignmentLog, ({ one }) => ({
+  job: one(jobs, {
+    fields: [notaryAssignmentLog.jobId],
+    references: [jobs.id],
+  }),
+  notary: one(users, {
+    fields: [notaryAssignmentLog.notaryId],
+    references: [users.id],
+  }),
+}));
+
+export const jobNotificationsRelations = relations(jobNotifications, ({ one }) => ({
+  job: one(jobs, {
+    fields: [jobNotifications.jobId],
+    references: [jobs.id],
+  }),
+  recipient: one(users, {
+    fields: [jobNotifications.recipientId],
+    references: [users.id],
+  }),
+}));
+
+export const notaryApprovalQueueRelations = relations(notaryApprovalQueue, ({ one }) => ({
+  job: one(jobs, {
+    fields: [notaryApprovalQueue.jobId],
+    references: [jobs.id],
+  }),
+  notary: one(users, {
+    fields: [notaryApprovalQueue.notaryId],
+    references: [users.id],
+  }),
+}));
+
+export const passwordResetTokensRelations = relations(passwordResetTokens, ({ one }) => ({
+  user: one(users, {
+    fields: [passwordResetTokens.userId],
+    references: [users.id],
+  }),
+}));
+
+// Financial Management Schemas
+export const insertFeeConfigurationSchema = createInsertSchema(feeConfigurations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const selectFeeConfigurationSchema = createSelectSchema(feeConfigurations);
+
+export const insertAccountTransactionSchema = createInsertSchema(accountTransactions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const selectAccountTransactionSchema = createSelectSchema(accountTransactions);
+
+export const insertContractorPaymentSchema = createInsertSchema(contractorPayments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const selectContractorPaymentSchema = createSelectSchema(contractorPayments);
+
+export const insertJobFeeBreakdownSchema = createInsertSchema(jobFeeBreakdowns).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const selectJobFeeBreakdownSchema = createSelectSchema(jobFeeBreakdowns);
+
+export const insertStripeWebhookEventSchema = createInsertSchema(stripeWebhookEvents).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const selectStripeWebhookEventSchema = createSelectSchema(stripeWebhookEvents);
+
+// Financial Management Types
+export type InsertFeeConfiguration = z.infer<typeof insertFeeConfigurationSchema>;
+export type FeeConfiguration = typeof feeConfigurations.$inferSelect;
+export type InsertAccountTransaction = z.infer<typeof insertAccountTransactionSchema>;
+export type AccountTransaction = typeof accountTransactions.$inferSelect;
+export type InsertContractorPayment = z.infer<typeof insertContractorPaymentSchema>;
+export type ContractorPayment = typeof contractorPayments.$inferSelect;
+export type InsertJobFeeBreakdown = z.infer<typeof insertJobFeeBreakdownSchema>;
+export type JobFeeBreakdown = typeof jobFeeBreakdowns.$inferSelect;
+export type InsertStripeWebhookEvent = z.infer<typeof insertStripeWebhookEventSchema>;
+export type StripeWebhookEvent = typeof stripeWebhookEvents.$inferSelect;
+
+// Participant Payments Table - Track payments to signers, witnesses, and observers
+export const participantPayments = pgTable("participant_payments", {
+  id: serial("id").primaryKey(),
+  participantId: integer("participant_id").references(() => users.id).notNull(),
+  jobId: integer("job_id").references(() => jobs.id).notNull(),
+  sessionId: integer("session_id"), // Reference to signing session if applicable
+  participantRole: text("participant_role").notNull(), // 'signer', 'witness', 'observer', 'primary_signer', 'co_signer'
+  baseCompensation: integer("base_compensation").notNull(), // Base amount for participation in cents
+  sessionDuration: integer("session_duration"), // Session duration in minutes
+  bonusAmount: integer("bonus_amount").default(0), // Additional compensation for complex/long sessions
+  totalAmount: integer("total_amount").notNull(), // Total compensation amount in cents
+  paymentStatus: text("payment_status").default("pending").notNull(), // 'pending', 'available', 'paid', 'failed'
+  sessionCompletedDate: timestamp("session_completed_date"), // When the signing session was completed
+  availableForPayoutDate: timestamp("available_for_payout_date"), // When payment becomes available (usually 24h after completion)
+  paidToParticipantDate: timestamp("paid_to_participant_date"), // When participant was actually paid
+  stripeTransferId: text("stripe_transfer_id"), // Stripe transfer ID for participant payment
+  paymentMethod: text("payment_method"), // 'stripe_transfer', 'ach', 'check', etc.
+  metadata: jsonb("metadata"), // Additional payment details
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type InsertParticipantPayment = typeof participantPayments.$inferInsert;
+export type SelectParticipantPayment = typeof participantPayments.$inferSelect;

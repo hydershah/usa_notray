@@ -44,7 +44,7 @@ async function resendInvitation() {
     
     // Send the email
     const emailResult = await transporter.sendMail({
-      from: '"USA Notary" <hello@xymax.co>',
+      from: `"USA Notary Services" <${process.env.SMTP_USER || "noreply@usanotaryservices.com"}>`,
       to: signer.signerEmail,
       subject: 'Document Signing Invitation - Action Required',
       html: `

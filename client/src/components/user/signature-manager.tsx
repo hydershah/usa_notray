@@ -8,7 +8,7 @@ import {
   Upload, Edit, Trash2, CheckCircle, AlertCircle,
   Calendar, User, FileSignature, Download, Eye, Plus
 } from "lucide-react";
-import { ProfessionalSignatureCapture } from "@/components/signing/professional-signature-capture";
+
 
 interface SavedSignature {
   id: string;
@@ -297,18 +297,21 @@ export function SignatureManager({ userId, onSignatureSelect }: SignatureManager
         </Card>
       )}
 
-      {/* Professional Signature Capture Modal */}
+      {/* TODO: Add new signature capture modal when implementing new signing system */}
       {showSignatureCapture && (
-        <ProfessionalSignatureCapture
-          isOpen={showSignatureCapture}
-          onClose={() => setShowSignatureCapture(false)}
-          onSave={handleSignatureSave}
-          participantName="Your Dashboard"
-          participantId={userId.toString()}
-          sessionId={`dashboard_${Date.now()}`}
-          signatureType={currentSignatureType}
-          required={false}
-        />
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Create {currentSignatureType}</h3>
+            <p className="text-gray-600 mb-4">
+              Signature capture functionality will be implemented with the new signing system.
+            </p>
+            <div className="flex gap-2">
+              <Button onClick={() => setShowSignatureCapture(false)} variant="outline">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

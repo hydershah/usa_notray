@@ -6,61 +6,70 @@ async function initializeEmailSettings() {
   console.log("🚀 Initializing email settings...\n");
 
   try {
-    // Email settings with Hostinger SSL configuration
+    // Professional email settings - secure configuration without hardcoded credentials
     const settings = [
       {
         key: 'smtp_host',
-        value: 'smtp.hostinger.com',
+        value: process.env.SMTP_HOST || 'smtp.hostinger.com',
         type: 'string',
         description: 'SMTP server hostname',
         isProtected: false
       },
       {
         key: 'smtp_port',
-        value: '465',
+        value: process.env.SMTP_PORT || '465',
         type: 'string',
         description: 'SMTP server port',
         isProtected: false
       },
       {
         key: 'smtp_user',
-        value: 'mail@digitalexpert.agency',
+        value: process.env.SMTP_USER || '',
         type: 'string',
         description: 'SMTP username/email',
         isProtected: false
       },
       {
         key: 'smtp_pass',
-        value: 'Coaches@1$',
+        value: process.env.SMTP_PASS || '',
         type: 'string',
         description: 'SMTP password',
-        isProtected: false
+        isProtected: true
       },
       {
         key: 'smtp_secure',
-        value: 'true',
+        value: process.env.SMTP_SECURE || 'true',
         type: 'string',
         description: 'Use SSL/TLS for SMTP',
         isProtected: false
       },
       {
         key: 'from_email',
-        value: 'mail@digitalexpert.agency',
+        value: process.env.FROM_EMAIL || process.env.SMTP_USER || 'noreply@usanotaryservices.com',
         type: 'string',
         description: 'From email address',
         isProtected: false
       },
       {
         key: 'from_name',
-        value: 'USA Notary System',
+        value: process.env.FROM_NAME || 'USA Notary Services',
         type: 'string',
         description: 'From display name',
         isProtected: false
       }
     ];
 
+    let updatedCount = 0;
+    let createdCount = 0;
+
     // Insert or update each setting
     for (const setting of settings) {
+      // Skip empty values to avoid overwriting existing settings
+      if (!setting.value && setting.key !== 'from_name') {
+        console.log(`⚠️ Skipping ${setting.key} - no value provided`);
+        continue;
+      }
+
       // Check if setting exists
       const existing = await db.select()
         .from(systemSettings)
@@ -79,21 +88,45 @@ async function initializeEmailSettings() {
           })
           .where(eq(systemSettings.key, setting.key));
         console.log(`✅ Updated setting: ${setting.key}`);
+        updatedCount++;
       } else {
         // Insert new setting
         await db.insert(systemSettings)
           .values(setting);
         console.log(`✅ Created setting: ${setting.key}`);
+        createdCount++;
       }
     }
 
-    console.log("\n✨ Email settings initialized successfully!");
+    console.log(`\n✨ Email settings initialization completed!`);
+    console.log(`   📝 Created: ${createdCount} settings`);
+    console.log(`   🔄 Updated: ${updatedCount} settings`);
+    
+    // Display configuration summary (without exposing credentials)
     console.log("\n📧 Configuration Summary:");
-    console.log("  Host: smtp.hostinger.com");
-    console.log("  Port: 465 (SSL)");
-    console.log("  User: mail@digitalexpert.agency");
-    console.log("  From: USA Notary System <mail@digitalexpert.agency>");
-    console.log("\n🔒 Settings can be managed from the admin dashboard: /email-settings");
+    const host = process.env.SMTP_HOST || 'smtp.hostinger.com';
+    const port = process.env.SMTP_PORT || '465';
+    const secure = (process.env.SMTP_PORT === '465' || process.env.SMTP_SECURE === 'true') ? 'SSL' : 'STARTTLS';
+    const fromName = process.env.FROM_NAME || 'USA Notary Services';
+    
+    console.log(`  📧 Host: ${host}`);
+    console.log(`  🔌 Port: ${port} (${secure})`);
+    console.log(`  👤 From: ${fromName}`);
+    console.log(`  🔑 User: ${process.env.SMTP_USER ? '✅ Configured' : '❌ Not set'}`);
+    console.log(`  🔒 Pass: ${process.env.SMTP_PASS ? '✅ Configured' : '❌ Not set'}`);
+    
+    console.log("\n🔧 Next Steps:");
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      console.log("  1. Set SMTP_USER and SMTP_PASS environment variables");
+      console.log("  2. Or configure via admin dashboard: /admin/email-settings");
+    } else {
+      console.log("  1. Test configuration via admin dashboard: /admin/email-settings");
+      console.log("  2. Send test emails to verify setup");
+    }
+    console.log("  3. Professional email templates are ready for:");
+    console.log("     • Signer invitations");
+    console.log("     • User registrations");
+    console.log("     • Password resets");
     
   } catch (error) {
     console.error("❌ Error initializing email settings:", error);

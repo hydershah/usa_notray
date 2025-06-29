@@ -1,6 +1,56 @@
-node_modules
-dist
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+/coverage
+
+# Production
+/build
+/dist
+
+# Environment variables
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Uploads
+uploads/
+
+# Local database files (use Supabase instead)
+*.db
+*.sqlite
+*.sqlite3
+database.db
+jobs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+dist
 server/public
 vite.config.ts.*
 *.tar.gz

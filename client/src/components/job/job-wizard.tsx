@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -29,7 +30,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
-import { ArrowLeft, ArrowRight, Plus, Trash2, Upload, FileText, CheckCircle, AlertCircle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Plus, Trash2, Upload, FileText, CheckCircle, AlertCircle, User, Clock } from 'lucide-react';
 import { type TitleCompany, type ClosingType, type User } from '@shared/schema';
 
 const jobSchema = z.object({
@@ -48,6 +49,8 @@ const jobSchema = z.object({
   selectedNotary: z.string().optional(),
   selectedDate: z.string().optional(),
   selectedTime: z.string().optional(),
+  requiresNSA: z.boolean().default(false),
+  requiresSpanishSpeaking: z.boolean().default(false),
 });
 
 const signerSchema = z.object({
@@ -61,7 +64,9 @@ const signerSchema = z.object({
 });
 
 type JobFormData = z.infer<typeof jobSchema>;
-type SignerFormData = z.infer<typeof signerSchema>;
+type SignerFormData = z.infer<typeof signerSchema> & {
+  existingUserId?: number;
+};
 
 interface DocumentFile {
   id: string;
@@ -85,17 +90,50 @@ export function JobWizard() {
   const [currentStep, setCurrentStep] = useState(1);
   const [signers, setSigners] = useState<SignerFormData[]>([]);
   const [signerErrors, setSignerErrors] = useState<Record<number, Record<string, string>>>({});
+  const [signerModes, setSignerModes] = useState<Record<number, 'existing' | 'new'>>({});
   const [documents, setDocuments] = useState<DocumentFile[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Random notary assignment states
+  const [availableTimeSlots, setAvailableTimeSlots] = useState<any[]>([]);
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<any>(null);
+  const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
+  const [preferredNotary, setPreferredNotary] = useState<any>(null);
+
+  // Get current user data to check permissions
+  const { data: currentUser } = useQuery({
+    queryKey: ['/api/auth/me'],
+  });
+
+  // Check if user has permission to create jobs
+  const canCreateJob = currentUser && (
+    currentUser.role === 'admin' ||
+    currentUser.role === 'title_company' ||
+    (currentUser.role === 'notary' && currentUser.notaryType === 'subscriber')
+  );
+
+  // Redirect if user doesn't have permission
+  React.useEffect(() => {
+    if (currentUser && !canCreateJob) {
+      toast({
+        variant: "destructive",
+        title: "Access Denied",
+        description: "You don't have permission to create jobs. Only administrators, title companies, and subscriber notaries can create jobs.",
+      });
+      setLocation('/jobs');
+    }
+  }, [currentUser, canCreateJob, setLocation, toast]);
+
   const form = useForm<JobFormData>({
     resolver: zodResolver(jobSchema),
     defaultValues: {
       kbaRequired: false,
       notaryOption: 'auto',
+      requiresNSA: false,
+      requiresSpanishSpeaking: false,
     },
   });
 
@@ -103,8 +141,34 @@ export function JobWizard() {
     queryKey: ['/api/companies'],
   });
 
-  const { data: notaries = [] } = useQuery<User[]>({
-    queryKey: ['/api/users/notaries'],
+  const { data: notaries = [] } = useQuery<any[]>({
+    queryKey: ['/api/notaries/available'],
+    queryFn: async () => {
+      const response = await fetch('/api/notaries/available', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch available notaries');
+      }
+      return response.json();
+    }
+  });
+
+  const { data: existingSigners = [] } = useQuery<any[]>({
+    queryKey: ['/api/users/signers'],
+    queryFn: async () => {
+      const response = await fetch('/api/users/signers', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch existing signers');
+      }
+      return response.json();
+    }
   });
 
   const { data: closingTypes = [] } = useQuery<ClosingType[]>({
@@ -143,6 +207,111 @@ export function JobWizard() {
       });
     },
   });
+
+  // Check for preferred notary when title company changes
+  const watchTitleCompany = form.watch('titleCompany');
+  React.useEffect(() => {
+    if (watchTitleCompany && form.watch('notaryOption') === 'auto') {
+      checkPreferredNotary(watchTitleCompany);
+    }
+  }, [watchTitleCompany]);
+
+  const checkPreferredNotary = async (companyName: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      const response = await fetch(`/api/title-companies/${encodeURIComponent(companyName)}/preferred-notary`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const company = await response.json();
+        if (company.preferredNotaryId && company.preferredNotaryActive) {
+          setPreferredNotary({
+            id: company.preferredNotaryId,
+            name: company.preferredNotaryName,
+            firstName: company.preferredNotaryFirstName,
+            lastName: company.preferredNotaryLastName,
+            email: company.preferredNotaryEmail
+          });
+        } else {
+          setPreferredNotary(null);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking preferred notary:', error);
+      setPreferredNotary(null);
+    }
+  };
+
+  // Load available time slots for random assignment
+  const loadAvailableTimeSlots = async (date: string) => {
+    if (form.watch('notaryOption') !== 'auto' || preferredNotary) return;
+
+    setIsLoadingAvailability(true);
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      const qualifications = {
+        requiresNSA: form.watch('requiresNSA'),
+        requiresSpanishSpeaking: form.watch('requiresSpanishSpeaking')
+      };
+
+      const queryParams = new URLSearchParams({
+        requiresNSA: qualifications.requiresNSA.toString(),
+        requiresSpanishSpeaking: qualifications.requiresSpanishSpeaking.toString()
+      });
+
+      const response = await fetch(`/api/random-notary/availability/${date}?${queryParams}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const availability = await response.json();
+        setAvailableTimeSlots(availability.timeSlots || []);
+      } else {
+        setAvailableTimeSlots([]);
+        toast({
+          variant: "destructive",
+          title: "No Availability",
+          description: "No qualified notaries are available for the selected requirements.",
+        });
+      }
+    } catch (error) {
+      console.error('Error loading availability:', error);
+      setAvailableTimeSlots([]);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to load notary availability. Please try again.",
+      });
+    } finally {
+      setIsLoadingAvailability(false);
+    }
+  };
+
+  // Handle date selection for random assignment
+  const handleDateSelection = (date: string) => {
+    form.setValue('selectedDate', date);
+    setSelectedTimeSlot(null);
+    if (date && form.watch('notaryOption') === 'auto' && !preferredNotary) {
+      loadAvailableTimeSlots(date);
+    }
+  };
+
+  // Handle time slot selection for random assignment  
+  const handleTimeSlotSelection = (timeSlot: any) => {
+    setSelectedTimeSlot(timeSlot);
+    form.setValue('selectedTime', timeSlot.startTime);
+  };
 
   const validateStep = async (step: number) => {
     switch (step) {
@@ -253,16 +422,65 @@ export function JobWizard() {
   };
 
   const handleAddSigner = () => {
+    const newIndex = signers.length;
     setSigners(prev => [...prev, {
       signerName: '',
       signerEmail: '',
       signerPhoneNumber: '',
       signerRole: '',
     }]);
+    setSignerModes(prev => ({ ...prev, [newIndex]: 'new' }));
   };
 
   const handleRemoveSigner = (index: number) => {
     setSigners(prev => prev.filter((_, i) => i !== index));
+    setSignerModes(prev => {
+      const newModes = { ...prev };
+      delete newModes[index];
+      // Reindex remaining modes
+      const reindexedModes: Record<number, 'existing' | 'new'> = {};
+      Object.entries(newModes).forEach(([key, value]) => {
+        const oldIndex = parseInt(key);
+        if (oldIndex > index) {
+          reindexedModes[oldIndex - 1] = value;
+        } else if (oldIndex < index) {
+          reindexedModes[oldIndex] = value;
+        }
+      });
+      return reindexedModes;
+    });
+  };
+
+  const handleSignerModeChange = (index: number, mode: 'existing' | 'new') => {
+    setSignerModes(prev => ({ ...prev, [index]: mode }));
+    if (mode === 'new') {
+      // Clear fields when switching to new mode
+      setSigners(prev => prev.map((signer, i) => 
+        i === index ? {
+          signerName: '',
+          signerEmail: '',
+          signerPhoneNumber: '',
+          signerRole: '',
+        } : signer
+      ));
+    }
+  };
+
+  const handleExistingSignerSelect = (index: number, userId: string) => {
+    const selectedUser = existingSigners.find(user => user.id.toString() === userId);
+    if (selectedUser) {
+      setSigners(prev => prev.map((signer, i) => 
+        i === index ? {
+          signerName: selectedUser.firstName && selectedUser.lastName 
+            ? `${selectedUser.firstName} ${selectedUser.lastName}` 
+            : selectedUser.username,
+          signerEmail: selectedUser.email,
+          signerPhoneNumber: selectedUser.phoneNumber || '',
+          signerRole: '',
+          existingUserId: selectedUser.id, // Store the user ID for reference
+        } : signer
+      ));
+    }
   };
 
   const handleSignerChange = (index: number, field: keyof SignerFormData, value: string) => {
@@ -445,764 +663,1045 @@ export function JobWizard() {
   };
 
   return (
-    <Card className="max-w-4xl mx-auto">
-      <CardHeader>
-        <CardTitle>Create New Job</CardTitle>
-        <div className="space-y-2">
-          <Progress value={progress} className="w-full" />
-          <div className="flex justify-between text-sm text-gray-600">
-            {steps.map((step) => (
-              <div key={step.id} className={`flex items-center ${
-                currentStep >= step.id ? 'text-primary font-medium' : ''
-              }`}>
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs mr-2 transition-all ${
-                  currentStep > step.id ? 'bg-green-500 text-white' : 
-                  currentStep === step.id ? 'bg-primary text-white ring-2 ring-primary ring-offset-2' : 
-                  'bg-gray-200'
-                }`}>
-                  {currentStep > step.id ? (
-                    <CheckCircle className="w-4 h-4" />
-                  ) : (
-                    step.id
-                  )}
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 py-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        {/* Enhanced Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">Create New Job</h1>
+          <p className="text-lg text-gray-600">Follow the steps below to create your notarization job</p>
+        </div>
+
+        {/* Enhanced Progress Indicator */}
+        <div className="mb-12">
+          <div className="flex items-center justify-between mb-6">
+            {steps.map((step, index) => (
+              <div key={step.id} className="flex items-center">
+                <div className="flex flex-col items-center">
+                  {/* Step Circle */}
+                  <div className={`relative w-12 h-12 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300 ${
+                    currentStep > step.id 
+                      ? 'bg-green-500 text-white shadow-lg' 
+                      : currentStep === step.id 
+                        ? 'bg-blue-600 text-white shadow-lg ring-4 ring-blue-200' 
+                        : 'bg-gray-200 text-gray-600'
+                  }`}>
+                    {currentStep > step.id ? (
+                      <CheckCircle className="w-6 h-6" />
+                    ) : (
+                      <span>{step.id}</span>
+                    )}
+                    
+                    {/* Pulse animation for current step */}
+                    {currentStep === step.id && (
+                      <div className="absolute inset-0 rounded-full bg-blue-600 animate-ping opacity-25"></div>
+                    )}
+                  </div>
+                  
+                  {/* Step Labels */}
+                  <div className="mt-3 text-center">
+                    <div className={`text-sm font-medium transition-colors ${
+                      currentStep >= step.id ? 'text-blue-600' : 'text-gray-500'
+                    }`}>
+                      {step.title}
+                    </div>
+                    <div className={`text-xs mt-1 ${
+                      currentStep >= step.id ? 'text-gray-600' : 'text-gray-400'
+                    }`}>
+                      {step.description}
+                    </div>
+                  </div>
                 </div>
-                <span className="hidden sm:inline">{step.title}</span>
+                
+                {/* Connector Line */}
+                {index < steps.length - 1 && (
+                  <div className={`flex-1 h-0.5 mx-4 transition-colors ${
+                    currentStep > step.id ? 'bg-green-500' : 'bg-gray-200'
+                  }`}></div>
+                )}
               </div>
             ))}
           </div>
+          
+          {/* Progress Bar */}
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div 
+              className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${progress}%` }}
+            ></div>
+          </div>
         </div>
-      </CardHeader>
 
-      <CardContent>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-            
-            {/* Step 1: Client Information */}
-            {currentStep === 1 && (
-              <div className="space-y-6">
-                <h3 className="text-lg font-medium">Client Information</h3>
+        {/* Main Content Card */}
+        <Card className="shadow-2xl border-0 bg-white/80 backdrop-blur-sm">
+          <CardContent className="p-8 md:p-12">
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <FormField
-                    control={form.control}
-                    name="titleCompany"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Title Company</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select title company" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {titleCompanies.map((company: any) => (
-                              <SelectItem key={company.id} value={company.companyName}>
-                                {company.companyName}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                {/* Step 1: Client Information */}
+                {currentStep === 1 && (
+                  <div className="space-y-8">
+                    <div className="text-center">
+                      <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <FileText className="w-8 h-8 text-blue-600" />
+                      </div>
+                      <h2 className="text-2xl font-bold text-gray-900 mb-2">Client Information</h2>
+                      <p className="text-gray-600">Let's start with the basic job details</p>
+                    </div>
+                    
+                    {/* Primary Information */}
+                    <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                        <div className="w-2 h-6 bg-blue-500 rounded-full mr-3"></div>
+                        Primary Details
+                      </h3>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <FormField
+                          control={form.control}
+                          name="titleCompany"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-sm font-medium text-gray-700">Title Company *</FormLabel>
+                              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <FormControl>
+                                  <SelectTrigger className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500">
+                                    <SelectValue placeholder="Select title company" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {titleCompanies.map((company: any) => (
+                                    <SelectItem key={company.id} value={company.companyName}>
+                                      {company.companyName}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
-                  <FormField
-                    control={form.control}
-                    name="closingType"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Closing Type</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select closing type" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {closingTypes.map((closingType: any) => (
-                              <SelectItem key={closingType.id} value={closingType.name}>
-                                {closingType.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                        <FormField
+                          control={form.control}
+                          name="closingType"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-sm font-medium text-gray-700">Closing Type *</FormLabel>
+                              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <FormControl>
+                                  <SelectTrigger className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500">
+                                    <SelectValue placeholder="Select closing type" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {closingTypes.map((closingType: any) => (
+                                    <SelectItem key={closingType.id} value={closingType.name}>
+                                      {closingType.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <FormField
-                    control={form.control}
-                    name="internalReference"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Internal Reference</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter internal reference" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                        <FormField
+                          control={form.control}
+                          name="internalReference"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-sm font-medium text-gray-700">Internal Reference</FormLabel>
+                              <FormControl>
+                                <Input 
+                                  placeholder="Enter internal reference" 
+                                  className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                                  {...field} 
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
-                  <FormField
-                    control={form.control}
-                    name="kbaRequired"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>KBA Required</FormLabel>
-                        <FormControl>
-                          <RadioGroup
-                            onValueChange={(value) => field.onChange(value === 'true')}
-                            defaultValue={field.value ? 'true' : 'false'}
-                            className="flex items-center space-x-6"
-                          >
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="true" id="kba-yes" />
-                              <Label htmlFor="kba-yes">Yes</Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="false" id="kba-no" />
-                              <Label htmlFor="kba-no">No</Label>
-                            </div>
-                          </RadioGroup>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                        <FormField
+                          control={form.control}
+                          name="kbaRequired"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-sm font-medium text-gray-700">KBA Required</FormLabel>
+                              <FormControl>
+                                <RadioGroup
+                                  onValueChange={(value) => field.onChange(value === 'true')}
+                                  defaultValue={field.value ? 'true' : 'false'}
+                                  className="flex items-center space-x-8 mt-2"
+                                >
+                                  <div className="flex items-center space-x-2">
+                                    <RadioGroupItem value="true" id="kba-yes" />
+                                    <Label htmlFor="kba-yes" className="text-sm font-medium">Yes</Label>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    <RadioGroupItem value="false" id="kba-no" />
+                                    <Label htmlFor="kba-no" className="text-sm font-medium">No</Label>
+                                  </div>
+                                </RadioGroup>
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
 
-                <div className="space-y-4">
-                  <h4 className="font-medium">Property Address</h4>
-                  
-                  <FormField
-                    control={form.control}
-                    name="propertyAddressOne"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Address Line 1</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter street address" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                    {/* Property Address */}
+                    <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                        <div className="w-2 h-6 bg-green-500 rounded-full mr-3"></div>
+                        Property Address
+                      </h3>
+                      
+                      <div className="space-y-6">
+                        <FormField
+                          control={form.control}
+                          name="propertyAddressOne"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-sm font-medium text-gray-700">Address Line 1 *</FormLabel>
+                              <FormControl>
+                                <Input 
+                                  placeholder="Enter street address" 
+                                  className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                                  {...field} 
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
-                  <FormField
-                    control={form.control}
-                    name="propertyAddressTwo"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Address Line 2 (Optional)</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Apt, suite, etc." {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                        <FormField
+                          control={form.control}
+                          name="propertyAddressTwo"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-sm font-medium text-gray-700">Address Line 2</FormLabel>
+                              <FormControl>
+                                <Input 
+                                  placeholder="Apt, suite, etc. (optional)" 
+                                  className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                                  {...field} 
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="propertyCity"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>City</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Enter city" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          <FormField
+                            control={form.control}
+                            name="propertyCity"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="text-sm font-medium text-gray-700">City *</FormLabel>
+                                <FormControl>
+                                  <Input 
+                                    placeholder="Enter city" 
+                                    className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                                    {...field} 
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
 
-                    <FormField
-                      control={form.control}
-                      name="propertyState"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>State</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select state" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="AL">Alabama</SelectItem>
-                              <SelectItem value="AK">Alaska</SelectItem>
-                              <SelectItem value="AZ">Arizona</SelectItem>
-                              <SelectItem value="AR">Arkansas</SelectItem>
-                              <SelectItem value="CA">California</SelectItem>
-                              <SelectItem value="CO">Colorado</SelectItem>
-                              <SelectItem value="CT">Connecticut</SelectItem>
-                              <SelectItem value="DE">Delaware</SelectItem>
-                              <SelectItem value="FL">Florida</SelectItem>
-                              <SelectItem value="GA">Georgia</SelectItem>
-                              <SelectItem value="HI">Hawaii</SelectItem>
-                              <SelectItem value="ID">Idaho</SelectItem>
-                              <SelectItem value="IL">Illinois</SelectItem>
-                              <SelectItem value="IN">Indiana</SelectItem>
-                              <SelectItem value="IA">Iowa</SelectItem>
-                              <SelectItem value="KS">Kansas</SelectItem>
-                              <SelectItem value="KY">Kentucky</SelectItem>
-                              <SelectItem value="LA">Louisiana</SelectItem>
-                              <SelectItem value="ME">Maine</SelectItem>
-                              <SelectItem value="MD">Maryland</SelectItem>
-                              <SelectItem value="MA">Massachusetts</SelectItem>
-                              <SelectItem value="MI">Michigan</SelectItem>
-                              <SelectItem value="MN">Minnesota</SelectItem>
-                              <SelectItem value="MS">Mississippi</SelectItem>
-                              <SelectItem value="MO">Missouri</SelectItem>
-                              <SelectItem value="MT">Montana</SelectItem>
-                              <SelectItem value="NE">Nebraska</SelectItem>
-                              <SelectItem value="NV">Nevada</SelectItem>
-                              <SelectItem value="NH">New Hampshire</SelectItem>
-                              <SelectItem value="NJ">New Jersey</SelectItem>
-                              <SelectItem value="NM">New Mexico</SelectItem>
-                              <SelectItem value="NY">New York</SelectItem>
-                              <SelectItem value="NC">North Carolina</SelectItem>
-                              <SelectItem value="ND">North Dakota</SelectItem>
-                              <SelectItem value="OH">Ohio</SelectItem>
-                              <SelectItem value="OK">Oklahoma</SelectItem>
-                              <SelectItem value="OR">Oregon</SelectItem>
-                              <SelectItem value="PA">Pennsylvania</SelectItem>
-                              <SelectItem value="RI">Rhode Island</SelectItem>
-                              <SelectItem value="SC">South Carolina</SelectItem>
-                              <SelectItem value="SD">South Dakota</SelectItem>
-                              <SelectItem value="TN">Tennessee</SelectItem>
-                              <SelectItem value="TX">Texas</SelectItem>
-                              <SelectItem value="UT">Utah</SelectItem>
-                              <SelectItem value="VT">Vermont</SelectItem>
-                              <SelectItem value="VA">Virginia</SelectItem>
-                              <SelectItem value="WA">Washington</SelectItem>
-                              <SelectItem value="WV">West Virginia</SelectItem>
-                              <SelectItem value="WI">Wisconsin</SelectItem>
-                              <SelectItem value="WY">Wyoming</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                          <FormField
+                            control={form.control}
+                            name="propertyState"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="text-sm font-medium text-gray-700">State *</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                  <FormControl>
+                                    <SelectTrigger className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500">
+                                      <SelectValue placeholder="Select state" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="AL">Alabama</SelectItem>
+                                    <SelectItem value="AK">Alaska</SelectItem>
+                                    <SelectItem value="AZ">Arizona</SelectItem>
+                                    <SelectItem value="AR">Arkansas</SelectItem>
+                                    <SelectItem value="CA">California</SelectItem>
+                                    <SelectItem value="CO">Colorado</SelectItem>
+                                    <SelectItem value="CT">Connecticut</SelectItem>
+                                    <SelectItem value="DE">Delaware</SelectItem>
+                                    <SelectItem value="FL">Florida</SelectItem>
+                                    <SelectItem value="GA">Georgia</SelectItem>
+                                    <SelectItem value="HI">Hawaii</SelectItem>
+                                    <SelectItem value="ID">Idaho</SelectItem>
+                                    <SelectItem value="IL">Illinois</SelectItem>
+                                    <SelectItem value="IN">Indiana</SelectItem>
+                                    <SelectItem value="IA">Iowa</SelectItem>
+                                    <SelectItem value="KS">Kansas</SelectItem>
+                                    <SelectItem value="KY">Kentucky</SelectItem>
+                                    <SelectItem value="LA">Louisiana</SelectItem>
+                                    <SelectItem value="ME">Maine</SelectItem>
+                                    <SelectItem value="MD">Maryland</SelectItem>
+                                    <SelectItem value="MA">Massachusetts</SelectItem>
+                                    <SelectItem value="MI">Michigan</SelectItem>
+                                    <SelectItem value="MN">Minnesota</SelectItem>
+                                    <SelectItem value="MS">Mississippi</SelectItem>
+                                    <SelectItem value="MO">Missouri</SelectItem>
+                                    <SelectItem value="MT">Montana</SelectItem>
+                                    <SelectItem value="NE">Nebraska</SelectItem>
+                                    <SelectItem value="NV">Nevada</SelectItem>
+                                    <SelectItem value="NH">New Hampshire</SelectItem>
+                                    <SelectItem value="NJ">New Jersey</SelectItem>
+                                    <SelectItem value="NM">New Mexico</SelectItem>
+                                    <SelectItem value="NY">New York</SelectItem>
+                                    <SelectItem value="NC">North Carolina</SelectItem>
+                                    <SelectItem value="ND">North Dakota</SelectItem>
+                                    <SelectItem value="OH">Ohio</SelectItem>
+                                    <SelectItem value="OK">Oklahoma</SelectItem>
+                                    <SelectItem value="OR">Oregon</SelectItem>
+                                    <SelectItem value="PA">Pennsylvania</SelectItem>
+                                    <SelectItem value="RI">Rhode Island</SelectItem>
+                                    <SelectItem value="SC">South Carolina</SelectItem>
+                                    <SelectItem value="SD">South Dakota</SelectItem>
+                                    <SelectItem value="TN">Tennessee</SelectItem>
+                                    <SelectItem value="TX">Texas</SelectItem>
+                                    <SelectItem value="UT">Utah</SelectItem>
+                                    <SelectItem value="VT">Vermont</SelectItem>
+                                    <SelectItem value="VA">Virginia</SelectItem>
+                                    <SelectItem value="WA">Washington</SelectItem>
+                                    <SelectItem value="WV">West Virginia</SelectItem>
+                                    <SelectItem value="WI">Wisconsin</SelectItem>
+                                    <SelectItem value="WY">Wyoming</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
 
-                    <FormField
-                      control={form.control}
-                      name="propertyZipCode"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>ZIP Code</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Enter ZIP code" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Step 2: Signers */}
-            {currentStep === 2 && (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-medium">Signer Information</h3>
-                  <Button type="button" onClick={handleAddSigner} variant="outline">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Signer
-                  </Button>
-                </div>
-
-                {signers.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    No signers added yet. Click "Add Signer" to get started.
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {signers.map((signer, index) => (
-                      <Card key={index} className="p-4">
-                        <div className="flex items-center justify-between mb-4">
-                          <h4 className="font-medium">Signer {index + 1}</h4>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRemoveSigner(index)}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <FormField
+                            control={form.control}
+                            name="propertyZipCode"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="text-sm font-medium text-gray-700">ZIP Code *</FormLabel>
+                                <FormControl>
+                                  <Input 
+                                    placeholder="Enter ZIP code" 
+                                    className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                                    {...field} 
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
                         </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <Label className={signerErrors[index]?.signerName ? 'text-destructive' : ''}>
-                              Signer Name *
-                            </Label>
-                            <Input
-                              value={signer.signerName}
-                              onChange={(e) => handleSignerChange(index, 'signerName', e.target.value)}
-                              placeholder="Enter signer name"
-                              className={signerErrors[index]?.signerName ? 'border-destructive' : ''}
-                              onBlur={() => validateSigner(signer, index)}
-                            />
-                            {signerErrors[index]?.signerName && (
-                              <p className="text-sm text-destructive mt-1">{signerErrors[index].signerName}</p>
-                            )}
-                          </div>
-                          
-                          <div>
-                            <Label className={signerErrors[index]?.signerEmail ? 'text-destructive' : ''}>
-                              Email *
-                            </Label>
-                            <Input
-                              type="email"
-                              value={signer.signerEmail}
-                              onChange={(e) => handleSignerChange(index, 'signerEmail', e.target.value)}
-                              placeholder="Enter email"
-                              className={signerErrors[index]?.signerEmail ? 'border-destructive' : ''}
-                              onBlur={() => validateSigner(signer, index)}
-                            />
-                            {signerErrors[index]?.signerEmail && (
-                              <p className="text-sm text-destructive mt-1">{signerErrors[index].signerEmail}</p>
-                            )}
-                          </div>
-                          
-                          <div>
-                            <Label className={signerErrors[index]?.signerPhoneNumber ? 'text-destructive' : ''}>
-                              Phone Number *
-                            </Label>
-                            <Input
-                              value={signer.signerPhoneNumber}
-                              onChange={(e) => handleSignerChange(index, 'signerPhoneNumber', e.target.value)}
-                              placeholder="(123) 456-7890"
-                              className={signerErrors[index]?.signerPhoneNumber ? 'border-destructive' : ''}
-                              onBlur={() => validateSigner(signer, index)}
-                            />
-                            {signerErrors[index]?.signerPhoneNumber && (
-                              <p className="text-sm text-destructive mt-1">{signerErrors[index].signerPhoneNumber}</p>
-                            )}
-                          </div>
-                          
-                          <div>
-                            <Label className={signerErrors[index]?.signerRole ? 'text-destructive' : ''}>
-                              Role *
-                            </Label>
-                            <Select
-                              value={signer.signerRole}
-                              onValueChange={(value) => {
-                                handleSignerChange(index, 'signerRole', value);
-                                validateSigner({ ...signer, signerRole: value }, index);
-                              }}
-                            >
-                              <SelectTrigger className={signerErrors[index]?.signerRole ? 'border-destructive' : ''}>
-                                <SelectValue placeholder="Select role" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="borrower">Borrower</SelectItem>
-                                <SelectItem value="co-borrower">Co-Borrower</SelectItem>
-                                <SelectItem value="seller">Seller</SelectItem>
-                                <SelectItem value="buyer">Buyer</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            {signerErrors[index]?.signerRole && (
-                              <p className="text-sm text-destructive mt-1">{signerErrors[index].signerRole}</p>
-                            )}
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
+                      </div>
+                    </div>
                   </div>
                 )}
-              </div>
-            )}
 
-            {/* Step 3: Schedule */}
-            {currentStep === 3 && (
-              <div className="space-y-6">
-                <h3 className="text-lg font-medium">Schedule Appointment</h3>
-                
-                <FormField
-                  control={form.control}
-                  name="notaryOption"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Notary Option</FormLabel>
-                      <FormControl>
-                        <RadioGroup
-                          onValueChange={field.onChange}
-                          defaultValue={field.value}
-                          className="grid grid-cols-1 md:grid-cols-2 gap-4"
+                {/* Step 2: Signers */}
+                {currentStep === 2 && (
+                  <div className="space-y-8">
+                    <div className="text-center">
+                      <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <User className="w-8 h-8 text-green-600" />
+                      </div>
+                      <h2 className="text-2xl font-bold text-gray-900 mb-2">Signer Information</h2>
+                      <p className="text-gray-600">Add all the signers who will participate in this notarization</p>
+                    </div>
+
+                    <div className="flex items-center justify-between bg-blue-50 rounded-lg p-4">
+                      <div className="flex items-center">
+                        <AlertCircle className="w-5 h-5 text-blue-600 mr-2" />
+                        <span className="text-sm font-medium text-blue-800">
+                          {signers.length} signer{signers.length !== 1 ? 's' : ''} added
+                        </span>
+                      </div>
+                      <Button 
+                        type="button" 
+                        onClick={handleAddSigner} 
+                        className="bg-blue-600 hover:bg-blue-700 text-white shadow-md"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Signer
+                      </Button>
+                    </div>
+
+                    {signers.length === 0 ? (
+                      <div className="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                        <User className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">No signers added yet</h3>
+                        <p className="text-gray-600 mb-6">Click "Add Signer" to get started</p>
+                        <Button 
+                          type="button" 
+                          onClick={handleAddSigner} 
+                          className="bg-blue-600 hover:bg-blue-700 text-white"
                         >
-                          <div className="flex items-center space-x-2 p-4 border rounded-lg">
-                            <RadioGroupItem value="assign" id="assign" />
-                            <div>
-                              <Label htmlFor="assign" className="font-medium">Assign Specific Notary</Label>
-                              <p className="text-sm text-gray-600">Choose from available notaries</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-2 p-4 border rounded-lg">
-                            <RadioGroupItem value="auto" id="auto" />
-                            <div>
-                              <Label htmlFor="auto" className="font-medium">Auto Assignment</Label>
-                              <p className="text-sm text-gray-600">System will assign best match</p>
-                            </div>
-                          </div>
-                        </RadioGroup>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {form.watch('notaryOption') === 'assign' && (
-                  <FormField
-                    control={form.control}
-                    name="selectedNotary"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Select Notary</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Choose a notary" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {notaries.map((notary: any) => (
-                              <SelectItem key={notary.id} value={notary.id.toString()}>
-                                {notary.username}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <FormField
-                    control={form.control}
-                    name="selectedDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Appointment Date</FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="selectedTime"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Appointment Time</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select time" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="09:00">9:00 AM</SelectItem>
-                            <SelectItem value="10:00">10:00 AM</SelectItem>
-                            <SelectItem value="11:00">11:00 AM</SelectItem>
-                            <SelectItem value="14:00">2:00 PM</SelectItem>
-                            <SelectItem value="15:00">3:00 PM</SelectItem>
-                            <SelectItem value="16:00">4:00 PM</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Step 4: Documents */}
-            {currentStep === 4 && (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-medium">Upload Documents</h3>
-                  <div className="text-sm text-gray-600">
-                    {documents.length} document{documents.length !== 1 ? 's' : ''} uploaded
-                  </div>
-                </div>
-                
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-                  <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <div className="mb-4">
-                    <p className="text-lg font-medium text-gray-900">Upload Multiple Documents</p>
-                    <p className="text-sm text-gray-600">Drag and drop files here, or click to browse</p>
-                  </div>
-                  <input
-                    type="file"
-                    accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                    multiple
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    id="file-upload"
-                  />
-                  <Button
-                    type="button"
-                    onClick={() => document.getElementById('file-upload')?.click()}
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Documents
-                  </Button>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Supported formats: PDF, DOC, DOCX (Max 10MB each) • Select multiple files
-                  </p>
-                </div>
-
-                {documents.length > 0 ? (
-                  <div className="space-y-4">
-                    <div className="text-sm font-medium text-gray-700 mb-2">
-                      Uploaded Documents ({documents.length})
-                    </div>
-                    {documents.map((doc) => (
-                      <Card key={doc.id} className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-3">
-                            <FileText className="h-8 w-8 text-blue-500" />
-                            <div>
-                              <p className="text-sm font-medium text-gray-900">{doc.name}</p>
-                              <div className="flex items-center space-x-2 text-xs text-gray-500">
-                                <span>{formatFileSize(doc.size)}</span>
-                                <span>•</span>
-                                <span className={doc.isRequired ? 'text-green-600' : 'text-gray-500'}>
-                                  {doc.isRequired ? 'Required' : 'Optional'}
-                                </span>
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add Your First Signer
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        {signers.map((signer, index) => (
+                          <Card key={index} className="border-2 border-gray-100 hover:border-blue-200 transition-colors">
+                            <CardHeader className="bg-gradient-to-r from-gray-50 to-gray-100 border-b">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center">
+                                  <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-sm mr-3">
+                                    {index + 1}
+                                  </div>
+                                  <div>
+                                    <h4 className="font-semibold text-gray-900">
+                                      {signer.signerName || `Signer ${index + 1}`}
+                                    </h4>
+                                    <p className="text-sm text-gray-600">
+                                      {signer.signerRole || 'Role not specified'}
+                                    </p>
+                                  </div>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRemoveSigner(index)}
+                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
                               </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleToggleRequired(doc.id)}
-                              title={doc.isRequired ? 'Mark as optional' : 'Mark as required'}
-                            >
-                              {doc.isRequired ? (
-                                <CheckCircle className="h-4 w-4 text-green-600" />
-                              ) : (
-                                <FileText className="h-4 w-4 text-gray-400" />
+                            </CardHeader>
+                            
+                            <CardContent className="p-6">
+                              {/* Mode Selection */}
+                              <div className="mb-6">
+                                <Label className="text-sm font-medium text-gray-700 mb-3 block">Signer Type</Label>
+                                <RadioGroup
+                                  value={signerModes[index] || 'new'}
+                                  onValueChange={(value: 'existing' | 'new') => handleSignerModeChange(index, value)}
+                                  className="grid grid-cols-2 gap-4"
+                                >
+                                  <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                                    <RadioGroupItem value="existing" id={`existing-${index}`} />
+                                    <div>
+                                      <Label htmlFor={`existing-${index}`} className="font-medium text-gray-900">Existing User</Label>
+                                      <p className="text-xs text-gray-600">Select from registered users</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                                    <RadioGroupItem value="new" id={`new-${index}`} />
+                                    <div>
+                                      <Label htmlFor={`new-${index}`} className="font-medium text-gray-900">New Signer</Label>
+                                      <p className="text-xs text-gray-600">Add new person details</p>
+                                    </div>
+                                  </div>
+                                </RadioGroup>
+                              </div>
+
+                              {/* Existing User Selection */}
+                              {signerModes[index] === 'existing' && (
+                                <div className="mb-6">
+                                  <Label className="text-sm font-medium text-gray-700">Select User</Label>
+                                  <Select onValueChange={(value) => handleExistingSignerSelect(index, value)}>
+                                    <SelectTrigger className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 mt-2">
+                                      <SelectValue placeholder="Choose an existing user" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {existingSigners.map((user: any) => (
+                                        <SelectItem key={user.id} value={user.id.toString()}>
+                                          <div className="flex items-center justify-between w-full">
+                                            <span className="font-medium">
+                                              {user.firstName && user.lastName 
+                                                ? `${user.firstName} ${user.lastName}` 
+                                                : user.username}
+                                            </span>
+                                            <span className="text-xs text-gray-500 ml-2">
+                                              {user.email}
+                                            </span>
+                                          </div>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
                               )}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleRemoveDocument(doc.id)}
-                              title="Remove document"
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                    <p>No documents uploaded yet</p>
-                    <p className="text-sm">Upload documents for this notarization job</p>
-                  </div>
-                )}
-              </div>
-            )}
 
-            {/* Step 5: Review */}
-            {currentStep === 5 && (
-              <div className="space-y-6">
-                <h3 className="text-lg font-medium">Review Job Details</h3>
-                <p className="text-sm text-gray-600">Please review all the information before submitting</p>
-                
-                {/* Client Information Summary */}
-                <Card className="p-4">
-                  <h4 className="font-medium mb-3 flex items-center">
-                    <CheckCircle className="h-5 w-5 text-green-500 mr-2" />
-                    Client Information
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-gray-600">Title Company:</span>
-                      <p className="font-medium">{form.watch('titleCompany') || 'Not specified'}</p>
-                    </div>
-                    <div>
-                      <span className="text-gray-600">Closing Type:</span>
-                      <p className="font-medium">{form.watch('closingType') || 'Not specified'}</p>
-                    </div>
-                    <div>
-                      <span className="text-gray-600">Internal Reference:</span>
-                      <p className="font-medium">{form.watch('internalReference') || 'None'}</p>
-                    </div>
-                    <div>
-                      <span className="text-gray-600">KBA Required:</span>
-                      <p className="font-medium">{form.watch('kbaRequired') ? 'Yes' : 'No'}</p>
-                    </div>
-                    <div className="md:col-span-2">
-                      <span className="text-gray-600">Property Address:</span>
-                      <p className="font-medium">
-                        {form.watch('propertyAddressOne')}
-                        {form.watch('propertyAddressTwo') && `, ${form.watch('propertyAddressTwo')}`}
-                        <br />
-                        {form.watch('propertyCity')}, {form.watch('propertyState')} {form.watch('propertyZipCode')}
-                      </p>
-                    </div>
-                  </div>
-                </Card>
+                              {/* Signer Details */}
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                  <Label className={`text-sm font-medium ${signerErrors[index]?.signerName ? 'text-red-600' : 'text-gray-700'}`}>
+                                    Signer Name *
+                                  </Label>
+                                  <Input
+                                    value={signer.signerName}
+                                    onChange={(e) => handleSignerChange(index, 'signerName', e.target.value)}
+                                    placeholder="Enter signer name"
+                                    className={`h-12 mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerName ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                    onBlur={() => validateSigner(signer, index)}
+                                    disabled={signerModes[index] === 'existing'}
+                                  />
+                                  {signerErrors[index]?.signerName && (
+                                    <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerName}</p>
+                                  )}
+                                </div>
+                                
+                                <div>
+                                  <Label className={`text-sm font-medium ${signerErrors[index]?.signerEmail ? 'text-red-600' : 'text-gray-700'}`}>
+                                    Email Address *
+                                  </Label>
+                                  <Input
+                                    type="email"
+                                    value={signer.signerEmail}
+                                    onChange={(e) => handleSignerChange(index, 'signerEmail', e.target.value)}
+                                    placeholder="Enter email address"
+                                    className={`h-12 mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerEmail ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                    onBlur={() => validateSigner(signer, index)}
+                                    disabled={signerModes[index] === 'existing'}
+                                  />
+                                  {signerErrors[index]?.signerEmail && (
+                                    <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerEmail}</p>
+                                  )}
+                                </div>
+                                
+                                <div>
+                                  <Label className={`text-sm font-medium ${signerErrors[index]?.signerPhoneNumber ? 'text-red-600' : 'text-gray-700'}`}>
+                                    Phone Number *
+                                  </Label>
+                                  <Input
+                                    value={signer.signerPhoneNumber}
+                                    onChange={(e) => handleSignerChange(index, 'signerPhoneNumber', e.target.value)}
+                                    placeholder="(123) 456-7890"
+                                    className={`h-12 mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerPhoneNumber ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                    onBlur={() => validateSigner(signer, index)}
+                                    disabled={signerModes[index] === 'existing'}
+                                  />
+                                  {signerErrors[index]?.signerPhoneNumber && (
+                                    <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerPhoneNumber}</p>
+                                  )}
+                                </div>
+                                
+                                <div>
+                                  <Label className={`text-sm font-medium ${signerErrors[index]?.signerRole ? 'text-red-600' : 'text-gray-700'}`}>
+                                    Role *
+                                  </Label>
+                                  <Select
+                                    value={signer.signerRole}
+                                    onValueChange={(value) => {
+                                      handleSignerChange(index, 'signerRole', value);
+                                      validateSigner({ ...signer, signerRole: value }, index);
+                                    }}
+                                  >
+                                    <SelectTrigger className={`h-12 mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerRole ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
+                                      <SelectValue placeholder="Select role" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="borrower">Borrower</SelectItem>
+                                      <SelectItem value="co-borrower">Co-Borrower</SelectItem>
+                                      <SelectItem value="seller">Seller</SelectItem>
+                                      <SelectItem value="buyer">Buyer</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  {signerErrors[index]?.signerRole && (
+                                    <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerRole}</p>
+                                  )}
+                                </div>
+                              </div>
 
-                {/* Signers Summary */}
-                <Card className="p-4">
-                  <h4 className="font-medium mb-3 flex items-center">
-                    <CheckCircle className="h-5 w-5 text-green-500 mr-2" />
-                    Signers ({signers.length})
-                  </h4>
-                  {signers.length > 0 ? (
-                    <div className="space-y-2">
-                      {signers.map((signer, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                          <div className="text-sm">
-                            <p className="font-medium">{signer.signerName}</p>
-                            <p className="text-gray-600">{signer.signerEmail} • {signer.signerPhoneNumber}</p>
-                          </div>
-                          <Badge>{signer.signerRole}</Badge>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-500">No signers added</p>
-                  )}
-                </Card>
-
-                {/* Schedule Summary */}
-                <Card className="p-4">
-                  <h4 className="font-medium mb-3 flex items-center">
-                    <CheckCircle className="h-5 w-5 text-green-500 mr-2" />
-                    Schedule
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-gray-600">Notary Option:</span>
-                      <p className="font-medium">{form.watch('notaryOption') === 'assign' ? 'Specific Notary' : 'Auto Assignment'}</p>
-                    </div>
-                    {form.watch('notaryOption') === 'assign' && form.watch('selectedNotary') && (
-                      <div>
-                        <span className="text-gray-600">Selected Notary:</span>
-                        <p className="font-medium">
-                          {notaries.find(n => n.id.toString() === form.watch('selectedNotary'))?.username || 'Not found'}
-                        </p>
+                              {/* Existing User Info */}
+                              {signerModes[index] === 'existing' && signer.existingUserId && (
+                                <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                  <div className="flex items-center">
+                                    <CheckCircle className="w-5 h-5 text-blue-600 mr-2" />
+                                    <div>
+                                      <p className="text-sm font-medium text-blue-800">
+                                        Selected User: {signer.signerName}
+                                      </p>
+                                      <p className="text-xs text-blue-600">
+                                        {signer.signerEmail} • Information auto-populated
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </CardContent>
+                          </Card>
+                        ))}
                       </div>
                     )}
-                    <div>
-                      <span className="text-gray-600">Date:</span>
-                      <p className="font-medium">{form.watch('selectedDate') || 'Not scheduled'}</p>
+                  </div>
+                )}
+
+                {/* Step 3: Schedule */}
+                {currentStep === 3 && (
+                  <div className="space-y-8">
+                    <div className="text-center">
+                      <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Clock className="w-8 h-8 text-purple-600" />
+                      </div>
+                      <h2 className="text-2xl font-bold text-gray-900 mb-2">Schedule Appointment</h2>
+                      <p className="text-gray-600">Choose how you'd like to assign a notary and schedule the appointment</p>
                     </div>
-                    <div>
-                      <span className="text-gray-600">Time:</span>
-                      <p className="font-medium">{form.watch('selectedTime') || 'Not scheduled'}</p>
+                    
+                    <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                        <div className="w-2 h-6 bg-purple-500 rounded-full mr-3"></div>
+                        Notary Assignment
+                      </h3>
+                      
+                      <FormField
+                        control={form.control}
+                        name="notaryOption"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-sm font-medium text-gray-700 mb-4 block">Assignment Method</FormLabel>
+                            <FormControl>
+                              <RadioGroup
+                                onValueChange={(value) => {
+                                  field.onChange(value);
+                                  if (value === 'auto') {
+                                    form.setValue('selectedNotary', undefined);
+                                    if (watchTitleCompany) {
+                                      checkPreferredNotary(watchTitleCompany);
+                                    }
+                                  } else {
+                                    setPreferredNotary(null);
+                                  }
+                                }}
+                                defaultValue={field.value}
+                                className="grid grid-cols-1 md:grid-cols-2 gap-6"
+                              >
+                                <div className="relative">
+                                  <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-blue-200 transition-colors cursor-pointer">
+                                    <RadioGroupItem value="assign" id="assign" className="mt-1" />
+                                    <div className="flex-1">
+                                      <Label htmlFor="assign" className="text-lg font-semibold text-gray-900 cursor-pointer">Assign Specific Notary</Label>
+                                      <p className="text-sm text-gray-600 mt-1">Choose from available notaries based on your preferences</p>
+                                      <div className="mt-3 flex items-center text-xs text-blue-600">
+                                        <CheckCircle className="w-4 h-4 mr-1" />
+                                        Direct selection control
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="relative">
+                                  <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-blue-200 transition-colors cursor-pointer">
+                                    <RadioGroupItem value="auto" id="auto" className="mt-1" />
+                                    <div className="flex-1">
+                                      <Label htmlFor="auto" className="text-lg font-semibold text-gray-900 cursor-pointer">Auto Assignment</Label>
+                                      <p className="text-sm text-gray-600 mt-1">System will assign the best match based on availability and preferences</p>
+                                      <div className="mt-3 flex items-center text-xs text-green-600">
+                                        <CheckCircle className="w-4 h-4 mr-1" />
+                                        Optimal matching algorithm
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </RadioGroup>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Show preferred notary info when auto assignment is selected */}
+                      {form.watch('notaryOption') === 'auto' && preferredNotary && (
+                        <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                          <div className="flex items-center">
+                            <CheckCircle className="w-5 h-5 text-green-600 mr-3" />
+                            <div>
+                              <p className="text-sm font-medium text-green-800">
+                                Preferred Notary Available: {preferredNotary.fullName}
+                              </p>
+                              <p className="text-xs text-green-600 mt-1">
+                                This notary is preferred by {watchTitleCompany} and will be prioritized for assignment
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Manual notary selection */}
+                      {form.watch('notaryOption') === 'assign' && (
+                        <div className="mt-6">
+                          <FormField
+                            control={form.control}
+                            name="selectedNotary"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="text-sm font-medium text-gray-700">Select Notary</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                  <FormControl>
+                                    <SelectTrigger className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 mt-2">
+                                      <SelectValue placeholder="Choose a notary" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {notaries.map((notary: any) => (
+                                      <SelectItem key={notary.id} value={notary.id.toString()}>
+                                        <div className="flex items-center justify-between w-full">
+                                          <span className="font-medium">{notary.fullName}</span>
+                                          <span className="text-xs text-gray-500 ml-2">{notary.email}</span>
+                                        </div>
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Additional Requirements */}
+                    <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                        <div className="w-2 h-6 bg-orange-500 rounded-full mr-3"></div>
+                        Special Requirements
+                      </h3>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <FormField
+                          control={form.control}
+                          name="requiresNSA"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center space-x-3 p-4 border rounded-lg">
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                />
+                              </FormControl>
+                              <div>
+                                <FormLabel className="text-sm font-medium text-gray-900">NSA Required</FormLabel>
+                                <p className="text-xs text-gray-600">Notary Signing Agent certification required</p>
+                              </div>
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="requiresSpanishSpeaking"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center space-x-3 p-4 border rounded-lg">
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                />
+                              </FormControl>
+                              <div>
+                                <FormLabel className="text-sm font-medium text-gray-900">Spanish Speaking</FormLabel>
+                                <p className="text-xs text-gray-600">Bilingual notary required</p>
+                              </div>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
                     </div>
                   </div>
-                </Card>
+                )}
 
-                {/* Documents Summary */}
-                <Card className="p-4">
-                  <h4 className="font-medium mb-3 flex items-center">
-                    <CheckCircle className="h-5 w-5 text-green-500 mr-2" />
-                    Documents ({documents.length})
-                  </h4>
-                  {documents.length > 0 ? (
-                    <div className="space-y-2">
-                      {documents.map((doc) => (
-                        <div key={doc.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                          <div className="flex items-center space-x-2 text-sm">
-                            <FileText className="h-4 w-4 text-blue-500" />
-                            <span className="font-medium">{doc.name}</span>
-                            <span className="text-gray-500">({formatFileSize(doc.size)})</span>
-                          </div>
-                          <Badge variant={doc.isRequired ? "default" : "secondary"}>
-                            {doc.isRequired ? 'Required' : 'Optional'}
-                          </Badge>
-                        </div>
-                      ))}
+                {/* Step 4: Documents */}
+                {currentStep === 4 && (
+                  <div className="space-y-8">
+                    <div className="text-center">
+                      <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Upload className="w-8 h-8 text-indigo-600" />
+                      </div>
+                      <h2 className="text-2xl font-bold text-gray-900 mb-2">Upload Documents</h2>
+                      <p className="text-gray-600">Add all the documents that need to be notarized</p>
                     </div>
-                  ) : (
-                    <p className="text-sm text-gray-500">No documents uploaded</p>
-                  )}
-                </Card>
-
-                {/* Final Check */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex items-start space-x-3">
-                    <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5" />
-                    <div className="text-sm">
-                      <p className="font-medium text-blue-900">Please confirm all information is correct</p>
-                      <p className="text-blue-700 mt-1">
-                        Once submitted, this job will be created and notifications will be sent to all signers.
+                    
+                    <div className="flex items-center justify-between bg-indigo-50 rounded-lg p-4">
+                      <div className="flex items-center">
+                        <FileText className="w-5 h-5 text-indigo-600 mr-2" />
+                        <span className="text-sm font-medium text-indigo-800">
+                          {documents.length} document{documents.length !== 1 ? 's' : ''} uploaded
+                        </span>
+                      </div>
+                      <div className="text-xs text-indigo-600">
+                        PDF, DOC, DOCX supported • Max 10MB each
+                      </div>
+                    </div>
+                    
+                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-blue-400 transition-colors">
+                      <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Upload className="h-8 w-8 text-blue-600" />
+                      </div>
+                      <div className="mb-6">
+                        <h3 className="text-xl font-semibold text-gray-900 mb-2">Upload Multiple Documents</h3>
+                        <p className="text-gray-600">Drag and drop files here, or click to browse your computer</p>
+                      </div>
+                      <input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                        multiple
+                        onChange={handleFileUpload}
+                        className="hidden"
+                        id="file-upload"
+                      />
+                      <Button
+                        type="button"
+                        onClick={() => document.getElementById('file-upload')?.click()}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg"
+                      >
+                        <Plus className="h-5 w-5 mr-3" />
+                        Select Documents
+                      </Button>
+                      <p className="text-sm text-gray-500 mt-4">
+                        Supported formats: PDF, DOC, DOCX, JPG, PNG • Maximum 10MB per file
                       </p>
                     </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
-            {/* Navigation */}
-            <div className="flex justify-between pt-6">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handlePrevious}
-                disabled={currentStep === 1}
-              >
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Previous
-              </Button>
-              
-              {currentStep < steps.length ? (
-                <Button type="button" onClick={handleNext}>
-                  Next
-                  <ArrowRight className="h-4 w-4 ml-2" />
-                </Button>
-              ) : (
-                <Button 
-                  type="submit" 
-                  disabled={createJobMutation.isPending || isSubmitting}
-                  className="bg-success hover:bg-success/90"
-                >
-                  {createJobMutation.isPending || isSubmitting ? (
-                    <div className="flex items-center">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      Creating Job...
+                    {/* Document List */}
+                    {documents.length > 0 && (
+                      <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                          <div className="w-2 h-6 bg-indigo-500 rounded-full mr-3"></div>
+                          Uploaded Documents
+                        </h3>
+                        
+                        <div className="space-y-4">
+                          {documents.map((doc) => (
+                            <div key={doc.id} className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:shadow-sm transition-shadow">
+                              <div className="flex items-center flex-1">
+                                <FileText className="h-8 w-8 text-blue-600 mr-4" />
+                                <div className="flex-1">
+                                  <h4 className="font-medium text-gray-900">{doc.name}</h4>
+                                  <div className="flex items-center space-x-4 mt-1">
+                                    <span className="text-sm text-gray-500">{formatFileSize(doc.size)}</span>
+                                    <Badge variant={doc.isRequired ? "default" : "secondary"} className="text-xs">
+                                      {doc.isRequired ? 'Required' : 'Optional'}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleToggleRequired(doc.id)}
+                                  className="text-xs"
+                                >
+                                  {doc.isRequired ? 'Make Optional' : 'Make Required'}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRemoveDocument(doc.id)}
+                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Step 5: Review */}
+                {currentStep === 5 && (
+                  <div className="space-y-8">
+                    <div className="text-center">
+                      <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <CheckCircle className="w-8 h-8 text-green-600" />
+                      </div>
+                      <h2 className="text-2xl font-bold text-gray-900 mb-2">Review Job Details</h2>
+                      <p className="text-gray-600">Please review all the information before submitting your job</p>
                     </div>
+                    
+                    {/* Client Information Summary */}
+                    <Card className="border-2 border-gray-100">
+                      <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100 border-b">
+                        <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                          <CheckCircle className="h-6 w-6 text-green-500 mr-3" />
+                          Client Information
+                        </h3>
+                      </CardHeader>
+                      <CardContent className="p-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+                          <div className="space-y-3">
+                            <div>
+                              <span className="text-gray-600 font-medium">Title Company:</span>
+                              <p className="text-gray-900 font-semibold">{form.watch('titleCompany') || 'Not specified'}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-600 font-medium">Closing Type:</span>
+                              <p className="text-gray-900 font-semibold">{form.watch('closingType') || 'Not specified'}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-600 font-medium">Internal Reference:</span>
+                              <p className="text-gray-900">{form.watch('internalReference') || 'None'}</p>
+                            </div>
+                          </div>
+                          <div className="space-y-3">
+                            <div>
+                              <span className="text-gray-600 font-medium">KBA Required:</span>
+                              <p className="text-gray-900">{form.watch('kbaRequired') ? 'Yes' : 'No'}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-600 font-medium">Property Address:</span>
+                              <p className="text-gray-900">
+                                {form.watch('propertyAddressOne')}<br />
+                                {form.watch('propertyAddressTwo') && <>{form.watch('propertyAddressTwo')}<br /></>}
+                                {form.watch('propertyCity')}, {form.watch('propertyState')} {form.watch('propertyZipCode')}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Signers Summary */}
+                    <Card className="border-2 border-gray-100">
+                      <CardHeader className="bg-gradient-to-r from-green-50 to-green-100 border-b">
+                        <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                          <CheckCircle className="h-6 w-6 text-green-500 mr-3" />
+                          Signers ({signers.length})
+                        </h3>
+                      </CardHeader>
+                      <CardContent className="p-6">
+                        <div className="space-y-4">
+                          {signers.map((signer, index) => (
+                            <div key={index} className="p-4 bg-gray-50 rounded-lg border">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center">
+                                  <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-sm mr-3">
+                                    {index + 1}
+                                  </div>
+                                  <div>
+                                    <h4 className="font-semibold text-gray-900">{signer.signerName}</h4>
+                                    <p className="text-sm text-gray-600">{signer.signerEmail}</p>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <Badge variant="outline">{signer.signerRole}</Badge>
+                                  <p className="text-xs text-gray-500 mt-1">{signer.signerPhoneNumber}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Documents Summary */}
+                    <Card className="border-2 border-gray-100">
+                      <CardHeader className="bg-gradient-to-r from-indigo-50 to-indigo-100 border-b">
+                        <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                          <CheckCircle className="h-6 w-6 text-green-500 mr-3" />
+                          Documents ({documents.length})
+                        </h3>
+                      </CardHeader>
+                      <CardContent className="p-6">
+                        <div className="space-y-3">
+                          {documents.map((doc, index) => (
+                            <div key={doc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                              <div className="flex items-center">
+                                <FileText className="h-5 w-5 text-blue-600 mr-3" />
+                                <div>
+                                  <span className="font-medium text-gray-900">{doc.name}</span>
+                                  <span className="text-sm text-gray-500 ml-2">({formatFileSize(doc.size)})</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <Badge variant={doc.isRequired ? "default" : "secondary"} className="text-xs">
+                                  {doc.isRequired ? 'Required' : 'Optional'}
+                                </Badge>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Final Confirmation */}
+                    <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-6 border border-green-200">
+                      <div className="flex items-center">
+                        <AlertCircle className="w-6 h-6 text-green-600 mr-3" />
+                        <div>
+                          <h3 className="font-semibold text-gray-900">Ready to Submit</h3>
+                          <p className="text-sm text-gray-600 mt-1">
+                            By submitting this job, you confirm that all information is accurate and you authorize the notarization process.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Enhanced Navigation */}
+                <div className="flex justify-between items-center pt-8 border-t border-gray-200">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handlePrevious}
+                    disabled={currentStep === 1}
+                    className="px-6 py-3 border-2 border-gray-300 hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Previous
+                  </Button>
+                  
+                  <div className="flex items-center space-x-2 text-sm text-gray-600">
+                    <span>Step {currentStep} of {steps.length}</span>
+                  </div>
+                  
+                  {currentStep < steps.length ? (
+                    <Button 
+                      type="button" 
+                      onClick={handleNext}
+                      className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl transition-shadow"
+                    >
+                      Next Step
+                      <ArrowRight className="h-4 w-4 ml-2" />
+                    </Button>
                   ) : (
-                    'Create Job'
+                    <Button 
+                      type="submit" 
+                      disabled={createJobMutation.isPending || isSubmitting}
+                      className="px-8 py-3 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white shadow-lg hover:shadow-xl transition-all transform hover:scale-105 disabled:transform-none disabled:opacity-50"
+                    >
+                      {createJobMutation.isPending || isSubmitting ? (
+                        <div className="flex items-center">
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
+                          Creating Job...
+                        </div>
+                      ) : (
+                        <div className="flex items-center">
+                          <CheckCircle className="h-5 w-5 mr-2" />
+                          Create Job
+                        </div>
+                      )}
+                    </Button>
                   )}
-                </Button>
-              )}
-            </div>
-          </form>
-        </Form>
-      </CardContent>
-    </Card>
+                </div>
+              </form>
+            </Form>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }

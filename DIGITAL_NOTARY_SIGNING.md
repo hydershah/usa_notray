@@ -59,7 +59,7 @@ This document describes the professional digital notary signing solution impleme
 - `@pdftron/webviewer`: PDF viewing and annotation
 - `node-forge`: PKI certificate operations
 - `crypto-js`: Cryptographic operations
-- `recordrtc`: Video recording
+- Video recording handled by Whereby video conferencing
 
 ### API Endpoints Required
 

@@ -15,8 +15,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { getStatusColor, getRoleColor, formatDate, formatRole } from '@/lib/utils';
-import { Download, FileText, User, Video, Tag, Eye, Upload } from 'lucide-react';
+import { Download, FileText, User, Video, Tag, Eye, Upload, Edit3, Save, X } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { useToast } from '@/hooks/use-toast';
 
@@ -35,6 +37,14 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
   const [completedDocuments, setCompletedDocuments] = useState<any[]>([]);
   const [loadingCompleted, setLoadingCompleted] = useState(false);
   
+  // Notary change functionality
+  const [isChangingNotary, setIsChangingNotary] = useState(false);
+  const [availableNotaries, setAvailableNotaries] = useState<any[]>([]);
+  const [selectedNewNotary, setSelectedNewNotary] = useState<string>('');
+  const [notarySearchCode, setNotarySearchCode] = useState<string>('');
+  const [loadingNotaries, setLoadingNotaries] = useState(false);
+  const [changingNotary, setChangingNotary] = useState(false);
+  
   // Load job documents when modal opens
   useEffect(() => {
     if (isOpen && job?.id) {
@@ -42,6 +52,13 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
       loadCompletedDocuments();
     }
   }, [isOpen, job?.id]);
+
+  // Load available notaries when changing notary mode is activated
+  useEffect(() => {
+    if (isChangingNotary) {
+      loadAvailableNotaries();
+    }
+  }, [isChangingNotary]);
   
   if (!job) return null;
 
@@ -242,6 +259,120 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
     }
   };
 
+  const loadAvailableNotaries = async () => {
+    try {
+      setLoadingNotaries(true);
+      const response = await fetch('/api/notaries/available', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (response.ok) {
+        const notaries = await response.json();
+        setAvailableNotaries(notaries);
+      } else {
+        console.warn('Failed to load available notaries');
+        setAvailableNotaries([]);
+      }
+    } catch (error) {
+      console.error('Error loading available notaries:', error);
+      setAvailableNotaries([]);
+    } finally {
+      setLoadingNotaries(false);
+    }
+  };
+
+  const handleNotarySearch = (searchTerm: string) => {
+    setNotarySearchCode(searchTerm);
+    if (searchTerm.length >= 2) {
+      const filtered = availableNotaries.filter(notary => 
+        notary.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        notary.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        notary.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        notary.email?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      
+      if (filtered.length === 1) {
+        setSelectedNewNotary(filtered[0].id.toString());
+      }
+    }
+  };
+
+  const handleNotaryChange = async () => {
+    if (!selectedNewNotary) {
+      toast({
+        variant: "destructive",
+        title: "No Notary Selected",
+        description: "Please select a notary to assign to this job.",
+      });
+      return;
+    }
+
+    try {
+      setChangingNotary(true);
+      
+      // Prepare the assignment data
+      const assignmentData = {
+        jobId: job.id,
+        notaryId: parseInt(selectedNewNotary),
+        timeSlot: {
+          date: job.selectedDate,
+          startTime: job.selectedTime,
+          endTime: job.selectedTime // This should be calculated based on appointment duration
+        },
+        assignmentType: 'manual'
+      };
+
+      const response = await fetch('/api/random-notary/assign', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(assignmentData)
+      });
+
+      if (response.ok) {
+        const selectedNotary = availableNotaries.find(n => n.id.toString() === selectedNewNotary);
+        const notaryName = selectedNotary ? 
+          `${selectedNotary.firstName || ''} ${selectedNotary.lastName || ''}`.trim() || selectedNotary.username :
+          'Unknown Notary';
+
+        toast({
+          title: "Notary Changed Successfully",
+          description: `Job has been reassigned to ${notaryName}`,
+        });
+
+        // Reset states
+        setIsChangingNotary(false);
+        setSelectedNewNotary('');
+        setNotarySearchCode('');
+        
+        // Trigger a refresh of the job data (you may need to implement this)
+        window.location.reload();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to change notary');
+      }
+    } catch (error) {
+      console.error('Error changing notary:', error);
+      toast({
+        variant: "destructive",
+        title: "Failed to Change Notary",
+        description: error instanceof Error ? error.message : "Unable to change the assigned notary. Please try again.",
+      });
+    } finally {
+      setChangingNotary(false);
+    }
+  };
+
+  const cancelNotaryChange = () => {
+    setIsChangingNotary(false);
+    setSelectedNewNotary('');
+    setNotarySearchCode('');
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" aria-describedby="job-details-description">
@@ -320,10 +451,87 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                 </span>
               </div>
               <div>
-                <span className="text-sm text-gray-600">Notary:</span>
-                <span className="ml-2 text-sm font-medium text-gray-900">
-                  {job.selectedNotary || 'Not assigned'}
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">Notary:</span>
+                  {job.selectedNotary && !isChangingNotary && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsChangingNotary(true)}
+                      className="h-6 px-2 text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      <Edit3 className="h-3 w-3 mr-1" />
+                      Change
+                    </Button>
+                  )}
+                </div>
+                
+                {!isChangingNotary ? (
+                  <span className="ml-2 text-sm font-medium text-gray-900">
+                    {job.selectedNotary || 'Not assigned'}
+                  </span>
+                ) : (
+                  <div className="mt-2 space-y-3">
+                    <div>
+                      <Label htmlFor="notary-search" className="text-xs font-medium">
+                        Search by notary code/name:
+                      </Label>
+                      <Input
+                        id="notary-search"
+                        placeholder="Enter notary username, name, or email..."
+                        value={notarySearchCode}
+                        onChange={(e) => handleNotarySearch(e.target.value)}
+                        className="mt-1"
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="notary-select" className="text-xs font-medium">
+                        Select notary:
+                      </Label>
+                      <Select value={selectedNewNotary} onValueChange={setSelectedNewNotary}>
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder={loadingNotaries ? "Loading..." : "Choose a notary"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableNotaries.map((notary) => (
+                            <SelectItem key={notary.id} value={notary.id.toString()}>
+                              <div className="flex items-center justify-between w-full">
+                                <span>
+                                  {`${notary.firstName || ''} ${notary.lastName || ''}`.trim() || notary.username}
+                                </span>
+                                <span className="text-xs text-gray-500 ml-2">
+                                  @{notary.username}
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        onClick={handleNotaryChange}
+                        disabled={!selectedNewNotary || changingNotary}
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        <Save className="h-3 w-3 mr-1" />
+                        {changingNotary ? 'Saving...' : 'Save'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={cancelNotaryChange}
+                        disabled={changingNotary}
+                      >
+                        <X className="h-3 w-3 mr-1" />
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="mt-4">
                 <h4 className="text-sm font-medium text-gray-900 mb-2">Property Address</h4>
@@ -685,27 +893,8 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
         <div className="flex justify-end space-x-3 mt-6">
           {(job.jobStatus === 'open' || job.jobStatus === 'pending') && (
             <>
-              <Button 
-                variant="outline"
-                onClick={() => {
-                  setLocation(`/document-tagging?jobId=${job.id}`);
-                  onClose();
-                }}
-                className="border-orange-500 text-orange-600 hover:bg-orange-50"
-              >
-                <Tag className="w-4 h-4 mr-2" />
-                Start Document Tagging
-              </Button>
-              <Button 
-                onClick={() => {
-                  setLocation(`/live-signing?jobId=${job.id}`);
-                  onClose();
-                }}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                <Video className="w-4 h-4 mr-2" />
-                Start Live Signing
-              </Button>
+
+
             </>
           )}
           <Button variant="outline" onClick={onClose}>

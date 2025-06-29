@@ -91,6 +91,19 @@ export default function Login() {
               {isLoading ? 'Signing in...' : 'Sign In'}
             </Button>
           </form>
+          
+          <div className="mt-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              Don't have a company account?
+            </p>
+            <Button 
+              variant="link" 
+              className="p-0 h-auto text-sm font-semibold"
+              onClick={() => setLocation('/register-company')}
+            >
+              Register Your Title Company
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

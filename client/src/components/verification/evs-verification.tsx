@@ -1,0 +1,601 @@
+import React, { useState, useRef } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { toast } from '@/hooks/use-toast';
+import { 
+  Upload, Camera, FileText, AlertCircle, CheckCircle, 
+  XCircle, RefreshCw, Eye, User, CreditCard, Shield 
+} from 'lucide-react';
+
+interface EVSVerificationProps {
+  userId: number;
+  onVerificationComplete: (result: any) => void;
+  onVerificationFailed: (error: string) => void;
+}
+
+interface VerificationState {
+  step: 'upload' | 'capture' | 'processing' | 'complete' | 'failed';
+  frontImageData?: string;
+  backImageData?: string;
+  selfieData?: string;
+  verificationResult?: any;
+  error?: string;
+}
+
+export function EVSVerification({ 
+  userId, 
+  onVerificationComplete, 
+  onVerificationFailed 
+}: EVSVerificationProps) {
+  const [state, setState] = useState<VerificationState>({ step: 'upload' });
+  const [loading, setLoading] = useState(false);
+  const frontInputRef = useRef<HTMLInputElement>(null);
+  const backInputRef = useRef<HTMLInputElement>(null);
+  const selfieInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [showSelfieCapture, setShowSelfieCapture] = useState(false);
+
+  const handleFileUpload = (type: 'front' | 'back', file: File) => {
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: "Invalid File Type",
+        description: "Please upload an image file (JPG, PNG, etc.)",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      toast({
+        title: "File Too Large",
+        description: "Please upload an image smaller than 10MB",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const imageData = e.target?.result as string;
+      setState(prev => ({
+        ...prev,
+        [type === 'front' ? 'frontImageData' : 'backImageData']: imageData
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: 'user'
+        } 
+      });
+      setCameraStream(stream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setShowSelfieCapture(true);
+    } catch (error) {
+      console.error('Camera access error:', error);
+      toast({
+        title: "Camera Access Denied",
+        description: "Please allow camera access to complete verification",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    ctx?.drawImage(video, 0, 0);
+    
+    const imageData = canvas.toDataURL('image/jpeg', 0.8);
+    setState(prev => ({ ...prev, selfieData: imageData }));
+    
+    // Stop camera
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+    setShowSelfieCapture(false);
+  };
+
+  const handleSelfieUpload = (file: File) => {
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: "Invalid File Type",
+        description: "Please upload an image file",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const imageData = e.target?.result as string;
+      setState(prev => ({ ...prev, selfieData: imageData }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const submitVerification = async () => {
+    if (!state.frontImageData || !state.selfieData) {
+      toast({
+        title: "Missing Documents",
+        description: "Please upload all required documents",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoading(true);
+    setState(prev => ({ ...prev, step: 'processing' }));
+
+    try {
+      const formData = new FormData();
+      formData.append('userId', userId.toString());
+      formData.append('frontImage', dataURLtoBlob(state.frontImageData));
+      if (state.backImageData) {
+        formData.append('backImage', dataURLtoBlob(state.backImageData));
+      }
+      formData.append('selfieImage', dataURLtoBlob(state.selfieData));
+
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/verification/evs-verify', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setState(prev => ({ 
+          ...prev, 
+          step: 'complete', 
+          verificationResult: result 
+        }));
+        onVerificationComplete(result);
+        
+        toast({
+          title: "Verification Complete",
+          description: "Your identity has been successfully verified!",
+        });
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Verification failed');
+      }
+    } catch (error) {
+      console.error('Verification error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Verification failed';
+      setState(prev => ({ 
+        ...prev, 
+        step: 'failed', 
+        error: errorMessage 
+      }));
+      onVerificationFailed(errorMessage);
+      
+      toast({
+        title: "Verification Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const dataURLtoBlob = (dataURL: string): Blob => {
+    const arr = dataURL.split(',');
+    const mimeMatch = arr[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
+  };
+
+  const resetVerification = () => {
+    setState({ step: 'upload' });
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+    setShowSelfieCapture(false);
+  };
+
+  if (state.step === 'processing') {
+    return (
+      <Card className="w-full max-w-2xl mx-auto">
+        <CardHeader>
+          <CardTitle className="flex items-center text-blue-600">
+            <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
+            Processing Verification
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8">
+            <div className="animate-pulse">
+              <Shield className="h-16 w-16 text-blue-600 mx-auto mb-4" />
+            </div>
+            <h3 className="text-lg font-medium mb-2">Verifying Your Identity</h3>
+            <p className="text-gray-600 mb-4">
+              Please wait while we verify your documents with EVS Solutions...
+            </p>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-sm text-blue-800">
+                This process typically takes 30-60 seconds. Please do not close this window.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (state.step === 'complete') {
+    return (
+      <Card className="w-full max-w-2xl mx-auto">
+        <CardHeader>
+          <CardTitle className="flex items-center text-green-600">
+            <CheckCircle className="h-5 w-5 mr-2" />
+            Verification Complete
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8">
+            <CheckCircle className="h-16 w-16 text-green-600 mx-auto mb-4" />
+            <h3 className="text-lg font-medium mb-2">Identity Successfully Verified</h3>
+            <p className="text-gray-600 mb-4">
+              Your identity has been verified through EVS Solutions. You can now participate in signing sessions.
+            </p>
+            
+            {state.verificationResult && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-left">
+                <h4 className="font-medium text-green-900 mb-2">Verification Details</h4>
+                <div className="text-sm text-green-800 space-y-1">
+                  <p><strong>Status:</strong> {state.verificationResult.status}</p>
+                  <p><strong>Confidence Score:</strong> {state.verificationResult.confidence}%</p>
+                  <p><strong>Verified At:</strong> {new Date().toLocaleString()}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (state.step === 'failed') {
+    return (
+      <Card className="w-full max-w-2xl mx-auto">
+        <CardHeader>
+          <CardTitle className="flex items-center text-red-600">
+            <XCircle className="h-5 w-5 mr-2" />
+            Verification Failed
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8">
+            <XCircle className="h-16 w-16 text-red-600 mx-auto mb-4" />
+            <h3 className="text-lg font-medium mb-2">Verification Could Not Be Completed</h3>
+            <p className="text-gray-600 mb-4">
+              {state.error || 'Unable to verify your identity. Please try again with clearer images.'}
+            </p>
+            
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+              <h4 className="font-medium text-red-900 mb-2">Tips for Better Results</h4>
+              <ul className="text-sm text-red-800 text-left space-y-1">
+                <li>• Ensure good lighting when taking photos</li>
+                <li>• Make sure your ID is clearly visible and not blurry</li>
+                <li>• Keep your face clearly visible in the selfie</li>
+                <li>• Avoid glare or shadows on your documents</li>
+              </ul>
+            </div>
+            
+            <Button onClick={resetVerification} className="w-full">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Try Again
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="w-full max-w-2xl mx-auto">
+      <CardHeader>
+        <CardTitle className="flex items-center text-blue-600">
+          <Shield className="h-5 w-5 mr-2" />
+          Identity Verification
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-6">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h3 className="font-medium text-blue-900 mb-2">EVS Solutions Verification</h3>
+            <p className="text-sm text-blue-800">
+              We use EVS Solutions for secure identity verification. This process is required before you can participate in any signing sessions.
+            </p>
+          </div>
+
+          {/* Front of ID */}
+          <div>
+            <Label className="text-base font-medium flex items-center mb-3">
+              <CreditCard className="h-4 w-4 mr-2" />
+              Front of Government ID
+            </Label>
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+              {state.frontImageData ? (
+                <div className="space-y-3">
+                  <img 
+                    src={state.frontImageData} 
+                    alt="Front of ID" 
+                    className="max-h-48 mx-auto rounded border"
+                  />
+                  <div className="flex items-center justify-center space-x-2">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <span className="text-sm text-green-600">Front of ID uploaded</span>
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => frontInputRef.current?.click()}
+                  >
+                    Replace Image
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <Upload className="h-12 w-12 text-gray-400 mx-auto" />
+                  <div>
+                    <p className="text-gray-600">Upload front of your ID</p>
+                    <p className="text-sm text-gray-500">Driver's License, Passport, or State ID</p>
+                  </div>
+                  <Button 
+                    onClick={() => frontInputRef.current?.click()}
+                    className="w-full"
+                  >
+                    Choose File
+                  </Button>
+                </div>
+              )}
+              <input
+                ref={frontInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => e.target.files?.[0] && handleFileUpload('front', e.target.files[0])}
+              />
+            </div>
+          </div>
+
+          {/* Back of ID (Optional) */}
+          <div>
+            <Label className="text-base font-medium flex items-center mb-3">
+              <CreditCard className="h-4 w-4 mr-2" />
+              Back of ID (Optional)
+            </Label>
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+              {state.backImageData ? (
+                <div className="space-y-3">
+                  <img 
+                    src={state.backImageData} 
+                    alt="Back of ID" 
+                    className="max-h-48 mx-auto rounded border"
+                  />
+                  <div className="flex items-center justify-center space-x-2">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <span className="text-sm text-green-600">Back of ID uploaded</span>
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => backInputRef.current?.click()}
+                  >
+                    Replace Image
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <Upload className="h-12 w-12 text-gray-400 mx-auto" />
+                  <div>
+                    <p className="text-gray-600">Upload back of your ID</p>
+                    <p className="text-sm text-gray-500">Required for Driver's License</p>
+                  </div>
+                  <Button 
+                    variant="outline"
+                    onClick={() => backInputRef.current?.click()}
+                    className="w-full"
+                  >
+                    Choose File
+                  </Button>
+                </div>
+              )}
+              <input
+                ref={backInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => e.target.files?.[0] && handleFileUpload('back', e.target.files[0])}
+              />
+            </div>
+          </div>
+
+          {/* Selfie */}
+          <div>
+            <Label className="text-base font-medium flex items-center mb-3">
+              <User className="h-4 w-4 mr-2" />
+              Selfie Photo
+            </Label>
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+              {state.selfieData ? (
+                <div className="space-y-3">
+                  <img 
+                    src={state.selfieData} 
+                    alt="Selfie" 
+                    className="max-h-48 mx-auto rounded border"
+                  />
+                  <div className="flex items-center justify-center space-x-2">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <span className="text-sm text-green-600">Selfie captured</span>
+                  </div>
+                  <div className="flex space-x-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={startCamera}
+                    >
+                      <Camera className="h-4 w-4 mr-2" />
+                      Retake
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => selfieInputRef.current?.click()}
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <Camera className="h-12 w-12 text-gray-400 mx-auto" />
+                  <div>
+                    <p className="text-gray-600">Take a selfie or upload a photo</p>
+                    <p className="text-sm text-gray-500">Make sure your face is clearly visible</p>
+                  </div>
+                  <div className="flex space-x-2">
+                    <Button 
+                      onClick={startCamera}
+                      className="flex-1"
+                    >
+                      <Camera className="h-4 w-4 mr-2" />
+                      Take Photo
+                    </Button>
+                    <Button 
+                      variant="outline"
+                      onClick={() => selfieInputRef.current?.click()}
+                      className="flex-1"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload
+                    </Button>
+                  </div>
+                </div>
+              )}
+              <input
+                ref={selfieInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => e.target.files?.[0] && handleSelfieUpload(e.target.files[0])}
+              />
+            </div>
+          </div>
+
+          {/* Camera Capture Modal */}
+          {showSelfieCapture && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                <h3 className="text-lg font-medium mb-4">Take Your Selfie</h3>
+                <div className="space-y-4">
+                  <video 
+                    ref={videoRef}
+                    autoPlay 
+                    playsInline
+                    className="w-full rounded border"
+                  />
+                  <canvas ref={canvasRef} className="hidden" />
+                  <div className="flex space-x-2">
+                    <Button onClick={capturePhoto} className="flex-1">
+                      <Camera className="h-4 w-4 mr-2" />
+                      Capture
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      onClick={() => {
+                        if (cameraStream) {
+                          cameraStream.getTracks().forEach(track => track.stop());
+                          setCameraStream(null);
+                        }
+                        setShowSelfieCapture(false);
+                      }}
+                      className="flex-1"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Submit Button */}
+          <div className="pt-4">
+            <Button 
+              onClick={submitVerification}
+              disabled={!state.frontImageData || !state.selfieData || loading}
+              className="w-full"
+            >
+              {loading ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Shield className="h-4 w-4 mr-2" />
+                  Submit for Verification
+                </>
+              )}
+            </Button>
+            
+            {(!state.frontImageData || !state.selfieData) && (
+              <p className="text-sm text-gray-500 text-center mt-2">
+                Please upload front of ID and take a selfie to continue
+              </p>
+            )}
+          </div>
+
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <div className="flex items-start space-x-2">
+              <AlertCircle className="h-4 w-4 text-gray-600 mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-gray-600">
+                <p className="font-medium mb-1">Privacy & Security</p>
+                <p>Your documents are processed securely through EVS Solutions and are only used for identity verification. Images are encrypted and stored according to industry standards.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+} 
