@@ -33,16 +33,18 @@ export const supabase = createClient(
 export const pool = new Pool({ 
   connectionString: DATABASE_URL,
   // Connection pool settings for production scaling
-  max: 20, // Maximum number of connections in the pool
-  min: 2,  // Minimum number of connections to maintain
-  idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
-  connectionTimeoutMillis: 5000, // Timeout for new connections
-  acquireTimeoutMillis: 5000, // Timeout for acquiring connection from pool
+  max: 15, // Reduced max connections for better stability
+  min: 3,  // Minimum number of connections to maintain
+  idleTimeoutMillis: 60000, // Keep connections longer (60 seconds)
+  connectionTimeoutMillis: 30000, // Increased timeout for new connections (30 seconds)
+  acquireTimeoutMillis: 20000, // Increased timeout for acquiring from pool (20 seconds)
   // Enable connection reuse and health checks
   allowExitOnIdle: false,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
   // Statement timeout to prevent long-running queries from blocking
-  statement_timeout: 60000, // 60 seconds
-  query_timeout: 60000, // 60 seconds
+  statement_timeout: 120000, // Increased to 120 seconds
+  query_timeout: 120000, // Increased to 120 seconds
 });
 
 // Pool event handlers for monitoring and debugging

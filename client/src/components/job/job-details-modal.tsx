@@ -18,9 +18,10 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { getStatusColor, getRoleColor, formatDate, formatRole } from '@/lib/utils';
-import { Download, FileText, User, Video, Tag, Eye, Upload, Edit3, Save, X } from 'lucide-react';
+import { Download, FileText, User, Video, Tag, Eye, Upload, Edit3, Save, X, Trash2 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { useToast } from '@/hooks/use-toast';
+import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 
 interface JobDetailsModalProps {
   job: any;
@@ -44,6 +45,21 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
   const [notarySearchCode, setNotarySearchCode] = useState<string>('');
   const [loadingNotaries, setLoadingNotaries] = useState(false);
   const [changingNotary, setChangingNotary] = useState(false);
+  
+  // Confirmation dialog state
+  const [confirmationDialog, setConfirmationDialog] = useState<{
+    isOpen: boolean;
+    documentId?: number;
+    documentName?: string;
+    title: string;
+    description: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    description: '',
+    onConfirm: () => {}
+  });
   
   // Load job documents when modal opens
   useEffect(() => {
@@ -240,6 +256,47 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
     document.body.appendChild(form);
     form.submit();
     document.body.removeChild(form);
+  };
+
+  const handleDeleteDocument = (documentId: number, documentName: string) => {
+    setConfirmationDialog({
+      isOpen: true,
+      documentId,
+      documentName,
+      title: 'Delete Document',
+      description: `Are you sure you want to delete "${documentName}"? This action cannot be undone.`,
+      onConfirm: async () => {
+        try {
+          const response = await fetch(`/api/jobs/${job.id}/documents/${documentId}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          });
+          
+          if (!response.ok) {
+            throw new Error('Delete failed');
+          }
+
+          // Refresh the documents list
+          await loadJobDocuments();
+
+          toast({
+            title: "Document Deleted",
+            description: `${documentName} has been deleted successfully.`,
+          });
+        } catch (error) {
+          console.error('Delete failed:', error);
+          toast({
+            variant: "destructive",
+            title: "Delete Failed",
+            description: "Unable to delete the document.",
+          });
+        } finally {
+          setConfirmationDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
   const formatFileSize = (bytes: number) => {
@@ -741,6 +798,15 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                       >
                         <Download className="h-4 w-4" />
                       </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteDocument(document.id, document.originalName)}
+                        title="Delete document"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -893,8 +959,29 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
         <div className="flex justify-end space-x-3 mt-6">
           {(job.jobStatus === 'open' || job.jobStatus === 'pending') && (
             <>
-
-
+              <Button
+                variant="outline"
+                onClick={() => {
+                  // Navigate to editor in tagging mode
+                  setLocation(`/editor/${job.id}?mode=tagging`);
+                  onClose();
+                }}
+                className="text-orange-600 border-orange-600 hover:bg-orange-50"
+              >
+                <Tag className="h-4 w-4 mr-2" />
+                Start Document Tagging
+              </Button>
+              <Button
+                onClick={() => {
+                  // Navigate to editor in signing mode
+                  setLocation(`/editor/${job.id}?mode=signing`);
+                  onClose();
+                }}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                <Video className="h-4 w-4 mr-2" />
+                Start Live Signing
+              </Button>
             </>
           )}
           <Button variant="outline" onClick={onClose}>
@@ -902,6 +989,18 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
           </Button>
         </div>
       </DialogContent>
+      
+      {/* Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={confirmationDialog.isOpen}
+        onClose={() => setConfirmationDialog(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmationDialog.onConfirm}
+        title={confirmationDialog.title}
+        description={confirmationDialog.description}
+        variant="destructive"
+        confirmText="Delete"
+        cancelText="Cancel"
+      />
     </Dialog>
   );
 }

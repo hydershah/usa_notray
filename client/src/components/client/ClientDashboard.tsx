@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   FileText, 
   ClipboardList, 
@@ -18,8 +19,12 @@ import {
   CreditCard,
   Plus,
   FileUp,
-  Users
+  Users,
+  Shield,
+  AlertCircle,
+  XCircle
 } from 'lucide-react';
+import { EVSVerification } from '@/components/verification/evs-verification';
 
 interface ClientProfile {
   id: number;
@@ -29,6 +34,9 @@ interface ClientProfile {
   role: string;
   companyId?: number;
   companyRole?: string;
+  isVerified?: boolean;
+  verificationStatus?: string;
+  accountSetupComplete?: boolean;
   company?: {
     id: number;
     companyName: string;
@@ -73,6 +81,7 @@ export function ClientDashboard() {
     averageCost: 0
   });
   const [loading, setLoading] = useState(true);
+  const [showVerification, setShowVerification] = useState(false);
 
   useEffect(() => {
     fetchDashboardData();
@@ -89,7 +98,12 @@ export function ClientDashboard() {
         headers: { Authorization: `Bearer ${token}` }
       });
       const profileData = await profileRes.json();
-      setProfile(profileData);
+      setProfile({
+        ...profileData,
+        isVerified: profileData.isVerified || false,
+        verificationStatus: profileData.verificationStatus || 'pending',
+        accountSetupComplete: profileData.accountSetupComplete || false,
+      });
 
       // Fetch jobs
       const jobsRes = await fetch('/api/jobs', {
@@ -125,6 +139,15 @@ export function ClientDashboard() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleVerificationComplete = (result: any) => {
+    fetchDashboardData(); // Refresh profile
+    setShowVerification(false);
+  };
+
+  const handleVerificationFailed = (error: string) => {
+    console.error('Verification failed:', error);
   };
 
   const getJobStatusColor = (status: string) => {
@@ -208,8 +231,63 @@ export function ClientDashboard() {
           {profile?.companyRole && (
             <Badge variant="outline">{profile.companyRole}</Badge>
           )}
+          {profile?.isVerified ? (
+            <Badge variant="default" className="bg-green-100 text-green-800">
+              <Shield className="h-3 w-3 mr-1" />
+              ID Verified
+            </Badge>
+          ) : (
+            <Badge variant="default" className="bg-orange-100 text-orange-800">
+              <AlertCircle className="h-3 w-3 mr-1" />
+              Verification Required
+            </Badge>
+          )}
         </div>
       </div>
+
+      {/* Verification Alert */}
+      {!profile?.isVerified && (
+        <Alert className="border-orange-200 bg-orange-50">
+          <AlertCircle className="h-4 w-4 text-orange-600" />
+          <AlertDescription className="text-orange-800">
+            <strong>ID Verification Required:</strong> To participate in document signing sessions, you must complete identity verification.
+            <Button 
+              size="sm" 
+              className="ml-2"
+              onClick={() => setShowVerification(true)}
+            >
+              Verify Now
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* ID Verification Modal/Component */}
+      {showVerification && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-bold">ID Verification Required</h2>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => setShowVerification(false)}
+                >
+                  <XCircle className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="p-4">
+              <EVSVerification
+                userId={profile?.id || 0}
+                onVerificationComplete={handleVerificationComplete}
+                onVerificationFailed={handleVerificationFailed}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -226,7 +304,7 @@ export function ClientDashboard() {
           className="h-16 flex flex-col items-center justify-center"
         >
           <ClipboardList className="h-6 w-6 mb-2" />
-          Pending List of Jobs
+          My Jobs
         </Button>
         <Button 
           variant="outline"
@@ -234,15 +312,24 @@ export function ClientDashboard() {
           className="h-16 flex flex-col items-center justify-center"
         >
           <DollarSign className="h-6 w-6 mb-2" />
-          Payments / Payouts
+          Payments
         </Button>
         <Button 
           variant="outline"
-          onClick={() => setActiveTab('settings')}
+          onClick={() => profile?.isVerified ? setActiveTab('settings') : setShowVerification(true)}
           className="h-16 flex flex-col items-center justify-center"
         >
-          <Settings className="h-6 w-6 mb-2" />
-          Account Management
+          {profile?.isVerified ? (
+            <>
+              <Settings className="h-6 w-6 mb-2" />
+              Account
+            </>
+          ) : (
+            <>
+              <Shield className="h-6 w-6 mb-2" />
+              Verify ID
+            </>
+          )}
         </Button>
       </div>
 
@@ -537,6 +624,83 @@ export function ClientDashboard() {
 
         {/* Settings Tab */}
         <TabsContent value="settings" className="space-y-6">
+          <div>
+            <h2 className="text-2xl font-bold">Account Settings</h2>
+            <p className="text-gray-600">Manage your account information and verification status</p>
+          </div>
+
+          {/* Verification Status Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                ID Verification Status
+              </CardTitle>
+              <CardDescription>
+                Identity verification is required to participate in document signing sessions
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">Current Status</span>
+                {profile?.isVerified ? (
+                  <Badge className="bg-green-100 text-green-800">
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    Verified
+                  </Badge>
+                ) : (
+                  <Badge className="bg-orange-100 text-orange-800">
+                    <Clock className="h-3 w-3 mr-1" />
+                    {profile?.verificationStatus === 'pending' ? 'Pending' : 'Required'}
+                  </Badge>
+                )}
+              </div>
+              
+              {!profile?.isVerified && (
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <div className="flex items-start space-x-3">
+                    <AlertCircle className="h-5 w-5 text-orange-600 mt-0.5" />
+                    <div>
+                      <h4 className="font-medium text-orange-900">Verification Required</h4>
+                      <p className="text-sm text-orange-800 mt-1">
+                        Complete ID verification to access all features and participate in signing sessions.
+                      </p>
+                      <Button 
+                        size="sm" 
+                        className="mt-3"
+                        onClick={() => setShowVerification(true)}
+                      >
+                        Start Verification
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {profile?.isVerified && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-start space-x-3">
+                    <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+                    <div>
+                      <h4 className="font-medium text-green-900">Identity Verified</h4>
+                      <p className="text-sm text-green-800 mt-1">
+                        Your identity has been successfully verified. You can now participate in all signing sessions.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="text-xs text-gray-500 space-y-1">
+                <p><strong>Required Documents:</strong></p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>Government-issued photo ID (Driver's License, State ID, or Passport)</li>
+                  <li>Clear selfie for face matching verification</li>
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Account Management</CardTitle>

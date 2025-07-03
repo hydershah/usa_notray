@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
+import { ConfirmationDialog } from "@/components/ui/confirmation-dialog";
 import { 
   Upload, 
   FileText, 
@@ -80,12 +81,30 @@ export default function EnhancedDocumentManager({
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<DocumentUploadProgress[]>([]);
   const [dragOver, setDragOver] = useState(false);
+  const [selectedDocuments, setSelectedDocuments] = useState<number[]>([]);
+  const [showBulkActions, setShowBulkActions] = useState(false);
 
   // Document edit form
   const [editForm, setEditForm] = useState({
     documentType: 'original' as const,
     isRequired: false,
     signaturePages: [] as number[]
+  });
+  
+  // Confirmation dialog state
+  const [confirmationDialog, setConfirmationDialog] = useState<{
+    isOpen: boolean;
+    type: 'single' | 'bulk';
+    document?: JobDocument;
+    title: string;
+    description: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    type: 'single',
+    title: '',
+    description: '',
+    onConfirm: () => {}
   });
 
   // Data fetching
@@ -164,6 +183,32 @@ export default function EnhancedDocumentManager({
     }
   });
 
+  const bulkDeleteDocumentsMutation = useMutation({
+    mutationFn: async (documentIds: number[]) => {
+      const promises = documentIds.map(id => 
+        apiRequest("DELETE", `/api/jobs/${jobId}/documents/${id}`)
+      );
+      await Promise.all(promises);
+    },
+    onSuccess: () => {
+      refetch();
+      onDocumentsChange?.();
+      setSelectedDocuments([]);
+      setShowBulkActions(false);
+      toast({
+        title: "Documents Deleted",
+        description: `${selectedDocuments.length} documents have been deleted successfully.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Bulk Delete Failed",
+        description: error.message || "Some documents could not be deleted.",
+        variant: "destructive"
+      });
+    }
+  });
+
   // Helper functions
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -213,7 +258,13 @@ export default function EnhancedDocumentManager({
   const canEditDocuments = userRole === 'admin' || userRole === 'title_company' || 
                            (userRole === 'notary' && ['open', 'pending'].includes(jobStatus));
 
-  const canDeleteDocuments = userRole === 'admin' || userRole === 'title_company';
+  // Enhanced delete permissions: admin, job creator, or document uploader
+  const canDeleteDocument = (document: JobDocument) => {
+    return userRole === 'admin' || 
+           userRole === 'title_company' || 
+           document.uploadedBy === user?.id ||
+           userRole === 'notary'; // Allow notaries to delete documents too
+  };
 
   // File handling
   const handleFileSelect = (files: FileList | null) => {
@@ -307,9 +358,54 @@ export default function EnhancedDocumentManager({
   };
 
   const handleDelete = (document: JobDocument) => {
-    if (window.confirm(`Are you sure you want to delete "${document.originalName}"?`)) {
-      deleteDocumentMutation.mutate(document.id);
+    setConfirmationDialog({
+      isOpen: true,
+      type: 'single',
+      document,
+      title: 'Delete Document',
+      description: `Are you sure you want to delete "${document.originalName}"? This action cannot be undone.`,
+      onConfirm: () => {
+        deleteDocumentMutation.mutate(document.id);
+        setConfirmationDialog(prev => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
+
+  const handleSelectDocument = (documentId: number, checked: boolean) => {
+    if (checked) {
+      setSelectedDocuments(prev => [...prev, documentId]);
+    } else {
+      setSelectedDocuments(prev => prev.filter(id => id !== documentId));
     }
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      const deletableDocIds = documents
+        .filter(doc => canDeleteDocument(doc))
+        .map(doc => doc.id);
+      setSelectedDocuments(deletableDocIds);
+    } else {
+      setSelectedDocuments([]);
+    }
+  };
+
+  const handleBulkDelete = () => {
+    const selectedDocs = documents.filter(doc => selectedDocuments.includes(doc.id));
+    const docNames = selectedDocs.map(doc => doc.originalName).join(', ');
+    
+    setConfirmationDialog({
+      isOpen: true,
+      type: 'bulk',
+      title: `Delete ${selectedDocuments.length} Documents`,
+      description: selectedDocuments.length > 3 
+        ? `Are you sure you want to delete ${selectedDocuments.length} documents? This action cannot be undone.`
+        : `Are you sure you want to delete the following documents? This action cannot be undone.\n\n${docNames}`,
+      onConfirm: () => {
+        bulkDeleteDocumentsMutation.mutate(selectedDocuments);
+        setConfirmationDialog(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const addSignaturePage = () => {
@@ -409,8 +505,24 @@ export default function EnhancedDocumentManager({
             <div className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
               Documents ({documents.length})
+              {selectedDocuments.length > 0 && (
+                <Badge className="bg-blue-100 text-blue-800">
+                  {selectedDocuments.length} selected
+                </Badge>
+              )}
             </div>
             <div className="flex gap-2">
+              {selectedDocuments.length > 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleteDocumentsMutation.isPending}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Selected ({selectedDocuments.length})
+                </Button>
+              )}
               {documents.filter(d => d.status === 'ready').length > 0 && (
                 <Badge className="bg-green-100 text-green-800">
                   {documents.filter(d => d.status === 'ready').length} Ready
@@ -437,6 +549,14 @@ export default function EnhancedDocumentManager({
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">
+                    <Checkbox
+                      checked={selectedDocuments.length > 0 && 
+                               selectedDocuments.length === documents.filter(doc => canDeleteDocument(doc)).length}
+                      onCheckedChange={handleSelectAll}
+                      aria-label="Select all documents"
+                    />
+                  </TableHead>
                   <TableHead>Document</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Size</TableHead>
@@ -449,6 +569,15 @@ export default function EnhancedDocumentManager({
               <TableBody>
                 {documents.map((document) => (
                   <TableRow key={document.id}>
+                    <TableCell>
+                      {canDeleteDocument(document) && (
+                        <Checkbox
+                          checked={selectedDocuments.includes(document.id)}
+                          onCheckedChange={(checked) => handleSelectDocument(document.id, !!checked)}
+                          aria-label={`Select ${document.originalName}`}
+                        />
+                      )}
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-3">
                         {getDocumentTypeIcon(document.documentType)}
@@ -513,7 +642,7 @@ export default function EnhancedDocumentManager({
                             <Edit className="h-4 w-4" />
                           </Button>
                         )}
-                        {canDeleteDocuments && (
+                        {canDeleteDocument(document) && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -684,6 +813,19 @@ export default function EnhancedDocumentManager({
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={confirmationDialog.isOpen}
+        onClose={() => setConfirmationDialog(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmationDialog.onConfirm}
+        title={confirmationDialog.title}
+        description={confirmationDialog.description}
+        variant="destructive"
+        confirmText="Delete"
+        cancelText="Cancel"
+        isLoading={deleteDocumentMutation.isPending || bulkDeleteDocumentsMutation.isPending}
+      />
     </div>
   );
 } 

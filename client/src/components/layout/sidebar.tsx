@@ -201,7 +201,7 @@ export function Sidebar() {
   }, {} as Record<string, MenuItem[]>);
 
   return (
-    <nav className="w-64 bg-white/95 backdrop-blur-sm h-screen sticky top-0 border-r border-gray-200/50 overflow-y-auto shadow-lg">
+    <nav className="w-80 bg-white/95 backdrop-blur-sm h-screen sticky top-0 border-r border-gray-200/50 overflow-y-auto shadow-lg">
       <div className="h-full flex flex-col p-6 space-y-8">
         {/* User Info Card */}
         <div className="bg-gradient-to-br from-gray-50 to-white border border-gray-200 rounded-xl p-4 shadow-sm">
@@ -266,10 +266,10 @@ export function Sidebar() {
                             )}>
                               <Icon className="h-4 w-4" />
                             </div>
-                            <div className="text-left">
-                              <span className="block font-medium">{item.label}</span>
+                            <div className="text-left flex-1">
+                              <span className="block font-medium text-sm">{item.label}</span>
                               {item.description && (
-                                <span className="text-xs text-gray-500 block mt-0.5">{item.description}</span>
+                                <span className="text-xs text-gray-500 block mt-1 leading-relaxed">{item.description}</span>
                               )}
                             </div>
                           </div>

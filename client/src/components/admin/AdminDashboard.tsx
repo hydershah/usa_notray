@@ -4,6 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { VerificationDataView } from './VerificationDataView';
+import { VerificationManagement } from './VerificationManagement';
 import { 
   Users, 
   Building2, 
@@ -28,7 +30,9 @@ import {
   Award,
   Sparkles,
   Layers,
-  Bell
+  Bell,
+  Search,
+  Filter
 } from 'lucide-react';
 
 interface PendingUser {
@@ -94,6 +98,17 @@ interface DashboardStats {
   pendingPayments: number;
 }
 
+interface UserData {
+  id: number;
+  username: string;
+  email: string;
+  role: string;
+  isVerified?: boolean;
+  verificationStatus?: string;
+  createdAt: string;
+  isActive: boolean;
+}
+
 export function AdminDashboard() {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState('overview');
@@ -113,33 +128,64 @@ export function AdminDashboard() {
   const [approvedCompanies, setApprovedCompanies] = useState<ApprovedCompany[]>([]);
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // User verification management state
+  const [allUsers, setAllUsers] = useState<UserData[]>([]);
+  const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('all');
+  const [verificationStats, setVerificationStats] = useState<any>(null);
 
   useEffect(() => {
     fetchDashboardData();
+    fetchVerificationStats();
   }, []);
 
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
       
+      // Check if we have a token
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.error('No authentication token found');
+        // Redirect to login or show login form
+        window.location.href = '/login';
+        return;
+      }
+      
       // Fetch dashboard statistics
       const [usersRes, companiesRes, jobsRes, pendingRes, pendingCompaniesRes] = await Promise.all([
         fetch('/api/users', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          headers: { Authorization: `Bearer ${token}` }
         }),
         fetch('/api/companies', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          headers: { Authorization: `Bearer ${token}` }
         }),
         fetch('/api/jobs', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          headers: { Authorization: `Bearer ${token}` }
         }),
         fetch('/api/admin/users/pending-approval', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          headers: { Authorization: `Bearer ${token}` }
         }),
         fetch('/api/admin/companies/pending', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          headers: { Authorization: `Bearer ${token}` }
         })
       ]);
+
+      // Check if any response failed with authentication error
+      if (usersRes.status === 401 || companiesRes.status === 401 || jobsRes.status === 401 || 
+          pendingRes.status === 401 || pendingCompaniesRes.status === 401) {
+        console.error('Authentication failed - invalid or expired token');
+        localStorage.removeItem('token'); // Clear invalid token
+        window.location.href = '/login';
+        return;
+      }
+
+      // Check if all responses are successful
+      if (!usersRes.ok || !companiesRes.ok || !jobsRes.ok || !pendingRes.ok || !pendingCompaniesRes.ok) {
+        throw new Error('One or more API requests failed');
+      }
 
       const users = await usersRes.json();
       const companies = await companiesRes.json();
@@ -147,40 +193,109 @@ export function AdminDashboard() {
       const pending = await pendingRes.json();
       const pendingCompaniesData = await pendingCompaniesRes.json();
 
+      // Ensure all data is arrays before processing
+      const usersArray = Array.isArray(users) ? users : [];
+      const companiesArray = Array.isArray(companies) ? companies : [];
+      const jobsArray = Array.isArray(jobs) ? jobs : [];
+      const pendingArray = Array.isArray(pending) ? pending : [];
+      const pendingCompaniesArray = Array.isArray(pendingCompaniesData) ? pendingCompaniesData : [];
+
+      // Set all users for user management
+      setAllUsers(usersArray);
+
       // Calculate statistics
-      const activeNotaries = users.filter((user: any) => 
+      const activeNotaries = usersArray.filter((user: any) => 
         user.role === 'notary' && user.isActive && user.approvalStatus === 'approved'
       ).length;
 
-      const activeJobs = jobs.filter((job: any) => 
+      const activeJobs = jobsArray.filter((job: any) => 
         ['open', 'pending', 'in_progress'].includes(job.jobStatus)
       ).length;
 
-      const completedJobs = jobs.filter((job: any) => 
+      const completedJobs = jobsArray.filter((job: any) => 
         job.jobStatus === 'completed'
       ).length;
 
       setStats({
-        totalUsers: users.length,
-        pendingApprovals: pending.length,
+        totalUsers: usersArray.length,
+        pendingApprovals: pendingArray.length,
         activeNotaries,
-        totalCompanies: companies.length,
-        pendingCompanies: pendingCompaniesData.length,
+        totalCompanies: companiesArray.length,
+        pendingCompanies: pendingCompaniesArray.length,
         activeJobs,
         completedJobs,
         monthlyRevenue: 15750, // Mock data - TODO: Calculate from payments
         pendingPayments: 3 // Mock data - TODO: Calculate from payments
       });
 
-      setPendingUsers(pending);
-      setPendingCompanies(pendingCompaniesData);
+      setPendingUsers(pendingArray);
+      setPendingCompanies(pendingCompaniesArray);
       // Filter out pending and rejected companies to show only approved ones
-      setApprovedCompanies(companies.filter((company: any) => company.status === 'active' || company.status === 'inactive'));
+      setApprovedCompanies(companiesArray.filter((company: any) => company.status === 'active' || company.status === 'inactive'));
 
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
+      // Set empty arrays to prevent filter errors
+      setAllUsers([]);
+      setPendingUsers([]);
+      setPendingCompanies([]);
+      setApprovedCompanies([]);
+      setStats({
+        totalUsers: 0,
+        pendingApprovals: 0,
+        activeNotaries: 0,
+        totalCompanies: 0,
+        pendingCompanies: 0,
+        activeJobs: 0,
+        completedJobs: 0,
+        monthlyRevenue: 0,
+        pendingPayments: 0
+      });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchVerificationStats = async () => {
+    try {
+      const response = await fetch('/api/admin/verification-stats', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (response.ok) {
+        const stats = await response.json();
+        setVerificationStats(stats);
+      }
+    } catch (error) {
+      console.error('Error fetching verification stats:', error);
+    }
+  };
+
+  const handleManualVerificationAction = async (userId: number, action: 'approve' | 'reject', notes?: string) => {
+    try {
+      const response = await fetch(`/api/admin/users/${userId}/verification-action`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ action, notes })
+      });
+
+      if (response.ok) {
+        // Refresh user data
+        await fetchDashboardData();
+        await fetchVerificationStats();
+        
+        // Update selected user if it's the same one
+        if (selectedUser?.id === userId) {
+          const updatedUser = allUsers.find(u => u.id === userId);
+          if (updatedUser) {
+            setSelectedUser(updatedUser);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error performing manual verification action:', error);
     }
   };
 
@@ -297,6 +412,14 @@ export function AdminDashboard() {
       console.error('Error deactivating company:', error);
     }
   };
+
+  // Filter users based on search term and role
+  const filteredUsers = Array.isArray(allUsers) ? allUsers.filter(user => {
+    const matchesSearch = user.username.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
+                         user.email.toLowerCase().includes(userSearchTerm.toLowerCase());
+    const matchesRole = userRoleFilter === 'all' || user.role === userRoleFilter;
+    return matchesSearch && matchesRole;
+  }) : [];
 
   const StatCard = ({ title, value, icon: Icon, description, trend, trendDirection, color = "blue" }: any) => {
     const colorClasses = {
@@ -418,24 +541,35 @@ export function AdminDashboard() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-6 bg-gray-100 p-1 rounded-xl shadow-inner">
-          {[
-            { value: 'overview', label: 'Overview', icon: BarChart3 },
-            { value: 'approvals', label: 'Approvals', icon: UserCheck },
-            { value: 'users', label: 'Users', icon: Users },
-            { value: 'companies', label: 'Companies', icon: Building2 },
-            { value: 'notaries', label: 'Notaries', icon: Shield },
-            { value: 'settings', label: 'Settings', icon: Settings }
-          ].map((tab) => (
-            <TabsTrigger 
-              key={tab.value} 
-              value={tab.value} 
-              className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-md transition-all duration-200"
-            >
-              <tab.icon className="h-4 w-4" />
-              <span className="hidden sm:inline">{tab.label}</span>
-            </TabsTrigger>
-          ))}
+        <TabsList className="grid w-full grid-cols-7 h-14 bg-gradient-to-r from-blue-50 via-purple-50 to-blue-50 border rounded-lg p-1 shadow-md">
+          <TabsTrigger value="overview" className="flex items-center gap-2 data-[state=active]:bg-blue-500 data-[state=active]:text-white hover:bg-blue-100">
+            <BarChart3 className="h-4 w-4" />
+            <span className="hidden sm:inline">Overview</span>
+          </TabsTrigger>
+          <TabsTrigger value="approvals" className="flex items-center gap-2 data-[state=active]:bg-orange-500 data-[state=active]:text-white hover:bg-orange-100">
+            <UserCheck className="h-4 w-4" />
+            <span className="hidden sm:inline">Approvals</span>
+          </TabsTrigger>
+          <TabsTrigger value="verification" className="flex items-center gap-2 data-[state=active]:bg-green-500 data-[state=active]:text-white hover:bg-green-100">
+            <Shield className="h-4 w-4" />
+            <span className="hidden sm:inline">KYC/KBA</span>
+          </TabsTrigger>
+          <TabsTrigger value="users" className="flex items-center gap-2 data-[state=active]:bg-purple-500 data-[state=active]:text-white hover:bg-purple-100">
+            <Users className="h-4 w-4" />
+            <span className="hidden sm:inline">Users</span>
+          </TabsTrigger>
+          <TabsTrigger value="companies" className="flex items-center gap-2 data-[state=active]:bg-indigo-500 data-[state=active]:text-white hover:bg-indigo-100">
+            <Building2 className="h-4 w-4" />
+            <span className="hidden sm:inline">Companies</span>
+          </TabsTrigger>
+          <TabsTrigger value="notaries" className="flex items-center gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-white hover:bg-amber-100">
+            <Award className="h-4 w-4" />
+            <span className="hidden sm:inline">Notaries</span>
+          </TabsTrigger>
+          <TabsTrigger value="settings" className="flex items-center gap-2 data-[state=active]:bg-gray-500 data-[state=active]:text-white hover:bg-gray-100">
+            <Settings className="h-4 w-4" />
+            <span className="hidden sm:inline">Settings</span>
+          </TabsTrigger>
         </TabsList>
 
         {/* Enhanced Overview Tab */}
@@ -773,77 +907,308 @@ export function AdminDashboard() {
           </Card>
         </TabsContent>
 
+        {/* KYC/KBA Verification Management Tab */}
+        <TabsContent value="verification" className="space-y-8 mt-8">
+          <VerificationManagement />
+        </TabsContent>
+
         {/* Enhanced Users Tab */}
         <TabsContent value="users" className="space-y-8 mt-8">
-          <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-gray-50">
-            <CardHeader className="pb-6">
-              <div className="flex items-center justify-between">
-                <div>
+          {/* Verification Statistics */}
+          {verificationStats && verificationStats.users && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <Card className="border-0 shadow-lg">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600">Total Required</p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {verificationStats.users.total_required_users || verificationStats.users.total_users || 0}
+                      </p>
+                    </div>
+                    <Shield className="h-8 w-8 text-blue-500" />
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Card className="border-0 shadow-lg">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600">Verified</p>
+                      <p className="text-2xl font-bold text-green-600">
+                        {verificationStats.users.verified_users || 0}
+                      </p>
+                    </div>
+                    <CheckCircle className="h-8 w-8 text-green-500" />
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Card className="border-0 shadow-lg">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600">Pending</p>
+                      <p className="text-2xl font-bold text-yellow-600">
+                        {verificationStats.users.pending_users || 0}
+                      </p>
+                    </div>
+                    <Clock className="h-8 w-8 text-yellow-500" />
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Card className="border-0 shadow-lg">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600">Failed</p>
+                      <p className="text-2xl font-bold text-red-600">
+                        {verificationStats.users.failed_users || 0}
+                      </p>
+                    </div>
+                    <AlertCircle className="h-8 w-8 text-red-500" />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* User List */}
+            <div className="lg:col-span-2">
+              <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-gray-50">
+                <CardHeader className="pb-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-3 text-xl">
+                        <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg">
+                          <Users className="h-6 w-6 text-white" />
+                        </div>
+                        User Management
+                      </CardTitle>
+                      <CardDescription className="mt-2 text-base">
+                        Manage users and their verification status
+                      </CardDescription>
+                    </div>
+                    <Badge className="bg-blue-100 text-blue-800 border-blue-200">
+                      {filteredUsers.length} of {allUsers.length} users
+                    </Badge>
+                  </div>
+                  
+                  {/* Search and Filter Controls */}
+                  <div className="flex flex-col sm:flex-row gap-4 mt-6">
+                    <div className="flex-1 relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                      <input
+                        type="text"
+                        placeholder="Search users by name or email..."
+                        value={userSearchTerm}
+                        onChange={(e) => setUserSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                    <div className="relative">
+                      <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                      <select
+                        value={userRoleFilter}
+                        onChange={(e) => setUserRoleFilter(e.target.value)}
+                        className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                      >
+                        <option value="all">All Roles</option>
+                        <option value="signer">Signers</option>
+                        <option value="witness">Witnesses</option>
+                        <option value="notary">Notaries</option>
+                        <option value="admin">Admins</option>
+                        <option value="client">Clients</option>
+                      </select>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4 max-h-96 overflow-y-auto">
+                    {filteredUsers.map((user) => (
+                      <div 
+                        key={user.id} 
+                        className={`p-4 border rounded-lg cursor-pointer transition-all duration-200 hover:shadow-md ${
+                          selectedUser?.id === user.id 
+                            ? 'border-blue-500 bg-blue-50' 
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                        onClick={() => setSelectedUser(user)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold ${
+                              user.role === 'signer' ? 'bg-blue-500' :
+                              user.role === 'witness' ? 'bg-green-500' :
+                              user.role === 'notary' ? 'bg-purple-500' :
+                              user.role === 'admin' ? 'bg-red-500' : 'bg-gray-500'
+                            }`}>
+                              {user.username.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <h4 className="font-semibold text-gray-900">{user.username}</h4>
+                              <p className="text-sm text-gray-600">{user.email}</p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center space-x-2">
+                            <Badge className={`text-xs ${
+                              user.role === 'signer' ? 'bg-blue-100 text-blue-800' :
+                              user.role === 'witness' ? 'bg-green-100 text-green-800' :
+                              user.role === 'notary' ? 'bg-purple-100 text-purple-800' :
+                              user.role === 'admin' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {user.role}
+                            </Badge>
+                            
+                            {(user.role === 'signer' || user.role === 'witness') && (
+                              <Badge className={`text-xs ${
+                                user.isVerified ? 'bg-green-100 text-green-800 border-green-300' :
+                                user.verificationStatus === 'pending' ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
+                                'bg-red-100 text-red-800 border-red-300'
+                              }`}>
+                                {user.isVerified ? 'Verified' : 
+                                 user.verificationStatus === 'pending' ? 'Pending' : 'Not Verified'}
+                              </Badge>
+                            )}
+                            
+                            <Badge className={`text-xs ${
+                              user.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {user.isActive ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {filteredUsers.length === 0 && (
+                      <div className="text-center py-8">
+                        <Users className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                        <p className="text-gray-500">No users match your search criteria.</p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* User Detail Panel */}
+            <div className="lg:col-span-1">
+              <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-gray-50">
+                <CardHeader className="pb-6">
                   <CardTitle className="flex items-center gap-3 text-xl">
                     <div className="p-2 bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg">
-                      <Users className="h-6 w-6 text-white" />
+                      <Eye className="h-6 w-6 text-white" />
                     </div>
-                    User Management
+                    User Details
                   </CardTitle>
-                  <CardDescription className="mt-2 text-base">
-                    Manage all system users and their roles
-                  </CardDescription>
-                </div>
-                <Badge className="bg-green-100 text-green-800 border-green-200">
-                  {stats.totalUsers} Total Users
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {[
-                  { 
-                    icon: Plus, 
-                    title: 'Create New User', 
-                    description: 'Add new users to the system',
-                    color: 'from-blue-500 to-blue-600',
-                    bgColor: 'hover:bg-blue-50',
-                    path: '/user-management'
-                  },
-                  { 
-                    icon: Users, 
-                    title: 'View All Users', 
-                    description: 'Browse and manage existing users',
-                    color: 'from-purple-500 to-purple-600',
-                    bgColor: 'hover:bg-purple-50',
-                    path: '/user-management'
-                  },
-                  { 
-                    icon: Shield, 
-                    title: 'Manage Roles', 
-                    description: 'Configure user roles and permissions',
-                    color: 'from-amber-500 to-orange-500',
-                    bgColor: 'hover:bg-amber-50',
-                    path: '/user-management'
-                  }
-                ].map((action, index) => (
-                  <Card key={index} className="border border-gray-200 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 cursor-pointer group">
-                    <CardContent className="p-6">
-                      <div className="text-center">
-                        <div className={`mx-auto mb-4 w-16 h-16 bg-gradient-to-br ${action.color} rounded-2xl flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all duration-300`}>
-                          <action.icon className="h-8 w-8 text-white" />
+                </CardHeader>
+                <CardContent>
+                  {selectedUser ? (
+                    <div className="space-y-6">
+                      {/* User Basic Info */}
+                      <div>
+                        <h4 className="font-semibold text-gray-900 mb-3">Basic Information</h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Username:</span>
+                            <span className="font-medium">{selectedUser.username}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Email:</span>
+                            <span className="font-medium">{selectedUser.email}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Role:</span>
+                            <Badge className="text-xs">{selectedUser.role}</Badge>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Status:</span>
+                            <Badge className={`text-xs ${
+                              selectedUser.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {selectedUser.isActive ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Created:</span>
+                            <span className="font-medium text-xs">
+                              {new Date(selectedUser.createdAt).toLocaleDateString()}
+                            </span>
+                          </div>
                         </div>
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">{action.title}</h3>
-                        <p className="text-sm text-gray-600 mb-4">{action.description}</p>
-                        <Button 
-                          onClick={() => setLocation(action.path)}
-                          className={`w-full ${action.bgColor} border-gray-200 hover:border-gray-300 transition-all duration-200`}
+                      </div>
+
+                      {/* Manual Verification Actions for Signers/Witnesses */}
+                      {(selectedUser.role === 'signer' || selectedUser.role === 'witness') && 
+                       !selectedUser.isVerified && (
+                        <div>
+                          <h4 className="font-semibold text-gray-900 mb-3">Manual Verification</h4>
+                          <div className="space-y-2">
+                            <Button
+                              size="sm"
+                              onClick={() => handleManualVerificationAction(selectedUser.id, 'approve', 'Manually approved by admin')}
+                              className="w-full bg-green-600 hover:bg-green-700 text-white"
+                            >
+                              <CheckCircle className="h-4 w-4 mr-2" />
+                              Approve Verification
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => {
+                                const reason = prompt('Please provide a reason for rejection:');
+                                if (reason) {
+                                  handleManualVerificationAction(selectedUser.id, 'reject', reason);
+                                }
+                              }}
+                              className="w-full"
+                            >
+                              <AlertCircle className="h-4 w-4 mr-2" />
+                              Reject Verification
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Action Buttons */}
+                      <div className="space-y-2">
+                        <Button
                           variant="outline"
+                          size="sm"
+                          onClick={() => setLocation('/user-management')}
+                          className="w-full"
                         >
-                          Get Started
+                          <Settings className="h-4 w-4 mr-2" />
+                          Manage User
                         </Button>
                       </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <Users className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                      <p className="text-gray-500">Select a user to view details</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
+          {/* Verification Data View */}
+          {selectedUser && (selectedUser.role === 'signer' || selectedUser.role === 'witness') && (
+            <div className="mt-8">
+              <VerificationDataView 
+                userId={selectedUser.id} 
+                userRole={selectedUser.role} 
+                className="w-full"
+              />
+            </div>
+          )}
         </TabsContent>
 
         {/* Enhanced Companies Tab */}
@@ -1126,7 +1491,7 @@ export function AdminDashboard() {
           </Card>
 
           {/* Company Management Actions */}
-          <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-gray-50">
+          <Card className="border-0 shadow-lg bg-gradient-to-br from-purple-500 to-purple-600">
             <CardHeader className="pb-6">
               <div className="flex items-center justify-between">
                 <div>

@@ -4,30 +4,14 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { storage } from './storage';
+import { cloudStorage, handleCloudFileUpload } from './lib/cloud-storage-service';
+import { optimizedStorage } from './lib/optimized-storage-strategy';
 
-// Configure multer for file uploads
-const uploadsDir = path.join(process.cwd(), 'uploads', 'notary-documents');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-const uploadStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const fileExtension = path.extname(file.originalname);
-    const fieldName = file.fieldname;
-    const userId = (req as any).user?.id || 'unknown';
-    cb(null, `${userId}-${fieldName}-${uniqueSuffix}${fileExtension}`);
-  }
-});
-
+// Updated multer configuration for Vultr cloud storage
 const upload = multer({
-  storage: uploadStorage,
+  storage: multer.memoryStorage(), // Use memory storage for cloud upload
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 25 * 1024 * 1024, // Increased to 25MB for notary documents
   },
   fileFilter: (req, file, cb) => {
     const allowedMimes = [
@@ -48,7 +32,7 @@ const upload = multer({
 export function registerNotaryProfileRoutes(app: Express) {
   /**
    * POST /api/notary/profile/upload-documents
-   * Upload notary documents (commission, E&O, bond, certificate, NSA)
+   * Upload notary documents (commission, E&O, bond, certificate, NSA) to Vultr cloud storage
    */
   app.post('/api/notary/profile/upload-documents', verifyToken, upload.fields([
     { name: 'notaryCommissionFile', maxCount: 1 },
@@ -64,27 +48,53 @@ export function registerNotaryProfileRoutes(app: Express) {
 
       const files = req.files as any;
       const filePaths: any = {};
+      const sessionId = `notary-profile-${req.user.id}`;
+      const userId = req.user.id;
 
-      // Process uploaded files
-      if (files.notaryCommissionFile) {
-        filePaths.notaryCommissionFile = `/uploads/notary-documents/${files.notaryCommissionFile[0].filename}`;
-      }
-      if (files.eoInsuranceFile) {
-        filePaths.eoInsuranceFile = `/uploads/notary-documents/${files.eoInsuranceFile[0].filename}`;
-      }
-      if (files.publicCertificateFile) {
-        filePaths.publicCertificateFile = `/uploads/notary-documents/${files.publicCertificateFile[0].filename}`;
-      }
-      if (files.bondFile) {
-        filePaths.bondFile = `/uploads/notary-documents/${files.bondFile[0].filename}`;
-      }
-      if (files.signingAgentFile) {
-        filePaths.signingAgentFile = `/uploads/notary-documents/${files.signingAgentFile[0].filename}`;
+      // Process uploaded files to Vultr cloud storage
+      const fileTypes = [
+        'notaryCommissionFile',
+        'eoInsuranceFile', 
+        'publicCertificateFile',
+        'bondFile',
+        'signingAgentFile'
+      ];
+
+      for (const fileType of fileTypes) {
+        if (files[fileType] && files[fileType][0]) {
+          try {
+            const file = files[fileType][0];
+            
+            // Upload to Vultr using the cloud storage service
+            const uploadResult = await handleCloudFileUpload(
+              file.buffer,
+              file.originalname,
+              'document',
+              sessionId,
+              userId,
+              { documentType: fileType }
+            );
+
+            // Store the Vultr file key and generate signed URL
+            filePaths[fileType] = {
+              fileKey: uploadResult.key,
+              fileUrl: uploadResult.signedUrl,
+              fileName: file.originalname,
+              uploadedAt: new Date().toISOString()
+            };
+
+            console.log(`✅ Uploaded ${fileType} to Vultr: ${file.originalname}`);
+          } catch (error) {
+            console.error(`❌ Failed to upload ${fileType}:`, error);
+            throw new Error(`Failed to upload ${fileType}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          }
+        }
       }
 
       res.json({
-        message: 'Files uploaded successfully',
-        ...filePaths
+        message: 'Files uploaded successfully to cloud storage',
+        uploadedFiles: filePaths,
+        storageType: 'vultr'
       });
 
     } catch (error) {
@@ -132,6 +142,13 @@ export function registerNotaryProfileRoutes(app: Express) {
         signingAgentFile
       } = req.body;
 
+      // Helper function to convert date strings to Date objects
+      const parseDate = (dateString: string) => {
+        if (!dateString) return null;
+        const date = new Date(dateString);
+        return isNaN(date.getTime()) ? null : date;
+      };
+
       // Update user profile with comprehensive notary information
       const updateData = {
         nameOnCommission,
@@ -142,17 +159,17 @@ export function registerNotaryProfileRoutes(app: Express) {
         commissionZipCode,
         commissionCounty,
         commissionNumber,
-        commissionExpiration,
+        commissionExpiration: parseDate(commissionExpiration),
         eoInsuranceCompany,
         eoInsuranceAmount, // Already in cents from frontend
-        eoInsuranceExpiration,
-        publicCertificateExpiration,
+        eoInsuranceExpiration: parseDate(eoInsuranceExpiration),
+        publicCertificateExpiration: parseDate(publicCertificateExpiration),
         publicCertificatePassword,
         bondCompanyName,
         bondAmount, // Already in cents from frontend
-        bondExpiration,
+        bondExpiration: parseDate(bondExpiration),
         signingAgentCertified,
-        signingAgentExpirationDate: signingAgentCertified ? signingAgentExpirationDate : null,
+        signingAgentExpirationDate: signingAgentCertified ? parseDate(signingAgentExpirationDate) : null,
         foreignLanguages,
         // File paths
         notaryCommissionFile,
@@ -162,7 +179,7 @@ export function registerNotaryProfileRoutes(app: Express) {
         signingAgentFile: signingAgentCertified ? signingAgentFile : null,
         // Update approval status and timestamps
         approvalStatus: 'pending', // Reset to pending for admin review
-        lastProfileUpdate: new Date().toISOString(),
+        lastProfileUpdate: new Date(),
         // Mark profile as complete for initial checks
         profileCompleted: true
       };

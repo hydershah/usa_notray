@@ -22,6 +22,44 @@ export function useAuth() {
     setIsLoading(false);
   }, []);
 
+  // Check localStorage periodically to handle same-tab updates
+  useEffect(() => {
+    const checkAuthState = () => {
+      const storedUser = authApi.getStoredUser();
+      const authenticated = authApi.isAuthenticated();
+      
+      if (storedUser && authenticated && !user) {
+        console.log('Auth state sync - updating user from localStorage');
+        setUser(storedUser);
+        setIsAuthenticated(true);
+      } else if ((!storedUser || !authenticated) && user) {
+        console.log('Auth state sync - clearing user state');
+        setUser(null);
+        setIsAuthenticated(false);
+      }
+    };
+
+    // Check immediately
+    checkAuthState();
+    
+    // Check when page becomes visible (handles tab switching)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkAuthState();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Periodic check as fallback (every 5 seconds)
+    const interval = setInterval(checkAuthState, 5000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(interval);
+    };
+  }, [user]);
+
   // Listen for localStorage changes (including from other tabs/logout)
   useEffect(() => {
     const handleStorageChange = () => {
@@ -32,12 +70,17 @@ export function useAuth() {
         console.log('Storage change detected - user logged out');
         setUser(null);
         setIsAuthenticated(false);
+      } else if (!user && storedUser) {
+        // Handle case where localStorage has user but state doesn't
+        console.log('Storage change detected - user logged in');
+        setUser(storedUser);
+        setIsAuthenticated(true);
       }
     };
 
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
+  }, [user]);
 
   const login = async (email: string, password: string) => {
     try {

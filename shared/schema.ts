@@ -92,6 +92,44 @@ export const users = pgTable("users", {
   idExpirationDate: text("id_expiration_date"), // From ID verification tool
   idIssueDate: text("id_issue_date"), // From ID verification tool
   
+  // Basic verification status
+  isVerified: boolean("is_verified").default(false),
+  verificationStatus: text("verification_status").default("pending"), // 'pending', 'approved', 'denied', 'review'
+  
+  // EVS Verification comprehensive data
+  evsTransactionId: text("evs_transaction_id"),
+  evsVerificationConfidence: integer("evs_verification_confidence"), // Confidence score from EVS (0-100)
+  evsVerifiedAt: timestamp("evs_verified_at"),
+  
+  // Extracted document data from EVS
+  evsExtractedFirstName: text("evs_extracted_first_name"),
+  evsExtractedLastName: text("evs_extracted_last_name"),
+  evsExtractedFullName: text("evs_extracted_full_name"),
+  evsExtractedDateOfBirth: text("evs_extracted_date_of_birth"),
+  evsExtractedAddress: text("evs_extracted_address"),
+  
+  // Biometric verification data from EVS
+  evsFaceMatchResult: boolean("evs_face_match_result"),
+  evsFaceMatchConfidence: integer("evs_face_match_confidence"), // Face matching confidence (0-100)
+  evsLivenessScore: integer("evs_liveness_score"), // Liveness detection score (0-100)
+  
+  // EVS verification status and metadata
+  evsVerificationErrors: text("evs_verification_errors").array(), // Array of error messages
+  evsVerificationWarnings: text("evs_verification_warnings").array(), // Array of warning messages
+  evsDocumentTypeDetected: text("evs_document_type_detected"), // Document type detected by EVS
+  evsVerificationMethod: text("evs_verification_method").default("api"), // 'api', 'manual', 'fallback'
+  
+  // Additional metadata
+  verificationIpAddress: text("verification_ip_address"), // IP address during verification
+  verificationUserAgent: text("verification_user_agent"), // Browser/device info during verification
+  verificationRetryCount: integer("verification_retry_count").default(0), // Number of verification attempts
+  
+  // Admin verification bypass functionality
+  verificationBypassedBy: integer("verification_bypassed_by").references(() => users.id), // Admin who bypassed verification
+  verificationBypassedAt: timestamp("verification_bypassed_at"), // When verification was bypassed
+  verificationBypassReason: text("verification_bypass_reason"), // Reason for bypassing verification
+  isVerificationBypassed: boolean("is_verification_bypassed").default(false), // Whether verification was manually bypassed
+  
   // Digital Certificate
   digitalCertificateFile: text("digital_certificate_file"), // PFX file path
   digitalCertificateExpiration: text("digital_certificate_expiration"),
@@ -112,8 +150,29 @@ export const users = pgTable("users", {
   mfaSecret: text("mfa_secret"),
   googleId: text("google_id"), // For Google login capability
   
+  // KBA (Knowledge-Based Authentication) verification
+  kbaVerified: boolean("kba_verified").default(false),
+  kbaVerificationDate: timestamp("kba_verification_date"),
+  kbaScore: integer("kba_score"), // 0-100 score from KBA verification
+  kbaProvider: text("kba_provider"), // 'evs', 'lexisnexis', 'transunion'
+  kbaSessionsCompleted: integer("kba_sessions_completed").default(0),
+  
   // Timestamps
   updatedAt: timestamp("updated_at").defaultNow(),
+  
+  // Notary verification bypass fields
+  notaryVerificationBypassed: boolean("notary_verification_bypassed").default(false),
+  notaryVerificationBypassedBy: integer("notary_verification_bypassed_by").references(() => users.id),
+  notaryVerificationBypassedAt: timestamp("notary_verification_bypassed_at"),
+  notaryVerificationBypassJobId: integer("notary_verification_bypassed_job_id"), // References jobs.id
+  notaryVerificationBypassReason: text("notary_verification_bypass_reason"),
+  
+  // Signature data for live signing sessions
+  signatureImage: text("signature_image"), // Base64 signature image for auto-fill
+  initialsImage: text("initials_image"), // Base64 initials image for auto-fill
+  signatureTyped: text("signature_typed"), // Typed signature text
+  initialsTyped: text("initials_typed"), // Typed initials text
+  defaultSignatureType: varchar("default_signature_type", { length: 20 }).default('draw'), // 'draw', 'type', or 'upload'
 });
 
 // Companies table - Enhanced for comprehensive company management  
@@ -234,6 +293,8 @@ export const jobs = pgTable("jobs", {
   notaryApprovalConditions: text("notary_approval_conditions"),
   signerNotificationsSent: boolean("signer_notifications_sent").default(false),
   signerNotificationsSentAt: timestamp("signer_notifications_sent_at"),
+  // Job type for billing and workflow differentiation
+  jobType: text("job_type").default("title_company"), // 'title_company', 'subscriber_personal'
 });
 
 // Password reset tokens table
@@ -244,6 +305,81 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   expiresAt: timestamp("expires_at").notNull(),
   used: boolean("used").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// User signatures table - for tracking signature history
+export const userSignatures = pgTable("user_signatures", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  signatureType: varchar("signature_type", { length: 20 }).notNull(), // 'signature' or 'initials'
+  format: varchar("format", { length: 20 }).notNull(), // 'draw', 'type', 'upload'
+  data: text("data").notNull(), // base64 image or text
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  ipAddress: varchar("ip_address", { length: 45 }),
+  userAgent: text("user_agent"),
+});
+
+// User verification attempts table - for tracking verification history
+export const userVerificationAttempts = pgTable("user_verification_attempts", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  attemptNumber: integer("attempt_number").notNull(),
+  
+  // EVS API response data
+  evsTransactionId: text("evs_transaction_id"),
+  status: text("status").notNull(), // 'approved', 'denied', 'review', 'error'
+  confidenceScore: integer("confidence_score"),
+  
+  // Document information
+  documentType: text("document_type"),
+  frontImageUploaded: boolean("front_image_uploaded").default(false),
+  backImageUploaded: boolean("back_image_uploaded").default(false),
+  selfieUploaded: boolean("selfie_uploaded").default(false),
+  
+  // Extracted data from this attempt
+  extractedFirstName: text("extracted_first_name"),
+  extractedLastName: text("extracted_last_name"),
+  extractedDateOfBirth: text("extracted_date_of_birth"),
+  extractedDocumentNumber: text("extracted_document_number"),
+  extractedExpirationDate: text("extracted_expiration_date"),
+  extractedAddress: text("extracted_address"),
+  
+  // Biometric results
+  faceMatchResult: boolean("face_match_result"),
+  faceMatchConfidence: integer("face_match_confidence"),
+  livenessScore: integer("liveness_score"),
+  
+  // Verification details
+  errors: text("errors").array(),
+  warnings: text("warnings").array(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  
+  // Metadata
+  attemptedAt: timestamp("attempted_at").defaultNow().notNull(),
+  processingTimeMs: integer("processing_time_ms"), // How long verification took
+  apiEnvironment: text("api_environment").default("sandbox"), // 'sandbox' or 'production'
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// KBA Sessions table - for tracking knowledge-based authentication sessions
+export const kbaSessions = pgTable("kba_sessions", {
+  id: serial("id").primaryKey(),
+  sessionId: text("session_id").notNull().unique(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  status: text("status").notNull().default("initialized"), // 'initialized', 'ready', 'completed', 'failed', 'expired'
+  questionsCount: integer("questions_count").notNull(),
+  questionsAnswered: integer("questions_answered").default(0),
+  correctAnswers: integer("correct_answers").default(0),
+  score: integer("score").default(0), // 0-100 score
+  provider: text("provider").notNull(), // 'evs', 'lexisnexis', 'transunion'
+  expiresAt: timestamp("expires_at").notNull(),
+  completedAt: timestamp("completed_at"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 // Signers table
@@ -308,6 +444,8 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   signers: many(signers),
   jobNotifications: many(jobNotifications),
   approvalQueue: many(notaryApprovalQueue),
+  verificationAttempts: many(userVerificationAttempts),
+  kbaSessions: many(kbaSessions),
   // Financial relationships
   accountTransactions: many(accountTransactions),
   contractorPayments: many(contractorPayments),
@@ -431,6 +569,13 @@ export const jobDocumentsRelations = relations(jobDocuments, ({ one }) => ({
   }),
   uploadedBy: one(users, {
     fields: [jobDocuments.uploadedBy],
+    references: [users.id],
+  }),
+}));
+
+export const kbaSessionsRelations = relations(kbaSessions, ({ one }) => ({
+  user: one(users, {
+    fields: [kbaSessions.userId],
     references: [users.id],
   }),
 }));
@@ -638,7 +783,7 @@ export const notaryAssignmentLog = pgTable("notary_assignment_log", {
   id: serial("id").primaryKey(),
   jobId: integer("job_id").references(() => jobs.id).notNull(),
   notaryId: integer("notary_id").references(() => users.id).notNull(),
-  assignmentType: text("assignment_type").notNull(), // 'manual', 'random', 'preferred'
+  assignmentType: text("assignment_type").notNull(), // 'manual', 'random', 'preferred', 'subscriber_self'
   assignmentStatus: text("assignment_status").notNull(), // 'assigned', 'accepted', 'rejected', 'completed'
   assignedAt: timestamp("assigned_at").defaultNow().notNull(),
   respondedAt: timestamp("responded_at"),
@@ -1020,6 +1165,14 @@ export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTo
 
 export const selectPasswordResetTokenSchema = createSelectSchema(passwordResetTokens);
 
+export const insertUserVerificationAttemptSchema = createInsertSchema(userVerificationAttempts).omit({
+  id: true,
+  createdAt: true,
+  attemptedAt: true,
+});
+
+export const selectUserVerificationAttemptSchema = createSelectSchema(userVerificationAttempts);
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -1065,6 +1218,17 @@ export type InsertNotaryApprovalQueue = z.infer<typeof insertNotaryApprovalQueue
 export type NotaryApprovalQueue = typeof notaryApprovalQueue.$inferSelect;
 export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+export type InsertUserVerificationAttempt = z.infer<typeof insertUserVerificationAttemptSchema>;
+export type UserVerificationAttempt = typeof userVerificationAttempts.$inferSelect;
+
+export const insertKbaSessionSchema = createInsertSchema(kbaSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const selectKbaSessionSchema = createSelectSchema(kbaSessions);
+export type InsertKbaSession = z.infer<typeof insertKbaSessionSchema>;
+export type KbaSession = typeof kbaSessions.$inferSelect;
 
 export const notaryAssignmentLogRelations = relations(notaryAssignmentLog, ({ one }) => ({
   job: one(jobs, {
@@ -1102,6 +1266,13 @@ export const notaryApprovalQueueRelations = relations(notaryApprovalQueue, ({ on
 export const passwordResetTokensRelations = relations(passwordResetTokens, ({ one }) => ({
   user: one(users, {
     fields: [passwordResetTokens.userId],
+    references: [users.id],
+  }),
+}));
+
+export const userVerificationAttemptsRelations = relations(userVerificationAttempts, ({ one }) => ({
+  user: one(users, {
+    fields: [userVerificationAttempts.userId],
     references: [users.id],
   }),
 }));
@@ -1182,3 +1353,279 @@ export const participantPayments = pgTable("participant_payments", {
 
 export type InsertParticipantPayment = typeof participantPayments.$inferInsert;
 export type SelectParticipantPayment = typeof participantPayments.$inferSelect;
+
+// Editor Session table - for tracking active editing sessions
+export const editorSessions = pgTable("editor_sessions", {
+  id: serial("id").primaryKey(),
+  jobId: integer("job_id").references(() => jobs.id).notNull(),
+  sessionId: text("session_id").notNull().unique(), // UUID for session
+  notaryId: integer("notary_id").references(() => users.id).notNull(),
+  status: text("status").default("preparing").notNull(), // 'preparing', 'active', 'completed', 'cancelled'
+  sessionType: text("session_type").default("notary").notNull(), // 'tagging', 'notary'
+  videoSessionId: text("video_session_id"), // Whereby.com session ID
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Document Tags table - for storing tags placed on documents
+export const documentTags = pgTable("document_tags", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").references(() => jobDocuments.id).notNull(),
+  sessionId: integer("session_id").references(() => editorSessions.id).notNull(),
+  tagType: text("tag_type").notNull(), // 'A', 'S', 'I', 'N', 'X', 'O', 'E', 'W', 'T', 'D'
+  assignedUserId: integer("assigned_user_id").references(() => users.id), // null for universal tags
+  pageNumber: integer("page_number").notNull(),
+  xPosition: integer("x_position").notNull(),
+  yPosition: integer("y_position").notNull(),
+  width: integer("width").default(100).notNull(),
+  height: integer("height").default(30).notNull(),
+  isCompleted: boolean("is_completed").default(false),
+  content: text("content"), // For completed tags
+  completedBy: integer("completed_by").references(() => users.id),
+  completedAt: timestamp("completed_at"),
+  createdBy: integer("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Session Participants table - for tracking who's in the session
+export const sessionParticipants = pgTable("session_participants", {
+  id: serial("id").primaryKey(),
+  sessionId: integer("session_id").references(() => editorSessions.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  role: text("role").notNull(), // 'notary', 'signer', 'observer'
+  userColor: text("user_color").notNull(), // Color for tags assigned to this user
+  isActive: boolean("is_active").default(true).notNull(),
+  joinedAt: timestamp("joined_at").defaultNow(),
+  leftAt: timestamp("left_at"),
+  
+  // ID Verification fields (per specs)
+  idVerified: boolean("id_verified").default(false).notNull(),
+  idVerifiedAt: timestamp("id_verified_at"),
+  idVerifiedBy: integer("id_verified_by").references(() => users.id),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Notary Log Entries table - for tracking notary actions
+export const notaryLogEntries = pgTable("notary_log_entries", {
+  id: serial("id").primaryKey(),
+  sessionId: integer("session_id").references(() => editorSessions.id).notNull(),
+  notaryId: integer("notary_id").references(() => users.id).notNull(),
+  signerId: integer("signer_id").references(() => users.id).notNull(),
+  documentId: integer("document_id").references(() => jobDocuments.id).notNull(),
+  notarizationType: text("notarization_type").notNull(), // 'JURAT', 'Acknowledgment', 'Copy Certification'
+  pageNumber: integer("page_number").notNull(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Audit Trail table - for tracking all actions in the session
+export const auditTrail = pgTable("audit_trail", {
+  id: serial("id").primaryKey(),
+  sessionId: integer("session_id").references(() => editorSessions.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  action: text("action").notNull(), // 'tag_placed', 'tag_completed', 'signature_placed', 'seal_placed', etc.
+  details: jsonb("details"), // JSON object with action details
+  documentId: integer("document_id").references(() => jobDocuments.id),
+  pageNumber: integer("page_number"),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+});
+
+// Document Versions table - for tracking document versions
+export const documentVersions = pgTable("document_versions", {
+  id: serial("id").primaryKey(),
+  originalDocumentId: integer("original_document_id").references(() => jobDocuments.id).notNull(),
+  sessionId: integer("session_id").references(() => editorSessions.id).notNull(),
+  versionNumber: integer("version_number").notNull(),
+  fileName: text("file_name").notNull(),
+  filePath: text("file_path").notNull(),
+  fileSize: integer("file_size").notNull(),
+  status: text("status").default("draft").notNull(), // 'draft', 'completed', 'certified'
+  digitalCertificateApplied: boolean("digital_certificate_applied").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Session Settings table - for storing session configuration
+export const sessionSettings = pgTable("session_settings", {
+  id: serial("id").primaryKey(),
+  sessionId: integer("session_id").references(() => editorSessions.id).notNull(),
+  allowParticipantChat: boolean("allow_participant_chat").default(true),
+  autoSyncScreens: boolean("auto_sync_screens").default(false),
+  recordSession: boolean("record_session").default(true),
+  requireIdVerification: boolean("require_id_verification").default(true),
+  maxConcurrentUsers: integer("max_concurrent_users").default(10),
+  sessionTimeout: integer("session_timeout").default(7200), // 2 hours in seconds
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Relations for new tables
+export const editorSessionsRelations = relations(editorSessions, ({ one, many }) => ({
+  job: one(jobs, {
+    fields: [editorSessions.jobId],
+    references: [jobs.id],
+  }),
+  notary: one(users, {
+    fields: [editorSessions.notaryId],
+    references: [users.id],
+  }),
+  documentTags: many(documentTags),
+  participants: many(sessionParticipants),
+  notaryLogEntries: many(notaryLogEntries),
+  auditTrail: many(auditTrail),
+  documentVersions: many(documentVersions),
+  settings: one(sessionSettings),
+}));
+
+export const documentTagsRelations = relations(documentTags, ({ one }) => ({
+  document: one(jobDocuments, {
+    fields: [documentTags.documentId],
+    references: [jobDocuments.id],
+  }),
+  session: one(editorSessions, {
+    fields: [documentTags.sessionId],
+    references: [editorSessions.id],
+  }),
+  assignedUser: one(users, {
+    fields: [documentTags.assignedUserId],
+    references: [users.id],
+  }),
+  completedBy: one(users, {
+    fields: [documentTags.completedBy],
+    references: [users.id],
+  }),
+  createdBy: one(users, {
+    fields: [documentTags.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const sessionParticipantsRelations = relations(sessionParticipants, ({ one }) => ({
+  session: one(editorSessions, {
+    fields: [sessionParticipants.sessionId],
+    references: [editorSessions.id],
+  }),
+  user: one(users, {
+    fields: [sessionParticipants.userId],
+    references: [users.id],
+  }),
+}));
+
+export const notaryLogEntriesRelations = relations(notaryLogEntries, ({ one }) => ({
+  session: one(editorSessions, {
+    fields: [notaryLogEntries.sessionId],
+    references: [editorSessions.id],
+  }),
+  notary: one(users, {
+    fields: [notaryLogEntries.notaryId],
+    references: [users.id],
+  }),
+  signer: one(users, {
+    fields: [notaryLogEntries.signerId],
+    references: [users.id],
+  }),
+  document: one(jobDocuments, {
+    fields: [notaryLogEntries.documentId],
+    references: [jobDocuments.id],
+  }),
+}));
+
+export const auditTrailRelations = relations(auditTrail, ({ one }) => ({
+  session: one(editorSessions, {
+    fields: [auditTrail.sessionId],
+    references: [editorSessions.id],
+  }),
+  user: one(users, {
+    fields: [auditTrail.userId],
+    references: [users.id],
+  }),
+  document: one(jobDocuments, {
+    fields: [auditTrail.documentId],
+    references: [jobDocuments.id],
+  }),
+}));
+
+export const documentVersionsRelations = relations(documentVersions, ({ one }) => ({
+  originalDocument: one(jobDocuments, {
+    fields: [documentVersions.originalDocumentId],
+    references: [jobDocuments.id],
+  }),
+  session: one(editorSessions, {
+    fields: [documentVersions.sessionId],
+    references: [editorSessions.id],
+  }),
+}));
+
+export const sessionSettingsRelations = relations(sessionSettings, ({ one }) => ({
+  session: one(editorSessions, {
+    fields: [sessionSettings.sessionId],
+    references: [editorSessions.id],
+  }),
+}));
+
+// Zod schemas for new tables
+export const insertEditorSessionSchema = createInsertSchema(editorSessions);
+export const selectEditorSessionSchema = createSelectSchema(editorSessions);
+export const insertDocumentTagSchema = createInsertSchema(documentTags);
+export const selectDocumentTagSchema = createSelectSchema(documentTags);
+export const insertSessionParticipantSchema = createInsertSchema(sessionParticipants);
+export const selectSessionParticipantSchema = createSelectSchema(sessionParticipants);
+export const insertNotaryLogEntrySchema = createInsertSchema(notaryLogEntries);
+export const selectNotaryLogEntrySchema = createSelectSchema(notaryLogEntries);
+export const insertAuditTrailSchema = createInsertSchema(auditTrail);
+export const selectAuditTrailSchema = createSelectSchema(auditTrail);
+export const insertDocumentVersionSchema = createInsertSchema(documentVersions);
+export const selectDocumentVersionSchema = createSelectSchema(documentVersions);
+export const insertSessionSettingsSchema = createInsertSchema(sessionSettings);
+export const selectSessionSettingsSchema = createSelectSchema(sessionSettings);
+
+// Type exports for new tables
+export type InsertEditorSession = z.infer<typeof insertEditorSessionSchema>;
+export type EditorSession = typeof editorSessions.$inferSelect;
+export type InsertDocumentTag = z.infer<typeof insertDocumentTagSchema>;
+export type DocumentTag = typeof documentTags.$inferSelect;
+export type InsertSessionParticipant = z.infer<typeof insertSessionParticipantSchema>;
+export type SessionParticipant = typeof sessionParticipants.$inferSelect;
+export type InsertNotaryLogEntry = z.infer<typeof insertNotaryLogEntrySchema>;
+export type NotaryLogEntry = typeof notaryLogEntries.$inferSelect;
+export type InsertAuditTrail = z.infer<typeof insertAuditTrailSchema>;
+export type AuditTrail = typeof auditTrail.$inferSelect;
+export type InsertDocumentVersion = z.infer<typeof insertDocumentVersionSchema>;
+export type DocumentVersion = typeof documentVersions.$inferSelect;
+export type InsertSessionSettings = z.infer<typeof insertSessionSettingsSchema>;
+export type SessionSettings = typeof sessionSettings.$inferSelect;
+
+// Add tag types and colors
+export const TAG_TYPES = {
+  // Signer tags
+  A: { name: 'Name', description: 'Signer name field', userType: 'signer' },
+  S: { name: 'Signature', description: 'Signature field', userType: 'signer' },
+  I: { name: 'Initials', description: 'Initial field', userType: 'signer' },
+  
+  // Notary tags
+  N: { name: 'Commission Number', description: 'Notary commission number', userType: 'notary' },
+  X: { name: 'Commission Expiration', description: 'Commission expiration date', userType: 'notary' },
+  O: { name: 'Disclosure', description: 'Notary disclosure line', userType: 'notary' },
+  E: { name: 'Seal', description: 'Notary seal/stamp', userType: 'notary' },
+  W: { name: 'Whiteout', description: 'Cover original PDF content', userType: 'notary' },
+  
+  // Universal tags
+  T: { name: 'Text', description: 'Text field', userType: 'universal' },
+  D: { name: 'Date', description: 'Date field', userType: 'universal' },
+} as const;
+
+export const USER_COLORS = [
+  '#FF6B6B', // Red
+  '#4ECDC4', // Teal
+  '#45B7D1', // Blue
+  '#96CEB4', // Green
+  '#FFEAA7', // Yellow
+  '#DDA0DD', // Plum
+  '#98D8C8', // Mint
+  '#F7DC6F', // Light Yellow
+  '#BB8FCE', // Light Purple
+  '#85C1E9', // Light Blue
+] as const;

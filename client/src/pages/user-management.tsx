@@ -55,6 +55,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { UserForm } from '@/components/user/user-form';
+import { AdminCertificateManager } from '@/components/admin/AdminCertificateManager';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { getRoleColor, formatRole, formatDate, formatDateTime } from '@/lib/utils';
@@ -106,6 +107,7 @@ export default function UserManagement() {
   const [auditUser, setAuditUser] = useState<any>(null);
   const [isRoleEditOpen, setIsRoleEditOpen] = useState(false);
   const [roleEditUser, setRoleEditUser] = useState<any>(null);
+  const [isCertificateManagementOpen, setIsCertificateManagementOpen] = useState(false);
   
   // Search and filter state
   const [searchTerm, setSearchTerm] = useState('');
@@ -267,15 +269,26 @@ export default function UserManagement() {
   });
 
   const toggleUserStatusMutation = useMutation({
-    mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
-      const response = await apiRequest('PATCH', `/api/users/${id}/status`, { isActive });
+    mutationFn: async ({ id, isActive, role }: { id: number; isActive: boolean; role: string }) => {
+      const payload: { isActive: boolean; approvalStatus?: string } = { isActive };
+      
+      // For notary users, also set approval status when activating
+      if (role === 'notary' && isActive) {
+        payload.approvalStatus = 'approved';
+      }
+      
+      const response = await apiRequest('PATCH', `/api/users/${id}/status`, payload);
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      
+      const isNotaryApproval = variables.role === 'notary' && variables.isActive;
       toast({
         title: "Success",
-        description: "User status updated successfully.",
+        description: isNotaryApproval 
+          ? "Notary user approved and activated successfully." 
+          : "User status updated successfully.",
       });
     },
     onError: (error: any) => {
@@ -376,7 +389,7 @@ export default function UserManagement() {
 
   const toggle2FAMutation = useMutation({
     mutationFn: async ({ userId, enabled }: { userId: number; enabled: boolean }) => {
-      const response = await apiRequest('PATCH', `/api/users/${userId}/quick-update`, { mfaEnabled: enabled });
+      const response = await apiRequest('PATCH', `/api/users/${userId}/2fa/toggle`, { enabled });
       return response.json();
     },
     onSuccess: () => {
@@ -412,6 +425,48 @@ export default function UserManagement() {
         variant: "destructive",
         title: "Error",
         description: error.message || "Failed to generate API key.",
+      });
+    },
+  });
+
+  const generateCertificateMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      const response = await apiRequest('POST', `/api/certificates/generate/${userId}`);
+      return response.json();
+    },
+    onSuccess: (data, userId) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      toast({
+        title: "Certificate Generated",
+        description: `Certificate generated successfully for user ${userId}`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to generate certificate",
+      });
+    },
+  });
+
+  const revokeCertificateMutation = useMutation({
+    mutationFn: async ({ userId, reason }: { userId: number; reason: string }) => {
+      const response = await apiRequest('POST', `/api/certificates/revoke/${userId}`, { reason });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      toast({
+        title: "Certificate Revoked",
+        description: "Certificate has been revoked successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to revoke certificate",
       });
     },
   });
@@ -453,7 +508,8 @@ export default function UserManagement() {
   const handleToggleUserStatus = (user: any) => {
     toggleUserStatusMutation.mutate({ 
       id: user.id, 
-      isActive: user.isActive === false ? true : false 
+      isActive: user.isActive === false ? true : false,
+      role: user.role
     });
   };
 
@@ -521,15 +577,108 @@ export default function UserManagement() {
     resetPasswordMutation.mutate(user.id);
   };
 
-  const handleToggle2FA = (user: any) => {
-    toggle2FAMutation.mutate({ 
-      userId: user.id, 
-      enabled: !user.twoFactorEnabled 
+    const handleToggle2FA = (user: any) => {
+    toggle2FAMutation.mutate({
+      userId: user.id,
+      enabled: !user.mfaEnabled
+    });
+  };
+
+  const handleBulk2FAToggle = (enabled: boolean) => {
+    if (selectedUsers.length === 0) return;
+    
+    // Toggle 2FA for all selected users
+    selectedUsers.forEach(userId => {
+      toggle2FAMutation.mutate({
+        userId,
+        enabled
+      });
+    });
+    
+    // Clear selection after operation
+    setSelectedUsers([]);
+    
+    toast({
+      title: `2FA ${enabled ? 'Enabled' : 'Disabled'}`,
+      description: `Two-factor authentication has been ${enabled ? 'enabled' : 'disabled'} for ${selectedUsers.length} selected user(s).`,
     });
   };
 
   const handleGenerateAPIKey = (user: any) => {
     generateAPIKeyMutation.mutate(user.id);
+  };
+
+  const handleGenerateCertificate = (user: any) => {
+    generateCertificateMutation.mutate(user.id);
+  };
+
+  const handleDownloadCertificate = async (user: any, fileType: 'p12' | 'pem' = 'p12') => {
+    try {
+      const response = await apiRequest('GET', `/api/certificates/download/${user.id}?type=${fileType}`);
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `notary-certificate-${user.id}.${fileType}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+        // Show password if available
+        const password = response.headers.get('X-Certificate-Password');
+        if (password && fileType === 'p12') {
+          toast({
+            title: "Certificate Downloaded",
+            description: `P12 Password: ${password}`,
+          });
+        }
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error);
+      }
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Download Failed",
+        description: error.message || "Failed to download certificate",
+      });
+    }
+  };
+
+  const handleRevokeCertificate = (user: any) => {
+    const reason = prompt('Enter reason for revocation:');
+    if (reason) {
+      revokeCertificateMutation.mutate({ userId: user.id, reason });
+    }
+  };
+
+  const handleValidateCertificate = async (user: any) => {
+    try {
+      const response = await apiRequest('GET', `/api/certificates/validate/${user.id}`);
+      const data = await response.json();
+      
+      if (data.valid) {
+        toast({
+          title: "Certificate Valid",
+          description: `Certificate is valid. Days remaining: ${data.daysRemaining}`,
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Certificate Invalid",
+          description: data.error || "Certificate is not valid",
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Validation Failed",
+        description: error.message || "Failed to validate certificate",
+      });
+    }
   };
 
   const handleBulkRoleChange = () => {
@@ -550,7 +699,7 @@ export default function UserManagement() {
       email: user.email,
       role: formatRole(user.role),
       status: user.isActive !== false ? 'Active' : 'Inactive',
-      twoFA: user.twoFactorEnabled ? 'Enabled' : 'Disabled',
+              twoFA: user.mfaEnabled ? 'Enabled' : 'Disabled',
       lastLogin: user.lastLoginAt ? formatDateTime(user.lastLoginAt) : 'Never',
       created: formatDate(user.createdAt),
       profileCompletion: `${getProfileCompletion(user)}%`
@@ -604,7 +753,7 @@ export default function UserManagement() {
     if (user.email) completion += 20;
     if (user.emailVerified) completion += 20;
     if (user.role) completion += 20;
-    if (user.twoFactorEnabled) completion += 20;
+    if (user.mfaEnabled) completion += 20;
     return completion;
   };
 
@@ -630,8 +779,10 @@ export default function UserManagement() {
 
   return (
     <MainLayout>
-      <TooltipProvider>
-        <Card>
+      <div className="-mx-4 sm:-mx-6 lg:-mx-8 xl:-mx-12">
+        <div className="px-1 sm:px-2 lg:px-3 xl:px-4">
+          <TooltipProvider>
+            <Card className="w-full max-w-none border-0 shadow-sm min-w-0">
           <CardHeader>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="flex items-center gap-2">
@@ -648,6 +799,30 @@ export default function UserManagement() {
                     >
                       <Edit className="h-4 w-4 mr-2" />
                       Change Role ({selectedUsers.length})
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => handleBulk2FAToggle(true)}
+                      size="sm"
+                    >
+                      <Shield className="h-4 w-4 mr-2" />
+                      Enable 2FA ({selectedUsers.length})
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => handleBulk2FAToggle(false)}
+                      size="sm"
+                    >
+                      <ShieldAlert className="h-4 w-4 mr-2" />
+                      Disable 2FA ({selectedUsers.length})
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsCertificateManagementOpen(true)}
+                      size="sm"
+                    >
+                      <Shield className="h-4 w-4 mr-2" />
+                      Certificate Management
                     </Button>
                     <Button
                       variant="destructive"
@@ -689,7 +864,7 @@ export default function UserManagement() {
             </div>
           </CardHeader>
           
-          <CardContent>
+          <CardContent className="px-2 sm:px-4 lg:px-6">
             {/* Advanced Search and Filter Controls */}
             <div className="flex flex-col sm:flex-row gap-4 mb-6">
               <div className="flex-1">
@@ -765,7 +940,8 @@ export default function UserManagement() {
               <span>Total: {Array.isArray(users) ? users.length : 0} users</span>
             </div>
 
-            <div className="overflow-x-auto">
+                         <div className="overflow-x-auto w-full -mx-2 sm:-mx-4 lg:-mx-6">
+               <div className="inline-block min-w-full align-middle px-2 sm:px-4 lg:px-6">
               {isLoading ? (
                 <div className="text-center py-8">Loading users...</div>
               ) : filteredAndSortedUsers.length === 0 ? (
@@ -773,7 +949,7 @@ export default function UserManagement() {
                   {searchTerm ? `No users found matching "${searchTerm}"` : "No users found. Invite or add users to get started."}
                 </div>
               ) : (
-                <Table>
+                <Table className="w-full min-w-full table-fixed lg:table-auto">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-12">
@@ -782,7 +958,7 @@ export default function UserManagement() {
                           onCheckedChange={handleSelectAll}
                         />
                       </TableHead>
-                      <TableHead>
+                      <TableHead className="w-48 lg:w-56">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -793,7 +969,7 @@ export default function UserManagement() {
                           {getSortIcon('name')}
                         </Button>
                       </TableHead>
-                      <TableHead>
+                      <TableHead className="w-56 lg:w-64">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -804,7 +980,7 @@ export default function UserManagement() {
                           {getSortIcon('email')}
                         </Button>
                       </TableHead>
-                      <TableHead>
+                      <TableHead className="w-40 lg:w-48">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -815,22 +991,10 @@ export default function UserManagement() {
                           {getSortIcon('role')}
                         </Button>
                       </TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Security</TableHead>
-                      <TableHead>Profile</TableHead>
-                      <TableHead>Last Login</TableHead>
-                      <TableHead>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleSort('created')}
-                          className="h-8 px-2 font-medium"
-                        >
-                          Created
-                          {getSortIcon('created')}
-                        </Button>
-                      </TableHead>
-                      <TableHead>Actions</TableHead>
+                      <TableHead className="w-32 lg:w-36">Status</TableHead>
+                      <TableHead className="w-32 lg:w-36">Security</TableHead>
+                      <TableHead className="w-40 lg:w-48">Last Login</TableHead>
+                      <TableHead className="w-24">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -856,14 +1020,21 @@ export default function UserManagement() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div>
-                            <div>{user.email}</div>
-                            {user.emailVerified === false && (
-                              <div className="text-xs text-orange-600 flex items-center gap-1">
-                                <AlertCircle className="w-3 h-3" />
-                                Unverified
-                              </div>
-                            )}
+                          <div className="min-w-[180px]">
+                            <div className="font-medium">{user.email}</div>
+                            <div className="flex items-center gap-1 mt-1">
+                              {user.emailVerified !== false ? (
+                                <Badge variant="default" className="text-xs bg-green-500">
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  Verified
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-xs">
+                                  <AlertCircle className="w-3 h-3 mr-1" />
+                                  Unverified
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -916,8 +1087,8 @@ export default function UserManagement() {
                           <div className="flex items-center gap-2">
                             <Tooltip>
                               <TooltipTrigger>
-                                <Badge variant={user.twoFactorEnabled ? "default" : "secondary"} className="text-xs">
-                                  {user.twoFactorEnabled ? (
+                                <Badge variant={user.mfaEnabled ? "default" : "secondary"} className="text-xs">
+                                  {user.mfaEnabled ? (
                                     <Shield className="w-3 h-3 mr-1" />
                                   ) : (
                                     <ShieldAlert className="w-3 h-3 mr-1" />
@@ -932,7 +1103,7 @@ export default function UserManagement() {
                                   onClick={() => handleToggle2FA(user)}
                                   disabled={toggle2FAMutation.isPending}
                                 >
-                                  {user.twoFactorEnabled ? 'Disable' : 'Enable'} 2FA
+                                  {user.mfaEnabled ? 'Disable' : 'Enable'} 2FA
                                 </Button>
                               </TooltipContent>
                             </Tooltip>
@@ -959,37 +1130,16 @@ export default function UserManagement() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="space-y-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm text-gray-600">Overall Progress</span>
-                              <span className="text-sm font-medium">{getProfileCompletion(user)}%</span>
-                            </div>
-                            <Progress value={getProfileCompletion(user)} className="h-2" />
-                            <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
-                              <div className="flex items-center gap-1">
-                                {user.username ? <CheckCircle className="w-3 h-3 text-green-500" /> : <XCircle className="w-3 h-3 text-red-500" />}
-                                Username
-                              </div>
-                              <div className="flex items-center gap-1">
-                                {user.email ? <CheckCircle className="w-3 h-3 text-green-500" /> : <XCircle className="w-3 h-3 text-red-500" />}
-                                Email
-                              </div>
-                              <div className="flex items-center gap-1">
-                                {user.emailVerified !== false ? <CheckCircle className="w-3 h-3 text-green-500" /> : <XCircle className="w-3 h-3 text-red-500" />}
-                                Email Verified
-                              </div>
-                              <div className="flex items-center gap-1">
-                                {user.twoFactorEnabled ? <CheckCircle className="w-3 h-3 text-green-500" /> : <XCircle className="w-3 h-3 text-red-500" />}
-                                Two-Factor Auth
-                              </div>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-sm">
+                          <div className="text-sm min-w-[140px]">
                             {user.lastLoginAt ? (
-                              <div>
-                                <div>{formatDateTime(user.lastLoginAt)}</div>
+                              <div className="space-y-1">
+                                <div className="font-medium">{formatDate(user.lastLoginAt)}</div>
+                                <div className="text-xs text-gray-500">
+                                  {new Date(user.lastLoginAt).toLocaleTimeString('en-US', { 
+                                    hour: '2-digit', 
+                                    minute: '2-digit' 
+                                  })}
+                                </div>
                                 {user.lastLoginIP && (
                                   <div className="text-xs text-gray-500 flex items-center gap-1">
                                     <Globe className="w-3 h-3" />
@@ -1000,11 +1150,6 @@ export default function UserManagement() {
                             ) : (
                               <span className="text-gray-500">Never</span>
                             )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-sm text-gray-500">
-                            {formatDate(user.createdAt)}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -1027,18 +1172,53 @@ export default function UserManagement() {
                                 <Edit className="h-4 w-4 mr-2" />
                                 Edit User
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleResetPassword(user)}>
-                                <RotateCcw className="h-4 w-4 mr-2" />
-                                Reset Password
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem 
-                                onClick={() => handleDeleteUser(user)}
-                                className="text-red-600"
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete User
-                              </DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => handleResetPassword(user)}>
+                        <RotateCcw className="h-4 w-4 mr-2" />
+                        Reset Password
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleToggle2FA(user)}>
+                        <Shield className="h-4 w-4 mr-2" />
+                        {user.mfaEnabled ? 'Disable' : 'Enable'} 2FA
+                      </DropdownMenuItem>
+                      
+                      {/* Certificate Management - Only for Notaries */}
+                      {user.role === 'notary' && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => handleGenerateCertificate(user)}>
+                            <Key className="h-4 w-4 mr-2" />
+                            Generate Certificate
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleDownloadCertificate(user, 'p12')}>
+                            <Download className="h-4 w-4 mr-2" />
+                            Download Certificate (.p12)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleDownloadCertificate(user, 'pem')}>
+                            <FileText className="h-4 w-4 mr-2" />
+                            Download Certificate (.pem)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleValidateCertificate(user)}>
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            Validate Certificate
+                          </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            onClick={() => handleRevokeCertificate(user)}
+                            className="text-orange-600"
+                          >
+                            <XCircle className="h-4 w-4 mr-2" />
+                            Revoke Certificate
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                      
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem 
+                        onClick={() => handleDeleteUser(user)}
+                        className="text-red-600"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete User
+                      </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
@@ -1047,6 +1227,7 @@ export default function UserManagement() {
                   </TableBody>
                 </Table>
               )}
+              </div>
             </div>
 
             {/* Enhanced Pagination */}
@@ -1114,7 +1295,9 @@ export default function UserManagement() {
             )}
           </CardContent>
         </Card>
-      </TooltipProvider>
+          </TooltipProvider>
+        </div>
+      </div>
 
       <UserForm
         user={selectedUser}
@@ -1345,7 +1528,7 @@ export default function UserManagement() {
                   <div>
                     <span className="text-gray-600">Two-Factor Auth:</span>
                     <div className="flex items-center gap-2">
-                      {userForDetails.twoFactorEnabled ? (
+                      {userForDetails.mfaEnabled ? (
                         <Badge variant="default" className="text-xs">
                           <ShieldCheck className="w-3 h-3 mr-1" />
                           Enabled
@@ -1411,7 +1594,7 @@ export default function UserManagement() {
                       Email Verified
                     </div>
                     <div className="flex items-center gap-1">
-                      {userForDetails.twoFactorEnabled ? <CheckCircle className="w-3 h-3 text-green-500" /> : <XCircle className="w-3 h-3 text-red-500" />}
+                      {userForDetails.mfaEnabled ? <CheckCircle className="w-3 h-3 text-green-500" /> : <XCircle className="w-3 h-3 text-red-500" />}
                       Two-Factor Auth
                     </div>
                   </div>
@@ -1623,6 +1806,25 @@ export default function UserManagement() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Certificate Management Dialog */}
+      <Dialog open={isCertificateManagementOpen} onOpenChange={setIsCertificateManagementOpen}>
+        <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              Digital Certificate Management
+            </DialogTitle>
+            <DialogDescription>
+              Manage digital certificates for notary users in the system
+            </DialogDescription>
+          </DialogHeader>
+          <AdminCertificateManager 
+            selectedUserIds={selectedUsers}
+            onClose={() => setIsCertificateManagementOpen(false)}
+          />
         </DialogContent>
       </Dialog>
     </MainLayout>

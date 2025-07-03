@@ -21,6 +21,7 @@ interface VerificationState {
   selfieData?: string;
   verificationResult?: any;
   error?: string;
+  documentType?: string;
 }
 
 export function EVSVerification({ 
@@ -28,7 +29,10 @@ export function EVSVerification({
   onVerificationComplete, 
   onVerificationFailed 
 }: EVSVerificationProps) {
-  const [state, setState] = useState<VerificationState>({ step: 'upload' });
+  const [state, setState] = useState<VerificationState>({ 
+    step: 'upload',
+    documentType: 'drivers_license' 
+  });
   const [loading, setLoading] = useState(false);
   const frontInputRef = useRef<HTMLInputElement>(null);
   const backInputRef = useRef<HTMLInputElement>(null);
@@ -160,6 +164,9 @@ export function EVSVerification({
         formData.append('backImage', dataURLtoBlob(state.backImageData));
       }
       formData.append('selfieImage', dataURLtoBlob(state.selfieData));
+      
+      // For international documents like Emirates ID, treat as passport for better recognition
+      formData.append('documentType', state.documentType || 'drivers_license');
 
       const token = localStorage.getItem('token');
       const response = await fetch('/api/verification/evs-verify', {
@@ -185,7 +192,14 @@ export function EVSVerification({
         });
       } else {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Verification failed');
+        let errorMessage = errorData.message || 'Verification failed';
+        
+        // Provide more specific guidance based on the error
+        if (errorMessage.includes('could not be processed') || errorMessage.includes('image quality')) {
+          errorMessage = 'Document images could not be processed. Please ensure:\n• Images are clear and well-lit\n• Entire document is visible\n• No glare or shadows\n• Camera is steady when taking photos';
+        }
+        
+        throw new Error(errorMessage);
       }
     } catch (error) {
       console.error('Verification error:', error);
@@ -345,6 +359,27 @@ export function EVSVerification({
             </p>
           </div>
 
+          {/* Document Type Selection */}
+          <div>
+            <Label className="text-base font-medium flex items-center mb-3">
+              <FileText className="h-4 w-4 mr-2" />
+              Document Type
+            </Label>
+            <select 
+              value={state.documentType || 'drivers_license'}
+              onChange={(e) => setState(prev => ({ ...prev, documentType: e.target.value }))}
+              className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="drivers_license">Driving License</option>
+              <option value="passport">Passport</option>
+              <option value="state_id">State ID</option>
+              <option value="national_id">National ID</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Select the type of document you're uploading for better recognition
+            </p>
+          </div>
+
           {/* Front of ID */}
           <div>
             <Label className="text-base font-medium flex items-center mb-3">
@@ -376,7 +411,7 @@ export function EVSVerification({
                   <Upload className="h-12 w-12 text-gray-400 mx-auto" />
                   <div>
                     <p className="text-gray-600">Upload front of your ID</p>
-                    <p className="text-sm text-gray-500">Driver's License, Passport, or State ID</p>
+                    <p className="text-sm text-gray-500">Driving License, Passport, or State ID</p>
                   </div>
                   <Button 
                     onClick={() => frontInputRef.current?.click()}
@@ -427,7 +462,7 @@ export function EVSVerification({
                   <Upload className="h-12 w-12 text-gray-400 mx-auto" />
                   <div>
                     <p className="text-gray-600">Upload back of your ID</p>
-                    <p className="text-sm text-gray-500">Required for Driver's License</p>
+                    <p className="text-sm text-gray-500">Required for Driving License</p>
                   </div>
                   <Button 
                     variant="outline"
@@ -594,6 +629,60 @@ export function EVSVerification({
               </div>
             </div>
           </div>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <div className="flex items-start space-x-2">
+              <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-amber-800">
+                <p className="font-medium mb-2">📸 Critical Photo Requirements</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <p className="font-semibold mb-1">Document Photos:</p>
+                    <ul className="space-y-1">
+                      <li>• High resolution (at least 200KB file size)</li>
+                      <li>• Bright, even lighting - no shadows</li>
+                      <li>• Document completely flat and in frame</li>
+                      <li>• Text must be sharp and readable</li>
+                      <li>• No glare or reflections</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="font-semibold mb-1">Selfie Photo:</p>
+                    <ul className="space-y-1">
+                      <li>• Face clearly visible and well-lit</li>
+                      <li>• Look directly at camera</li>
+                      <li>• Remove glasses if possible</li>
+                      <li>• Plain background preferred</li>
+                      <li>• High quality (at least 200KB)</li>
+                    </ul>
+                  </div>
+                </div>
+                <div className="mt-2 p-2 bg-amber-100 border border-amber-300 rounded text-xs">
+                  <strong>⚠️ Poor quality photos will be rejected.</strong> Most verification failures are due to blurry, dark, or low-resolution images.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {state.documentType === 'national_id' ? (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-start space-x-2">
+                <AlertCircle className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div className="text-sm text-blue-800">
+                  <p className="font-medium mb-2">🌍 International Document Notice</p>
+                  <p className="mb-2">
+                    You've selected an international document. Our system will process this as a passport-type document for better recognition.
+                  </p>
+                  <ul className="space-y-1 text-xs">
+                    <li>• Ensure all text is in English or has English translation visible</li>
+                    <li>• Document must have photo and personal details clearly visible</li>
+                    <li>• International documents may take longer to process</li>
+                    <li>• If verification fails, you may need manual admin approval</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       </CardContent>
     </Card>

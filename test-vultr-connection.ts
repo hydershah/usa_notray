@@ -5,8 +5,12 @@
  * This script tests your Vultr setup without affecting existing files
  */
 
+import { config } from 'dotenv';
 import { S3Client, ListBucketsCommand, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+
+// Load environment variables from .env file
+config();
 
 async function testVultrConnection() {
   console.log('🧪 Testing Vultr Object Storage Connection...\n');

@@ -548,6 +548,24 @@ export function registerUserManagementRoutes(app: Express) {
         idExpirationDate: user.idExpirationDate,
         idIssueDate: user.idIssueDate,
         
+        // Account Setup Status
+        accountSetupComplete: !!(user.firstName && user.lastName && user.phoneNumber && 
+                                user.address1 && user.city && user.state && user.zipCode),
+        
+        // Verification Status (considering both EVS verification and admin bypass)
+        isVerified: user.isVerified || user.isVerificationBypassed || false,
+        verificationStatus: user.isVerificationBypassed ? 'approved' : (user.verificationStatus || 'pending'),
+        isVerificationBypassed: user.isVerificationBypassed || false,
+        verificationBypassedAt: user.verificationBypassedAt,
+        verificationBypassReason: user.verificationBypassReason,
+        verificationBypassedBy: user.verificationBypassedBy,
+        evsTransactionId: user.evsTransactionId,
+        evsVerificationConfidence: user.evsVerificationConfidence,
+        evsVerifiedAt: user.evsVerifiedAt,
+        totalVerificationAttempts: user.totalVerificationAttempts || 0,
+        verificationRetryCount: user.verificationRetryCount || 0,
+        latestVerificationAttempt: user.latestVerificationAttempt,
+        
         // Signatures and seals
         hasSignatureData: !!user.signatureData,
         hasInitialData: !!user.initialData,
@@ -623,6 +641,43 @@ export function registerUserManagementRoutes(app: Express) {
   // ============================================================================
   // USER LISTING ROUTES
   // ============================================================================
+
+  /**
+   * GET /api/debug/user/:email
+   * Debug endpoint to check user verification status (temporary)
+   */
+  app.get('/api/debug/user/:email', verifyToken, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const email = req.params.email;
+      const user = await storage.getUserByEmail(email);
+      
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      res.json({
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        isVerified: user.isVerified,
+        verificationStatus: user.verificationStatus,
+        isVerificationBypassed: user.isVerificationBypassed,
+        verificationBypassedAt: user.verificationBypassedAt,
+        verificationBypassReason: user.verificationBypassReason,
+        verificationBypassedBy: user.verificationBypassedBy,
+        computedIsVerified: user.isVerified || user.isVerificationBypassed || false,
+        isActive: user.isActive
+      });
+    } catch (error) {
+      console.error('Debug user error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
 
   /**
    * GET /api/admin/users/by-role/:role

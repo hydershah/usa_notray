@@ -262,59 +262,62 @@ class EmailService {
     const invitationLink = `${process.env.CLIENT_URL || 'https://notary.usanotaryservices.com'}/sign/${data.invitationToken}`;
     
     const content = `
-        <h2 style="color: #1e40af; margin-bottom: 20px;">Document Signing Invitation</h2>
+        <h2 style="color: #1f2937; margin-bottom: 16px;">You're Invited to a Document Signing Session</h2>
         
-        <p>Dear <strong>${data.signerName}</strong>,</p>
-        
-        <p>You have been invited to participate in a professional notarization session. Your secure digital signing portal is now ready.</p>
-        
-        <div class="info-box">
-            <h3 style="margin-top: 0; color: #1e40af;">Session Details</h3>
-            <ul style="margin: 10px 0; padding-left: 20px;">
-                <li><strong>Title Company:</strong> ${data.titleCompany}</li>
-                <li><strong>Document Type:</strong> ${data.closingType}</li>
-                <li><strong>Your Role:</strong> ${data.signerRole}</li>
-                ${data.propertyAddress ? `<li><strong>Property:</strong> ${data.propertyAddress}</li>` : ''}
-                ${data.scheduledDate ? `<li><strong>Scheduled Date:</strong> ${data.scheduledDate}</li>` : ''}
-                ${data.scheduledTime ? `<li><strong>Scheduled Time:</strong> ${data.scheduledTime}</li>` : ''}
-            </ul>
+        <div style="background-color: #dbeafe; border: 1px solid #60a5fa; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <p style="margin: 0; color: #1e40af; font-weight: 600;">📋 Important: ID Verification Required</p>
+          <p style="margin: 8px 0 0 0; color: #1e40af; font-size: 14px;">
+            Before you can join the signing session, you must complete identity verification using a government-issued ID and selfie photo. This is required for all signers and witnesses.
+          </p>
         </div>
         
-        <div style="text-align: center; margin: 30px 0;">
-            <a href="${invitationLink}" class="button">
-                🔐 Access Secure Signing Portal
-            </a>
+        <p style="color: #374151; line-height: 1.6;">
+          Dear <strong>${data.signerName}</strong>, you have been invited to participate as a <strong>${data.signerRole || 'participant'}</strong> in a notarized document signing session.
+        </p>
+        
+        <div style="background-color: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <h3 style="color: #1f2937; margin: 0 0 12px 0; font-size: 16px;">Session Details:</h3>
+          <ul style="color: #4b5563; margin: 0; padding-left: 20px;">
+            <li><strong>Property:</strong> ${data.propertyAddress || 'Not specified'}</li>
+            <li><strong>Closing Type:</strong> ${data.closingType || 'Not specified'}</li>
+            <li><strong>Scheduled:</strong> ${data.scheduledDate || 'To be scheduled'}</li>
+            <li><strong>Your Role:</strong> ${data.signerRole || 'Participant'}</li>
+            <li><strong>Notary:</strong> ${data.notaryName || 'To be assigned'}</li>
+          </ul>
         </div>
         
-        <div class="warning-box">
-            <h4 style="margin-top: 0;">🆔 What You'll Need:</h4>
-            <ul style="margin: 10px 0;">
-                <li>Government-issued photo ID (Driver's License, Passport, etc.)</li>
-                <li>Good lighting for identity verification</li>
-                <li>Stable internet connection</li>
-                <li>Computer or mobile device with camera</li>
-            </ul>
+        <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <h3 style="color: #92400e; margin: 0 0 8px 0; font-size: 16px;">📝 Next Steps:</h3>
+          <ol style="color: #92400e; margin: 0; padding-left: 20px; line-height: 1.6;">
+            <li><strong>Create Account:</strong> Click the link below to set up your account</li>
+            <li><strong>Complete ID Verification:</strong> Upload your government ID and take a selfie</li>
+            <li><strong>Complete Profile:</strong> Add your address and contact information</li>
+            <li><strong>Wait for Approval:</strong> Your verification will be processed quickly</li>
+            <li><strong>Join Session:</strong> You'll receive a notification when the session begins</li>
+          </ol>
         </div>
         
-        <div class="success-box">
-            <h4 style="margin-top: 0;">✅ Process Overview:</h4>
-            <ol style="margin: 10px 0;">
-                <li>Identity verification with your ID document</li>
-                <li>Review documents in our secure viewer</li>
-                <li>Digital signature capture</li>
-                <li>Live notarization with certified notary</li>
-                <li>Receive completed documents instantly</li>
-            </ol>
+        <div style="text-align: center; margin: 24px 0;">
+          <a href="${invitationLink}" 
+             style="background-color: #2563eb; color: white; padding: 12px 24px; 
+                    text-decoration: none; border-radius: 6px; font-weight: 600; 
+                    display: inline-block;">
+            Set Up Account & Verify Identity
+          </a>
         </div>
         
-        <p><strong>Security Note:</strong> This invitation link is unique to you and expires in 7 days for security. Please do not share this link with others.</p>
+        <div style="background-color: #ecfdf5; border: 1px solid #10b981; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <h3 style="color: #047857; margin: 0 0 8px 0; font-size: 14px;">💡 What You'll Need for Verification:</h3>
+          <ul style="color: #047857; margin: 0; padding-left: 20px; font-size: 14px;">
+            <li>Government-issued photo ID (Driver's License, State ID, or Passport)</li>
+            <li>Camera or smartphone to take a clear selfie</li>
+            <li>Good lighting for photo quality</li>
+          </ul>
+        </div>
         
-        <p>If you experience any issues or have questions, please contact us immediately at <a href="mailto:support@usanotaryservices.com">support@usanotaryservices.com</a> or call our support line.</p>
-        
-        <p style="margin-top: 30px;">
-            Best regards,<br>
-            <strong>The USA Notary Services Team</strong><br>
-            <em>Trusted. Secure. Professional.</em>
+        <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
+          Contact Email: ${data.signerEmail}. ID verification is required before joining sessions. 
+          If you have questions, please contact the notary or title company.
         </p>
     `;
 

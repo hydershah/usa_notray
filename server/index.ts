@@ -63,11 +63,31 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = 3000;
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
-  });
+  
+  // Add error handling and retry logic for port conflicts
+  const startServer = (retryCount = 0) => {
+    const maxRetries = 3;
+    
+    server.listen({
+      port,
+      host: "0.0.0.0",
+    }, () => {
+      log(`serving on port ${port}`);
+    });
+
+    server.on('error', (error: any) => {
+      if (error.code === 'EADDRINUSE' && retryCount < maxRetries) {
+        console.log(`Port ${port} is busy, retrying in 2 seconds... (attempt ${retryCount + 1}/${maxRetries})`);
+        setTimeout(() => {
+          server.close();
+          startServer(retryCount + 1);
+        }, 2000);
+      } else {
+        console.error('Server startup error:', error);
+        process.exit(1);
+      }
+    });
+  };
+
+  startServer();
 })();

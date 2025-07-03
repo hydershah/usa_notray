@@ -75,22 +75,39 @@ import passport from 'passport';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { z } from 'zod';
 import { DrizzleError } from 'drizzle-orm';
+import fetch from 'node-fetch';
 // Note: verifyToken is defined below instead of importing
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 
-// Multer configuration for file uploads
+// Professional multer configuration optimized for Vultr cloud storage
 const upload = multer({
-  dest: 'uploads/',
+  storage: multer.memoryStorage(), // Use memory storage for direct cloud uploads
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 100 * 1024 * 1024, // 100MB limit for cloud storage
   },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'text/plain',
+      'video/mp4',
+      'video/webm',
+      'video/mov',
+      'audio/wav',
+      'audio/mp3'
+    ];
+    
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only PDF, DOC, and DOCX files are allowed.'));
+      cb(new Error('Invalid file type. Please upload PDF, DOC, DOCX, images, videos, or audio files only.'));
     }
   }
 });
@@ -113,11 +130,6 @@ import {
 } from './email-template-routes';
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  
-  // Ensure uploads directory exists
-  if (!fs.existsSync('uploads')) {
-    fs.mkdirSync('uploads');
-  }
 
   // Authentication routes
   app.post('/api/auth/login', async (req, res) => {
@@ -763,8 +775,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Handle multiple document uploads
+      // Handle multiple document uploads to Vultr with intelligent organization
       if (req.files && req.files.length > 0) {
+        const { VultrUploadHandler } = await import('./vultr-upload-handler');
+        
         for (let i = 0; i < req.files.length; i++) {
           const file = req.files[i];
           const metadataKey = `documentMetadata_${i}`;
@@ -778,19 +792,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
 
-          await storage.createJobDocument({
-            jobId: job.id,
-            fileName: file.filename,
-            originalName: metadata.originalName || file.originalname,
-            filePath: file.path,
-            fileSize: file.size,
-            mimeType: file.mimetype,
-            documentType: metadata.documentType,
-            status: 'uploaded',
-            uploadedBy: req.user.id,
-            isRequired: metadata.isRequired,
-            signaturePages: []
-          });
+          // Upload to Vultr with intelligent organization
+          const fileBuffer = Buffer.from(file.buffer || await fs.promises.readFile(file.path));
+          
+          const uploadResult = await VultrUploadHandler.handleJobDocumentUpload(
+            fileBuffer,
+            file.originalname,
+            job.id,
+            req.user.id,
+            {
+              ...metadata,
+              userRole: req.user.role,
+              titleCompany: jobData.titleCompany
+            }
+          );
+
+          if (!uploadResult.success) {
+            console.error(`Failed to upload document to Vultr: ${uploadResult.error}`);
+            return res.status(500).json({ 
+              message: `Failed to upload document: ${uploadResult.error}`,
+              error: 'vultr_upload_failed'
+            });
+          }
+          // If successful, the document record was already created by VultrUploadHandler
         }
       }
 
@@ -888,6 +912,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete individual job endpoint
+  app.delete('/api/jobs/:id', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      const job = await storage.getJob(jobId);
+      
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      // Check if user has access to delete this job
+      if (req.user.role !== 'admin' && job.userId !== req.user.id) {
+        return res.status(403).json({ message: 'Access denied. Only job creator or admin can delete jobs.' });
+      }
+
+      // Get all documents associated with this job for cleanup
+      const documents = await storage.getJobDocumentsByJobId(jobId);
+      
+      // Delete all associated files (both local and Vultr)
+      for (const document of documents) {
+        try {
+          const filePath = document.filePath;
+          const isVultrFile = !filePath.startsWith('/') && !filePath.includes('\\') && !filePath.includes('uploads/');
+          
+          if (isVultrFile) {
+            // Delete from Vultr cloud storage
+            const { cloudStorage } = await import('./lib/cloud-storage-service');
+            try {
+              const fileExists = await cloudStorage.fileExists(filePath);
+              if (fileExists) {
+                await cloudStorage.deleteFile(filePath);
+                console.log(`✅ Deleted file from Vultr: ${filePath}`);
+              }
+            } catch (vultrError) {
+              console.error(`❌ Failed to delete file from Vultr: ${filePath}`, vultrError);
+            }
+          } else {
+            // Delete local file if it exists
+            if (fs.existsSync(filePath)) {
+              fs.unlinkSync(filePath);
+              console.log(`✅ Deleted local file: ${filePath}`);
+            }
+          }
+        } catch (fileError) {
+          console.error(`Error deleting file for document ${document.id}:`, fileError);
+          // Continue with job deletion even if file cleanup fails
+        }
+      }
+
+      // Delete job from database (cascade will handle related records)
+      const deleted = await storage.deleteJob(jobId);
+      
+      if (!deleted) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      res.json({ message: 'Job and associated files deleted successfully' });
+    } catch (error) {
+      console.error('Delete job error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
   app.put('/api/jobs/:id/file', verifyToken, upload.single('notarizedFile'), async (req: any, res) => {
     try {
       const jobId = parseInt(req.params.id);
@@ -904,9 +991,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const updateData: any = {};
+      
       if (req.file) {
-        updateData.notarizedFile = req.file.path;
+        // Upload notarized file to Vultr
+        const { VultrUploadHandler } = await import('./vultr-upload-handler');
+        
+        const fileBuffer = req.file.buffer ? Buffer.from(req.file.buffer) : await fs.promises.readFile(req.file.path);
+        
+        const uploadResult = await VultrUploadHandler.handleJobDocumentUpload(
+          fileBuffer,
+          req.file.originalname,
+          jobId,
+          req.user.id,
+          {
+            documentType: 'notarized',
+            userRole: req.user.role,
+            jobId: jobId
+          }
+        );
+
+        if (!uploadResult.success) {
+          return res.status(500).json({ 
+            message: `Failed to upload notarized file: ${uploadResult.error}`,
+            error: 'vultr_upload_failed'
+          });
+        }
+        
+        updateData.notarizedFile = uploadResult.fileKey;
+        console.log(`✅ Uploaded notarized file to Vultr: ${req.file.originalname} → ${uploadResult.fileKey}`);
       }
+      
       if (status) {
         updateData.jobStatus = status;
       }
@@ -1471,9 +1585,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ===== ENHANCED UPLOAD SYSTEM ROUTES =====
+  // ===== ENHANCED UPLOAD SYSTEM ROUTES (VULTR-ENABLED) =====
   
-  // Professional signature upload with security scanning
+  // Professional signature upload with Vultr cloud storage
   app.post('/api/uploads/signature', 
     process.env.NODE_ENV === 'development' ? 
       (req: any, res: any, next: any) => {
@@ -1481,9 +1595,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
         req.user = { id: 1, role: 'admin' };
         next();
       } : verifyToken, 
-    signatureUpload, handleSignatureUpload);
+    upload.single('signature'), async (req: any, res) => {
+      try {
+        if (!req.file) {
+          return res.status(400).json({ error: 'No signature file uploaded' });
+        }
+
+        const { sessionId, participantId, signatureType = 'signature' } = req.body;
+        
+        if (!sessionId || !participantId) {
+          return res.status(400).json({ error: 'sessionId and participantId are required' });
+        }
+
+        // Upload signature to Vultr
+        const { VultrUploadHandler } = await import('./vultr-upload-handler');
+        
+        const uploadResult = await VultrUploadHandler.handleSignatureUpload(
+          req.file.buffer,
+          req.file.originalname,
+          sessionId,
+          parseInt(participantId),
+          signatureType
+        );
+
+        if (!uploadResult.success) {
+          return res.status(500).json({ 
+            error: `Failed to upload signature: ${uploadResult.error}`,
+            code: 'vultr_upload_failed'
+          });
+        }
+
+        console.log(`✅ Uploaded signature to Vultr: ${req.file.originalname} → ${uploadResult.fileKey}`);
+
+        res.json({
+          success: true,
+          message: 'Signature uploaded successfully to Vultr',
+          fileKey: uploadResult.fileKey,
+          fileUrl: uploadResult.signedUrl,
+          size: uploadResult.size,
+          storageType: 'vultr',
+          signatureType
+        });
+      } catch (error) {
+        console.error('Signature upload error:', error);
+        res.status(500).json({ error: 'Signature upload failed' });
+      }
+    });
   
-  // Document upload with processing and validation
+  // Document upload with Vultr cloud storage
   app.post('/api/uploads/document', 
     process.env.NODE_ENV === 'development' ? 
       (req: any, res: any, next: any) => {
@@ -1491,22 +1650,137 @@ export async function registerRoutes(app: Express): Promise<Server> {
         req.user = { id: 1, role: 'admin' };
         next();
       } : verifyToken, 
-    documentUpload, handleDocumentUpload);
+    upload.single('document'), async (req: any, res) => {
+      try {
+        if (!req.file) {
+          return res.status(400).json({ error: 'No document file uploaded' });
+        }
+
+        const { jobId, sessionId, documentType = 'additional' } = req.body;
+        
+        if (!jobId && !sessionId) {
+          return res.status(400).json({ error: 'Either jobId or sessionId is required' });
+        }
+
+        // Upload document to Vultr
+        const { VultrUploadHandler } = await import('./vultr-upload-handler');
+        
+        let uploadResult;
+        
+        if (jobId) {
+          // Job-specific document upload
+          uploadResult = await VultrUploadHandler.handleJobDocumentUpload(
+            req.file.buffer,
+            req.file.originalname,
+            parseInt(jobId),
+            req.user.id,
+            {
+              documentType,
+              userRole: req.user.role,
+              uploadType: 'general'
+            }
+          );
+        } else {
+          // General document upload for sessions (use signature handler with 'signature' type)
+          uploadResult = await VultrUploadHandler.handleSignatureUpload(
+            req.file.buffer,
+            req.file.originalname,
+            sessionId,
+            req.user.id,
+            'signature'
+          );
+        }
+
+        if (!uploadResult.success) {
+          return res.status(500).json({ 
+            error: `Failed to upload document: ${uploadResult.error}`,
+            code: 'vultr_upload_failed'
+          });
+        }
+
+        console.log(`✅ Uploaded document to Vultr: ${req.file.originalname} → ${uploadResult.fileKey}`);
+
+        res.json({
+          success: true,
+          message: 'Document uploaded successfully to Vultr',
+          fileKey: uploadResult.fileKey,
+          fileUrl: uploadResult.signedUrl,
+          size: uploadResult.size,
+          storageType: 'vultr',
+          documentType
+        });
+      } catch (error) {
+        console.error('Document upload error:', error);
+        res.status(500).json({ error: 'Document upload failed' });
+      }
+    });
   
-  // Notary stamp upload with enhanced security
+  // Notary stamp upload with Vultr cloud storage
   app.post('/api/uploads/notary-stamp', 
-    // In development, make token verification very lenient
     process.env.NODE_ENV === 'development' ? 
       (req: any, res: any, next: any) => {
-        // In development, always set a default user
         console.log('Development mode: bypassing authentication for stamp upload');
         req.user = { id: 1, role: 'admin' };
         next();
-      } : 
-      verifyToken, 
-    stampUpload, 
-    handleNotaryStampUpload
-  );
+      } : verifyToken, 
+    upload.single('stamp'), async (req: any, res) => {
+      try {
+        if (!req.file) {
+          return res.status(400).json({ error: 'No stamp image uploaded' });
+        }
+
+        const { notaryId, state, commission } = req.body;
+        
+        if (!notaryId) {
+          return res.status(400).json({ error: 'notaryId is required' });
+        }
+
+        // Upload notary stamp to Vultr
+        const { VultrUploadHandler } = await import('./vultr-upload-handler');
+        
+        const uploadResult = await VultrUploadHandler.handleNotaryStampUpload(
+          req.file.buffer,
+          req.file.originalname,
+          parseInt(notaryId),
+          {
+            state,
+            commission,
+            uploadedBy: req.user.id,
+            uploadType: 'notary_stamp'
+          }
+        );
+
+        if (!uploadResult.success) {
+          return res.status(500).json({ 
+            error: `Failed to upload notary stamp: ${uploadResult.error}`,
+            code: 'vultr_upload_failed'
+          });
+        }
+
+        // Create notary stamp record in database
+        await db.insert(notaryStamps).values({
+          notaryId: parseInt(notaryId),
+          stampType: 'notary',
+          stampData: uploadResult.fileKey!, // Store Vultr key instead of base64 data
+          isActive: false // Admin needs to approve
+        });
+
+        console.log(`✅ Uploaded notary stamp to Vultr: ${req.file.originalname} → ${uploadResult.fileKey}`);
+
+        res.json({
+          success: true,
+          message: 'Notary stamp uploaded successfully to Vultr',
+          fileKey: uploadResult.fileKey,
+          fileUrl: uploadResult.signedUrl,
+          size: uploadResult.size,
+          storageType: 'vultr',
+          note: 'Stamp requires admin approval before activation'
+        });
+      } catch (error) {
+        console.error('Notary stamp upload error:', error);
+        res.status(500).json({ error: 'Notary stamp upload failed' });
+      }
+    });
   
   // Secure file retrieval
   app.get('/api/uploads/:type/:fileId', verifyToken, getUploadedFile);
@@ -1595,15 +1869,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Recording upload endpoint for enhanced video system
-  app.post('/api/recordings/upload', verifyToken, async (req: any, res) => {
+  // Recording upload endpoint for enhanced video system  
+  app.post('/api/recordings/upload', verifyToken, upload.single('recording'), async (req: any, res) => {
     try {
-      // Enhanced recording upload would be handled here
-      // This is a placeholder for the video recording upload
+      if (!req.file) {
+        return res.status(400).json({ message: 'No recording file provided' });
+      }
+
+      const { jobId, recordingType = 'notarization' } = req.body;
+      
+      if (!jobId) {
+        return res.status(400).json({ message: 'Job ID is required' });
+      }
+
+      // Upload recording to Vultr
+      const { VultrUploadHandler } = await import('./vultr-upload-handler');
+      
+      const fileBuffer = req.file.buffer ? Buffer.from(req.file.buffer) : await fs.promises.readFile(req.file.path);
+      
+      const uploadResult = await VultrUploadHandler.handleVideoRecordingUpload(
+        fileBuffer,
+        req.file.originalname,
+        parseInt(jobId),
+        {
+          recordingType,
+          userRole: req.user.role,
+          userId: req.user.id,
+          timestamp: new Date().toISOString()
+        }
+      );
+
+      if (!uploadResult.success) {
+        return res.status(500).json({ 
+          message: `Failed to upload recording: ${uploadResult.error}`,
+          error: 'vultr_upload_failed'
+        });
+      }
+
+      console.log(`✅ Uploaded recording to Vultr: ${req.file.originalname} → ${uploadResult.fileKey}`);
+
       res.json({
         success: true,
-        message: 'Recording upload endpoint ready',
-        cloudUrl: `https://secure-storage.example.com/recordings/${Date.now()}.webm`
+        message: 'Recording uploaded successfully to Vultr',
+        fileKey: uploadResult.fileKey,
+        fileUrl: uploadResult.signedUrl,
+        size: uploadResult.size,
+        storageType: 'vultr'
       });
     } catch (error) {
       console.error('Recording upload error:', error);
@@ -1742,6 +2053,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const addedDocuments = [];
 
       if (req.files && req.files.length > 0) {
+        const { VultrUploadHandler } = await import('./vultr-upload-handler');
+        
         for (let i = 0; i < req.files.length; i++) {
           const file = req.files[i];
           const metadataKey = `documentMetadata_${i}`;
@@ -1755,27 +2068,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
 
-          const document = await storage.createJobDocument({
-            jobId: jobId,
-            fileName: file.filename,
-            originalName: metadata.originalName || file.originalname,
-            filePath: file.path,
-            fileSize: file.size,
-            mimeType: file.mimetype,
-            documentType: metadata.documentType,
-            status: 'uploaded',
-            uploadedBy: req.user.id,
-            isRequired: metadata.isRequired,
-            signaturePages: []
-          });
+          // Upload to Vultr with intelligent organization
+          try {
+            const fileBuffer = Buffer.from(file.buffer || await fs.promises.readFile(file.path));
+            
+            const uploadResult = await VultrUploadHandler.handleJobDocumentUpload(
+              fileBuffer,
+              file.originalname,
+              jobId,
+              req.user.id,
+              {
+                ...metadata,
+                userRole: req.user.role,
+                jobId: jobId
+              }
+            );
 
-          addedDocuments.push(document);
+            if (uploadResult.success) {
+              // Get the created document from database
+              const documents = await storage.getJobDocumentsByJobId(jobId);
+              const latestDocument = documents[documents.length - 1]; // Get the most recently added
+              addedDocuments.push(latestDocument);
+              
+              console.log(`✅ Document uploaded to Vultr: ${file.originalname} → ${uploadResult.fileKey}`);
+            } else {
+              throw new Error(uploadResult.error || 'Upload failed');
+            }
+            
+          } catch (vultrError) {
+            console.error(`Vultr upload failed for ${file.originalname}:`, vultrError);
+            return res.status(500).json({ 
+              message: `Failed to upload document: ${vultrError instanceof Error ? vultrError.message : 'Unknown error'}`,
+              error: 'vultr_upload_failed',
+              fileName: file.originalname
+            });
+          }
         }
       }
 
       res.status(201).json({
         message: `Added ${addedDocuments.length} document${addedDocuments.length !== 1 ? 's' : ''} to job`,
-        documents: addedDocuments
+        documents: addedDocuments,
+        vultrOrganized: true // Indicate that files are organized in Vultr
       });
     } catch (error) {
       console.error('Add job documents error:', error);
@@ -1803,11 +2137,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Delete the file from filesystem if it exists
-      if (fs.existsSync(document.filePath)) {
-        fs.unlinkSync(document.filePath);
+      // Delete the file from both local filesystem and Vultr cloud storage
+      const filePath = document.filePath;
+      const isVultrFile = !filePath.startsWith('/') && !filePath.includes('\\') && !filePath.includes('uploads/');
+      
+      if (isVultrFile) {
+        // Delete from Vultr cloud storage
+        try {
+          const { cloudStorage } = await import('./lib/cloud-storage-service');
+          const fileExists = await cloudStorage.fileExists(filePath);
+          if (fileExists) {
+            await cloudStorage.deleteFile(filePath);
+            console.log(`✅ Deleted document from Vultr: ${filePath}`);
+          }
+        } catch (vultrError) {
+          console.error(`❌ Failed to delete document from Vultr: ${filePath}`, vultrError);
+          // Continue with database deletion even if cloud file deletion fails
+        }
+      } else {
+        // Delete local file if it exists (legacy support)
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          console.log(`✅ Deleted local document: ${filePath}`);
+        }
       }
 
+      // Delete from database
       const deleted = await storage.deleteJobDocument(documentId);
       
       if (!deleted) {
@@ -1854,7 +2209,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Document download route
+  // Document download route (Vultr-enabled)
   app.get('/api/jobs/:jobId/documents/:documentId/download', async (req: any, res) => {
     try {
       // Handle authentication via header or query parameter (for iframe compatibility)
@@ -1893,32 +2248,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Check if file exists
-      if (!fs.existsSync(document.filePath)) {
-        return res.status(404).json({ message: 'File not found on disk' });
-      }
+      // Handle both local files (legacy) and Vultr files
+      const filePath = document.filePath;
+      
+      // Check if this is a Vultr key (doesn't start with / or contain file system path separators)
+      const isVultrFile = !filePath.startsWith('/') && !filePath.includes('\\') && !filePath.includes('uploads/');
+      
+      if (isVultrFile) {
+        // File is stored in Vultr - generate signed URL and redirect
+        try {
+          const { cloudStorage } = await import('./lib/cloud-storage-service');
+          
+          // Check if file exists in Vultr
+          const fileExists = await cloudStorage.fileExists(filePath);
+          if (!fileExists) {
+            return res.status(404).json({ message: 'File not found in cloud storage' });
+          }
+          
+          // Generate signed URL for download (valid for 1 hour)
+          const signedUrl = await cloudStorage.getSignedUrl(filePath, 3600);
+          
+          // Check if this is a signed PDF request
+          const isSigned = req.query.signed === 'true';
+          const timestamp = req.query.timestamp;
+          
+          // Set appropriate headers for download
+          const filename = isSigned 
+            ? `SIGNED_${timestamp}_${document.originalName}` 
+            : document.originalName;
+            
+          res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+          
+          if (isSigned) {
+            res.setHeader('X-Document-Status', 'signed');
+            res.setHeader('X-Signing-Timestamp', timestamp || new Date().toISOString());
+            console.log(`Serving signed PDF from Vultr: ${filename}`);
+          }
+          
+          // Redirect to Vultr signed URL
+          console.log(`Redirecting to Vultr download: ${document.originalName}`);
+          res.redirect(302, signedUrl);
+          
+        } catch (vultrError) {
+          console.error('Vultr download error:', vultrError);
+          return res.status(500).json({ message: 'Failed to access file in cloud storage' });
+        }
+      } else {
+        // Legacy local file handling
+        if (!fs.existsSync(filePath)) {
+          return res.status(404).json({ message: 'File not found on disk' });
+        }
 
-      // Check if this is a signed PDF request
-      const isSigned = req.query.signed === 'true';
-      const timestamp = req.query.timestamp;
-      
-      // Set appropriate headers
-      const filename = isSigned 
-        ? `SIGNED_${timestamp}_${document.originalName}` 
-        : document.originalName;
+        const isSigned = req.query.signed === 'true';
+        const timestamp = req.query.timestamp;
         
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      res.setHeader('Content-Type', document.mimeType);
-      
-      if (isSigned) {
-        // Add a header to indicate this is a signed document
-        res.setHeader('X-Document-Status', 'signed');
-        res.setHeader('X-Signing-Timestamp', timestamp || new Date().toISOString());
-        console.log(`Serving signed PDF: ${filename}`);
+        const filename = isSigned 
+          ? `SIGNED_${timestamp}_${document.originalName}` 
+          : document.originalName;
+          
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Type', document.mimeType);
+        
+        if (isSigned) {
+          res.setHeader('X-Document-Status', 'signed');
+          res.setHeader('X-Signing-Timestamp', timestamp || new Date().toISOString());
+          console.log(`Serving signed PDF from local: ${filename}`);
+        }
+        
+        res.sendFile(path.resolve(filePath));
       }
-      
-      // Send the file
-      res.sendFile(path.resolve(document.filePath));
     } catch (error) {
       console.error('Download document error:', error);
       res.status(500).json({ message: 'Internal server error' });
@@ -1976,7 +2374,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Generate signed PDF
       try {
-        const pdfBytes = await fs.promises.readFile(document.filePath);
+        let pdfBytes: Buffer;
+        
+        // Handle both local files (legacy) and Vultr files
+        const filePath = document.filePath;
+        const isVultrFile = !filePath.startsWith('/') && !filePath.includes('\\') && !filePath.includes('uploads/');
+        
+        if (isVultrFile) {
+          // File is stored in Vultr - download for processing
+          const { cloudStorage } = await import('./lib/cloud-storage-service');
+          
+          const fileExists = await cloudStorage.fileExists(filePath);
+          if (!fileExists) {
+            return res.status(404).json({ message: 'PDF file not found in cloud storage' });
+          }
+          
+          // Get signed URL to download the file content
+          const signedUrl = await cloudStorage.getSignedUrl(filePath, 300); // 5 minutes for processing
+          
+          // Fetch the file content from Vultr
+          const response = await fetch(signedUrl);
+          if (!response.ok) {
+            throw new Error(`Failed to download PDF from Vultr: ${response.statusText}`);
+          }
+          
+          const arrayBuffer = await response.arrayBuffer();
+          pdfBytes = Buffer.from(arrayBuffer);
+          console.log(`Downloaded PDF from Vultr for signing: ${document.originalName}`);
+        } else {
+          // Legacy local file handling
+          pdfBytes = await fs.promises.readFile(filePath);
+          console.log(`Read PDF from local storage for signing: ${document.originalName}`);
+        }
         const pdfDoc = await PDFDocument.load(pdfBytes);
         const pages = pdfDoc.getPages();
         const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -2101,7 +2530,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Document preview route (for images and PDFs)
+  // Document preview route (for images and PDFs) - Vultr-enabled
   app.get('/api/jobs/:jobId/documents/:documentId/preview', async (req: any, res) => {
     try {
       // Handle authentication via header or query parameter (for iframe compatibility)
@@ -2140,18 +2569,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Check if file exists
-      if (!fs.existsSync(document.filePath)) {
-        console.error('File not found on disk:', document.filePath);
-        return res.status(404).json({ message: 'File not found on disk' });
-      }
-
-      // Set appropriate headers for inline viewing
-      res.setHeader('Content-Type', document.mimeType);
-      res.setHeader('Cache-Control', 'private, max-age=300'); // 5 minute cache
+      // Handle both local files (legacy) and Vultr files
+      const filePath = document.filePath;
       
-      // Send the file for inline viewing
-      res.sendFile(path.resolve(document.filePath));
+      // Check if this is a Vultr key (doesn't start with / or contain file system path separators)
+      const isVultrFile = !filePath.startsWith('/') && !filePath.includes('\\') && !filePath.includes('uploads/');
+      
+      if (isVultrFile) {
+        // File is stored in Vultr - generate signed URL and redirect
+        try {
+          const { cloudStorage } = await import('./lib/cloud-storage-service');
+          
+          // Check if file exists in Vultr
+          const fileExists = await cloudStorage.fileExists(filePath);
+          if (!fileExists) {
+            return res.status(404).json({ message: 'File not found in cloud storage' });
+          }
+          
+          // Generate signed URL for preview (valid for 1 hour)
+          const signedUrl = await cloudStorage.getSignedUrl(filePath, 3600);
+          
+          // Set appropriate headers for inline viewing
+          res.setHeader('Content-Type', document.mimeType);
+          res.setHeader('Cache-Control', 'private, max-age=300'); // 5 minute cache
+          
+          // Redirect to Vultr signed URL for inline viewing
+          console.log(`Redirecting to Vultr preview: ${document.originalName}`);
+          res.redirect(302, signedUrl);
+          
+        } catch (vultrError) {
+          console.error('Vultr preview error:', vultrError);
+          return res.status(500).json({ message: 'Failed to access file in cloud storage' });
+        }
+      } else {
+        // Legacy local file handling
+        if (!fs.existsSync(filePath)) {
+          console.error('File not found on disk:', filePath);
+          return res.status(404).json({ message: 'File not found on disk' });
+        }
+
+        // Set appropriate headers for inline viewing
+        res.setHeader('Content-Type', document.mimeType);
+        res.setHeader('Cache-Control', 'private, max-age=300'); // 5 minute cache
+        
+        // Send the file for inline viewing
+        res.sendFile(path.resolve(filePath));
+      }
     } catch (error) {
       console.error('Preview document error:', error);
       res.status(500).json({ message: 'Internal server error' });
@@ -3086,7 +3549,7 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
     }
   });
 
-  // EVS Verification route
+  // EVS Verification route with Vultr storage
   app.post('/api/verification/evs-verify', verifyToken, upload.fields([
     { name: 'frontImage', maxCount: 1 },
     { name: 'backImage', maxCount: 1 },
@@ -3100,6 +3563,59 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
         return res.status(400).json({ message: 'Front image and selfie are required' });
       }
 
+      // Store verification images in Vultr for compliance and audit purposes
+      const { VultrUploadHandler } = await import('./vultr-upload-handler');
+      const uploadedFiles: { [key: string]: any } = {};
+      const sessionId = `evs-verification-${userId}-${Date.now()}`;
+
+      try {
+        // Upload front image
+        const frontResult = await VultrUploadHandler.handleSignatureUpload(
+          files.frontImage[0].buffer,
+          `front-id-${userId}-${Date.now()}.jpg`,
+          sessionId,
+          parseInt(userId),
+          'id_verification'
+        );
+        
+        if (frontResult.success) {
+          uploadedFiles.frontImage = frontResult.fileKey;
+        }
+
+        // Upload back image if provided
+        if (files.backImage && files.backImage[0]) {
+          const backResult = await VultrUploadHandler.handleSignatureUpload(
+            files.backImage[0].buffer,
+            `back-id-${userId}-${Date.now()}.jpg`,
+            sessionId,
+            parseInt(userId),
+            'id_verification'
+          );
+          
+          if (backResult.success) {
+            uploadedFiles.backImage = backResult.fileKey;
+          }
+        }
+
+        // Upload selfie image
+        const selfieResult = await VultrUploadHandler.handleSignatureUpload(
+          files.selfieImage[0].buffer,
+          `selfie-${userId}-${Date.now()}.jpg`,
+          sessionId,
+          parseInt(userId),
+          'id_verification'
+        );
+        
+        if (selfieResult.success) {
+          uploadedFiles.selfieImage = selfieResult.fileKey;
+        }
+
+        console.log(`✅ Uploaded verification images to Vultr for user ${userId}`);
+      } catch (uploadError) {
+        console.error('Failed to upload verification images to Vultr:', uploadError);
+        // Continue with verification even if upload fails, but log the issue
+      }
+
       // TODO: Integrate with actual EVS Solutions API
       // For now, we'll simulate the verification process
       
@@ -3109,9 +3625,10 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
       // Simulate verification result (95% success rate)
       const isSuccessful = Math.random() > 0.05;
       const confidence = Math.floor(Math.random() * 20) + 80; // 80-100%
+      const verificationId = `evs_${Date.now()}`;
 
       if (isSuccessful) {
-        // Update user verification status
+        // Update user verification status with stored file references
         await db.update(users)
           .set({ 
             isVerified: true,
@@ -3119,6 +3636,9 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
             idType: 'drivers_license', // This would come from EVS API
             idNumber: 'D123456789', // This would come from EVS API  
             idExpirationDate: '2028-12-31', // This would come from EVS API
+            evsTransactionId: verificationId,
+            evsVerificationConfidence: confidence,
+            evsVerifiedAt: new Date(),
             updatedAt: new Date()
           })
           .where(eq(users.id, parseInt(userId)));
@@ -3128,8 +3648,10 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
           status: 'verified',
           confidence: confidence,
           message: 'Identity successfully verified',
-          verificationId: `evs_${Date.now()}`,
-          verifiedAt: new Date().toISOString()
+          verificationId,
+          verifiedAt: new Date().toISOString(),
+          storedImages: uploadedFiles,
+          storageType: 'vultr'
         });
       } else {
         // Update user verification status as failed
@@ -3137,6 +3659,8 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
           .set({ 
             isVerified: false,
             verificationStatus: 'failed',
+            evsTransactionId: verificationId,
+            evsVerificationConfidence: confidence,
             updatedAt: new Date()
           })
           .where(eq(users.id, parseInt(userId)));
@@ -3145,19 +3669,12 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
           success: false,
           status: 'failed',
           message: 'Identity verification failed. Please ensure your documents are clear and try again.',
-          reasons: ['Low image quality', 'Document not readable']
+          reasons: ['Low image quality', 'Document not readable'],
+          verificationId,
+          storedImages: uploadedFiles, // Keep images for review even on failure
+          storageType: 'vultr'
         });
       }
-
-      // Clean up uploaded files
-      const cleanupFiles = [...(files.frontImage || []), ...(files.backImage || []), ...(files.selfieImage || [])];
-      cleanupFiles.forEach(file => {
-        try {
-          fs.unlinkSync(file.path);
-        } catch (error) {
-          console.warn('Failed to delete uploaded file:', file.path);
-        }
-      });
 
     } catch (error) {
       console.error('EVS verification error:', error);
@@ -3176,6 +3693,465 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
   app.delete('/api/email-templates/:id', verifyToken, deleteTemplate);
   app.post('/api/email-templates/:template_key/preview', verifyToken, previewTemplate);
   app.post('/api/email-templates/send-test', verifyToken, sendTestEmail);
+
+  // ==========================================
+  // EDITOR ROUTES - PDF Tagging & Signing Sessions
+  // ==========================================
+
+  // Create editor session from job
+  app.post('/api/editor/job/:jobId/session', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.jobId);
+      const { sessionType = 'tagging', videoSessionId } = req.body;
+      
+      if (!jobId || isNaN(jobId)) {
+        return res.status(400).json({ message: 'Invalid job ID' });
+      }
+      
+      // Import SessionService dynamically
+      const { SessionService } = await import('./services/editor/SessionService');
+      
+      const session = await SessionService.createSession({
+        jobId,
+        sessionType,
+        notaryId: req.user.id,
+        videoSessionId
+      });
+      
+      res.json({
+        success: true,
+        session,
+        message: `${sessionType} session created successfully`
+      });
+      
+    } catch (error) {
+      console.error('Create editor session error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to create session',
+        error: 'session_creation_failed'
+      });
+    }
+  });
+
+  // Get editor session data
+  app.get('/api/editor/session/:sessionId', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      
+      const { SessionService } = await import('./services/editor/SessionService');
+      
+      const session = await SessionService.getSession(sessionId);
+      if (!session) {
+        return res.status(404).json({ message: 'Session not found' });
+      }
+      
+      // Get session documents and participants
+      const [documents, participants] = await Promise.all([
+        SessionService.getSessionDocuments(session.jobId),
+        SessionService.getSessionParticipants(session.jobId)
+      ]);
+      
+      res.json({
+        session,
+        documents,
+        participants
+      });
+      
+    } catch (error) {
+      console.error('Get editor session error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to get session',
+        error: 'session_fetch_failed'
+      });
+    }
+  });
+
+  // Update session status
+  app.put('/api/editor/session/:sessionId/status', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      const { status, startedAt, completedAt } = req.body;
+      
+      const { SessionService } = await import('./services/editor/SessionService');
+      
+      await SessionService.updateSessionStatus(sessionId, status, {
+        startedAt: startedAt ? new Date(startedAt) : undefined,
+        completedAt: completedAt ? new Date(completedAt) : undefined
+      });
+      
+      res.json({
+        success: true,
+        message: `Session status updated to ${status}`
+      });
+      
+    } catch (error) {
+      console.error('Update session status error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to update session',
+        error: 'session_update_failed'
+      });
+    }
+  });
+
+  // Get job participants for editor
+  app.get('/api/jobs/:jobId/participants', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.jobId);
+      
+      const { SessionService } = await import('./services/editor/SessionService');
+      
+      const participants = await SessionService.getSessionParticipants(jobId);
+      
+      res.json({
+        participants,
+        count: participants.length
+      });
+      
+    } catch (error) {
+      console.error('Get job participants error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to get participants',
+        error: 'participants_fetch_failed'
+      });
+    }
+  });
+
+  // Cancel editor session
+  app.delete('/api/editor/session/:sessionId', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      
+      const { SessionService } = await import('./services/editor/SessionService');
+      
+      await SessionService.cancelSession(sessionId);
+      
+      res.json({
+        success: true,
+        message: 'Session cancelled successfully'
+      });
+      
+    } catch (error) {
+      console.error('Cancel session error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to cancel session',
+        error: 'session_cancel_failed'
+      });
+    }
+  });
+
+  // ==========================================
+  // TAG MANAGEMENT ROUTES - Place, Update, Delete Tags
+  // ==========================================
+
+  // Place a new tag
+  app.post('/api/editor/session/:sessionId/place-tag', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      const { documentId, tagType, coordinates, assignedUserId } = req.body;
+      
+      if (!documentId || !tagType || !coordinates) {
+        return res.status(400).json({ message: 'Missing required fields' });
+      }
+      
+      const { TagService } = await import('./services/editor/TagService');
+      
+      const tag = await TagService.placeTag({
+        sessionId,
+        documentId,
+        tagType,
+        coordinates,
+        assignedUserId: assignedUserId || req.user.id,
+        placedBy: req.user.id
+      });
+      
+      res.json({
+        success: true,
+        tag,
+        message: 'Tag placed successfully'
+      });
+      
+    } catch (error) {
+      console.error('Place tag error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to place tag',
+        error: 'tag_place_failed'
+      });
+    }
+  });
+
+  // Get all tags for a session
+  app.get('/api/editor/session/:sessionId/tags', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      
+      const { TagService } = await import('./services/editor/TagService');
+      
+      const tags = await TagService.getSessionTags(sessionId);
+      
+      res.json({
+        tags,
+        count: tags.length
+      });
+      
+    } catch (error) {
+      console.error('Get tags error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to get tags',
+        error: 'tags_fetch_failed'
+      });
+    }
+  });
+
+  // Update a tag
+  app.put('/api/editor/session/:sessionId/tag/:tagId', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId, tagId } = req.params;
+      const updates = req.body;
+      
+      const { TagService } = await import('./services/editor/TagService');
+      
+      const tag = await TagService.updateTag(tagId, {
+        ...updates,
+        updatedBy: req.user.id
+      });
+      
+      res.json({
+        success: true,
+        tag,
+        message: 'Tag updated successfully'
+      });
+      
+    } catch (error) {
+      console.error('Update tag error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to update tag',
+        error: 'tag_update_failed'
+      });
+    }
+  });
+
+  // Delete a tag
+  app.delete('/api/editor/session/:sessionId/tag/:tagId', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId, tagId } = req.params;
+      
+      const { TagService } = await import('./services/editor/TagService');
+      
+      await TagService.deleteTag(tagId, req.user.id);
+      
+      res.json({
+        success: true,
+        message: 'Tag deleted successfully'
+      });
+      
+    } catch (error) {
+      console.error('Delete tag error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to delete tag',
+        error: 'tag_delete_failed'
+      });
+    }
+  });
+
+  // Replace all tags with content (live signing mode)
+  app.post('/api/editor/session/:sessionId/replace-all', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      
+      const { TagService } = await import('./services/editor/TagService');
+      
+      const result = await TagService.replaceAllTagsWithContent(sessionId, req.user.id);
+      
+      res.json({
+        success: true,
+        ...result,
+        message: 'All tags replaced with content successfully'
+      });
+      
+    } catch (error) {
+      console.error('Replace all tags error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to replace tags',
+        error: 'replace_all_failed'
+      });
+    }
+  });
+
+  // Handle preflight OPTIONS requests for document serving
+  app.options('/api/documents/:filePath(*)', (req: any, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.status(200).end();
+  });
+
+  // Serve documents directly by file path for editor
+  app.get('/api/documents/:filePath(*)', async (req: any, res) => {
+    try {
+      const filePath = decodeURIComponent(req.params.filePath);
+      console.log('📄 Document request for:', filePath);
+      
+      // Set response timeout to prevent hanging
+      req.setTimeout(30000); // 30 second timeout
+      res.setTimeout(30000);
+      
+      // Check if this is a Vultr file or local file
+      const isVultrFile = !filePath.startsWith('/') && !filePath.includes('\\') && !filePath.includes('uploads/');
+      
+      if (isVultrFile) {
+        // Handle Vultr stored files with retry logic
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        while (retryCount < maxRetries) {
+          try {
+            const { cloudStorage } = await import('./lib/cloud-storage-service');
+            
+            // Check file existence with timeout
+            const fileExistsPromise = cloudStorage.fileExists(filePath);
+            const fileExistsTimeout = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('File existence check timeout')), 10000)
+            );
+            
+            const fileExists = await Promise.race([fileExistsPromise, fileExistsTimeout]) as boolean;
+            if (!fileExists) {
+              console.log('📄 File not found in Vultr:', filePath);
+              return res.status(404).json({ message: 'Document not found in cloud storage' });
+            }
+            
+            // Get signed URL with timeout
+            const signedUrlPromise = cloudStorage.getSignedUrl(filePath, 3600); // 1 hour
+            const signedUrlTimeout = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Signed URL generation timeout')), 10000)
+            );
+            
+            const signedUrl = await Promise.race([signedUrlPromise, signedUrlTimeout]) as string;
+            console.log('📄 Proxying Vultr content for:', filePath);
+            
+            // Fetch the file content from Vultr with timeout and better error handling
+            console.log('📄 Fetching from Vultr URL (truncated):', signedUrl.substring(0, 100) + '...');
+            
+            const fetchController = new AbortController();
+            const fetchTimeout = setTimeout(() => {
+              fetchController.abort();
+              console.log('📄 Fetch aborted due to timeout');
+            }, 20000); // 20 second fetch timeout
+            
+            const response = await fetch(signedUrl, {
+              method: 'GET',
+              signal: fetchController.signal,
+              headers: {
+                'User-Agent': 'NotaryPlatform/1.0',
+                'Accept': 'application/pdf,*/*'
+              }
+            });
+            
+            clearTimeout(fetchTimeout);
+            
+            console.log('📄 Vultr response:', {
+              status: response.status,
+              statusText: response.statusText,
+              contentType: response.headers.get('content-type'),
+              contentLength: response.headers.get('content-length')
+            });
+            
+            if (!response.ok) {
+              throw new Error(`Vultr fetch failed: ${response.status} ${response.statusText}`);
+            }
+            
+            // Get the content type from Vultr response or default to PDF
+            const contentType = response.headers.get('content-type') || 'application/pdf';
+            const contentLength = response.headers.get('content-length');
+            
+            console.log('📄 Serving PDF:', { contentType, contentLength });
+            
+            // Set proper headers for PDF viewing including CORS
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Cache-Control', 'private, max-age=300');
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+            if (contentLength) {
+              res.setHeader('Content-Length', contentLength);
+            }
+            
+            // Stream the content from Vultr through our server with timeout
+            const bufferPromise = response.arrayBuffer();
+            const bufferTimeout = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Buffer read timeout')), 15000)
+            );
+            
+            const buffer = await Promise.race([bufferPromise, bufferTimeout]) as ArrayBuffer;
+            console.log('📄 PDF buffer size:', buffer.byteLength, 'bytes');
+            
+            res.send(Buffer.from(buffer));
+            return; // Success, exit retry loop
+            
+          } catch (vultrError: any) {
+            retryCount++;
+            console.error(`📄 Vultr document error (attempt ${retryCount}/${maxRetries}):`, vultrError.message || vultrError);
+            
+            if (retryCount >= maxRetries) {
+              // After all retries failed, check if we can fallback to local storage
+              console.log('📄 Vultr retries exhausted, checking for local fallback...');
+              
+              // Try to find the file in local storage as a fallback
+              const possibleLocalPaths = [
+                path.join('uploads', filePath),
+                path.join(__dirname, '..', 'uploads', filePath),
+                filePath
+              ];
+              
+              for (const localPath of possibleLocalPaths) {
+                if (fs.existsSync(localPath)) {
+                  console.log('📄 Found local fallback:', localPath);
+                  res.setHeader('Content-Type', 'application/pdf');
+                  res.setHeader('Cache-Control', 'private, max-age=300');
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+                  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+                  res.setHeader('X-Served-From', 'local-fallback');
+                  return res.sendFile(path.resolve(localPath));
+                }
+              }
+              
+              // No fallback found, return error
+              return res.status(500).json({ 
+                message: 'Failed to access document in cloud storage after retries',
+                error: 'vultr_timeout_exhausted',
+                retries: maxRetries
+              });
+            }
+            
+            // Wait before retry (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+          }
+        }
+      } else {
+        // Handle local files
+        const fullPath = path.resolve(filePath);
+        
+        if (!fs.existsSync(fullPath)) {
+          console.log('📄 Local file not found:', fullPath);
+          return res.status(404).json({ message: 'Document not found on disk' });
+        }
+        
+        // Set proper headers for PDF viewing including CORS
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Cache-Control', 'private, max-age=300');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        
+        console.log('📄 Serving local file:', fullPath);
+        res.sendFile(fullPath);
+      }
+      
+    } catch (error) {
+      console.error('📄 Document serving error:', error);
+      res.status(500).json({ message: 'Failed to serve document' });
+    }
+  });
 
   const httpServer = createServer(app);
   return httpServer;

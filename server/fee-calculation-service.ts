@@ -53,7 +53,7 @@ export class FeeCalculationService {
     sessionDuration: number = 20, // minutes
     idVerificationCount: number = 1,
     witnessProvided: boolean = false
-  ): Promise<FeeCalculationResult['subscriberFees']> {
+  ): Promise<NonNullable<FeeCalculationResult['subscriberFees']>> {
     
     const basePlatformFee = await this.getFeeConfiguration('platform_base'); // $10.00
     
@@ -88,7 +88,7 @@ export class FeeCalculationService {
     documentCount: number = 1,
     witnessProvided: boolean = false,
     clientProvidesWitness: boolean = false
-  ): Promise<FeeCalculationResult['contractorFees']> {
+  ): Promise<NonNullable<FeeCalculationResult['contractorFees']>> {
     
     let totalJobFee = 0;
     

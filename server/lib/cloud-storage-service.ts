@@ -56,33 +56,65 @@ export class CloudStorageService {
       // Generate content hash for integrity verification
       const contentHash = createHash('md5').update(buffer).digest('hex');
       
+      // Ensure all metadata values are strings and contain only valid characters
+      const stringifiedMetadata: Record<string, string> = {};
+      if (options.metadata) {
+        for (const [metaKey, value] of Object.entries(options.metadata)) {
+          // Sanitize metadata keys and values for S3 compatibility
+          const sanitizedKey = metaKey.replace(/[^a-zA-Z0-9-]/g, '-').toLowerCase();
+          const sanitizedValue = value != null ? String(value).replace(/[^\x00-\x7F]/g, '') : '';
+          
+          if (sanitizedKey && sanitizedValue) {
+            stringifiedMetadata[sanitizedKey] = sanitizedValue.substring(0, 256); // S3 metadata value limit
+          }
+        }
+      }
+      
+      // Sanitize the object key to ensure S3 compatibility
+      const sanitizedKey = key.replace(/[^a-zA-Z0-9\/\-_.~]/g, '-');
+      
       const command = new PutObjectCommand({
         Bucket: this.bucketName,
-        Key: key,
+        Key: sanitizedKey,
         Body: buffer,
         ContentType: options.contentType || 'application/octet-stream',
-        ContentMD5: Buffer.from(contentHash, 'hex').toString('base64'),
         Metadata: {
-          ...options.metadata,
-          uploadedAt: new Date().toISOString(),
-          originalSize: buffer.length.toString(),
+          ...stringifiedMetadata,
+          'uploaded-at': new Date().toISOString().replace(/[:.]/g, '-'), // S3-safe timestamp
+          'original-size': buffer.length.toString(),
         },
         ACL: options.acl || 'private',
         CacheControl: options.cacheControl || 'max-age=31536000', // 1 year cache
-        ServerSideEncryption: 'AES256', // Server-side encryption
+        // Remove ServerSideEncryption as some Vultr regions may not support it
       });
 
       const result = await this.s3Client.send(command);
       
       return {
-        key,
-        url: `https://${this.bucketName}.${this.region}.vultrobjects.com/${key}`,
+        key: sanitizedKey,
+        url: `https://${this.bucketName}.${this.region}.vultrobjects.com/${sanitizedKey}`,
         etag: result.ETag || '',
         size: buffer.length,
       };
-    } catch (error) {
-      console.error('File upload failed:', error);
-      throw new Error(`Failed to upload file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } catch (error: any) {
+      console.error('File upload failed:', {
+        error: error.message,
+        code: error.Code,
+        bucketName: this.bucketName,
+        region: this.region,
+        key: sanitizedKey
+      });
+      
+      // Provide more specific error messages
+      if (error.Code === 'InvalidArgument') {
+        throw new Error(`Invalid upload parameters. Check bucket name, region, and file content.`);
+      } else if (error.Code === 'NoSuchBucket') {
+        throw new Error(`Bucket '${this.bucketName}' does not exist in region '${this.region}'.`);
+      } else if (error.Code === 'AccessDenied') {
+        throw new Error(`Access denied. Check your Vultr credentials and bucket permissions.`);
+      } else {
+        throw new Error(`Failed to upload file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
     }
   }
 
@@ -95,13 +127,21 @@ export class CloudStorageService {
     options: UploadOptions = {}
   ): Promise<UploadResult> {
     try {
+      // Ensure all metadata values are strings (AWS SDK requirement)
+      const stringifiedMetadata: Record<string, string> = {};
+      if (options.metadata) {
+        for (const [key, value] of Object.entries(options.metadata)) {
+          stringifiedMetadata[key] = value != null ? String(value) : '';
+        }
+      }
+      
       const command = new PutObjectCommand({
         Bucket: this.bucketName,
         Key: key,
         Body: stream,
         ContentType: options.contentType || 'application/octet-stream',
         Metadata: {
-          ...options.metadata,
+          ...stringifiedMetadata,
           uploadedAt: new Date().toISOString(),
         },
         ACL: options.acl || 'private',
@@ -199,28 +239,30 @@ export class CloudStorageService {
   }
 
   /**
-   * Generate a secure file key with proper structure
+   * Generate a secure file key with intelligent organization
    */
-  generateFileKey(type: 'document' | 'signature' | 'stamp' | 'certificate', 
-                 sessionId: string, 
-                 originalFilename: string,
-                 userId?: number): string {
-    const timestamp = Date.now();
-    const randomId = createHash('sha256')
-      .update(`${sessionId}-${timestamp}-${Math.random()}`)
-      .digest('hex')
-      .substring(0, 16);
+  async generateFileKey(
+    type: 'document' | 'signature' | 'stamp' | 'certificate', 
+    sessionId: string, 
+    originalFilename: string,
+    userId?: number,
+    options?: {
+      userRole?: string;
+      jobId?: number;
+      notaryId?: number;
+    }
+  ): Promise<string> {
+    const { generateVultrKey } = await import('./vultr-file-organizer');
     
-    const extension = originalFilename.split('.').pop()?.toLowerCase() || 'bin';
-    const sanitizedFilename = originalFilename
-      .replace(/[^a-zA-Z0-9._-]/g, '_')
-      .substring(0, 100); // Limit filename length
+    const organizedPath = generateVultrKey(type, originalFilename, {
+      userId,
+      userRole: options?.userRole,
+      jobId: options?.jobId,
+      notaryId: options?.notaryId,
+      sessionId
+    });
     
-    // Organize files by type and date for better management
-    const date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-    const userPrefix = userId ? `user-${userId}/` : '';
-    
-    return `${type}/${date}/${userPrefix}${sessionId}/${randomId}_${sanitizedFilename}`;
+    return organizedPath.vultrKey;
   }
 
   /**
@@ -272,38 +314,39 @@ export class CloudStorageService {
 // Singleton instance
 export const cloudStorage = new CloudStorageService();
 
-// Enhanced file upload handler using cloud storage
+// Enhanced file upload handler using cloud storage with intelligent organization
 export async function handleCloudFileUpload(
   buffer: Buffer,
   originalFilename: string,
   uploadType: 'document' | 'signature' | 'stamp' | 'certificate',
   sessionId: string,
   userId?: number,
-  metadata?: Record<string, string>
+  metadata?: Record<string, string> & {
+    userRole?: string;
+    jobId?: number;
+    notaryId?: number;
+  }
 ): Promise<{
   key: string;
   url: string;
   signedUrl: string;
   size: number;
+  organizedPath?: {
+    folder: string;
+    filename: string;
+  };
 }> {
   try {
-    // Generate secure file key
-    const fileKey = cloudStorage.generateFileKey(uploadType, sessionId, originalFilename, userId);
+    // Generate intelligent file key with organization
+    const fileKey = await cloudStorage.generateFileKey(uploadType, sessionId, originalFilename, userId, {
+      userRole: metadata?.userRole,
+      jobId: metadata?.jobId,
+      notaryId: metadata?.notaryId,
+    });
     
-    // Determine content type
-    const extension = originalFilename.split('.').pop()?.toLowerCase();
-    const contentTypeMap: Record<string, string> = {
-      'pdf': 'application/pdf',
-      'jpg': 'image/jpeg',
-      'jpeg': 'image/jpeg',
-      'png': 'image/png',
-      'gif': 'image/gif',
-      'webp': 'image/webp',
-      'doc': 'application/msword',
-      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    };
-    
-    const contentType = contentTypeMap[extension || ''] || 'application/octet-stream';
+    // Get content type using the organizer
+    const { VultrFileOrganizer } = await import('./vultr-file-organizer');
+    const contentType = VultrFileOrganizer.getContentType(originalFilename);
     
     // Upload to cloud storage
     const uploadResult = await cloudStorage.uploadFile(buffer, fileKey, {
@@ -313,6 +356,10 @@ export async function handleCloudFileUpload(
         uploadType,
         sessionId,
         userId: userId?.toString() || '',
+        userRole: metadata?.userRole || '',
+        jobId: metadata?.jobId?.toString() || '',
+        notaryId: metadata?.notaryId?.toString() || '',
+        uploadedAt: new Date().toISOString(),
         ...metadata,
       },
       acl: 'private', // All files are private by default
@@ -321,11 +368,24 @@ export async function handleCloudFileUpload(
     // Generate signed URL for immediate access
     const signedUrl = await cloudStorage.getSignedUrl(fileKey, 3600); // 1 hour expiry
     
+    // Parse the organized path for additional info
+    let organizedPath;
+    try {
+      const parsed = VultrFileOrganizer.parseVultrKey(fileKey);
+      organizedPath = {
+        folder: `${parsed.fileType}/${parsed.year}/${parsed.month}/${parsed.category}`,
+        filename: parsed.filename
+      };
+    } catch (error) {
+      console.warn('Could not parse organized path:', error);
+    }
+    
     return {
       key: fileKey,
       url: uploadResult.url,
       signedUrl,
       size: uploadResult.size,
+      organizedPath,
     };
   } catch (error) {
     console.error('Cloud file upload failed:', error);

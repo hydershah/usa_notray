@@ -5,14 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { SignatureManager } from '@/components/user/signature-manager';
 import { NotaryStampManager } from '@/components/user/notary-stamp-manager';
 import { toast } from '@/hooks/use-toast';
 import { 
   User, 
   Mail, 
   Shield, 
-  FileSignature, 
   Stamp,
   Settings,
   Save,
@@ -23,6 +21,7 @@ import {
   FileText
 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
+import TwoFactorAuth from '@/components/TwoFactorAuth';
 
 export default function Profile() {
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -221,14 +220,10 @@ export default function Profile() {
 
         {/* Main Content */}
         <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className={`grid w-full ${(currentUser.role === 'notary' || currentUser.role === 'admin') ? 'grid-cols-3' : 'grid-cols-2'}`}>
             <TabsTrigger value="profile">
               <User className="w-4 h-4 mr-2" />
               Profile
-            </TabsTrigger>
-            <TabsTrigger value="signatures">
-              <FileSignature className="w-4 h-4 mr-2" />
-              Signatures
             </TabsTrigger>
             {(currentUser.role === 'notary' || currentUser.role === 'admin') && (
               <TabsTrigger value="stamps">
@@ -413,11 +408,6 @@ export default function Profile() {
             </Card>
           </TabsContent>
 
-          {/* Signatures Tab */}
-          <TabsContent value="signatures">
-            <SignatureManager userId={currentUser.id} />
-          </TabsContent>
-
           {/* Notary Stamps Tab */}
           {(currentUser.role === 'notary' || currentUser.role === 'admin') && (
             <TabsContent value="stamps">
@@ -427,34 +417,34 @@ export default function Profile() {
 
           {/* Settings Tab */}
           <TabsContent value="settings">
+            <div className="space-y-6">
+              {/* Two-Factor Authentication */}
+              <TwoFactorAuth />
+              
+              {/* Other Security Settings */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Other Security Settings</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium">Change Password</h4>
+                      <p className="text-sm text-gray-600">Update your account password</p>
+                    </div>
+                    <Button variant="outline" size="sm">
+                      Change Password
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            
             <Card>
               <CardHeader>
-                <CardTitle>Account Settings</CardTitle>
+                <CardTitle>Preferences</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div>
-                  <h3 className="text-lg font-medium mb-4">Security Settings</h3>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-medium">Two-Factor Authentication</h4>
-                        <p className="text-sm text-gray-600">Add an extra layer of security to your account</p>
-                      </div>
-                      <Button variant="outline" size="sm">
-                        Enable 2FA
-                      </Button>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-medium">Change Password</h4>
-                        <p className="text-sm text-gray-600">Update your account password</p>
-                      </div>
-                      <Button variant="outline" size="sm">
-                        Change Password
-                      </Button>
-                    </div>
-                  </div>
-                </div>
 
                 <div className="pt-6 border-t">
                   <h3 className="text-lg font-medium mb-4">Preferences</h3>

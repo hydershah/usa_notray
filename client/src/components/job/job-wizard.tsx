@@ -30,7 +30,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
-import { ArrowLeft, ArrowRight, Plus, Trash2, Upload, FileText, CheckCircle, AlertCircle, User, Clock } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Plus, Trash2, Upload, FileText, CheckCircle, AlertCircle, User as UserIcon, Clock } from 'lucide-react';
 import { type TitleCompany, type ClosingType, type User } from '@shared/schema';
 
 const jobSchema = z.object({
@@ -746,10 +746,48 @@ export function JobWizard() {
                         <FileText className="w-8 h-8 text-blue-600" />
                       </div>
                       <h2 className="text-2xl font-bold text-gray-900 mb-2">Client Information</h2>
-                      <p className="text-gray-600">Let's start with the basic job details</p>
+                      {currentUser?.role === 'notary' && currentUser?.notaryType === 'subscriber' ? (
+                        <p className="text-gray-600">Create a new job for your personal clients</p>
+                      ) : (
+                        <p className="text-gray-600">Create a new title company job</p>
+                      )}
                     </div>
+
+                    {/* Different messaging based on user type */}
+                    {currentUser?.role === 'notary' && currentUser?.notaryType === 'subscriber' && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                        <div className="flex items-start">
+                          <div className="flex-shrink-0">
+                            <UserIcon className="h-5 w-5 text-blue-600 mt-0.5" />
+                          </div>
+                          <div className="ml-3">
+                            <h4 className="text-sm font-medium text-blue-900">Personal Client Job</h4>
+                            <p className="text-sm text-blue-800 mt-1">
+                              You're creating a job for your personal clients. You will automatically be assigned as the notary for this job.
+                              Platform fees will be deducted from your account upon completion.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {(currentUser?.role === 'admin' || currentUser?.role === 'title_company') && (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+                        <div className="flex items-start">
+                          <div className="flex-shrink-0">
+                            <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+                          </div>
+                          <div className="ml-3">
+                            <h4 className="text-sm font-medium text-green-900">Title Company Job</h4>
+                            <p className="text-sm text-green-800 mt-1">
+                              You're creating a job for USA Notary clients. The system will assign a qualified contractor notary based on your preferences.
+                              The assigned notary will be paid from the client fees.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     
-                    {/* Primary Information */}
                     <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
                       <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
                         <div className="w-2 h-6 bg-blue-500 rounded-full mr-3"></div>
@@ -1017,7 +1055,7 @@ export function JobWizard() {
                   <div className="space-y-8">
                     <div className="text-center">
                       <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <User className="w-8 h-8 text-green-600" />
+                        <UserIcon className="w-8 h-8 text-green-600" />
                       </div>
                       <h2 className="text-2xl font-bold text-gray-900 mb-2">Signer Information</h2>
                       <p className="text-gray-600">Add all the signers who will participate in this notarization</p>
@@ -1042,7 +1080,7 @@ export function JobWizard() {
 
                     {signers.length === 0 ? (
                       <div className="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
-                        <User className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                        <UserIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                         <h3 className="text-lg font-medium text-gray-900 mb-2">No signers added yet</h3>
                         <p className="text-gray-600 mb-6">Click "Add Signer" to get started</p>
                         <Button 
@@ -1252,168 +1290,239 @@ export function JobWizard() {
                         <Clock className="w-8 h-8 text-purple-600" />
                       </div>
                       <h2 className="text-2xl font-bold text-gray-900 mb-2">Schedule Appointment</h2>
-                      <p className="text-gray-600">Choose how you'd like to assign a notary and schedule the appointment</p>
+                      {currentUser?.role === 'notary' && currentUser?.notaryType === 'subscriber' ? (
+                        <p className="text-gray-600">Set the appointment details for your personal client job</p>
+                      ) : (
+                        <p className="text-gray-600">Choose how you'd like to assign a notary and schedule the appointment</p>
+                      )}
                     </div>
                     
-                    <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                        <div className="w-2 h-6 bg-purple-500 rounded-full mr-3"></div>
-                        Notary Assignment
-                      </h3>
-                      
-                      <FormField
-                        control={form.control}
-                        name="notaryOption"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className="text-sm font-medium text-gray-700 mb-4 block">Assignment Method</FormLabel>
-                            <FormControl>
-                              <RadioGroup
-                                onValueChange={(value) => {
-                                  field.onChange(value);
-                                  if (value === 'auto') {
-                                    form.setValue('selectedNotary', undefined);
-                                    if (watchTitleCompany) {
-                                      checkPreferredNotary(watchTitleCompany);
-                                    }
-                                  } else {
-                                    setPreferredNotary(null);
-                                  }
-                                }}
-                                defaultValue={field.value}
-                                className="grid grid-cols-1 md:grid-cols-2 gap-6"
-                              >
-                                <div className="relative">
-                                  <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-blue-200 transition-colors cursor-pointer">
-                                    <RadioGroupItem value="assign" id="assign" className="mt-1" />
-                                    <div className="flex-1">
-                                      <Label htmlFor="assign" className="text-lg font-semibold text-gray-900 cursor-pointer">Assign Specific Notary</Label>
-                                      <p className="text-sm text-gray-600 mt-1">Choose from available notaries based on your preferences</p>
-                                      <div className="mt-3 flex items-center text-xs text-blue-600">
-                                        <CheckCircle className="w-4 h-4 mr-1" />
-                                        Direct selection control
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="relative">
-                                  <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-blue-200 transition-colors cursor-pointer">
-                                    <RadioGroupItem value="auto" id="auto" className="mt-1" />
-                                    <div className="flex-1">
-                                      <Label htmlFor="auto" className="text-lg font-semibold text-gray-900 cursor-pointer">Auto Assignment</Label>
-                                      <p className="text-sm text-gray-600 mt-1">System will assign the best match based on availability and preferences</p>
-                                      <div className="mt-3 flex items-center text-xs text-green-600">
-                                        <CheckCircle className="w-4 h-4 mr-1" />
-                                        Optimal matching algorithm
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              </RadioGroup>
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      {/* Show preferred notary info when auto assignment is selected */}
-                      {form.watch('notaryOption') === 'auto' && preferredNotary && (
-                        <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-                          <div className="flex items-center">
-                            <CheckCircle className="w-5 h-5 text-green-600 mr-3" />
-                            <div>
-                              <p className="text-sm font-medium text-green-800">
-                                Preferred Notary Available: {preferredNotary.fullName}
-                              </p>
-                              <p className="text-xs text-green-600 mt-1">
-                                This notary is preferred by {watchTitleCompany} and will be prioritized for assignment
+                    {/* Subscriber Notary: Simple date/time selection */}
+                    {currentUser?.role === 'notary' && currentUser?.notaryType === 'subscriber' ? (
+                      <div className="space-y-6">
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                          <div className="flex items-start">
+                            <div className="flex-shrink-0">
+                              <UserIcon className="h-5 w-5 text-blue-600 mt-0.5" />
+                            </div>
+                            <div className="ml-3">
+                              <h4 className="text-sm font-medium text-blue-900">You are the assigned notary</h4>
+                              <p className="text-sm text-blue-800 mt-1">
+                                As a subscriber notary, you are automatically assigned to handle this job for your personal clients.
                               </p>
                             </div>
                           </div>
                         </div>
-                      )}
 
-                      {/* Manual notary selection */}
-                      {form.watch('notaryOption') === 'assign' && (
-                        <div className="mt-6">
+                        <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
+                          <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                            <div className="w-2 h-6 bg-purple-500 rounded-full mr-3"></div>
+                            Appointment Details
+                          </h3>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <FormField
+                              control={form.control}
+                              name="selectedDate"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel className="text-sm font-medium text-gray-700">Appointment Date</FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type="date"
+                                      {...field}
+                                      className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+
+                            <FormField
+                              control={form.control}
+                              name="selectedTime"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel className="text-sm font-medium text-gray-700">Appointment Time</FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type="time"
+                                      {...field}
+                                      className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Title Company/Admin: Full notary assignment workflow */
+                      <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                          <div className="w-2 h-6 bg-purple-500 rounded-full mr-3"></div>
+                          Notary Assignment
+                        </h3>
+                        
+                        <FormField
+                          control={form.control}
+                          name="notaryOption"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-sm font-medium text-gray-700 mb-4 block">Assignment Method</FormLabel>
+                              <FormControl>
+                                <RadioGroup
+                                  onValueChange={(value) => {
+                                    field.onChange(value);
+                                    if (value === 'auto') {
+                                      form.setValue('selectedNotary', undefined);
+                                      if (watchTitleCompany) {
+                                        checkPreferredNotary(watchTitleCompany);
+                                      }
+                                    } else {
+                                      setPreferredNotary(null);
+                                    }
+                                  }}
+                                  defaultValue={field.value}
+                                  className="grid grid-cols-1 md:grid-cols-2 gap-6"
+                                >
+                                  <div className="relative">
+                                    <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-blue-200 transition-colors cursor-pointer">
+                                      <RadioGroupItem value="assign" id="assign" className="mt-1" />
+                                      <div className="flex-1">
+                                        <Label htmlFor="assign" className="text-lg font-semibold text-gray-900 cursor-pointer">Assign Specific Notary</Label>
+                                        <p className="text-sm text-gray-600 mt-1">Choose from available contractor notaries</p>
+                                        <div className="mt-3 flex items-center text-xs text-blue-600">
+                                          <CheckCircle className="w-4 h-4 mr-1" />
+                                          Direct selection control
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="relative">
+                                    <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-blue-200 transition-colors cursor-pointer">
+                                      <RadioGroupItem value="auto" id="auto" className="mt-1" />
+                                      <div className="flex-1">
+                                        <Label htmlFor="auto" className="text-lg font-semibold text-gray-900 cursor-pointer">Auto Assignment</Label>
+                                        <p className="text-sm text-gray-600 mt-1">System assigns best contractor notary match</p>
+                                        <div className="mt-3 flex items-center text-xs text-green-600">
+                                          <CheckCircle className="w-4 h-4 mr-1" />
+                                          Optimal matching algorithm
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </RadioGroup>
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        {/* Show preferred notary info when auto assignment is selected */}
+                        {form.watch('notaryOption') === 'auto' && preferredNotary && (
+                          <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                            <div className="flex items-center">
+                              <CheckCircle className="w-5 h-5 text-green-600 mr-3" />
+                              <div>
+                                <p className="text-sm font-medium text-green-800">
+                                  Preferred Contractor Available: {preferredNotary.fullName}
+                                </p>
+                                <p className="text-xs text-green-600 mt-1">
+                                  This contractor notary is preferred by {watchTitleCompany}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Manual notary selection - only contractor notaries */}
+                        {form.watch('notaryOption') === 'assign' && (
+                          <div className="mt-6">
+                            <FormField
+                              control={form.control}
+                              name="selectedNotary"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel className="text-sm font-medium text-gray-700">Select Contractor Notary</FormLabel>
+                                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                    <FormControl>
+                                      <SelectTrigger className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 mt-2">
+                                        <SelectValue placeholder="Choose a contractor notary" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      {notaries.filter(notary => notary.notaryType === 'contractor').map((notary: any) => (
+                                        <SelectItem key={notary.id} value={notary.id.toString()}>
+                                          <div className="flex items-center justify-between w-full">
+                                            <span className="font-medium">{notary.fullName}</span>
+                                            <span className="text-xs text-gray-500 ml-2">{notary.email}</span>
+                                          </div>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Additional Requirements - only for title company jobs */}
+                    {(currentUser?.role === 'admin' || currentUser?.role === 'title_company') && (
+                      <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                          <div className="w-2 h-6 bg-orange-500 rounded-full mr-3"></div>
+                          Special Requirements
+                        </h3>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <FormField
                             control={form.control}
-                            name="selectedNotary"
+                            name="requiresNSA"
                             render={({ field }) => (
-                              <FormItem>
-                                <FormLabel className="text-sm font-medium text-gray-700">Select Notary</FormLabel>
-                                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                  <FormControl>
-                                    <SelectTrigger className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 mt-2">
-                                      <SelectValue placeholder="Choose a notary" />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    {notaries.map((notary: any) => (
-                                      <SelectItem key={notary.id} value={notary.id.toString()}>
-                                        <div className="flex items-center justify-between w-full">
-                                          <span className="font-medium">{notary.fullName}</span>
-                                          <span className="text-xs text-gray-500 ml-2">{notary.email}</span>
-                                        </div>
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                                <FormMessage />
+                              <FormItem className="flex items-center space-x-3 p-4 border rounded-lg">
+                                <FormControl>
+                                  <Checkbox
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                  />
+                                </FormControl>
+                                <div>
+                                  <FormLabel className="text-sm font-medium text-gray-900">NSA Required</FormLabel>
+                                  <p className="text-xs text-gray-600">Notary Signing Agent certification required</p>
+                                </div>
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={form.control}
+                            name="requiresSpanishSpeaking"
+                            render={({ field }) => (
+                              <FormItem className="flex items-center space-x-3 p-4 border rounded-lg">
+                                <FormControl>
+                                  <Checkbox
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                  />
+                                </FormControl>
+                                <div>
+                                  <FormLabel className="text-sm font-medium text-gray-900">Spanish Speaking</FormLabel>
+                                  <p className="text-xs text-gray-600">Bilingual notary required</p>
+                                </div>
                               </FormItem>
                             )}
                           />
                         </div>
-                      )}
-                    </div>
-
-                    {/* Additional Requirements */}
-                    <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                        <div className="w-2 h-6 bg-orange-500 rounded-full mr-3"></div>
-                        Special Requirements
-                      </h3>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <FormField
-                          control={form.control}
-                          name="requiresNSA"
-                          render={({ field }) => (
-                            <FormItem className="flex items-center space-x-3 p-4 border rounded-lg">
-                              <FormControl>
-                                <Checkbox
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                />
-                              </FormControl>
-                              <div>
-                                <FormLabel className="text-sm font-medium text-gray-900">NSA Required</FormLabel>
-                                <p className="text-xs text-gray-600">Notary Signing Agent certification required</p>
-                              </div>
-                            </FormItem>
-                          )}
-                        />
-
-                        <FormField
-                          control={form.control}
-                          name="requiresSpanishSpeaking"
-                          render={({ field }) => (
-                            <FormItem className="flex items-center space-x-3 p-4 border rounded-lg">
-                              <FormControl>
-                                <Checkbox
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                />
-                              </FormControl>
-                              <div>
-                                <FormLabel className="text-sm font-medium text-gray-900">Spanish Speaking</FormLabel>
-                                <p className="text-xs text-gray-600">Bilingual notary required</p>
-                              </div>
-                            </FormItem>
-                          )}
-                        />
                       </div>
-                    </div>
+                    )}
                   </div>
                 )}
 

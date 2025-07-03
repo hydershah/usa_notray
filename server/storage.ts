@@ -3,7 +3,6 @@ import {
   users,
   titleCompanies,
   jobs,
-  signers,
   jobParticipants,
   payments,
   invoices,
@@ -17,10 +16,14 @@ import {
   notaryWorkingHours,
   calendarEvents,
   notaryAssignmentLog,
+  signers,
+  auditTrail,
+  notaryLogEntries,
+  documentTags,
+  documentVersions,
   InsertUser,
   InsertTitleCompany,
   InsertJob,
-  InsertSigner,
   InsertJobParticipant,
   InsertJobDocument,
   InsertPayment,
@@ -34,10 +37,10 @@ import {
   InsertNotaryWorkingHours,
   InsertCalendarEvents,
   InsertNotaryAssignmentLog,
+  InsertSigner,
   User,
   TitleCompany,
   Job,
-  Signer,
   JobParticipant,
   JobDocument,
   Payment,
@@ -50,9 +53,10 @@ import {
   NotaryTimeSlots,
   NotaryWorkingHours,
   CalendarEvents,
-  NotaryAssignmentLog
+  NotaryAssignmentLog,
+  Signer
 } from "@shared/schema";
-import { db } from "./db";
+import { db, pool } from "./db";
 import bcrypt from "bcrypt";
 
 export interface IStorage {
@@ -115,14 +119,6 @@ export interface IStorage {
   getJobsByUserId(userId: number): Promise<Job[]>;
   getRoleBasedJobs(userId: number, role: string): Promise<Job[]>;
 
-  // Signer operations
-  getSigner(id: number): Promise<Signer | undefined>;
-  createSigner(signer: InsertSigner): Promise<Signer>;
-  updateSigner(id: number, signer: Partial<InsertSigner>): Promise<Signer | undefined>;
-  deleteSigner(id: number): Promise<boolean>;
-  getSignersByJobId(jobId: number): Promise<Signer[]>;
-  getSignerByInvitationToken(token: string): Promise<Signer | undefined>;
-
   // Job participant operations
   getJobParticipant(id: number): Promise<JobParticipant | undefined>;
   createJobParticipant(participant: InsertJobParticipant): Promise<JobParticipant>;
@@ -173,13 +169,41 @@ export interface IStorage {
   deleteClosingType(id: number): Promise<boolean>;
   getClosingTypes(): Promise<ClosingType[]>;
   getActiveClosingTypes(): Promise<ClosingType[]>;
+
+  // Signer operations
+  getSignersByJobId(jobId: number): Promise<Signer[]>;
+  getSigner(id: number): Promise<Signer | undefined>;
+  createSigner(signer: InsertSigner): Promise<Signer>;
+  updateSigner(id: number, signer: Partial<InsertSigner>): Promise<Signer | undefined>;
+  deleteSigner(id: number): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
+  // Raw SQL query execution method
+  async executeQuery(query: string, params?: any[]): Promise<any[]> {
+    try {
+      const client = await pool.connect();
+      try {
+        const result = await client.query(query, params);
+        return result.rows;
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      console.error('Database query error:', error);
+      throw error;
+    }
+  }
+
   // User operations
   async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user || undefined;
+  }
+
+  // Alias for getUser to maintain compatibility
+  async getUserById(id: number): Promise<User | undefined> {
+    return this.getUser(id);
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
@@ -509,56 +533,6 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  // Signer operations
-  async getSigner(id: number): Promise<Signer | undefined> {
-    const [signer] = await db.select().from(signers).where(eq(signers.id, id));
-    return signer || undefined;
-  }
-
-  async createSigner(insertSigner: InsertSigner): Promise<Signer> {
-    const [signer] = await db
-      .insert(signers)
-      .values(insertSigner)
-      .returning();
-    return signer;
-  }
-
-  async updateSigner(id: number, updateData: Partial<InsertSigner>): Promise<Signer | undefined> {
-    const [signer] = await db
-      .update(signers)
-      .set(updateData)
-      .where(eq(signers.id, id))
-      .returning();
-    return signer || undefined;
-  }
-
-  async deleteSigner(id: number): Promise<boolean> {
-    const result = await db.delete(signers).where(eq(signers.id, id));
-    return (result.rowCount || 0) > 0;
-  }
-
-  async getSignersByJobId(jobId: number): Promise<Signer[]> {
-    return await db.select().from(signers).where(eq(signers.jobId, jobId)).orderBy(asc(signers.id));
-  }
-
-  async getSignerByInvitationToken(token: string): Promise<Signer | undefined> {
-    // Note: The signers table doesn't have invitationToken. 
-    // We'll search in jobParticipants and find the corresponding signer
-    const [participant] = await db.select().from(jobParticipants).where(eq(jobParticipants.inviteToken, token));
-    if (!participant || !participant.jobId) {
-      return undefined;
-    }
-    
-    // Find signer by jobId and email matching
-    const [signer] = await db.select().from(signers).where(
-      and(
-        eq(signers.jobId, participant.jobId),
-        eq(signers.signerEmail, participant.email)
-      )
-    );
-    return signer || undefined;
-  }
-
   // Job participant operations
   async getJobParticipant(id: number): Promise<JobParticipant | undefined> {
     const [participant] = await db.select().from(jobParticipants).where(eq(jobParticipants.id, id));
@@ -605,7 +579,30 @@ export class DatabaseStorage implements IStorage {
       return job?.userId === userId || user?.role === 'admin' || job?.selectedNotary === user?.username;
     }
     
-    return participant.inviteStatus === 'accepted';
+    // Check if participant has accepted the invitation
+    if (participant.inviteStatus !== 'accepted') {
+      return false;
+    }
+
+    // Get user details to check verification status
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    
+    if (!user) {
+      return false;
+    }
+
+    // For signers and witnesses, require ID verification (either EVS, admin bypass, or notary bypass) before session access
+    if ((user.role === 'signer' || user.role === 'witness') && 
+        !(user.isVerified || user.isVerificationBypassed || user.notaryVerificationBypassed)) {
+      return false;
+    }
+
+    // Also check if user has completed their profile setup
+    if ((user.role === 'signer' || user.role === 'witness') && !user.accountSetupComplete) {
+      return false;
+    }
+
+    return true;
   }
 
   async generateSessionToken(jobId: number): Promise<string> {
@@ -648,8 +645,38 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteJobDocument(id: number): Promise<boolean> {
-    const result = await db.delete(jobDocuments).where(eq(jobDocuments.id, id));
-    return (result.rowCount || 0) > 0;
+    try {
+      // First, handle audit trail references to preserve audit history
+      // Set documentId to NULL in audit_trail records that reference this document
+      await db
+        .update(auditTrail)
+        .set({ documentId: null })
+        .where(eq(auditTrail.documentId, id));
+      
+      // Also handle other tables that might reference the document
+      await db
+        .update(notaryLogEntries)
+        .set({ documentId: null })
+        .where(eq(notaryLogEntries.documentId, id));
+      
+      await db
+        .update(documentTags)
+        .set({ documentId: null })
+        .where(eq(documentTags.documentId, id));
+      
+      // Handle document versions by setting originalDocumentId to NULL
+      await db
+        .update(documentVersions)
+        .set({ originalDocumentId: null })
+        .where(eq(documentVersions.originalDocumentId, id));
+      
+      // Now delete the document itself
+      const result = await db.delete(jobDocuments).where(eq(jobDocuments.id, id));
+      return (result.rowCount || 0) > 0;
+    } catch (error) {
+      console.error('Error deleting job document:', error);
+      return false;
+    }
   }
 
   async getJobDocumentsByJobId(jobId: number): Promise<JobDocument[]> {
@@ -814,6 +841,38 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(closingTypes)
       .where(eq(closingTypes.isActive, true))
       .orderBy(asc(closingTypes.name));
+  }
+
+  // Signer operations
+  async getSignersByJobId(jobId: number): Promise<Signer[]> {
+    return await db.select().from(signers).where(eq(signers.jobId, jobId));
+  }
+
+  async getSigner(id: number): Promise<Signer | undefined> {
+    const [signer] = await db.select().from(signers).where(eq(signers.id, id));
+    return signer || undefined;
+  }
+
+  async createSigner(insertSigner: InsertSigner): Promise<Signer> {
+    const [signer] = await db
+      .insert(signers)
+      .values(insertSigner)
+      .returning();
+    return signer;
+  }
+
+  async updateSigner(id: number, updateData: Partial<InsertSigner>): Promise<Signer | undefined> {
+    const [signer] = await db
+      .update(signers)
+      .set(updateData)
+      .where(eq(signers.id, id))
+      .returning();
+    return signer || undefined;
+  }
+
+  async deleteSigner(id: number): Promise<boolean> {
+    const result = await db.delete(signers).where(eq(signers.id, id));
+    return (result.rowCount || 0) > 0;
   }
 }
 

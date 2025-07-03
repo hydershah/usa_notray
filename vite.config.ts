@@ -51,20 +51,45 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
-    port: 3000,
+    port: 3002,
     proxy: {
-      '/api': 'http://localhost:3000',
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        ws: true,
+        configure: (proxy, options) => {
+          proxy.on('error', (err) => {
+            console.log('proxy error', err);
+          });
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            console.log('Sending Request to the Target:', req.method, req.url);
+          });
+          proxy.on('proxyRes', (proxyRes, req, res) => {
+            console.log('Received Response from the Target:', proxyRes.statusCode, req.url);
+          });
+        }
+      },
+      '/uploads': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
+      },
+      '/ws/editor': {
+        target: 'http://localhost:3000/ws/editor',
+        ws: true,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ws\/editor/, ''),
+        configure: (proxy, options) => {
+          proxy.on('error', (err: any) => {
+            console.error('WebSocket proxy error:', err);
+          });
+        }
+      }
     },
   },
-  publicDir: 'client/public',
+  publicDir: 'public',
   optimizeDeps: {
-    include: ['pdfjs-dist', 'process'],
-    exclude: ['pdfjs-dist/build/pdf.worker.min.mjs'],
-    esbuildOptions: {
-      target: 'esnext',
-      define: {
-        global: 'globalThis'
-      }
-    }
-  }
+    include: ['process'],
+  },
+  // Handle PDF.js worker files
+  assetsInclude: ['**/*.worker.js', '**/*.worker.min.js']
 });

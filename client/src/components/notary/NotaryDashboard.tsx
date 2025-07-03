@@ -22,6 +22,7 @@ import {
   Shield
 } from 'lucide-react';
 import { NotaryApprovalQueue } from './NotaryApprovalQueue';
+import { ParticipantVerificationManager } from './ParticipantVerificationManager';
 
 interface NotaryProfile {
   id: number;
@@ -101,6 +102,11 @@ export function NotaryDashboard() {
       const profileRes = await fetch(`/api/users/${user.id}/profile/comprehensive`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      
+      if (!profileRes.ok) {
+        throw new Error(`Profile API error: ${profileRes.status} ${profileRes.statusText}`);
+      }
+      
       const profileData = await profileRes.json();
       setProfile(profileData);
 
@@ -108,6 +114,11 @@ export function NotaryDashboard() {
       const jobsRes = await fetch('/api/jobs', {
         headers: { Authorization: `Bearer ${token}` }
       });
+      
+      if (!jobsRes.ok) {
+        throw new Error(`Jobs API error: ${jobsRes.status} ${jobsRes.statusText}`);
+      }
+      
       const jobsData = await jobsRes.json();
       setJobs(jobsData);
 
@@ -131,10 +142,29 @@ export function NotaryDashboard() {
           completedJobs,
           averagePayment: completedJobs > 0 ? totalEarnings / completedJobs : 0
         });
+      } else {
+        console.warn('Payments API not available:', paymentsRes.status);
+        // Set default payment data if payments API fails
+        setPayments({
+          totalEarnings: 0,
+          monthlyEarnings: 0,
+          pendingPayments: 0,
+          completedJobs: 0,
+          averagePayment: 0
+        });
       }
 
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
+      // Set default values to prevent UI breakage
+      setJobs([]);
+      setPayments({
+        totalEarnings: 0,
+        monthlyEarnings: 0,
+        pendingPayments: 0,
+        completedJobs: 0,
+        averagePayment: 0
+      });
     } finally {
       setLoading(false);
     }
@@ -265,9 +295,10 @@ export function NotaryDashboard() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="approvals">Approvals</TabsTrigger>
+          <TabsTrigger value="verifications">Verifications</TabsTrigger>
           <TabsTrigger value="jobs">Jobs</TabsTrigger>
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
@@ -374,6 +405,11 @@ export function NotaryDashboard() {
         {/* Approvals Tab */}
         <TabsContent value="approvals" className="space-y-6">
           <NotaryApprovalQueue />
+        </TabsContent>
+
+        {/* Verifications Tab */}
+        <TabsContent value="verifications" className="space-y-6">
+          <ParticipantVerificationManager />
         </TabsContent>
 
         {/* Jobs Tab */}

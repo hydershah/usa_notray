@@ -2,20 +2,11 @@ import { MainLayout } from '@/components/layout/main-layout';
 import { useAuth } from '@/hooks/use-auth';
 import { useNotaryProfileStatus } from '@/hooks/use-notary-profile-status';
 import { useLocation } from 'wouter';
-
-// Import role-specific dashboard components
-import { AdminDashboard } from '@/components/admin/AdminDashboard';
-import { NotaryDashboard } from '@/components/notary/NotaryDashboard';
-import { ClientDashboard } from '@/components/client/ClientDashboard';
-import { SignerDashboard } from '@/components/signer/SignerDashboard';
-
-// Import fallback components for roles without specific dashboards
+import { useState, useEffect } from 'react';
+import { Link } from 'wouter';
+import { type Job } from '@shared/schema';
+import { getStatusColor } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   User,
   Eye,
@@ -28,11 +19,21 @@ import {
   Calendar,
   Settings,
   AlertCircle,
-  AlertTriangle
+  AlertTriangle,
+  Shield,
+  XCircle
 } from 'lucide-react';
-import { Link } from 'wouter';
-import { type Job } from '@shared/schema';
-import { getStatusColor } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EVSVerification } from '@/components/verification/evs-verification';
+
+// Import role-specific dashboard components
+import { AdminDashboard } from '@/components/admin/AdminDashboard';
+import { NotaryDashboard } from '@/components/notary/NotaryDashboard';
+import { ClientDashboard } from '@/components/client/ClientDashboard';
 
 interface DashboardStats {
   totalJobs: number;
@@ -210,6 +211,125 @@ function CompanyUserDashboard() {
 // Witness Dashboard (limited features)
 function WitnessDashboard() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
+  const [profile, setProfile] = useState<any>(null);
+  const [showVerification, setShowVerification] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchWitnessProfile();
+  }, []);
+
+  const fetchWitnessProfile = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      
+      if (!token) {
+        console.error('No authentication token found');
+        setLoading(false);
+        return;
+      }
+      
+      // Get user ID with improved fallback logic
+      let userId = user?.id;
+      
+      // First fallback: Get from localStorage
+      if (!userId) {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+          try {
+            const parsedUser = JSON.parse(storedUser);
+            userId = parsedUser.id;
+            console.log('Got user ID from localStorage:', userId);
+          } catch (e) {
+            console.error('Error parsing stored user:', e);
+          }
+        }
+      }
+      
+      // Second fallback: Get from /api/auth/me endpoint
+      if (!userId) {
+        console.log('Fetching user ID from /api/auth/me');
+        const meResponse = await fetch('/api/auth/me', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (meResponse.ok) {
+          const meData = await meResponse.json();
+          userId = meData.id;
+          console.log('Got user ID from /api/auth/me:', userId);
+        } else {
+          console.error('Failed to get user from /api/auth/me:', meResponse.status);
+        }
+      }
+      
+      if (!userId) {
+        console.error('No user ID available after all fallback methods');
+        setLoading(false);
+        return;
+      }
+      
+      console.log('Fetching profile for user ID:', userId); // Debug log
+      
+      // Add cache-busting parameter to ensure fresh data
+      const response = await fetch(`/api/users/${userId}/profile/comprehensive?_t=${Date.now()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (!response.ok) {
+        console.error('Profile fetch failed:', response.status, response.statusText);
+        setLoading(false);
+        return;
+      }
+      
+      const data = await response.json();
+      
+      console.log('Witness profile data:', data); // Debug log
+      
+      setProfile({
+        ...data,
+        isVerified: data.isVerified || false,
+        verificationStatus: data.verificationStatus || 'pending',
+        accountSetupComplete: data.accountSetupComplete || false,
+      });
+      
+      // Update localStorage user data if the verification status changed
+      if (data.isVerified !== undefined) {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+          const userData = JSON.parse(storedUser);
+          userData.isVerified = data.isVerified;
+          userData.verificationStatus = data.verificationStatus;
+          localStorage.setItem('user', JSON.stringify(userData));
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching witness profile:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerificationComplete = (result: any) => {
+    fetchWitnessProfile(); // Refresh profile
+    setShowVerification(false);
+  };
+
+  const handleVerificationFailed = (error: string) => {
+    console.error('Verification failed:', error);
+  };
+
+  if (loading) {
+    return (
+      <MainLayout>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading your dashboard...</p>
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>
@@ -217,21 +337,113 @@ function WitnessDashboard() {
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Welcome, {user?.username}</h1>
-          <p className="text-gray-600 mt-1">Witness Dashboard - View your signing sessions</p>
+          <div className="flex items-center space-x-4 mt-2">
+            <p className="text-gray-600">Witness Dashboard</p>
+            {profile?.isVerified ? (
+              <Badge variant="default" className="bg-green-100 text-green-800">
+                <Shield className="h-3 w-3 mr-1" />
+                ID Verified
+              </Badge>
+            ) : (
+              <Badge variant="default" className="bg-orange-100 text-orange-800">
+                <AlertCircle className="h-3 w-3 mr-1" />
+                Verification Required
+              </Badge>
+            )}
+          </div>
         </div>
+
+        {/* Verification Alert */}
+        {!profile?.isVerified && (
+          <Alert className="border-orange-200 bg-orange-50">
+            <AlertCircle className="h-4 w-4 text-orange-600" />
+            <AlertDescription className="text-orange-800">
+              <strong>ID Verification Required:</strong> As a witness, you must complete identity verification before participating in any notarization sessions.
+              <div className="flex gap-2 mt-2">
+                <Button 
+                  size="sm" 
+                  onClick={() => setShowVerification(true)}
+                >
+                  Verify Now
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="outline"
+                  onClick={() => {
+                    setLoading(true);
+                    fetchWitnessProfile();
+                  }}
+                >
+                  Refresh Status
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* ID Verification Modal/Component */}
+        {showVerification && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-4 border-b">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-bold">ID Verification Required</h2>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => setShowVerification(false)}
+                  >
+                    <XCircle className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="p-4">
+                <EVSVerification
+                  userId={(() => {
+                    let id = user?.id;
+                    if (!id) {
+                      const storedUser = localStorage.getItem('user');
+                      if (storedUser) {
+                        try {
+                          const parsedUser = JSON.parse(storedUser);
+                          id = parsedUser.id;
+                        } catch (e) {
+                          console.error('Error parsing stored user:', e);
+                        }
+                      }
+                    }
+                    return id || 0;
+                  })()}
+                  onVerificationComplete={handleVerificationComplete}
+                  onVerificationFailed={handleVerificationFailed}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Quick Actions for Witness */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Button asChild variant="outline" className="h-20 flex flex-col items-center justify-center">
+          <Button 
+            asChild 
+            variant="outline" 
+            className="h-20 flex flex-col items-center justify-center"
+            disabled={!profile?.isVerified}
+          >
             <Link to="/jobs">
               <Eye className="h-6 w-6 mb-2" />
-              <span>Start New Signing</span>
+              <span>View Sessions</span>
             </Link>
           </Button>
-          <Button asChild variant="outline" className="h-20 flex flex-col items-center justify-center">
+          <Button 
+            asChild 
+            variant="outline" 
+            className="h-20 flex flex-col items-center justify-center"
+            disabled={!profile?.isVerified}
+          >
             <Link to="/jobs">
               <Briefcase className="h-6 w-6 mb-2" />
-              <span>Pending List of Jobs</span>
+              <span>Pending Invitations</span>
             </Link>
           </Button>
           <Button asChild variant="outline" className="h-20 flex flex-col items-center justify-center">
@@ -240,55 +452,51 @@ function WitnessDashboard() {
               <span>Profile Update</span>
             </Link>
           </Button>
-          <Button asChild variant="outline" className="h-20 flex flex-col items-center justify-center">
-            <Link to="/payments">
-              <CheckCircle className="h-6 w-6 mb-2" />
-              <span>Payments / Payouts</span>
-            </Link>
+          <Button 
+            onClick={() => setShowVerification(true)}
+            variant="outline" 
+            className="h-20 flex flex-col items-center justify-center"
+            disabled={profile?.isVerified}
+          >
+            <Shield className="h-6 w-6 mb-2" />
+            <span>{profile?.isVerified ? 'Verified' : 'Verify ID'}</span>
           </Button>
         </div>
 
         {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="border-0 shadow-sm">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Sessions Completed</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">12</p>
+                  <p className="text-sm font-medium text-gray-600">Verification Status</p>
+                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                    {profile?.isVerified ? 'Verified' : 'Pending'}
+                  </p>
                 </div>
-                <CheckCircle className="h-8 w-8 text-green-600" />
+                <Shield className={`h-8 w-8 ${profile?.isVerified ? 'text-green-600' : 'text-orange-600'}`} />
               </div>
             </CardContent>
           </Card>
+
           <Card className="border-0 shadow-sm">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Total Earned</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">$360</p>
+                  <p className="text-sm font-medium text-gray-600">Sessions Available</p>
+                  <p className="text-3xl font-bold text-gray-900 mt-2">2</p>
                 </div>
-                <CheckCircle className="h-8 w-8 text-blue-600" />
+                <Eye className="h-8 w-8 text-blue-600" />
               </div>
             </CardContent>
           </Card>
-          <Card className="border-0 shadow-sm">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Pending Payments</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">$90</p>
-                </div>
-                <Clock className="h-8 w-8 text-amber-600" />
-              </div>
-            </CardContent>
-          </Card>
+
           <Card className="border-0 shadow-sm">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">Pending Invitations</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">3</p>
+                  <p className="text-3xl font-bold text-gray-900 mt-2">1</p>
                 </div>
                 <Bell className="h-8 w-8 text-purple-600" />
               </div>
@@ -296,13 +504,26 @@ function WitnessDashboard() {
           </Card>
         </div>
 
-        <Alert className="border-blue-200 bg-blue-50">
-          <Eye className="h-4 w-4 text-blue-600" />
-          <AlertDescription className="text-blue-800">
-            As a witness, you can view and participate in signing sessions when invited. 
-            <Link to="/jobs" className="ml-1 underline font-medium">Check for pending invitations →</Link>
-          </AlertDescription>
-        </Alert>
+        {/* Session Access Information */}
+        {!profile?.isVerified ? (
+          <Alert className="border-red-200 bg-red-50">
+            <XCircle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-800">
+              <strong>Session Access Restricted:</strong> You cannot join witnessing sessions until your identity is verified. 
+              <Link to="#" onClick={() => setShowVerification(true)} className="ml-1 underline font-medium">
+                Complete verification now →
+              </Link>
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <Alert className="border-green-200 bg-green-50">
+            <CheckCircle className="h-4 w-4 text-green-600" />
+            <AlertDescription className="text-green-800">
+              <strong>Ready to Witness:</strong> Your identity is verified. You can now participate in notarization sessions.
+              <Link to="/jobs" className="ml-1 underline font-medium">View available sessions →</Link>
+            </AlertDescription>
+          </Alert>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card>
@@ -345,31 +566,51 @@ function WitnessDashboard() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Account Management</CardTitle>
+              <CardTitle>Account Requirements</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <Settings className="h-5 w-5 text-gray-600" />
+                  <div className={`w-4 h-4 rounded-full ${profile?.accountSetupComplete ? 'bg-green-500' : 'bg-gray-300'}`}>
+                    {profile?.accountSetupComplete && <CheckCircle className="w-3 h-3 text-white" />}
+                  </div>
                   <div>
-                    <p className="font-medium">Profile Settings</p>
-                    <p className="text-sm text-gray-600">Update your contact and preference information</p>
+                    <p className="font-medium">Account Setup</p>
+                    <p className="text-sm text-gray-600">Complete profile and contact information</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <CheckCircle className="h-5 w-5 text-blue-600" />
+                  <div className={`w-4 h-4 rounded-full ${profile?.isVerified ? 'bg-green-500' : 'bg-gray-300'}`}>
+                    {profile?.isVerified && <CheckCircle className="w-3 h-3 text-white" />}
+                  </div>
                   <div>
-                    <p className="font-medium">Payment Settings</p>
-                    <p className="text-sm text-gray-600">Manage payment methods and payout preferences</p>
+                    <p className="font-medium">ID Verification</p>
+                    <p className="text-sm text-gray-600">Government ID and selfie verification</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <Bell className="h-5 w-5 text-amber-600" />
                   <div>
-                    <p className="font-medium">Notifications</p>
-                    <p className="text-sm text-gray-600">Configure how you receive session invitations</p>
+                    <p className="font-medium">Session Notifications</p>
+                    <p className="text-sm text-gray-600">Receive invitations to witnessing sessions</p>
                   </div>
                 </div>
+                
+                {!profile?.isVerified && (
+                  <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-sm text-yellow-800 font-medium">⚠️ Verification Required</p>
+                    <p className="text-xs text-yellow-700 mt-1">
+                      Complete ID verification to participate in witnessing sessions.
+                    </p>
+                    <Button 
+                      size="sm" 
+                      className="mt-2 w-full"
+                      onClick={() => setShowVerification(true)}
+                    >
+                      Start Verification
+                    </Button>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -456,10 +697,16 @@ export default function Dashboard() {
   } = useNotaryProfileStatus();
   const [, setLocation] = useLocation();
 
+  // Use effect to handle navigation instead of during render
+  useEffect(() => {
+    if (user?.role === 'notary' && !profileStatusLoading && needsProfileCompletion) {
+      setLocation('/notary/profile/complete');
+    }
+  }, [user?.role, profileStatusLoading, needsProfileCompletion, setLocation]);
+
   // Check if notary needs to complete profile
   if (user?.role === 'notary' && !profileStatusLoading && needsProfileCompletion) {
-    setLocation('/notary/profile/complete');
-    return null;
+    return null; // Return null while navigating
   }
 
   // Show pending approval status for notaries
@@ -540,13 +787,6 @@ export default function Dashboard() {
       return (
         <MainLayout>
           <ClientDashboard />
-        </MainLayout>
-      );
-    
-    case 'signer':
-      return (
-        <MainLayout>
-          <SignerDashboard />
         </MainLayout>
       );
     

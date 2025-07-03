@@ -104,6 +104,7 @@ export function NotaryProfileCompletion() {
   });
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
   const [completionProgress, setCompletionProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   const form = useForm<NotaryProfileFormData>({
     resolver: zodResolver(notaryProfileSchema),
@@ -133,59 +134,78 @@ export function NotaryProfileCompletion() {
 
   // Calculate completion progress
   useEffect(() => {
-    const watchedValues = form.watch();
-    const totalFields = Object.keys(watchedValues).length;
-    const completedFields = Object.values(watchedValues).filter(value => {
-      if (typeof value === 'string') return value.trim() !== '';
-      if (typeof value === 'number') return value > 0;
-      if (typeof value === 'boolean') return true; // Booleans are always "complete"
-      if (Array.isArray(value)) return true; // Arrays are always "complete"
-      return false;
-    }).length;
-    
-    // Add file uploads to completion calculation
-    const uploadedFileCount = Object.values(uploadedFiles).filter(file => file !== null).length;
-    const requiredFiles = 4; // Commission, E&O, Certificate, Bond (Signing Agent is optional)
-    
-    const progress = Math.round(((completedFields + uploadedFileCount) / (totalFields + requiredFiles)) * 100);
-    setCompletionProgress(Math.min(progress, 100));
+    try {
+      const watchedValues = form.watch();
+      const totalFields = Object.keys(watchedValues).length;
+      const completedFields = Object.values(watchedValues).filter(value => {
+        if (typeof value === 'string') return value.trim() !== '';
+        if (typeof value === 'number') return value > 0;
+        if (typeof value === 'boolean') return true; // Booleans are always "complete"
+        if (Array.isArray(value)) return true; // Arrays are always "complete"
+        return false;
+      }).length;
+      
+      // Add file uploads to completion calculation
+      const uploadedFileCount = Object.values(uploadedFiles).filter(file => file !== null).length;
+      const requiredFiles = 4; // Commission, E&O, Certificate, Bond (Signing Agent is optional)
+      
+      const progress = Math.round(((completedFields + uploadedFileCount) / (totalFields + requiredFiles)) * 100);
+      setCompletionProgress(Math.min(progress, 100));
+    } catch (err) {
+      console.error('Error calculating progress:', err);
+      setCompletionProgress(0);
+    }
   }, [form.watch(), uploadedFiles]);
 
   const handleFileUpload = (fileType: keyof FileUploadStatus, file: File) => {
-    if (file.size > 10 * 1024 * 1024) { // 10MB limit
+    try {
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        toast({
+          title: 'File too large',
+          description: 'Please select a file smaller than 10MB.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setUploadedFiles(prev => ({
+        ...prev,
+        [fileType]: file,
+      }));
+
       toast({
-        title: 'File too large',
-        description: 'Please select a file smaller than 10MB.',
+        title: 'File uploaded',
+        description: `${file.name} has been selected for upload.`,
+      });
+    } catch (err) {
+      console.error('Error handling file upload:', err);
+      toast({
+        title: 'Upload Error',
+        description: 'Failed to process file upload.',
         variant: 'destructive',
       });
-      return;
     }
-
-    setUploadedFiles(prev => ({
-      ...prev,
-      [fileType]: file,
-    }));
-
-    toast({
-      title: 'File uploaded',
-      description: `${file.name} has been selected for upload.`,
-    });
   };
 
   const handleLanguageToggle = (language: string) => {
-    setSelectedLanguages(prev => {
-      const newLanguages = prev.includes(language)
-        ? prev.filter(l => l !== language)
-        : [...prev, language];
-      
-      form.setValue('foreignLanguages', newLanguages);
-      return newLanguages;
-    });
+    try {
+      setSelectedLanguages(prev => {
+        const newLanguages = prev.includes(language)
+          ? prev.filter(l => l !== language)
+          : [...prev, language];
+        
+        form.setValue('foreignLanguages', newLanguages);
+        return newLanguages;
+      });
+    } catch (err) {
+      console.error('Error toggling language:', err);
+    }
   };
 
   const onSubmit = async (data: NotaryProfileFormData) => {
     try {
       setIsSubmitting(true);
+      setError(null);
 
       // Check required files
       const requiredFiles = ['notaryCommissionFile', 'eoInsuranceFile', 'publicCertificateFile', 'bondFile'] as const;
@@ -209,6 +229,10 @@ export function NotaryProfileCompletion() {
       });
 
       const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Authentication token not found');
+      }
+
       const fileUploadResponse = await fetch('/api/notary/profile/upload-documents', {
         method: 'POST',
         headers: {
@@ -218,7 +242,8 @@ export function NotaryProfileCompletion() {
       });
 
       if (!fileUploadResponse.ok) {
-        throw new Error('Failed to upload documents');
+        const errorText = await fileUploadResponse.text();
+        throw new Error(`Failed to upload documents: ${fileUploadResponse.status} ${errorText}`);
       }
 
       const fileUploadResult = await fileUploadResponse.json();
@@ -247,7 +272,8 @@ export function NotaryProfileCompletion() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to save profile');
+        const errorText = await response.text();
+        throw new Error(`Failed to save profile: ${response.status} ${errorText}`);
       }
 
       toast({
@@ -260,6 +286,8 @@ export function NotaryProfileCompletion() {
 
     } catch (error) {
       console.error('Profile completion error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      setError(errorMessage);
       toast({
         title: 'Error',
         description: 'Failed to complete profile. Please try again.',
@@ -328,6 +356,15 @@ export function NotaryProfileCompletion() {
             </div>
             <Progress value={completionProgress} className="h-2" />
           </div>
+          
+          {error && (
+            <Alert className="mt-6 border-red-200 bg-red-50">
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+              <AlertDescription className="text-red-800">
+                <strong>Error:</strong> {error}
+              </AlertDescription>
+            </Alert>
+          )}
         </div>
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">

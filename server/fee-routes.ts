@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import jwt from "jsonwebtoken";
 import { feeCalculationService } from "./fee-calculation-service";
 import { db } from "./db";
 import { eq, desc } from "drizzle-orm";
@@ -19,7 +20,6 @@ const verifyToken = (req: any, res: any, next: any) => {
   }
 
   try {
-    const jwt = require('jsonwebtoken');
     const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
     const decoded = jwt.verify(token, JWT_SECRET) as any;
     req.user = decoded;

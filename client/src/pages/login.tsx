@@ -5,16 +5,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
-import { IdCard } from 'lucide-react';
+import { IdCard, Shield, Smartphone } from 'lucide-react';
 
 export default function Login() {
   const [, setLocation] = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
   const { toast } = useToast();
   const { login } = useAuth();
 
@@ -23,12 +26,42 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      await login(email, password);
-      toast({
-        title: "Success",
-        description: "You have been logged in successfully.",
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          email, 
+          password, 
+          twoFactorCode: twoFactorCode || undefined 
+        })
       });
-      setLocation('/dashboard');
+
+      const data = await response.json();
+
+      if (response.ok) {
+        if (data.requiresTwoFactor) {
+          setRequiresTwoFactor(true);
+          toast({
+            title: "2FA Required",
+            description: "Please enter your two-factor authentication code.",
+          });
+        } else {
+          // Complete login
+          localStorage.setItem('token', data.token);
+          localStorage.setItem('user', JSON.stringify(data.user));
+          toast({
+            title: "Success",
+            description: "You have been logged in successfully.",
+          });
+          setLocation('/dashboard');
+        }
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: data.message || "Login failed. Please try again.",
+        });
+      }
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -61,6 +94,7 @@ export default function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                disabled={requiresTwoFactor}
               />
             </div>
             <div className="space-y-2">
@@ -72,24 +106,81 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                disabled={requiresTwoFactor}
               />
             </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Checkbox 
-                  id="remember" 
-                  checked={rememberMe}
-                  onCheckedChange={(checked) => setRememberMe(checked as boolean)}
-                />
-                <Label htmlFor="remember" className="text-sm">Remember me</Label>
+            
+            {requiresTwoFactor && (
+              <div className="space-y-3 p-4 border rounded-lg bg-blue-50">
+                <div className="flex items-center gap-2 text-blue-700">
+                  <Shield className="h-4 w-4" />
+                  <span className="font-medium">Two-Factor Authentication Required</span>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="two-factor">Enter 6-digit code from your authenticator app</Label>
+                  <div className="flex justify-center">
+                    <InputOTP
+                      maxLength={6}
+                      value={twoFactorCode}
+                      onChange={setTwoFactorCode}
+                    >
+                      <InputOTPGroup>
+                        <InputOTPSlot index={0} />
+                        <InputOTPSlot index={1} />
+                        <InputOTPSlot index={2} />
+                        <InputOTPSlot index={3} />
+                        <InputOTPSlot index={4} />
+                        <InputOTPSlot index={5} />
+                      </InputOTPGroup>
+                    </InputOTP>
+                  </div>
+                  <div className="flex items-center gap-1 text-xs text-gray-600 justify-center">
+                    <Smartphone className="h-3 w-3" />
+                    <span>Open your authenticator app to get the current code</span>
+                  </div>
+                </div>
               </div>
-              <Button variant="link" className="p-0 h-auto text-sm">
-                Forgot password?
+            )}
+            
+            {!requiresTwoFactor && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="remember" 
+                    checked={rememberMe}
+                    onCheckedChange={(checked) => setRememberMe(checked as boolean)}
+                  />
+                  <Label htmlFor="remember" className="text-sm">Remember me</Label>
+                </div>
+                <Button variant="link" className="p-0 h-auto text-sm">
+                  Forgot password?
+                </Button>
+              </div>
+            )}
+            
+            <div className="space-y-2">
+              <Button 
+                type="submit" 
+                className="w-full" 
+                disabled={isLoading || (requiresTwoFactor && twoFactorCode.length !== 6)}
+              >
+                {isLoading ? 'Signing in...' : requiresTwoFactor ? 'Verify & Sign In' : 'Sign In'}
               </Button>
+              
+              {requiresTwoFactor && (
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  className="w-full" 
+                  onClick={() => {
+                    setRequiresTwoFactor(false);
+                    setTwoFactorCode('');
+                  }}
+                >
+                  Back to Login
+                </Button>
+              )}
             </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? 'Signing in...' : 'Sign In'}
-            </Button>
           </form>
           
           <div className="mt-6 text-center">
