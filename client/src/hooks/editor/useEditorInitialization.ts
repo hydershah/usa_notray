@@ -10,7 +10,7 @@ import type {
 
 interface UseEditorInitializationProps {
   sessionId: string;
-  mode: 'tagging' | 'live_signing';
+  mode: 'tagging' | 'notary';
   documents: SessionDocument[];
   participants: SessionParticipant[];
   currentUserId?: string;
@@ -81,7 +81,7 @@ export const useEditorInitialization = ({
     setMode({
       mode: mode,
       canPlaceTags: mode === 'tagging',
-      canModifyContent: mode === 'live_signing',
+      canModifyContent: mode === 'notary',
       showPlaceholders: true
     });
 

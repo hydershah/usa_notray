@@ -301,14 +301,14 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
     if (process.env.NODE_ENV !== 'development') return null;
 
     return (
-      <div className="fixed bottom-4 right-4 bg-black bg-opacity-75 text-white text-xs p-2 rounded max-w-xs">
-        <div className="font-bold mb-1">Active Shortcuts:</div>
+      <div className="fixed bottom-4 left-4 bg-black bg-opacity-75 text-white text-xs p-3 rounded-lg max-w-xs shadow-lg border border-gray-600">
+        <div className="font-bold mb-2 text-blue-300">Active Shortcuts:</div>
         <div>• ` → Notary, 1-8 → Signers</div>
         <div>• A,S,I,N,X,O,E,W,T,D → Tag types</div>
         <div>• Del → Delete tag, Esc → Deselect</div>
         <div>• Arrows → Move tag, PgUp/PgDn → Pages</div>
         <div>• Ctrl+Z/Y → Undo/Redo</div>
-        <div className="mt-1 text-yellow-300">
+        <div className="mt-2 pt-2 border-t border-gray-600 text-yellow-300">
           Selected: {selectedUser?.displayName || 'None'} | 
           Tag: {selectedTagType || 'None'}
         </div>

@@ -3,7 +3,7 @@
 export interface EditorSession {
   id: string;
   jobId: string;
-  sessionType: 'tagging' | 'live_signing';
+  sessionType: 'tagging' | 'notary';
   status: 'created' | 'active' | 'in_progress' | 'completed' | 'cancelled';
   notaryId: string;
   videoSessionId?: string;
@@ -164,7 +164,7 @@ export interface PDFViewerState {
 }
 
 export interface EditorMode {
-  mode: 'tagging' | 'live_signing';
+  mode: 'tagging' | 'notary';
   canPlaceTags: boolean;
   canModifyContent: boolean;
   showPlaceholders: boolean;

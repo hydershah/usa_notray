@@ -1,11 +1,11 @@
 import { db } from "../../db";
 import { editorSessions, jobs, users, jobDocuments } from "../../../shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 export interface CreateSessionRequest {
   jobId: number;
-  sessionType: 'tagging' | 'live_signing';
+  sessionType: 'tagging' | 'notary';
   notaryId: number;
   videoSessionId?: string;
 }
@@ -13,8 +13,8 @@ export interface CreateSessionRequest {
 export interface EditorSessionData {
   id: string;
   jobId: number;
-  sessionType: 'tagging' | 'live_signing';
-  status: 'created' | 'in_progress' | 'completed' | 'cancelled';
+  sessionType: 'tagging' | 'notary';
+  status: 'preparing' | 'active' | 'completed' | 'cancelled';
   notaryId: number;
   videoSessionId?: string;
   createdAt: Date;
@@ -76,11 +76,47 @@ export class SessionService {
           eq(editorSessions.jobId, request.jobId),
           eq(editorSessions.sessionType, request.sessionType)
         ))
+        .orderBy(desc(editorSessions.createdAt)) // Get the most recent session
         .limit(1);
       
-      if (existingSession.length && existingSession[0].status !== 'cancelled') {
-        // Return existing session if not cancelled
-        return this.convertToEditorSessionData(existingSession[0]);
+      if (existingSession.length) {
+        const session = existingSession[0];
+        
+              // For tagging sessions: Always return existing session (even if completed)
+      // This allows users to continue editing their tagged document
+      if (request.sessionType === 'tagging' && session.status !== 'cancelled') {
+        // If session is completed, reactivate it for continued editing
+        if (session.status === 'completed') {
+          await db
+            .update(editorSessions)
+            .set({ 
+              status: 'active',
+              updatedAt: new Date()
+            })
+            .where(eq(editorSessions.id, session.id));
+          
+          console.log(`🔄 Reactivated completed tagging session: ${session.sessionId} for continued editing`);
+          
+          // Return updated session data
+          const updatedSession = { ...session, status: 'active' as const };
+          return this.convertToEditorSessionData(updatedSession);
+        }
+        
+        console.log(`🔄 Returning existing tagging session: ${session.sessionId} (status: ${session.status})`);
+        return this.convertToEditorSessionData(session);
+      }
+        
+        // For notary sessions: Only return if in progress
+        if (request.sessionType === 'notary' && session.status === 'active') {
+          console.log(`🔄 Returning existing notary session: ${session.sessionId}`);
+          return this.convertToEditorSessionData(session);
+        }
+        
+        // For completed notary sessions, create a new one
+        if (request.sessionType === 'notary' && session.status === 'completed') {
+          console.log(`✨ Creating new notary session (previous completed)`);
+          // Continue to create new session below
+        }
       }
       
       // Create new session
@@ -89,7 +125,7 @@ export class SessionService {
         jobId: request.jobId,
         notaryId: request.notaryId,
         sessionType: request.sessionType,
-        status: 'created' as const,
+        status: 'preparing' as const,
         videoSessionId: request.videoSessionId,
         createdAt: new Date(),
       };
@@ -266,7 +302,7 @@ export class SessionService {
    */
   static async updateSessionStatus(
     sessionId: string, 
-    status: 'created' | 'in_progress' | 'completed' | 'cancelled',
+    status: 'preparing' | 'active' | 'completed' | 'cancelled',
     data: { startedAt?: Date; completedAt?: Date } = {}
   ): Promise<void> {
     try {

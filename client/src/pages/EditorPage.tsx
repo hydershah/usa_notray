@@ -39,7 +39,7 @@ const EditorPage: React.FC<EditorPageProps> = () => {
   
   // Get mode from URL search params
   const searchParams = new URLSearchParams(window.location.search);
-  const mode = searchParams.get('mode') as 'tagging' | 'signing' || 'tagging';
+  const mode = searchParams.get('mode') as 'tagging' | 'notary' || 'tagging';
   
   const [sessionData, setSessionData] = useState<SessionData | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
@@ -73,7 +73,7 @@ const EditorPage: React.FC<EditorPageProps> = () => {
         // Create or get editor session
         const sessionResponse = await apiRequest("POST", `/api/editor/job/${jobId}/session`, {
           sessionType: mode,
-          videoSessionId: mode === 'signing' ? `whereby_${jobId}_${Date.now()}` : undefined
+          videoSessionId: mode === 'notary' ? `whereby_${jobId}_${Date.now()}` : undefined
         });
 
         const sessionResult = await sessionResponse.json();
@@ -135,7 +135,7 @@ const EditorPage: React.FC<EditorPageProps> = () => {
 
       toast({
         title: "Session Completed",
-        description: `${mode === 'tagging' ? 'Tagging' : 'Signing'} session completed successfully!`
+        description: `${mode === 'tagging' ? 'Tagging' : 'Notary'} session completed successfully!`
       });
 
       // Navigate back to job details
@@ -167,7 +167,7 @@ const EditorPage: React.FC<EditorPageProps> = () => {
             {jobLoading ? 'Loading Job Data...' : 'Initializing Editor Session...'}
           </h2>
           <p className="text-gray-600">
-            {mode === 'tagging' ? 'Setting up document tagging workspace' : 'Preparing live signing session'}
+            {mode === 'tagging' ? 'Setting up document tagging workspace' : 'Preparing notary session'}
           </p>
         </div>
       </div>
@@ -245,7 +245,7 @@ const EditorPage: React.FC<EditorPageProps> = () => {
         mode={mode}
         documents={sessionData.documents}
         participants={sessionData.participants}
-        currentUserId={user.id.toString()}
+        currentUserId={user?.id.toString() || ''}
         onSessionComplete={handleSessionComplete}
         onTagsChanged={handleTagsChanged}
       />

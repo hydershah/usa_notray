@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { db } from '../db.js';
-import { users, userVerificationAttempts } from '../../shared/schema.js';
+import { db } from '../db';
+import { users, userVerificationAttempts } from '../../shared/schema';
 import { eq, inArray, and, sql } from 'drizzle-orm';
-import { verifyToken } from '../auth.js';
+import { verifyToken } from '../auth';
 
 const router = Router();
 
@@ -68,6 +68,88 @@ router.get('/verification-users', verifyToken, requireAdmin, async (req: Request
 
 // Get verification attempts for a specific user
 router.get('/verification-attempts/:userId', verifyToken, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const userId = parseInt(req.params.userId);
+    
+    if (isNaN(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+
+    const attempts = await db
+      .select()
+      .from(userVerificationAttempts)
+      .where(eq(userVerificationAttempts.userId, userId))
+      .orderBy(userVerificationAttempts.attemptedAt);
+
+    res.json(attempts);
+  } catch (error) {
+    console.error('Error fetching verification attempts:', error);
+    res.status(500).json({ error: 'Failed to fetch verification attempts' });
+  }
+});
+
+// Get verification data for a specific user (frontend expects this path)
+router.get('/users/:userId/verification-data', verifyToken, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const userId = parseInt(req.params.userId);
+    
+    if (isNaN(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+
+    const userData = await db.execute(sql`
+      SELECT 
+        u.id,
+        u.username,
+        u.email,
+        u.first_name,
+        u.last_name,
+        u.full_name,
+        u.role,
+        u.phone_number,
+        u.is_verified,
+        u.verification_status,
+        u.is_verification_bypassed,
+        u.verification_bypassed_at,
+        u.verification_bypass_reason,
+        bypass_admin.full_name as bypassed_by_admin,
+        u.evs_transaction_id,
+        u.evs_verification_confidence,
+        u.evs_verified_at,
+        u.evs_extracted_first_name,
+        u.evs_extracted_last_name,
+        u.evs_extracted_date_of_birth,
+        u.id_type,
+        u.id_number,
+        u.id_expiration_date,
+        u.evs_face_match_result,
+        u.evs_face_match_confidence,
+        u.evs_liveness_score,
+        u.verification_retry_count,
+        u.created_at,
+        u.last_login_at,
+        u.is_active,
+        u.kba_verified,
+        u.kba_verification_date,
+        u.kba_score
+      FROM users u
+      LEFT JOIN users bypass_admin ON u.verification_bypassed_by = bypass_admin.id
+      WHERE u.id = ${userId}
+    `);
+
+    if (userData.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json(userData.rows[0]);
+  } catch (error) {
+    console.error('Error fetching user verification data:', error);
+    res.status(500).json({ error: 'Failed to fetch user verification data' });
+  }
+});
+
+// Get verification attempts for a specific user (frontend expects this path)
+router.get('/users/:userId/verification-attempts', verifyToken, requireAdmin, async (req: Request, res: Response) => {
   try {
     const userId = parseInt(req.params.userId);
     

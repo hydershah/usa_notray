@@ -65,7 +65,7 @@ export class TagService {
         throw new Error('Invalid coordinates: width, height, and pageNumber must be positive');
       }
 
-      // Get session to verify it exists
+      // Get session to verify it exists and check status
       const [session] = await db
         .select()
         .from(editorSessions)
@@ -74,6 +74,19 @@ export class TagService {
       
       if (!session) {
         throw new Error('Session not found');
+      }
+      
+      // If session is completed, reactivate it since user is making changes
+      if (session.status === 'completed') {
+        await db
+          .update(editorSessions)
+          .set({ 
+            status: 'in_progress',
+            updatedAt: new Date()
+          })
+          .where(eq(editorSessions.sessionId, request.sessionId));
+        
+        console.log(`🔄 Reactivated completed session: ${request.sessionId} (user making new changes)`);
       }
       
       // Get assigned user info for display
@@ -182,6 +195,23 @@ export class TagService {
    */
   static async updateTag(tagId: string, updates: any): Promise<DocumentTagData> {
     try {
+      // Validate tag ID format
+      if (!tagId || tagId.trim() === '') {
+        throw new Error('Invalid tag ID: empty or null');
+      }
+      
+      // Handle temporary tag IDs (these should not be updated in DB)
+      if (tagId.startsWith('temp_')) {
+        console.log('Skipping update for temporary tag:', tagId);
+        throw new Error('Cannot update temporary tag - tag not yet saved to database');
+      }
+      
+      // Validate that tag ID can be parsed as integer
+      const numericTagId = parseInt(tagId);
+      if (isNaN(numericTagId) || !isFinite(numericTagId) || numericTagId <= 0) {
+        console.error('Invalid tag ID detected:', tagId, 'parsed as:', numericTagId);
+        throw new Error('Invalid tag ID: must be a positive integer');
+      }
       // Validate coordinates to prevent NaN values
       if (updates.coordinates) {
         const coords = updates.coordinates;
@@ -221,11 +251,21 @@ export class TagService {
       
       // Handle coordinate updates with validation
       if (updates.coordinates) {
-        updateData.xPosition = Math.round(updates.coordinates.x);
-        updateData.yPosition = Math.round(updates.coordinates.y);
-        updateData.width = Math.round(updates.coordinates.width);
-        updateData.height = Math.round(updates.coordinates.height);
-        updateData.pageNumber = updates.coordinates.pageNumber;
+        if (updates.coordinates.x !== undefined) {
+          updateData.xPosition = Math.round(updates.coordinates.x);
+        }
+        if (updates.coordinates.y !== undefined) {
+          updateData.yPosition = Math.round(updates.coordinates.y);
+        }
+        if (updates.coordinates.width !== undefined) {
+          updateData.width = Math.round(updates.coordinates.width);
+        }
+        if (updates.coordinates.height !== undefined) {
+          updateData.height = Math.round(updates.coordinates.height);
+        }
+        if (updates.coordinates.pageNumber !== undefined) {
+          updateData.pageNumber = updates.coordinates.pageNumber;
+        }
       }
       
       // Handle other updates
@@ -236,14 +276,44 @@ export class TagService {
         updateData.completedAt = new Date();
       }
       
+      // First, get the current tag to find its session
+      const [currentTag] = await db
+        .select()
+        .from(documentTags)
+        .where(eq(documentTags.id, numericTagId))
+        .limit(1);
+      
+      if (!currentTag) {
+        throw new Error('Tag not found');
+      }
+      
+      // Check if session is completed and reactivate it
+      const [session] = await db
+        .select()
+        .from(editorSessions)
+        .where(eq(editorSessions.id, currentTag.sessionId))
+        .limit(1);
+      
+      if (session && session.status === 'completed') {
+        await db
+          .update(editorSessions)
+          .set({ 
+            status: 'in_progress',
+            updatedAt: new Date()
+          })
+          .where(eq(editorSessions.id, currentTag.sessionId));
+        
+        console.log(`🔄 Reactivated completed session: ${session.sessionId} (tag update)`);
+      }
+      
       const [updatedTag] = await db
         .update(documentTags)
         .set(updateData)
-        .where(eq(documentTags.id, parseInt(tagId)))
+        .where(eq(documentTags.id, numericTagId))
         .returning();
       
       if (!updatedTag) {
-        throw new Error('Tag not found');
+        throw new Error('Tag not found after update');
       }
       
       // Get display information
@@ -279,9 +349,57 @@ export class TagService {
    */
   static async deleteTag(tagId: string, deletedBy: number): Promise<void> {
     try {
+      // Validate tag ID format
+      if (!tagId || tagId.trim() === '') {
+        throw new Error('Invalid tag ID: empty or null');
+      }
+      
+      // Handle temporary tag IDs (these should not be deleted from DB)
+      if (tagId.startsWith('temp_')) {
+        console.log('Skipping delete for temporary tag:', tagId);
+        throw new Error('Cannot delete temporary tag - tag not yet saved to database');
+      }
+      
+      // Validate that tag ID can be parsed as integer
+      const numericTagId = parseInt(tagId);
+      if (isNaN(numericTagId) || !isFinite(numericTagId) || numericTagId <= 0) {
+        console.error('Invalid tag ID detected:', tagId, 'parsed as:', numericTagId);
+        throw new Error('Invalid tag ID: must be a positive integer');
+      }
+      
+      // First, get the current tag to find its session
+      const [currentTag] = await db
+        .select()
+        .from(documentTags)
+        .where(eq(documentTags.id, numericTagId))
+        .limit(1);
+      
+      if (!currentTag) {
+        throw new Error('Tag not found');
+      }
+      
+      // Check if session is completed and reactivate it
+      const [session] = await db
+        .select()
+        .from(editorSessions)
+        .where(eq(editorSessions.id, currentTag.sessionId))
+        .limit(1);
+      
+      if (session && session.status === 'completed') {
+        await db
+          .update(editorSessions)
+          .set({ 
+            status: 'in_progress',
+            updatedAt: new Date()
+          })
+          .where(eq(editorSessions.id, currentTag.sessionId));
+        
+        console.log(`🔄 Reactivated completed session: ${session.sessionId} (tag deletion)`);
+      }
+      
       const result = await db
         .delete(documentTags)
-        .where(eq(documentTags.id, parseInt(tagId)))
+        .where(eq(documentTags.id, numericTagId))
         .returning();
       
       if (!result.length) {
@@ -325,7 +443,7 @@ export class TagService {
       
       // Update each tag with default content
       for (const tag of tags) {
-        const content = this.getDefaultContentForTag(tag);
+        const content = await this.getDefaultContentForTag(tag);
         
         await db
           .update(documentTags)
@@ -348,6 +466,137 @@ export class TagService {
     } catch (error) {
       console.error('Failed to replace tags with content:', error);
       throw new Error(`Failed to replace tags: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+  
+  /**
+   * Validate user profile completeness for different tag types
+   */
+  static async validateUserProfileForTags(userId: number, tagTypes: string[]): Promise<{
+    isComplete: boolean;
+    missingFields: { tagType: string; field: string; description: string }[];
+    userProfile: any;
+  }> {
+    try {
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      
+      if (!user) {
+        return {
+          isComplete: false,
+          missingFields: [{ tagType: 'ALL', field: 'user', description: 'User profile not found' }],
+          userProfile: null
+        };
+      }
+      
+      const missingFields: { tagType: string; field: string; description: string }[] = [];
+      
+      // Check each tag type for required profile data
+      for (const tagType of tagTypes) {
+        switch (tagType) {
+          case 'A': // Name tag
+            if (!user.firstName && !user.fullName) {
+              missingFields.push({
+                tagType: 'A',
+                field: 'firstName',
+                description: 'First name is required for name tags'
+              });
+            }
+            if (!user.lastName && !user.fullName) {
+              missingFields.push({
+                tagType: 'A',
+                field: 'lastName',
+                description: 'Last name is required for name tags'
+              });
+            }
+            break;
+            
+          case 'S': // Signature tag
+            if (!user.signatureImage && !user.signatureData && !user.signatureTyped) {
+              missingFields.push({
+                tagType: 'S',
+                field: 'signature',
+                description: 'Signature image or typed signature is required'
+              });
+            }
+            break;
+            
+          case 'I': // Initials tag
+            if (!user.initialsImage && !user.initialData && !user.initialsTyped) {
+              // Can generate from name if available
+              if (!user.firstName || !user.lastName) {
+                missingFields.push({
+                  tagType: 'I',
+                  field: 'initials',
+                  description: 'Initials image/typed or first/last name for generation required'
+                });
+              }
+            }
+            break;
+            
+          case 'N': // Commission Number
+            if (!user.commissionNumber) {
+              missingFields.push({
+                tagType: 'N',
+                field: 'commissionNumber',
+                description: 'Notary commission number is required'
+              });
+            }
+            break;
+            
+          case 'X': // Commission Expiration
+            if (!user.commissionExpiration) {
+              missingFields.push({
+                tagType: 'X',
+                field: 'commissionExpiration',
+                description: 'Notary commission expiration date is required'
+              });
+            }
+            break;
+            
+          case 'O': // Disclosure
+            if (!user.disclosure) {
+              missingFields.push({
+                tagType: 'O',
+                field: 'disclosure',
+                description: 'Notary disclosure statement is required'
+              });
+            }
+            break;
+            
+          case 'E': // Notary Seal
+            // Additional validation can be added for seal requirements
+            break;
+            
+          // T, D, W don't require specific profile data
+        }
+      }
+      
+      return {
+        isComplete: missingFields.length === 0,
+        missingFields,
+        userProfile: {
+          id: user.id,
+          name: user.fullName || `${user.firstName} ${user.lastName}`,
+          email: user.email,
+          role: user.role,
+          hasSignature: !!(user.signatureImage || user.signatureData || user.signatureTyped),
+          hasInitials: !!(user.initialsImage || user.initialData || user.initialsTyped),
+          hasCommissionInfo: !!(user.commissionNumber && user.commissionExpiration),
+          hasDisclosure: !!user.disclosure
+        }
+      };
+      
+    } catch (error) {
+      console.error('Failed to validate user profile:', error);
+      return {
+        isComplete: false,
+        missingFields: [{ tagType: 'ALL', field: 'validation', description: 'Profile validation failed' }],
+        userProfile: null
+      };
     }
   }
   
@@ -422,27 +671,94 @@ export class TagService {
     return baseColor;
   }
   
-  private static getDefaultContentForTag(tag: any): string {
-    // Generate default content based on tag type
-    switch (tag.tagType) {
-      case 'A': // Name
-        return 'John Doe'; // Would come from user profile
-      case 'S': // Signature
-        return '[Signature Image]'; // Would be replaced with actual signature
-      case 'I': // Initials
-        return '[Initials Image]'; // Would be replaced with actual initials
-      case 'D': // Date
-        return new Date().toLocaleDateString();
-      case 'T': // Text
-        return 'Sample text';
-      case 'N': // Commission Number
-        return 'Commission #123456'; // Would come from notary profile
-      case 'X': // Expiration
-        return '12/31/2025'; // Would come from notary profile
-      case 'O': // Disclosure
-        return 'Notary disclosure statement...'; // Would come from notary profile
-      default:
-        return '';
+  private static async getDefaultContentForTag(tag: any): Promise<string> {
+    try {
+      // Get user profile data for content generation
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, tag.assignedUserId))
+        .limit(1);
+      
+      if (!user) {
+        console.warn(`User not found for tag ${tag.id}, using fallback content`);
+        return this.getFallbackContent(tag.tagType);
+      }
+      
+      // Generate content based on tag type using actual profile data
+      switch (tag.tagType) {
+        case 'A': // Name tag
+          if (user.fullName) return user.fullName;
+          if (user.firstName && user.lastName) return `${user.firstName} ${user.lastName}`;
+          return user.firstName || 'Please enter name';
+          
+        case 'S': // Signature tag
+          // Check for different signature formats based on user preference
+          if (user.signatureImage) return user.signatureImage; // Base64 image
+          if (user.signatureData) return user.signatureData; // Legacy base64 field
+          if (user.signatureTyped) return user.signatureTyped; // Typed signature
+          return '[Please upload signature]';
+          
+        case 'I': // Initials tag
+          if (user.initialsImage) return user.initialsImage; // Base64 image
+          if (user.initialData) return user.initialData; // Legacy base64 field
+          if (user.initialsTyped) return user.initialsTyped; // Typed initials
+          // Generate initials from name if none uploaded
+          if (user.firstName && user.lastName) {
+            return `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`;
+          }
+          return '[Please upload initials]';
+          
+        case 'D': // Date tag
+          return new Date().toLocaleDateString();
+          
+        case 'T': // Text tag
+          return ''; // Leave blank for user input during session
+          
+        // Notary-specific tags
+        case 'N': // Commission Number
+          if (user.commissionNumber) return user.commissionNumber;
+          return '[Commission number not set in profile]';
+          
+        case 'X': // Commission Expiration
+          if (user.commissionExpiration) return user.commissionExpiration;
+          return '[Expiration date not set in profile]';
+          
+        case 'O': // Disclosure statement
+          if (user.disclosure) return user.disclosure;
+          return '[Disclosure statement not set in profile]';
+          
+        case 'E': // Notary Seal (requires special handling)
+          return '[Notary Seal - requires notarization type selection]';
+          
+        case 'W': // Whiteout
+          return ''; // No content needed for whiteout tags
+          
+        default:
+          console.warn(`Unknown tag type: ${tag.tagType}`);
+          return '';
+      }
+      
+    } catch (error) {
+      console.error('Failed to get user profile content for tag:', error);
+      return this.getFallbackContent(tag.tagType);
+    }
+  }
+  
+  private static getFallbackContent(tagType: string): string {
+    // Fallback content when user profile data is unavailable
+    switch (tagType) {
+      case 'A': return '[Name required]';
+      case 'S': return '[Signature required]';
+      case 'I': return '[Initials required]';
+      case 'D': return new Date().toLocaleDateString();
+      case 'T': return '';
+      case 'N': return '[Commission # required]';
+      case 'X': return '[Expiration required]';
+      case 'O': return '[Disclosure required]';
+      case 'E': return '[Seal required]';
+      case 'W': return '';
+      default: return '';
     }
   }
 }

@@ -3,7 +3,7 @@ import PDFTaggingEditor from '../components/editor/PDFTaggingEditor';
 import type { SessionDocument, SessionParticipant, DocumentTag } from '../types/editor';
 
 const EditorDemo: React.FC = () => {
-  const [currentMode, setCurrentMode] = useState<'tagging' | 'signing'>('tagging');
+  const [currentMode, setCurrentMode] = useState<'tagging' | 'notary'>('tagging');
   const [tagsCount, setTagsCount] = useState(0);
 
   // Sample documents
@@ -86,7 +86,7 @@ const EditorDemo: React.FC = () => {
 
   const handleSessionComplete = () => {
     console.log('Session completed! Tags placed:', tagsCount);
-    alert(`Tagging session completed! ${tagsCount} tags were placed. You can now transition to live signing mode.`);
+    alert(`Tagging session completed! ${tagsCount} tags were placed. You can now transition to live notary mode.`);
   };
 
   const handleTagsChanged = (tags: DocumentTag[]) => {
@@ -94,7 +94,7 @@ const EditorDemo: React.FC = () => {
   };
 
   const handleModeSwitch = () => {
-    const newMode = currentMode === 'tagging' ? 'signing' : 'tagging';
+    const newMode = currentMode === 'tagging' ? 'notary' : 'tagging';
     setCurrentMode(newMode);
   };
 
@@ -120,7 +120,7 @@ const EditorDemo: React.FC = () => {
               onClick={handleModeSwitch}
               className="px-4 py-2 bg-white text-blue-600 rounded-lg hover:bg-blue-50 transition-colors font-medium"
             >
-              Switch to {currentMode === 'tagging' ? 'Signing' : 'Tagging'} Mode
+              Switch to {currentMode === 'tagging' ? 'Notary' : 'Tagging'} Mode
             </button>
           </div>
         </div>
@@ -144,7 +144,7 @@ const EditorDemo: React.FC = () => {
                 </>
               ) : (
                 <>
-                  In signing mode, you would see real content instead of placeholder tags. 
+                  In notary mode, you would see real content instead of placeholder tags. 
                   Users can drag, resize, and modify their content in real-time.
                 </>
               )}

@@ -3,7 +3,7 @@ import { useEditorStore } from '../../hooks/editor/useEditorStore';
 
 interface VideoIntegrationProps {
   sessionId: string;
-  mode: 'tagging' | 'live_signing';
+  mode: 'tagging' | 'notary';
   autoStart?: boolean;
   className?: string;
 }
@@ -192,7 +192,7 @@ export const VideoIntegration: React.FC<VideoIntegrationProps> = ({
 
   // Auto-start video for live signing sessions
   useEffect(() => {
-    if (autoStart && mode === 'live_signing' && !isVideoActive && currentUser) {
+    if (autoStart && mode === 'notary' && !isVideoActive && currentUser) {
       startVideo();
     }
   }, [autoStart, mode, isVideoActive, currentUser, startVideo]);

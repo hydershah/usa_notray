@@ -310,10 +310,10 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       // Clear any existing content to prevent render conflicts
       context.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Calculate optimal scale based on container width
+      // Calculate optimal scale based on container width - made smaller for better UX
       const containerWidth = containerRef.current?.clientWidth || 800;
       const viewport = page.getViewport({ scale: 1 });
-      const baseScale = Math.min((containerWidth - 80) / viewport.width, 2.0); // Max 2x scale
+      const baseScale = Math.min((containerWidth - 120) / viewport.width, 1.0); // Reduced to 1.0x max scale for better fit
       const finalScale = baseScale * viewer.zoomLevel;
 
       console.log(`📐 Page ${pageNumber} scale calculation:`, { containerWidth, baseScale, zoomLevel: viewer.zoomLevel, finalScale });
@@ -579,59 +579,50 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   return (
     <div className={`relative h-full flex flex-col ${className}`}>
       {/* Controls */}
-      <div className="flex items-center justify-between p-3 bg-gray-50 border-b">
-        <div className="flex items-center gap-2">
-          <button onClick={handleZoomOut} className="p-2 bg-white border rounded hover:bg-gray-50">−</button>
-          <span className="min-w-16 text-center text-sm font-medium">
-            {Math.round(viewer.zoomLevel * 100)}%
-          </span>
-          <button onClick={handleZoomIn} className="p-2 bg-white border rounded hover:bg-gray-50">+</button>
-          <button onClick={handleZoomReset} className="px-3 py-2 bg-white border rounded hover:bg-gray-50 text-sm">
-            Reset
+      <div className="flex items-center justify-between px-4 py-3 bg-white border-b shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
+            <button 
+              onClick={handleZoomOut} 
+              className="p-2 bg-white border rounded hover:bg-gray-50 transition-colors shadow-sm"
+              title="Zoom out"
+            >
+              −
+            </button>
+            <span className="min-w-16 text-center text-sm font-medium px-2">
+              {Math.round(viewer.zoomLevel * 100)}%
+            </span>
+            <button 
+              onClick={handleZoomIn} 
+              className="p-2 bg-white border rounded hover:bg-gray-50 transition-colors shadow-sm"
+              title="Zoom in"
+            >
+              +
+            </button>
+          </div>
+          <button 
+            onClick={handleZoomReset} 
+            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm transition-colors"
+            title="Reset zoom to fit"
+          >
+            Fit to View
           </button>
         </div>
         
-        <div className="text-sm text-gray-600">
-          Page {viewer.currentPage} of {viewer.totalPages}
-          {tags.length > 0 && <span className="ml-4">• {tags.length} tags</span>}
+        <div className="text-sm text-gray-700 bg-gray-100 px-3 py-2 rounded-lg">
+          📄 Page {viewer.currentPage} of {viewer.totalPages}
+          {tags.length > 0 && <span className="ml-3 text-green-600">• {tags.length} tags</span>}
         </div>
       </div>
 
       {/* PDF Content */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-auto bg-gray-100 p-8"
+        className="flex-1 overflow-auto bg-gray-50 py-6 px-4"
         onScroll={handleScroll}
       >
-        {/* Debug Section - Remove this after testing */}
-        <div className="mb-4 p-4 bg-yellow-100 border border-yellow-400 rounded">
-          <p className="text-sm font-medium">Debug Info:</p>
-          <p className="text-xs">PDF Loaded: {pdfDoc ? '✅ Yes' : '❌ No'}</p>
-          <p className="text-xs">Pages Rendered: {renderedPages.size} / {pdfDoc?.numPages || 0}</p>
-          <p className="text-xs">Can Edit Tags: {canEditTags ? '✅ Yes' : '❌ No'}</p>
-          <button 
-            onClick={() => {
-              console.log('🧪 Test button clicked');
-              if (handleCanvasClick) {
-                const mockEvent = {
-                  currentTarget: { 
-                    getBoundingClientRect: () => ({ left: 100, top: 100 }),
-                    dataset: { pageNumber: '1' }
-                  },
-                  clientX: 200,
-                  clientY: 200
-                } as any;
-                console.log('🧪 Triggering mock canvas click');
-                handleCanvasClick(mockEvent);
-              }
-            }}
-            className="mt-2 px-3 py-1 bg-blue-500 text-white text-xs rounded"
-          >
-            Test Tag Placement
-          </button>
-        </div>
-
-        <div className="max-w-full mx-auto space-y-8">
+        {/* PDF Pages Container */}
+        <div className="w-full flex flex-col items-center space-y-6">
           {Array.from({ length: pdfDoc.numPages }, (_, index) => {
             const pageNumber = index + 1;
             const pageTags = tags.filter(tag => tag.coordinates.pageNumber === pageNumber);
@@ -640,14 +631,19 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
             return (
               <div key={pageNumber} className="relative">
                 {/* Page label */}
-                <div className="text-sm text-gray-500 font-medium mb-2">
-                  Page {pageNumber}
+                <div className="text-sm text-gray-600 font-medium mb-3 flex items-center justify-between">
+                  <span>Page {pageNumber}</span>
+                  {pageTags.length > 0 && (
+                    <span className="text-green-600 text-xs bg-green-50 px-2 py-1 rounded-full">
+                      {pageTags.length} tags
+                    </span>
+                  )}
                 </div>
                 
                 {/* Page container with tags */}
                 <div
                   ref={el => { if (el) pageContainerRefs.current[index] = el; }}
-                  className="relative bg-white shadow-lg mx-auto"
+                  className="relative bg-white shadow-lg rounded-lg overflow-hidden border border-gray-200"
                   style={{ display: 'inline-block' }}
                 >
                   {/* PDF Canvas */}
@@ -684,11 +680,16 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                     onMouseDown={(e) => {
                       console.log(`👆 Canvas ${pageNumber} MOUSE DOWN:`, { pageNumber, button: e.button });
                     }}
-                    className={`block ${canEditTags ? 'cursor-crosshair' : 'cursor-default'}`}
+                    className={`
+                      block transition-all duration-200
+                      ${canEditTags 
+                        ? 'cursor-crosshair hover:ring-2 hover:ring-blue-300 hover:ring-opacity-50' 
+                        : 'cursor-default'
+                      }
+                    `}
                     style={{ 
-                      backgroundColor: '#f9fafb', // Light background while loading
-                      minHeight: '600px', // Ensure clickable area exists even before render
-                      border: '2px solid red' // Temporary: make canvas boundaries visible
+                      backgroundColor: '#ffffff', // Clean white background
+                      minHeight: '600px' // Ensure clickable area exists even before render
                     }}
                   />
                   

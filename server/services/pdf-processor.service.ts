@@ -1,4 +1,27 @@
-import { PDFDocument, PDFPage, rgb } from 'pdf-lib';
+import { PDFDocument, PDFPage, rgb, PDFFont, StandardFonts } from 'pdf-lib';
+import fs from 'fs/promises';
+import path from 'path';
+import { db } from '../db';
+import { documentTags, jobDocuments, documentVersions } from '../../shared/schema';
+import { eq } from 'drizzle-orm';
+import { TAG_TYPES } from '../../shared/schema';
+
+export interface ProcessedDocument {
+  buffer: Buffer;
+  fileName: string;
+  fileSize: number;
+  pageCount: number;
+}
+
+export interface TagPosition {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  pageNumber: number;
+  content?: string;
+  tagType: string;
+}
 
 export class PDFProcessorService {
   private static instance: PDFProcessorService;
@@ -10,8 +33,377 @@ export class PDFProcessorService {
     return PDFProcessorService.instance;
   }
 
-  // Basic implementation - to be expanded
-  async processCompletedDocument(): Promise<Buffer> {
-    throw new Error('Method not implemented.');
+  /**
+   * Process completed tagging session and generate final PDF with tags applied
+   */
+  async processCompletedDocument(sessionId: string): Promise<ProcessedDocument> {
+    try {
+      console.log(`🔄 Processing completed document for session: ${sessionId}`);
+
+      // Get all tags for this session
+      const tags = await this.getSessionTags(sessionId);
+      console.log(`📌 Found ${tags.length} tags to apply`);
+
+      if (tags.length === 0) {
+        throw new Error('No tags found for session');
+      }
+
+      // Get original document
+      const originalDocument = await this.getOriginalDocument(sessionId);
+      console.log(`📄 Original document: ${originalDocument.fileName}`);
+
+      // Load PDF
+      const pdfBuffer = await this.loadDocumentBuffer(originalDocument.filePath);
+      const pdfDoc = await PDFDocument.load(pdfBuffer);
+      
+      // Apply tags to PDF
+      await this.applyTagsToPDF(pdfDoc, tags);
+      
+      // Generate final PDF buffer
+      const finalPdfBuffer = await pdfDoc.save();
+      const finalBuffer = Buffer.from(finalPdfBuffer);
+
+      console.log(`✅ Generated final PDF: ${finalBuffer.length} bytes`);
+
+      return {
+        buffer: finalBuffer,
+        fileName: `completed_${originalDocument.fileName}`,
+        fileSize: finalBuffer.length,
+        pageCount: pdfDoc.getPageCount()
+      };
+
+    } catch (error) {
+      console.error('❌ Failed to process completed document:', error);
+      throw new Error(`Failed to process document: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Apply tags to PDF document
+   */
+  private async applyTagsToPDF(pdfDoc: PDFDocument, tags: TagPosition[]): Promise<void> {
+    try {
+      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      
+      // Group tags by page
+      const tagsByPage = this.groupTagsByPage(tags);
+      
+      for (const [pageNum, pageTags] of Array.from(tagsByPage.entries())) {
+        const page = pdfDoc.getPage(pageNum - 1); // PDF pages are 0-indexed
+        const { height: pageHeight } = page.getSize();
+        
+        console.log(`📄 Processing page ${pageNum} with ${pageTags.length} tags`);
+        
+        for (const tag of pageTags) {
+          await this.applyTagToPage(page, tag, font, boldFont, pageHeight);
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Failed to apply tags to PDF:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Apply individual tag to PDF page
+   */
+  private async applyTagToPage(
+    page: PDFPage, 
+    tag: TagPosition, 
+    font: PDFFont, 
+    boldFont: PDFFont,
+    pageHeight: number
+  ): Promise<void> {
+    try {
+      // Convert coordinates (PDF origin is bottom-left, but tags are positioned from top-left)
+      const pdfY = pageHeight - tag.y - tag.height;
+      
+      const tagInfo = TAG_TYPES[tag.tagType as keyof typeof TAG_TYPES];
+      const content = tag.content || `[${tagInfo?.name || tag.tagType}]`;
+      
+      // Determine styling based on tag type
+      const isNotaryTag = ['N', 'X', 'O', 'E'].includes(tag.tagType);
+      const currentFont = isNotaryTag ? boldFont : font;
+      const fontSize = this.getFontSize(tag.tagType, tag.width, tag.height);
+      const textColor = this.getTagColor(tag.tagType);
+      
+      // Handle special tag types
+      switch (tag.tagType) {
+        case 'E': // Notary seal
+          await this.drawNotarySeal(page, tag.x, pdfY, tag.width, tag.height);
+          break;
+          
+        case 'W': // Whiteout
+          this.drawWhiteout(page, tag.x, pdfY, tag.width, tag.height);
+          break;
+          
+        case 'S': // Signature
+        case 'I': // Initials
+          this.drawSignaturePlaceholder(page, tag.x, pdfY, tag.width, tag.height, currentFont, fontSize);
+          break;
+          
+        default: // Text fields
+          this.drawTextField(page, tag.x, pdfY, tag.width, tag.height, content, currentFont, fontSize, textColor);
+          break;
+      }
+      
+      console.log(`✅ Applied tag ${tag.tagType} at (${tag.x}, ${tag.y})`);
+      
+    } catch (error) {
+      console.error(`❌ Failed to apply tag ${tag.tagType}:`, error);
+      // Don't throw - continue with other tags
+    }
+  }
+
+  /**
+   * Draw text field on PDF
+   */
+  private drawTextField(
+    page: PDFPage, 
+    x: number, 
+    y: number, 
+    width: number, 
+    height: number,
+    text: string,
+    font: PDFFont,
+    fontSize: number,
+    color: any
+  ): void {
+    // Draw background rectangle
+    page.drawRectangle({
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+      color: rgb(1, 1, 1), // White background
+      borderColor: rgb(0.8, 0.8, 0.8),
+      borderWidth: 1,
+    });
+    
+    // Draw text
+    page.drawText(text, {
+      x: x + 4,
+      y: y + (height / 2) - (fontSize / 2),
+      size: fontSize,
+      font: font,
+      color: color,
+    });
+  }
+
+  /**
+   * Draw signature placeholder
+   */
+  private drawSignaturePlaceholder(
+    page: PDFPage,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    font: PDFFont,
+    fontSize: number
+  ): void {
+    // Draw signature line
+    page.drawLine({
+      start: { x: x, y: y + height - 5 },
+      end: { x: x + width, y: y + height - 5 },
+      thickness: 1,
+      color: rgb(0, 0, 0),
+    });
+    
+    // Draw X to indicate signature location
+    page.drawText('X', {
+      x: x + 5,
+      y: y + 5,
+      size: fontSize,
+      font: font,
+      color: rgb(0.5, 0.5, 0.5),
+    });
+  }
+
+  /**
+   * Draw whiteout rectangle
+   */
+  private drawWhiteout(
+    page: PDFPage,
+    x: number,
+    y: number,
+    width: number,
+    height: number
+  ): void {
+    page.drawRectangle({
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+      color: rgb(1, 1, 1), // White
+    });
+  }
+
+  /**
+   * Draw notary seal placeholder
+   */
+  private async drawNotarySeal(
+    page: PDFPage,
+    x: number,
+    y: number,
+    width: number,
+    height: number
+  ): Promise<void> {
+    // Draw circular seal outline
+    const centerX = x + width / 2;
+    const centerY = y + height / 2;
+    const radius = Math.min(width, height) / 2 - 2;
+    
+    // Draw circle (approximate with rectangle for now)
+    page.drawRectangle({
+      x: x + 2,
+      y: y + 2,
+      width: width - 4,
+      height: height - 4,
+      borderColor: rgb(0, 0, 0),
+      borderWidth: 2,
+    });
+    
+    // Add seal text
+    page.drawText('NOTARY SEAL', {
+      x: centerX - 25,
+      y: centerY - 5,
+      size: 8,
+      color: rgb(0, 0, 0),
+    });
+  }
+
+  /**
+   * Get appropriate font size for tag
+   */
+  private getFontSize(tagType: string, width: number, height: number): number {
+    const baseSize = Math.min(width / 8, height * 0.6);
+    
+    switch (tagType) {
+      case 'S': // Signature
+      case 'I': // Initials
+        return Math.max(10, Math.min(baseSize, 14));
+      case 'E': // Seal
+        return Math.max(6, Math.min(baseSize * 0.7, 10));
+      default:
+        return Math.max(8, Math.min(baseSize, 12));
+    }
+  }
+
+  /**
+   * Get color for tag type
+   */
+  private getTagColor(tagType: string): any {
+    switch (tagType) {
+      case 'N': // Notary commission
+      case 'X': // Commission expiration  
+      case 'O': // Disclosure
+        return rgb(0.2, 0.2, 0.8); // Blue for notary
+      case 'S': // Signature
+      case 'I': // Initials
+        return rgb(0.8, 0.2, 0.2); // Red for signatures
+      default:
+        return rgb(0, 0, 0); // Black for other text
+    }
+  }
+
+  /**
+   * Group tags by page number
+   */
+  private groupTagsByPage(tags: TagPosition[]): Map<number, TagPosition[]> {
+    const grouped = new Map<number, TagPosition[]>();
+    
+    for (const tag of tags) {
+      const pageNum = tag.pageNumber;
+      if (!grouped.has(pageNum)) {
+        grouped.set(pageNum, []);
+      }
+      grouped.get(pageNum)!.push(tag);
+    }
+    
+    return grouped;
+  }
+
+  /**
+   * Get session tags from database
+   */
+  private async getSessionTags(sessionId: string): Promise<TagPosition[]> {
+    try {
+      const tags = await db
+        .select()
+        .from(documentTags)
+        .where(eq(documentTags.sessionId, parseInt(sessionId)));
+
+      return tags.map(tag => ({
+        x: tag.xPosition,
+        y: tag.yPosition,
+        width: tag.width,
+        height: tag.height,
+        pageNumber: tag.pageNumber,
+        content: tag.content || undefined,
+        tagType: tag.tagType
+      }));
+      
+    } catch (error) {
+      console.error('Failed to get session tags:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get original document info
+   */
+  private async getOriginalDocument(sessionId: string): Promise<any> {
+    try {
+      // First get the session to find the job ID
+      const { editorSessions } = await import('../../shared/schema');
+      const [session] = await db
+        .select()
+        .from(editorSessions)
+        .where(eq(editorSessions.sessionId, sessionId))
+        .limit(1);
+
+      if (!session) {
+        throw new Error('Session not found');
+      }
+
+      // Get the first document for this session's job
+      const [document] = await db
+        .select()
+        .from(jobDocuments)
+        .where(eq(jobDocuments.jobId, session.jobId))
+        .limit(1);
+
+      if (!document) {
+        throw new Error('No document found for session job');
+      }
+
+      return document;
+      
+    } catch (error) {
+      console.error('Failed to get original document:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Load document buffer from file system
+   */
+  private async loadDocumentBuffer(filePath: string): Promise<Buffer> {
+    try {
+      if (filePath.startsWith('vultr://')) {
+        // Handle Vultr storage - would need to implement download
+        throw new Error('Vultr storage documents not yet supported for PDF processing');
+      } else {
+        // Local file
+        const fullPath = path.resolve(filePath);
+        return await fs.readFile(fullPath);
+      }
+    } catch (error) {
+      console.error('Failed to load document buffer:', error);
+      throw error;
+    }
   }
 }

@@ -15,7 +15,7 @@ import type {
 
 interface PDFTaggingEditorProps {
   sessionId: string;
-  mode: 'tagging' | 'live_signing';
+  mode: 'tagging' | 'notary';
   documents: SessionDocument[];
   participants: SessionParticipant[];
   currentUserId: string;
@@ -100,11 +100,12 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         setMode({
           mode: mode,
           canPlaceTags: mode === 'tagging',
-          canModifyContent: mode === 'live_signing',
+          canModifyContent: mode === 'notary',
           showPlaceholders: mode === 'tagging'
         });
 
         // Load existing tags
+        console.log(`🔍 Loading existing tags for session: ${sessionId}`);
         const response = await fetch(`/api/editor/session/${sessionId}/tags`, {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -113,7 +114,16 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
 
         if (response.ok) {
           const { tags: existingTags } = await response.json();
+          console.log(`✅ Loaded ${existingTags.length} existing tags:`, existingTags);
           setTags(existingTags);
+          
+          if (existingTags.length > 0) {
+            console.log(`🏷️  Tags loaded successfully - session appears to be a continuation of previous work`);
+          } else {
+            console.log(`📝 No existing tags found - starting fresh tagging session`);
+          }
+        } else {
+          console.error(`❌ Failed to load existing tags:`, response.status, response.statusText);
         }
 
         setIsLoading(false);
@@ -190,11 +200,29 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
   // Handle session completion
   const handleSessionComplete = useCallback(async () => {
     try {
+      console.log('📋 Session completion initiated...');
+      
+      // First, save any pending changes
       await batchSaveChanges();
-      onSessionComplete?.();
+      console.log('💾 Pending changes saved');
+      
+      // The actual completion is now handled by the TaggingToolbar
+      // which calls the /api/editor/session/:sessionId/complete endpoint
+      // When that succeeds, it will call onSessionComplete
+      
+      // Show success message or redirect
+      if (onSessionComplete) {
+        console.log('🎉 Calling parent completion handler');
+        onSessionComplete();
+      } else {
+        // Default behavior: redirect to job details or dashboard
+        console.log('🏠 No completion handler, redirecting to dashboard');
+        window.location.href = '/dashboard';
+      }
+      
     } catch (error) {
-      console.error('Failed to complete session:', error);
-      setError('Failed to save changes. Please try again.');
+      console.error('❌ Failed to complete session:', error);
+      setError('Failed to save changes before completion. Please try again.');
     }
   }, [batchSaveChanges, onSessionComplete]);
 
@@ -248,29 +276,53 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
   return (
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b px-4 py-3 shadow-sm">
+      <div className="bg-white border-b px-6 py-4 shadow-md">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-semibold text-gray-800">
+            <h1 className="text-xl font-semibold text-gray-900">
               {mode === 'tagging' ? 'Document Tagging' : 'Live Signing Session'}
             </h1>
-            <p className="text-sm text-gray-500">
-              Session: {sessionId.substring(0, 8)}...
+            <p className="text-sm text-gray-600 mt-1">
+              Session: {sessionId.substring(0, 8)}... • {tags.length} tags placed
+              {tags.length > 0 && (
+                <span className="ml-2 text-green-600 font-medium">
+                  (Continue editing previous work)
+                </span>
+              )}
             </p>
           </div>
           
-          {/* Status indicators */}
+          {/* Action buttons and status */}
           <div className="flex items-center space-x-4">
-            {isProcessing && (
-              <div className="flex items-center text-blue-600">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
-                <span className="text-sm">Saving...</span>
-              </div>
-            )}
-            
             {mode === 'tagging' && (
-              <div className="text-sm text-green-600">
-                ✅ {tags.length} tags placed
+              <div className="flex items-center space-x-3">
+                {isProcessing && (
+                  <div className="flex items-center text-blue-600">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                    <span className="text-sm">Saving...</span>
+                  </div>
+                )}
+                
+                <div className="text-sm text-gray-600 bg-gray-100 px-3 py-2 rounded-lg">
+                  📊 {participants.length} participants
+                </div>
+                
+                {/* Complete Tagging Button */}
+                <button
+                  onClick={handleSessionComplete}
+                  disabled={tags.length === 0}
+                  className={`
+                    px-6 py-2.5 rounded-lg font-semibold text-sm transition-all flex items-center space-x-2 border
+                    ${tags.length === 0 
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200' 
+                      : 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800 shadow-lg hover:shadow-xl border-green-600 hover:border-green-700 transform hover:scale-105'
+                    }
+                  `}
+                  title={tags.length === 0 ? 'Place at least one tag before completing' : 'Complete the tagging session. You can continue editing by clicking Start Tagging again.'}
+                >
+                  <span>✅</span>
+                  <span>Complete Tagging</span>
+                </button>
               </div>
             )}
           </div>
@@ -280,7 +332,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Column - Video (only in live signing mode) */}
-        {mode === 'live_signing' && (
+        {mode === 'notary' && (
           <div className="w-80 bg-black border-r">
             <VideoIntegration
               sessionId={sessionId}
@@ -292,7 +344,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         )}
 
         {/* Center Column - PDF Viewer */}
-        <div className="flex-1 relative bg-gray-100">
+        <div className="flex-1 relative bg-white">
           <PDFViewer
             documentUrl={currentDocument.fileUrl}
             onCoordinateClick={handleTagPlacement}
@@ -306,15 +358,17 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         </div>
 
         {/* Right Column - Controls & Tools */}
-        <div className="w-80 bg-white border-l">
-          <TaggingToolbar
-            participants={participants}
-            sessionId={sessionId}
-            mode={mode}
-            onDocumentSwitch={handleDocumentSwitch}
-            onSessionComplete={handleSessionComplete}
-            className="h-full"
-          />
+        <div className="w-80 bg-gray-50 border-l border-gray-200">
+          <div className="h-full p-6">
+            <TaggingToolbar
+              participants={participants}
+              sessionId={sessionId}
+              mode={mode}
+              onDocumentSwitch={handleDocumentSwitch}
+              onSessionComplete={handleSessionComplete}
+              className="h-full"
+            />
+          </div>
         </div>
       </div>
 

@@ -332,7 +332,7 @@ export const useEditorStore = create<EditorStore>()(
       replaceAllTags: async () => {
         const { session, tags, mode } = get();
         
-        if (!session || mode.mode !== 'signing') {
+        if (!session || mode.mode !== 'notary') {
           throw new Error('Cannot replace tags: Invalid session or mode');
         }
         

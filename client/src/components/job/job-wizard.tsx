@@ -80,7 +80,7 @@ interface DocumentFile {
 
 const steps = [
   { id: 1, title: 'Client Info', description: 'Basic job information' },
-  { id: 2, title: 'Signers', description: 'Add signers to the job' },
+  { id: 2, title: 'Participants', description: 'Add signers and witnesses' },
   { id: 3, title: 'Schedule', description: 'Set appointment details' },
   { id: 4, title: 'Documents', description: 'Upload required files' },
   { id: 5, title: 'Review', description: 'Review and submit' },
@@ -131,7 +131,7 @@ export function JobWizard() {
     resolver: zodResolver(jobSchema),
     defaultValues: {
       kbaRequired: false,
-      notaryOption: 'auto',
+      notaryOption: currentUser?.role === 'admin' ? 'admin_self' : 'auto',
       requiresNSA: false,
       requiresSpanishSpeaking: false,
     },
@@ -341,8 +341,8 @@ export function JobWizard() {
         if (signers.length === 0) {
           toast({
             variant: "destructive",
-            title: "No Signers",
-            description: "Please add at least one signer.",
+            title: "No Participants",
+            description: "Please add at least one participant (signer or witness).",
           });
           return false;
         }
@@ -360,8 +360,8 @@ export function JobWizard() {
         if (invalidSigners.length > 0) {
           toast({
             variant: "destructive",
-            title: "Invalid Signer Information",
-            description: `Please check signer(s): ${invalidSigners.join(', ')}`,
+            title: "Invalid Participant Information",
+            description: `Please check participant(s): ${invalidSigners.join(', ')}`,
           });
           return false;
         }
@@ -399,7 +399,7 @@ export function JobWizard() {
           toast({
             variant: "destructive",
             title: "Incomplete Job",
-            description: "Please add signers and documents before submitting.",
+            description: "Please add participants and documents before submitting.",
           });
           return false;
         }
@@ -587,8 +587,8 @@ export function JobWizard() {
     if (signers.length === 0) {
       toast({
         variant: "destructive",
-        title: "No Signers",
-        description: "Please add at least one signer.",
+        title: "No Participants",
+        description: "Please add at least one participant (signer or witness).",
       });
       setCurrentStep(2);
       return;
@@ -603,8 +603,8 @@ export function JobWizard() {
     if (!allValid) {
       toast({
         variant: "destructive",
-        title: "Invalid Signer Information",
-        description: "Please fix signer information errors.",
+        title: "Invalid Participant Information",
+        description: "Please fix participant information errors.",
       });
       setCurrentStep(2);
       return;
@@ -771,7 +771,24 @@ export function JobWizard() {
                       </div>
                     )}
 
-                    {(currentUser?.role === 'admin' || currentUser?.role === 'title_company') && (
+                    {currentUser?.role === 'admin' && (
+                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-6">
+                        <div className="flex items-start">
+                          <div className="flex-shrink-0">
+                            <CheckCircle className="h-5 w-5 text-purple-600 mt-0.5" />
+                          </div>
+                          <div className="ml-3">
+                            <h4 className="text-sm font-medium text-purple-900">Admin Job Creation</h4>
+                            <p className="text-sm text-purple-800 mt-1">
+                              As an admin, you can assign yourself as the notary, automatically assign a contractor notary, or manually select a specific notary.
+                              You have full control over the assignment process.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {currentUser?.role === 'title_company' && (
                       <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
                         <div className="flex items-start">
                           <div className="flex-shrink-0">
@@ -1057,15 +1074,15 @@ export function JobWizard() {
                       <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                         <UserIcon className="w-8 h-8 text-green-600" />
                       </div>
-                      <h2 className="text-2xl font-bold text-gray-900 mb-2">Signer Information</h2>
-                      <p className="text-gray-600">Add all the signers who will participate in this notarization</p>
+                      <h2 className="text-2xl font-bold text-gray-900 mb-2">Participants Information</h2>
+                      <p className="text-gray-600">Add all signers and witnesses who will participate in this notarization</p>
                     </div>
 
                     <div className="flex items-center justify-between bg-blue-50 rounded-lg p-4">
                       <div className="flex items-center">
                         <AlertCircle className="w-5 h-5 text-blue-600 mr-2" />
                         <span className="text-sm font-medium text-blue-800">
-                          {signers.length} signer{signers.length !== 1 ? 's' : ''} added
+                          {signers.length} participant{signers.length !== 1 ? 's' : ''} added
                         </span>
                       </div>
                       <Button 
@@ -1074,24 +1091,24 @@ export function JobWizard() {
                         className="bg-blue-600 hover:bg-blue-700 text-white shadow-md"
                       >
                         <Plus className="h-4 w-4 mr-2" />
-                        Add Signer
+                        Add Participant
                       </Button>
                     </div>
 
                     {signers.length === 0 ? (
-                      <div className="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
-                        <UserIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">No signers added yet</h3>
-                        <p className="text-gray-600 mb-6">Click "Add Signer" to get started</p>
-                        <Button 
-                          type="button" 
-                          onClick={handleAddSigner} 
-                          className="bg-blue-600 hover:bg-blue-700 text-white"
-                        >
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add Your First Signer
-                        </Button>
-                      </div>
+                                              <div className="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                          <UserIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                          <h3 className="text-lg font-medium text-gray-900 mb-2">No participants added yet</h3>
+                          <p className="text-gray-600 mb-6">Click "Add Participant" to add signers and witnesses</p>
+                          <Button 
+                            type="button" 
+                            onClick={handleAddSigner} 
+                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                          >
+                            <Plus className="h-4 w-4 mr-2" />
+                            Add Your First Participant
+                          </Button>
+                        </div>
                     ) : (
                       <div className="space-y-6">
                         {signers.map((signer, index) => (
@@ -1126,7 +1143,7 @@ export function JobWizard() {
                             <CardContent className="p-6">
                               {/* Mode Selection */}
                               <div className="mb-6">
-                                <Label className="text-sm font-medium text-gray-700 mb-3 block">Signer Type</Label>
+                                <Label className="text-sm font-medium text-gray-700 mb-3 block">Participant Type</Label>
                                 <RadioGroup
                                   value={signerModes[index] || 'new'}
                                   onValueChange={(value: 'existing' | 'new') => handleSignerModeChange(index, value)}
@@ -1142,7 +1159,7 @@ export function JobWizard() {
                                   <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
                                     <RadioGroupItem value="new" id={`new-${index}`} />
                                     <div>
-                                      <Label htmlFor={`new-${index}`} className="font-medium text-gray-900">New Signer</Label>
+                                      <Label htmlFor={`new-${index}`} className="font-medium text-gray-900">New Participant</Label>
                                       <p className="text-xs text-gray-600">Add new person details</p>
                                     </div>
                                   </div>
@@ -1166,9 +1183,14 @@ export function JobWizard() {
                                                 ? `${user.firstName} ${user.lastName}` 
                                                 : user.username}
                                             </span>
-                                            <span className="text-xs text-gray-500 ml-2">
-                                              {user.email}
-                                            </span>
+                                            <div className="flex items-center space-x-2">
+                                              <span className="text-xs text-gray-500">
+                                                {user.email}
+                                              </span>
+                                              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                                {user.role}
+                                              </span>
+                                            </div>
                                           </div>
                                         </SelectItem>
                                       ))}
@@ -1181,12 +1203,12 @@ export function JobWizard() {
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div>
                                   <Label className={`text-sm font-medium ${signerErrors[index]?.signerName ? 'text-red-600' : 'text-gray-700'}`}>
-                                    Signer Name *
+                                    Participant Name *
                                   </Label>
                                   <Input
                                     value={signer.signerName}
                                     onChange={(e) => handleSignerChange(index, 'signerName', e.target.value)}
-                                    placeholder="Enter signer name"
+                                    placeholder="Enter participant name"
                                     className={`h-12 mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerName ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
                                     disabled={signerModes[index] === 'existing'}
@@ -1246,14 +1268,20 @@ export function JobWizard() {
                                       <SelectValue placeholder="Select role" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      <SelectItem value="borrower">Borrower</SelectItem>
-                                      <SelectItem value="co-borrower">Co-Borrower</SelectItem>
-                                      <SelectItem value="seller">Seller</SelectItem>
-                                      <SelectItem value="buyer">Buyer</SelectItem>
+                                      <SelectItem value="borrower">Borrower (Signs documents)</SelectItem>
+                                      <SelectItem value="co-borrower">Co-Borrower (Signs documents)</SelectItem>
+                                      <SelectItem value="seller">Seller (Signs documents)</SelectItem>
+                                      <SelectItem value="buyer">Buyer (Signs documents)</SelectItem>
+                                      <SelectItem value="witness">Witness (Observes signing)</SelectItem>
                                     </SelectContent>
                                   </Select>
                                   {signerErrors[index]?.signerRole && (
                                     <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerRole}</p>
+                                  )}
+                                  {signer.signerRole === 'witness' && (
+                                    <p className="text-xs text-blue-600 mt-1">
+                                      <span className="font-medium">Witness:</span> This person will observe the signing but won't sign documents themselves.
+                                    </p>
                                   )}
                                 </div>
                               </div>
@@ -1387,8 +1415,25 @@ export function JobWizard() {
                                     }
                                   }}
                                   defaultValue={field.value}
-                                  className="grid grid-cols-1 md:grid-cols-2 gap-6"
+                                  className={`grid grid-cols-1 ${currentUser?.role === 'admin' ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-6`}
                                 >
+                                  {/* Admin Self-Assignment Option */}
+                                  {currentUser?.role === 'admin' && (
+                                    <div className="relative">
+                                      <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-purple-200 transition-colors cursor-pointer">
+                                        <RadioGroupItem value="admin_self" id="admin_self" className="mt-1" />
+                                        <div className="flex-1">
+                                          <Label htmlFor="admin_self" className="text-lg font-semibold text-gray-900 cursor-pointer">Assign Myself as Notary</Label>
+                                          <p className="text-sm text-gray-600 mt-1">You will be the notary for this job</p>
+                                          <div className="mt-3 flex items-center text-xs text-purple-600">
+                                            <UserIcon className="w-4 h-4 mr-1" />
+                                            Direct admin control
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+
                                   <div className="relative">
                                     <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-blue-200 transition-colors cursor-pointer">
                                       <RadioGroupItem value="assign" id="assign" className="mt-1" />
@@ -1687,7 +1732,7 @@ export function JobWizard() {
                       <CardHeader className="bg-gradient-to-r from-green-50 to-green-100 border-b">
                         <h3 className="text-lg font-semibold text-gray-900 flex items-center">
                           <CheckCircle className="h-6 w-6 text-green-500 mr-3" />
-                          Signers ({signers.length})
+                          Participants ({signers.length})
                         </h3>
                       </CardHeader>
                       <CardContent className="p-6">

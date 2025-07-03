@@ -1223,7 +1223,7 @@ const EditorErrorFallback: React.FC<FallbackProps> = ({ error, resetErrorBoundar
 #### Tagging Interface
 - [x] Create tag placement system with drag & drop
 - [x] Implement colored rectangle tags with labels
-- [x] Add tag type selection (signature, name, initial, etc.)
+- [x] Ad tag type selection (signature, name, initial, etc.)
 - [x] Create user assignment and color coding system
 - [x] Build tag validation and persistence
 

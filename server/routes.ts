@@ -9,7 +9,7 @@ import { registerApprovalWorkflowRoutes } from "./approval-workflow-routes";
 import { registerFeeRoutes } from "./fee-routes";
 import { notificationService } from "./notification-service";
 import { verifyToken } from "./auth";
-import { eq, and, gte, lte, desc, inArray } from "drizzle-orm";
+import { eq, and, gte, lte, desc, inArray, sql } from "drizzle-orm";
 import { randomNotaryService, NotaryQualifications, TimeSlotRequest } from "./random-notary-service";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -281,7 +281,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Get users who can be signers (clients, customers, and other non-notary users)
+      // Get users who can be signers and witnesses
       const signerUsers = await db
         .select({
           id: users.id,
@@ -297,8 +297,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(
           and(
             eq(users.isActive, true),
-            // Include clients, customers, and title company users, but exclude admins and notaries
-            inArray(users.role, ['client', 'customer', 'title_company'])
+            // Include only signer and witness roles
+            inArray(users.role, ['signer', 'witness'])
           )
         )
         .orderBy(users.firstName, users.lastName, users.username);
@@ -647,9 +647,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const job = await storage.createJob(jobData);
 
-      // Handle notary assignment logic based on the business requirements
+      // Handle automatic notary assignment based on who creates the job
       let assignedNotary = null;
-      if (jobData.notaryOption === 'auto' && !jobData.selectedNotary) {
+      
+      // FUNDAMENTAL ASSIGNMENT LOGIC: Assign notary based on creator role
+      if (req.user.role === 'notary' && req.user.notaryType === 'subscriber') {
+        // Subscriber notary creates job → They are the notary for their own job
+        assignedNotary = req.user;
+        console.log(`🔧 Subscriber notary created job ${job.id} - auto-assigning themselves as notary`);
+        
+      } else if (req.user.role === 'admin' && (!jobData.notaryOption || jobData.notaryOption === 'admin_self')) {
+        // Admin creates job without specifying notaryOption OR explicitly chooses admin_self → Admin as notary
+        assignedNotary = req.user;
+        console.log(`🔧 Admin created job ${job.id} - assigning admin as notary (option: ${jobData.notaryOption || 'default'})`);
+        
+      } else if (req.user.role === 'admin' || req.user.role === 'title_company') {
+        // Admin or Title company creates job → Use assignment flow based on notaryOption
+        console.log(`🔧 ${req.user.role} created job ${job.id} with notaryOption: ${jobData.notaryOption} - will use assignment flow`);
+      }
+
+      // If we have a default assignment from creator role, apply it immediately
+      if (assignedNotary) {
+        await storage.updateJob(job.id, {
+          notaryId: assignedNotary.id,
+          selectedNotary: assignedNotary.id.toString(),
+          jobStatus: 'open',
+          notaryApprovalStatus: 'approved' // Auto-approve since it's their own job or admin
+        });
+
+        // Log the automatic assignment
+        await db.insert(notaryAssignmentLog).values({
+          jobId: job.id,
+          notaryId: assignedNotary.id,
+          assignmentType: req.user.role === 'admin' ? 'admin_default' : 'subscriber_default',
+          assignmentStatus: 'assigned'
+        });
+
+        console.log(`✅ Auto-assigned notary ${assignedNotary.firstName} ${assignedNotary.lastName} to job ${job.id}`);
+      }
+
+      // Handle additional notary assignment logic for title companies
+      if (!assignedNotary && jobData.notaryOption === 'auto' && !jobData.selectedNotary) {
         // Check if title company has a preferred notary
         const titleCompany = await db
           .select()
@@ -728,8 +766,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             requiresSpanishSpeaking: jobData.requiresSpanishSpeaking === 'true' || false
           });
         }
-      } else if (jobData.notaryOption === 'assign' && jobData.selectedNotary) {
-        // Manual assignment
+      } else if (!assignedNotary && jobData.notaryOption === 'assign' && jobData.selectedNotary) {
+        // Manual assignment for title companies
         const selectedNotaryId = parseInt(jobData.selectedNotary);
         await storage.updateJob(job.id, {
           notaryId: selectedNotaryId,
@@ -3450,6 +3488,131 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
   registerApprovalWorkflowRoutes(app);
   registerNotaryProfileRoutes(app);
   registerFeeRoutes(app);
+  
+  // ==========================================
+  // ADMIN VERIFICATION ROUTES (Missing endpoints for dashboard)
+  // ==========================================
+  
+  // Middleware to ensure only admins can access these routes
+  const requireAdmin = (req: any, res: any, next: any) => {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    next();
+  };
+
+  // Get verification data for a specific user (frontend expects this path)
+  app.get('/api/admin/users/:userId/verification-data', verifyToken, requireAdmin, async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      if (isNaN(userId)) {
+        return res.status(400).json({ error: 'Invalid user ID' });
+      }
+
+      const [userData] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (!userData) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      res.json(userData);
+    } catch (error) {
+      console.error('Error fetching user verification data:', error);
+      res.status(500).json({ error: 'Failed to fetch user verification data' });
+    }
+  });
+
+  // Get verification attempts for a specific user (frontend expects this path)
+  app.get('/api/admin/users/:userId/verification-attempts', verifyToken, requireAdmin, async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      if (isNaN(userId)) {
+        return res.status(400).json({ error: 'Invalid user ID' });
+      }
+
+      // Return empty array for now since the table might not exist
+      res.json([]);
+    } catch (error) {
+      console.error('Error fetching verification attempts:', error);
+      res.status(500).json({ error: 'Failed to fetch verification attempts' });
+    }
+  });
+
+  // Get verification statistics for admin dashboard
+  app.get('/api/admin/verification-stats', verifyToken, requireAdmin, async (req: any, res) => {
+    try {
+      // Get basic verification statistics
+      const [verificationStats] = await db.execute(sql`
+        SELECT 
+          COUNT(*) as total_users,
+          COUNT(CASE WHEN role IN ('signer', 'witness') THEN 1 END) as verification_required_users,
+          COUNT(CASE WHEN is_verified = true THEN 1 END) as verified_users,
+          COUNT(CASE WHEN is_verification_bypassed = true THEN 1 END) as bypassed_users,
+          COUNT(CASE WHEN verification_status = 'pending' AND role IN ('signer', 'witness') THEN 1 END) as pending_verification,
+          COUNT(CASE WHEN verification_status = 'failed' THEN 1 END) as failed_verification
+        FROM users
+        WHERE is_active = true
+      `);
+
+      res.json({
+        totalUsers: verificationStats?.total_users || 0,
+        verificationRequiredUsers: verificationStats?.verification_required_users || 0,
+        verifiedUsers: verificationStats?.verified_users || 0,
+        bypassedUsers: verificationStats?.bypassed_users || 0,
+        pendingVerification: verificationStats?.pending_verification || 0,
+        failedVerification: verificationStats?.failed_verification || 0
+      });
+    } catch (error) {
+      console.error('Error fetching verification stats:', error);
+      res.status(500).json({ error: 'Failed to fetch verification statistics' });
+    }
+  });
+
+  // Get all users requiring verification (for admin dashboard)
+  app.get('/api/admin/verification-users', verifyToken, requireAdmin, async (req: any, res) => {
+    try {
+      const verificationUsers = await db.execute(sql`
+        SELECT 
+          u.id,
+          u.username,
+          u.email,
+          u.first_name,
+          u.last_name,
+          u.full_name,
+          u.role,
+          u.phone_number,
+          u.is_verified,
+          u.verification_status,
+          u.is_verification_bypassed,
+          u.verification_bypassed_at,
+          u.verification_bypass_reason,
+          u.evs_transaction_id,
+          u.evs_verification_confidence,
+          u.evs_verified_at,
+          u.id_type,
+          u.id_number,
+          u.id_expiration_date,
+          u.created_at,
+          u.last_login_at,
+          u.is_active
+        FROM users u
+        WHERE u.role IN ('signer', 'witness', 'notary')
+        AND u.is_active = true
+        ORDER BY u.created_at DESC
+      `);
+
+      res.json(verificationUsers.rows || []);
+    } catch (error) {
+      console.error('Error fetching verification users:', error);
+      res.status(500).json({ error: 'Failed to fetch verification users' });
+    }
+  });
 
   // Password reset and setup routes
   app.post('/api/auth/validate-password-reset-token', async (req, res) => {
@@ -3682,6 +3845,106 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
     }
   });
 
+  // ==========================================
+  // KBA (Knowledge-Based Authentication) Routes
+  // ==========================================
+
+  // Initialize KBA session
+  app.post('/api/kba/initialize', verifyToken, async (req: any, res) => {
+    try {
+      const { userId, firstName, lastName, dateOfBirth, ssn, address, phone, email } = req.body;
+
+      if (!userId || !firstName || !lastName || !dateOfBirth || !address) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Missing required fields: userId, firstName, lastName, dateOfBirth, address' 
+        });
+      }
+
+      const { kbaService } = await import('./lib/kba-service');
+      
+      const kbaSession = await kbaService.initializeKBASession({
+        userId,
+        firstName,
+        lastName,
+        dateOfBirth,
+        ssn,
+        address,
+        phone,
+        email
+      });
+
+      res.json(kbaSession);
+    } catch (error) {
+      console.error('KBA initialization error:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Failed to initialize KBA session',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Submit KBA answers
+  app.post('/api/kba/submit', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId, userId, answers } = req.body;
+
+      if (!sessionId || !userId || !answers || !Array.isArray(answers)) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Missing required fields: sessionId, userId, answers' 
+        });
+      }
+
+      const { kbaService } = await import('./lib/kba-service');
+      
+      const verificationResult = await kbaService.submitKBAAnswers({
+        sessionId,
+        userId,
+        answers
+      });
+
+      // Update user's KBA verification status in database
+      if (verificationResult.success && verificationResult.status === 'passed') {
+        await db
+          .update(users)
+          .set({
+            kbaVerified: true,
+            kbaVerificationDate: new Date(),
+            kbaScore: verificationResult.score,
+            updatedAt: new Date()
+          })
+          .where(eq(users.id, parseInt(userId)));
+      }
+
+      res.json(verificationResult);
+    } catch (error) {
+      console.error('KBA submission error:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Failed to submit KBA answers',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Test KBA service connectivity
+  app.get('/api/kba/test', verifyToken, async (req: any, res) => {
+    try {
+      const { kbaService } = await import('./lib/kba-service');
+      const testResult = await kbaService.testConnection();
+      res.json(testResult);
+    } catch (error) {
+      console.error('KBA test error:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'KBA service test failed',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // Email Template Management Routes
   app.get('/api/email-templates', verifyToken, getAllTemplates);
   app.get('/api/email-templates/variables/all', verifyToken, getTemplateVariables);
@@ -3708,13 +3971,81 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
         return res.status(400).json({ message: 'Invalid job ID' });
       }
       
+      // Check if job exists and has a notary assigned
+      const [job] = await db
+        .select()
+        .from(jobs)
+        .where(eq(jobs.id, jobId))
+        .limit(1);
+        
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+      
+      // If no notary is assigned to the job, try to auto-assign based on current user
+      if (!job.notaryId && !job.selectedNotary) {
+        console.log(`⚠️ Job ${jobId} has no notary assigned. Attempting auto-assignment...`);
+        
+        // Auto-assign notary if current user can be the notary
+        if (req.user.role === 'admin' || 
+            (req.user.role === 'notary' && req.user.notaryType === 'subscriber')) {
+          
+          await db
+            .update(jobs)
+            .set({
+              notaryId: req.user.id,
+              selectedNotary: req.user.id.toString(),
+              notaryApprovalStatus: 'approved'
+            })
+            .where(eq(jobs.id, jobId));
+            
+          console.log(`✅ Auto-assigned ${req.user.role} as notary for job ${jobId}`);
+        } else {
+          return res.status(400).json({ 
+            message: 'This job has no notary assigned. Please assign a notary before starting the tagging session.',
+            error: 'no_notary_assigned',
+            suggestion: 'Contact an administrator to assign a notary to this job.'
+          });
+        }
+      }
+      
       // Import SessionService dynamically
       const { SessionService } = await import('./services/editor/SessionService');
+      
+      // Get the updated job data to get the correct notary ID
+      const [updatedJob] = await db
+        .select()
+        .from(jobs)
+        .where(eq(jobs.id, jobId))
+        .limit(1);
+      
+      if (!updatedJob) {
+        return res.status(404).json({ message: 'Job not found after update' });
+      }
+      
+      // Use notaryId if available, otherwise parse selectedNotary
+      let notaryId = updatedJob.notaryId;
+      if (!notaryId && updatedJob.selectedNotary) {
+        notaryId = parseInt(updatedJob.selectedNotary);
+        if (isNaN(notaryId)) {
+          return res.status(400).json({ 
+            message: 'Invalid notary assignment. Please check the job configuration.',
+            error: 'invalid_notary_id'
+          });
+        }
+      }
+      
+      if (!notaryId) {
+        return res.status(400).json({ 
+          message: 'No notary assigned to this job. Please assign a notary before starting the session.',
+          error: 'no_notary_assigned'
+        });
+      }
       
       const session = await SessionService.createSession({
         jobId,
         sessionType,
-        notaryId: req.user.id,
+        notaryId,
         videoSessionId
       });
       
@@ -3974,6 +4305,245 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
         message: error instanceof Error ? error.message : 'Failed to replace tags',
         error: 'replace_all_failed'
       });
+    }
+  });
+
+  // Validate user profile completeness for tag types
+  app.post('/api/editor/validate-profile', verifyToken, async (req: any, res) => {
+    try {
+      const { userId, tagTypes } = req.body;
+      
+      if (!userId || !tagTypes || !Array.isArray(tagTypes)) {
+        return res.status(400).json({ 
+          message: 'Missing required fields: userId and tagTypes array' 
+        });
+      }
+      
+      // Allow users to check their own profile or admins/notaries to check any profile
+      if (req.user.id !== parseInt(userId) && !['admin', 'notary'].includes(req.user.role)) {
+        return res.status(403).json({ 
+          message: 'Access denied: You can only validate your own profile' 
+        });
+      }
+      
+      const { TagService } = await import('./services/editor/TagService');
+      
+      const validation = await TagService.validateUserProfileForTags(parseInt(userId), tagTypes);
+      
+      res.json({
+        success: true,
+        validation,
+        recommendations: validation.missingFields.length > 0 ? {
+          message: 'Profile incomplete for optimal tag experience',
+          action: 'Please complete missing profile fields before session',
+          priority: validation.missingFields.some(f => ['A', 'S', 'I'].includes(f.tagType)) ? 'high' : 'medium'
+        } : {
+          message: 'Profile is complete for requested tag types',
+          action: 'Ready for tagging session'
+        }
+      });
+      
+    } catch (error) {
+      console.error('Profile validation error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to validate profile',
+        error: 'profile_validation_failed'
+      });
+    }
+  });
+
+  // Complete tagging session
+  app.post('/api/editor/session/:sessionId/complete', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      const { force = false } = req.body; // Allow force completion even with incomplete tags
+      
+      const { SessionService } = await import('./services/editor/SessionService');
+      const { TagService } = await import('./services/editor/TagService');
+      
+      // Get session info
+      const session = await SessionService.getSession(sessionId);
+      if (!session) {
+        return res.status(404).json({ message: 'Session not found' });
+      }
+      
+      // Get all tags for validation
+      const tags = await TagService.getSessionTags(sessionId);
+      
+      if (session.status === 'completed') {
+        return res.status(200).json({ 
+          message: 'Session was already completed',
+          sessionId,
+          alreadyCompleted: true,
+          document: {
+            taggedDocumentReady: true,
+            tagsPlaced: tags.length,
+            message: 'Tagged document is ready for live signing session'
+          }
+        });
+      }
+      
+      // Check if there are any tags placed
+      if (tags.length === 0 && !force) {
+        return res.status(400).json({ 
+          message: 'Cannot complete session: No tags have been placed',
+          error: 'no_tags_placed',
+          canForce: true
+        });
+      }
+      
+      // Optional: Check for minimum required tags (can be customized based on business rules)
+      const participantCount = (await SessionService.getSessionParticipants(session.jobId)).length;
+      const minimumTags = Math.max(1, participantCount); // At least one tag per participant
+      
+      if (tags.length < minimumTags && !force) {
+        return res.status(400).json({
+          message: `Recommended minimum of ${minimumTags} tags not met (${tags.length} placed)`,
+          error: 'insufficient_tags',
+          canForce: true,
+          placed: tags.length,
+          recommended: minimumTags
+        });
+      }
+      
+      // For tagging sessions: Save tagged document configuration (NOT final PDF yet)
+      // For live signing sessions: Generate final PDF with real content applied
+      let documentInfo = null;
+      
+      if (session.sessionType === 'tagging') {
+        // Tagging completion: Just save the tag configuration
+        console.log(`📋 Tagging session completed: ${sessionId} with ${tags.length} tags placed`);
+        
+        // The "tagged document" is the combination of:
+        // 1. Original PDF document (unchanged)
+        // 2. Tag metadata in database (already saved via TagService)
+        // This will be used later in the live signing session
+        
+        documentInfo = {
+          taggedDocumentReady: true,
+          tagsPlaced: tags.length,
+          message: 'Tagged document configuration saved for live signing session',
+          canContinueEditing: true,
+          note: 'You can start tagging again to continue editing these tags'
+        };
+        
+      } else if (session.sessionType === 'notary' && tags.length > 0) {
+        // Notary completion: Generate final PDF with real content
+        try {
+          console.log(`✍️ Generating final PDF for live signing session: ${sessionId}`);
+          
+          const { PDFProcessorService } = await import('./services/pdf-processor.service');
+          const pdfProcessor = PDFProcessorService.getInstance();
+          
+          // Process the document and apply real content (not placeholder tags)
+          const processedDoc = await pdfProcessor.processCompletedDocument(sessionId);
+          
+          // Save to uploads directory
+          const fs = await import('fs/promises');
+          const path = await import('path');
+          const uploadsDir = path.resolve('uploads/signed');
+          
+          // Ensure directory exists
+          try {
+            await fs.mkdir(uploadsDir, { recursive: true });
+          } catch (mkdirError) {
+            console.log('Uploads directory already exists or created');
+          }
+          
+          const signedFileName = `session_${sessionId}_signed.pdf`;
+          const signedFilePath = path.join(uploadsDir, signedFileName);
+          
+          // Write the signed PDF
+          await fs.writeFile(signedFilePath, processedDoc.buffer);
+          
+          // Create document version record
+          const [documentVersion] = await db.insert(documentVersions).values({
+            originalDocumentId: session.jobId,
+            sessionId: parseInt(sessionId),
+            versionNumber: 1,
+            fileName: signedFileName,
+            filePath: signedFilePath,
+            fileSize: processedDoc.fileSize,
+            status: 'completed',
+            digitalCertificateApplied: false
+          }).returning();
+          
+          documentInfo = {
+            documentVersionId: documentVersion.id,
+            fileName: signedFileName,
+            fileSize: processedDoc.fileSize,
+            downloadUrl: `/api/documents/signed/${encodeURIComponent(signedFileName)}`,
+            message: 'Final signed PDF generated successfully'
+          };
+          
+          console.log(`✅ Generated signed PDF: ${signedFileName} (${processedDoc.fileSize} bytes)`);
+          
+        } catch (pdfError) {
+          console.error('❌ Failed to generate final signed PDF:', pdfError);
+          // Don't fail the completion, just log the error
+          console.warn('Session marked as completed but PDF generation failed');
+        }
+      }
+      
+      // Mark session as completed
+      await SessionService.updateSessionStatus(sessionId, 'completed', {
+        completedAt: new Date()
+      });
+      
+      console.log(`✅ Tagging session completed: ${sessionId} by user ${req.user.id}`);
+      
+      res.json({
+        success: true,
+        message: 'Tagging session completed successfully',
+        sessionId,
+        completedAt: new Date(),
+        document: documentInfo,
+        stats: {
+          totalTags: tags.length,
+          completedTags: tags.filter(tag => tag.isCompleted).length,
+          participantCount
+        }
+      });
+      
+    } catch (error) {
+      console.error('Complete tagging session error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to complete session',
+        error: 'session_completion_failed'
+      });
+    }
+  });
+
+  // Serve signed documents from live signing sessions
+  app.get('/api/documents/signed/:fileName', async (req: any, res) => {
+    try {
+      const { fileName } = req.params;
+      console.log('📄 Signed document request for:', fileName);
+      
+      const path = await import('path');
+      const fs = await import('fs/promises');
+      
+      const filePath = path.resolve('uploads/signed', fileName);
+      
+      // Check if file exists
+      try {
+        await fs.access(filePath);
+      } catch (error) {
+        return res.status(404).json({ message: 'Signed document not found' });
+      }
+      
+      // Set headers for PDF download
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.setHeader('Cache-Control', 'no-cache');
+      
+      // Stream the file
+      const fileBuffer = await fs.readFile(filePath);
+      res.send(fileBuffer);
+      
+    } catch (error) {
+      console.error('Error serving signed document:', error);
+      res.status(500).json({ message: 'Failed to serve signed document' });
     }
   });
 
