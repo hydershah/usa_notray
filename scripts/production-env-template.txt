@@ -1,0 +1,30 @@
+# Production Environment Configuration Template
+# Copy these variables to your .env.production file and update with your actual domain
+
+# CRITICAL: Update these URLs for your production domain
+CLIENT_URL="https://notary.yourdomain.com"
+SERVER_URL="https://api.yourdomain.com" 
+WS_URL="wss://api.yourdomain.com"
+API_URL="https://api.yourdomain.com/api"
+VIDEO_URL="https://yourdomain.whereby.com"
+
+# Database
+DATABASE_URL="postgresql://username:password@your-db-host:5432/notary_platform"
+
+# Email (update domain)
+SMTP_HOST="smtp.yourdomain.com"
+SMTP_USER="noreply@yourdomain.com"
+EMAIL_FROM="USA Notary Platform <noreply@yourdomain.com>"
+
+# Security
+JWT_SECRET="your-secure-jwt-secret-production"
+SESSION_SECRET="your-secure-session-secret-production"
+
+# External Services
+EVS_API_KEY="your-evs-api-key"
+WHEREBY_API_KEY="your-whereby-api-key"
+STRIPE_SECRET_KEY="sk_live_your_stripe_secret_key"
+
+# Storage
+VULTR_ENDPOINT="https://ewr1.vultrobjects.com"
+VULTR_BUCKET_NAME="usanotary-production" 

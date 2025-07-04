@@ -102,7 +102,7 @@ export class CloudStorageService {
         code: error.Code,
         bucketName: this.bucketName,
         region: this.region,
-        key: sanitizedKey
+        key: key
       });
       
       // Provide more specific error messages

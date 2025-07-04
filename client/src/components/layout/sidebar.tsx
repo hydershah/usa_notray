@@ -181,15 +181,27 @@ export function Sidebar() {
 
   const filteredMenuItems = menuItems.filter(item => {
     const userRole = user?.role || '';
+    const isAdmin = user?.isAdmin || user?.role === 'admin';
+    const isNotary = user?.isNotary || user?.role === 'notary';
     
-    // Special handling for create job - only show for subscriber notaries
+    // Special handling for create job - only show for subscriber notaries or admins/title companies
     if (item.id === 'create-job') {
-      return userRole === 'admin' || 
+      return isAdmin || 
              userRole === 'title_company' || 
-             (userRole === 'notary' && user?.notaryType === 'subscriber');
+             (isNotary && user?.notaryType === 'subscriber');
     }
     
-    return item.roles.includes(userRole);
+    // Check if user has the required role/privileges for this menu item
+    return item.roles.some(requiredRole => {
+      switch (requiredRole) {
+        case 'admin':
+          return isAdmin;
+        case 'notary':
+          return isNotary;
+        default:
+          return userRole === requiredRole;
+      }
+    });
   });
 
   // Group items by section

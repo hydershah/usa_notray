@@ -3,6 +3,7 @@ import { signers } from "../shared/schema";
 import { eq } from "drizzle-orm";
 import nodemailer from "nodemailer";
 
+
 async function resendInvitation() {
   const signerEmail = process.argv[2];
   
@@ -40,7 +41,7 @@ async function resendInvitation() {
     console.log(`   Job ID: ${signer.jobId}`);
     console.log(`   Invitation Token: ${signer.invitationToken}`);
     
-    const invitationLink = `http://localhost:3000/sign/${signer.invitationToken}`;
+    const invitationLink = `${process.env.CLIENT_URL || 'http://localhost:5173'}/sign/${signer.invitationToken}`;
     
     // Send the email
     const emailResult = await transporter.sendMail({

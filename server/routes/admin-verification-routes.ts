@@ -2,13 +2,13 @@ import { Router, Request, Response } from 'express';
 import { db } from '../db';
 import { users, userVerificationAttempts } from '../../shared/schema';
 import { eq, inArray, and, sql } from 'drizzle-orm';
-import { verifyToken } from '../auth';
+import { verifyToken, hasAdminPrivileges } from '../auth';
 
 const router = Router();
 
 // Middleware to ensure only admins can access these routes
 const requireAdmin = (req: any, res: Response, next: any) => {
-  if (req.user?.role !== 'admin') {
+  if (!hasAdminPrivileges(req.user)) {
     return res.status(403).json({ error: 'Admin access required' });
   }
   next();
@@ -216,24 +216,12 @@ router.post('/bypass-verification/:userId', verifyToken, requireAdmin, async (re
       })
       .where(eq(users.id, userId));
 
-    // Log the bypass action (you can create a separate table for audit logs)
-    await db.execute(sql`
-      INSERT INTO verification_bypass_log (
-        user_id, 
-        admin_id, 
-        action, 
-        reason, 
-        previous_verification_status,
-        new_verification_status
-      ) VALUES (
-        ${userId},
-        ${adminId},
-        'bypass',
-        ${reason.trim()},
-        ${previousStatus},
-        'approved'
-      )
-    `);
+    // TODO: Log the bypass action (verification_bypass_log table needs to be created)
+    console.log(`Admin ${adminId} bypassed verification for user ${userId}:`, {
+      reason: reason.trim(),
+      previousStatus,
+      newStatus: 'approved'
+    });
 
     res.json({ success: true, message: 'Verification bypassed successfully' });
   } catch (error) {
@@ -288,24 +276,12 @@ router.post('/remove-bypass/:userId', verifyToken, requireAdmin, async (req: any
       })
       .where(eq(users.id, userId));
 
-    // Log the bypass removal action
-    await db.execute(sql`
-      INSERT INTO verification_bypass_log (
-        user_id, 
-        admin_id, 
-        action, 
-        reason, 
-        previous_verification_status,
-        new_verification_status
-      ) VALUES (
-        ${userId},
-        ${adminId},
-        'remove_bypass',
-        ${reason.trim()},
-        ${previousStatus},
-        'pending'
-      )
-    `);
+    // TODO: Log the bypass removal action (verification_bypass_log table needs to be created)
+    console.log(`Admin ${adminId} removed verification bypass for user ${userId}:`, {
+      reason: reason.trim(),
+      previousStatus,
+      newStatus: 'pending'
+    });
 
     res.json({ success: true, message: 'Verification bypass removed successfully' });
   } catch (error) {
@@ -317,21 +293,8 @@ router.post('/remove-bypass/:userId', verifyToken, requireAdmin, async (req: any
 // Get verification bypass audit log
 router.get('/bypass-log', verifyToken, requireAdmin, async (req: Request, res: Response) => {
   try {
-    const bypassLog = await db.execute(sql`
-      SELECT 
-        vbl.*,
-        u.full_name as user_name,
-        u.email as user_email,
-        admin.full_name as admin_name,
-        admin.email as admin_email
-      FROM verification_bypass_log vbl
-      JOIN users u ON vbl.user_id = u.id
-      JOIN users admin ON vbl.admin_id = admin.id
-      ORDER BY vbl.created_at DESC
-      LIMIT 100
-    `);
-
-    res.json(bypassLog.rows);
+    // TODO: Implement after creating verification_bypass_log table
+    res.json([]);
   } catch (error) {
     console.error('Error fetching bypass log:', error);
     res.status(500).json({ error: 'Failed to fetch bypass log' });
@@ -375,5 +338,10 @@ router.get('/verification-stats', verifyToken, requireAdmin, async (req: Request
     res.status(500).json({ error: 'Failed to fetch verification statistics' });
   }
 });
+
+// Export a registration function to match the pattern used by other routes
+export function registerAdminVerificationRoutes(app: any) {
+  app.use('/api/admin', router);
+}
 
 export default router; 

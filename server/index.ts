@@ -89,5 +89,22 @@ app.use((req, res, next) => {
     });
   };
 
+  // Add graceful shutdown
+  process.on('SIGTERM', () => {
+    console.log('Received SIGTERM, shutting down gracefully...');
+    server.close(() => {
+      console.log('Server closed');
+      process.exit(0);
+    });
+  });
+
+  process.on('SIGINT', () => {
+    console.log('Received SIGINT, shutting down gracefully...');
+    server.close(() => {
+      console.log('Server closed');
+      process.exit(0);
+    });
+  });
+
   startServer();
 })();

@@ -117,8 +117,21 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode;
     return null;
   }
 
-  if (allowedRoles && user && !allowedRoles.includes(user.role)) {
-    return <Redirect to="/dashboard" />;
+  if (allowedRoles && user) {
+    const hasRequiredRole = allowedRoles.some(role => {
+      switch (role) {
+        case 'admin':
+          return (user as any).isAdmin || (user as any).role === 'admin';
+        case 'notary':
+          return (user as any).isNotary || (user as any).role === 'notary';
+        default:
+          return (user as any).role === role;
+      }
+    });
+
+    if (!hasRequiredRole) {
+      return <Redirect to="/dashboard" />;
+    }
   }
 
   return <>{children}</>;

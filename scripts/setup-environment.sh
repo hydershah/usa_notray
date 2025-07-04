@@ -54,8 +54,12 @@ RATE_LIMIT_MAX_REQUESTS=100
 # Application Configuration
 NODE_ENV="development"
 PORT=3000
+CLIENT_URL="http://localhost:5173"
+SERVER_URL="http://localhost:3000"
 FRONTEND_URL="http://localhost:5173"
 BACKEND_URL="http://localhost:3000"
+WS_URL="ws://localhost:3000"
+API_URL="http://localhost:3000/api"
 
 # File Upload Configuration
 MAX_FILE_SIZE_MB=50

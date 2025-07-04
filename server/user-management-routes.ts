@@ -3,7 +3,19 @@ import { insertUserSchema } from '../shared/schema.js';
 import { storage } from './storage';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { verifyToken } from './auth.js';
+import { verifyToken, hasAdminPrivileges } from './auth.js';
+import { 
+  authLimiter, 
+  registrationLimiter, 
+  passwordResetLimiter,
+  apiLimiter 
+} from './middleware/rate-limiter';
+import { 
+  sanitizeHtml, 
+  preventSqlInjection,
+  validateEmail,
+  validatePhoneNumber 
+} from './middleware/sanitization';
 
 export function registerUserManagementRoutes(app: Express) {
   
@@ -21,7 +33,7 @@ export function registerUserManagementRoutes(app: Express) {
       const updates = req.body;
 
       // Check permissions
-      if (req.user.role !== 'admin' && req.user.id !== userId) {
+      if (!hasAdminPrivileges(req.user) && req.user.id !== userId) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -64,7 +76,7 @@ export function registerUserManagementRoutes(app: Express) {
       const { isActive, approvalStatus } = req.body;
 
       // Check permissions - only admins can change user status
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -99,7 +111,7 @@ export function registerUserManagementRoutes(app: Express) {
       const { password } = req.body;
 
       // Check permissions
-      if (req.user.role !== 'admin' && req.user.id !== userId) {
+      if (!hasAdminPrivileges(req.user) && req.user.id !== userId) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -288,7 +300,7 @@ export function registerUserManagementRoutes(app: Express) {
    */
   app.get('/api/admin/users/pending-approval', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -333,7 +345,7 @@ export function registerUserManagementRoutes(app: Express) {
    */
   app.post('/api/admin/users/:id/approve', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -366,7 +378,7 @@ export function registerUserManagementRoutes(app: Express) {
    */
   app.post('/api/admin/users/:id/reject', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -401,7 +413,7 @@ export function registerUserManagementRoutes(app: Express) {
    */
   app.post('/api/admin/users/:id/request-update', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -443,7 +455,7 @@ export function registerUserManagementRoutes(app: Express) {
       const userId = parseInt(req.params.id);
       
       // Check access permissions
-      const canAccess = req.user.role === 'admin' || 
+      const canAccess = hasAdminPrivileges(req.user) || 
                        req.user.id === userId ||
                        (req.user.role === 'company_manager' && req.user.companyId && 
                         await storage.getUsersByCompany(req.user.companyId).then(users => 
@@ -501,6 +513,7 @@ export function registerUserManagementRoutes(app: Express) {
         
         // Notary information (if applicable)
         notaryType: user.notaryType,
+        notaryIdCode: user.notaryIdCode,
         nameOnCommission: user.nameOnCommission,
         commissionNumber: user.commissionNumber,
         commissionExpiration: user.commissionExpiration,
@@ -597,7 +610,7 @@ export function registerUserManagementRoutes(app: Express) {
       const userId = parseInt(req.params.id);
       
       // Check access permissions
-      const canUpdate = req.user.role === 'admin' || req.user.id === userId;
+      const canUpdate = hasAdminPrivileges(req.user) || req.user.id === userId;
 
       if (!canUpdate) {
         return res.status(403).json({ message: 'Access denied. You can only update your own profile.' });
@@ -610,7 +623,7 @@ export function registerUserManagementRoutes(app: Express) {
       
       // If this is a notary updating their profile, set status to pending for re-approval
       const user = await storage.getUser(userId);
-      if (user?.role === 'notary' && user.approvalStatus === 'approved' && req.user.role !== 'admin') {
+      if (user?.role === 'notary' && user.approvalStatus === 'approved' && !hasAdminPrivileges(req.user)) {
         updateData.approvalStatus = 'requires_update';
         updateData.isActive = false;
       }
@@ -648,7 +661,7 @@ export function registerUserManagementRoutes(app: Express) {
    */
   app.get('/api/debug/user/:email', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -685,7 +698,7 @@ export function registerUserManagementRoutes(app: Express) {
    */
   app.get('/api/admin/users/by-role/:role', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -714,6 +727,14 @@ export function registerUserManagementRoutes(app: Express) {
    */
   app.get('/api/notaries/qualified', verifyToken, async (req: any, res) => {
     try {
+      // SECURITY RESTRICTION: Only allow admin access to browse qualified notaries
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ 
+          message: 'Admin access required',
+          error: 'Access denied to qualified notaries listing'
+        });
+      }
+      
       const { requiresNSA, requiresSpanish } = req.query;
       
       const notaries = await storage.getNotariesByQualifications(

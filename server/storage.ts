@@ -8,6 +8,7 @@ import {
   invoices,
   paymentSchedules,
   closingTypes,
+  participantRoles,
   jobDocuments,
   companies,
   notaryStamps,
@@ -30,6 +31,7 @@ import {
   InsertInvoice,
   InsertPaymentSchedule,
   InsertClosingType,
+  InsertParticipantRole,
   InsertCompany,
   InsertNotaryStamp,
   InsertNotaryAvailability,
@@ -47,6 +49,7 @@ import {
   Invoice,
   PaymentSchedule,
   ClosingType,
+  ParticipantRole,
   Company,
   NotaryStamp,
   NotaryAvailability,
@@ -170,12 +173,26 @@ export interface IStorage {
   getClosingTypes(): Promise<ClosingType[]>;
   getActiveClosingTypes(): Promise<ClosingType[]>;
 
+  // Participant role operations
+  getParticipantRole(id: number): Promise<ParticipantRole | undefined>;
+  createParticipantRole(role: InsertParticipantRole): Promise<ParticipantRole>;
+  updateParticipantRole(id: number, role: Partial<InsertParticipantRole>): Promise<ParticipantRole | undefined>;
+  deleteParticipantRole(id: number): Promise<boolean>;
+  getParticipantRoles(): Promise<ParticipantRole[]>;
+  getActiveParticipantRoles(): Promise<ParticipantRole[]>;
+
   // Signer operations
   getSignersByJobId(jobId: number): Promise<Signer[]>;
   getSigner(id: number): Promise<Signer | undefined>;
   createSigner(signer: InsertSigner): Promise<Signer>;
   updateSigner(id: number, signer: Partial<InsertSigner>): Promise<Signer | undefined>;
   deleteSigner(id: number): Promise<boolean>;
+
+  // Signature management operations
+  getUserSignatures(userId: number): Promise<any[]>;
+  createUserSignature(signature: any): Promise<any>;
+  setDefaultSignature(userId: number, signatureId: string): Promise<void>;
+  deleteUserSignature(userId: number, signatureId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -843,6 +860,44 @@ export class DatabaseStorage implements IStorage {
       .orderBy(asc(closingTypes.name));
   }
 
+  // Participant role operations
+  async getParticipantRole(id: number): Promise<ParticipantRole | undefined> {
+    const [role] = await db.select().from(participantRoles).where(eq(participantRoles.id, id));
+    return role || undefined;
+  }
+
+  async createParticipantRole(insertRole: InsertParticipantRole): Promise<ParticipantRole> {
+    const [role] = await db
+      .insert(participantRoles)
+      .values(insertRole)
+      .returning();
+    return role;
+  }
+
+  async updateParticipantRole(id: number, updateData: Partial<InsertParticipantRole>): Promise<ParticipantRole | undefined> {
+    const [role] = await db
+      .update(participantRoles)
+      .set(updateData)
+      .where(eq(participantRoles.id, id))
+      .returning();
+    return role || undefined;
+  }
+
+  async deleteParticipantRole(id: number): Promise<boolean> {
+    const result = await db.delete(participantRoles).where(eq(participantRoles.id, id));
+    return (result.rowCount || 0) > 0;
+  }
+
+  async getParticipantRoles(): Promise<ParticipantRole[]> {
+    return await db.select().from(participantRoles).orderBy(asc(participantRoles.name));
+  }
+
+  async getActiveParticipantRoles(): Promise<ParticipantRole[]> {
+    return await db.select().from(participantRoles)
+      .where(eq(participantRoles.isActive, true))
+      .orderBy(asc(participantRoles.name));
+  }
+
   // Signer operations
   async getSignersByJobId(jobId: number): Promise<Signer[]> {
     return await db.select().from(signers).where(eq(signers.jobId, jobId));
@@ -874,6 +929,62 @@ export class DatabaseStorage implements IStorage {
     const result = await db.delete(signers).where(eq(signers.id, id));
     return (result.rowCount || 0) > 0;
   }
+
+  // Signature management operations
+  async getUserSignatures(userId: number): Promise<any[]> {
+    // For now, we'll use a simple in-memory storage approach
+    // In production, you would store these in a dedicated database table
+    const signatures = this.userSignatures.get(userId) || [];
+    return signatures;
+  }
+
+  async createUserSignature(signature: any): Promise<any> {
+    const signatureId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+    const newSignature = {
+      id: signatureId,
+      ...signature,
+      createdAt: new Date().toISOString()
+    };
+
+    if (!this.userSignatures.has(signature.userId)) {
+      this.userSignatures.set(signature.userId, []);
+    }
+
+    const userSignatures = this.userSignatures.get(signature.userId)!;
+    
+    // If this is the first signature, make it default
+    if (userSignatures.length === 0) {
+      newSignature.isDefault = true;
+    }
+
+    userSignatures.push(newSignature);
+    return newSignature;
+  }
+
+  async setDefaultSignature(userId: number, signatureId: string): Promise<void> {
+    const userSignatures = this.userSignatures.get(userId) || [];
+    
+    // Reset all signatures to not default
+    userSignatures.forEach(sig => sig.isDefault = false);
+    
+    // Set the specified signature as default
+    const targetSignature = userSignatures.find(sig => sig.id === signatureId);
+    if (targetSignature) {
+      targetSignature.isDefault = true;
+    }
+  }
+
+  async deleteUserSignature(userId: number, signatureId: string): Promise<void> {
+    const userSignatures = this.userSignatures.get(userId) || [];
+    const index = userSignatures.findIndex(sig => sig.id === signatureId);
+    
+    if (index >= 0) {
+      userSignatures.splice(index, 1);
+    }
+  }
+
+  // In-memory storage for signatures (in production, use a database table)
+  private userSignatures = new Map<number, any[]>();
 }
 
 export const storage = new DatabaseStorage();

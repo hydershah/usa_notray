@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, unique, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -42,6 +42,7 @@ export const users = pgTable("users", {
   signatureData: text("signature_data"), // Base64 encoded signature image (GIF)
   initialData: text("initial_data"), // Base64 encoded initial image (GIF)
   notaryType: text("notary_type"), // 'contractor' or 'subscriber' for notary role
+  notaryIdCode: text("notary_id_code"), // System-generated ID code for notaries (CY0001, CY0002, etc.)
   isActive: boolean("is_active").default(true), // For admin to activate/deactivate users
   
   // Account Balance and Financial Management for Subscribers/Contractors
@@ -173,6 +174,9 @@ export const users = pgTable("users", {
   signatureTyped: text("signature_typed"), // Typed signature text
   initialsTyped: text("initials_typed"), // Typed initials text
   defaultSignatureType: varchar("default_signature_type", { length: 20 }).default('draw'), // 'draw', 'type', or 'upload'
+  
+  // Profile completion tracking
+  profileSubmitted: boolean("profile_submitted").default(false), // Track if user has gone through profile completion process
 });
 
 // Companies table - Enhanced for comprehensive company management  
@@ -426,6 +430,21 @@ export const jobDocuments = pgTable("job_documents", {
   uploadedBy: integer("uploaded_by").references(() => users.id),
   isRequired: boolean("is_required").default(false),
   signaturePages: text("signature_pages").array().default([]), // Array of page numbers requiring signatures
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Participant Roles table for configurable signer roles
+export const participantRoles = pgTable("participant_roles", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(), // 'borrower', 'co-borrower', 'seller', 'buyer', 'witness', etc.
+  displayName: text("display_name").notNull(), // 'Borrower (Signs documents)', 'Co-Borrower (Signs documents)', etc.
+  description: text("description"), // Optional description of what this role does
+  category: text("category").default("signer").notNull(), // 'signer', 'witness', 'observer'
+  requiresSignature: boolean("requires_signature").default(true), // Whether this role needs to sign documents
+  requiresIdVerification: boolean("requires_id_verification").default(true), // Whether this role needs ID verification
+  isActive: boolean("is_active").default(true), // Admin can enable/disable roles
+  sortOrder: integer("sort_order").default(0), // For ordering in dropdowns
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -1629,3 +1648,187 @@ export const USER_COLORS = [
   '#BB8FCE', // Light Purple
   '#85C1E9', // Light Blue
 ] as const;
+
+// Participant Roles schemas
+export const insertParticipantRoleSchema = createInsertSchema(participantRoles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const selectParticipantRoleSchema = createSelectSchema(participantRoles);
+
+// Participant Roles types
+export type InsertParticipantRole = z.infer<typeof insertParticipantRoleSchema>;
+export type ParticipantRole = typeof participantRoles.$inferSelect;
+
+// System-wide Activity Logs table - for tracking ALL user actions across the system
+export const systemActivityLogs = pgTable("system_activity_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  userRole: text("user_role"), // 'admin', 'notary', 'signer', 'title_company', 'witness'
+  userEmail: text("user_email"),
+  userName: text("user_name"),
+  
+  // Action details
+  action: text("action").notNull(), // 'login', 'logout', 'job_created', 'job_assigned', 'user_approved', 'company_approved', 'document_uploaded', 'payment_processed', etc.
+  actionCategory: text("action_category").notNull(), // 'authentication', 'job_management', 'user_management', 'company_management', 'document_management', 'payment', 'system_admin'
+  actionDescription: text("action_description").notNull(),
+  
+  // Context information
+  targetType: text("target_type"), // 'user', 'job', 'company', 'document', 'payment', 'system'
+  targetId: integer("target_id"), // ID of the target entity
+  targetName: text("target_name"), // Name/title of the target entity
+  
+  // Related entities
+  jobId: integer("job_id").references(() => jobs.id),
+  companyId: integer("company_id").references(() => companies.id),
+  
+  // Request/Response details
+  requestMethod: text("request_method"), // 'GET', 'POST', 'PUT', 'DELETE'
+  requestPath: text("request_path"), // API endpoint path
+  requestBody: jsonb("request_body"), // Request payload (filtered for sensitive data)
+  responseStatus: integer("response_status"), // HTTP status code
+  
+  // Additional metadata
+  details: jsonb("details"), // Additional structured data about the action
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  sessionId: text("session_id"),
+  
+  // Status and flags
+  severity: text("severity").default("info").notNull(), // 'info', 'warning', 'error', 'critical'
+  isSystemAction: boolean("is_system_action").default(false), // True for automated system actions
+  isSuccessful: boolean("is_successful").default(true),
+  errorMessage: text("error_message"),
+  
+  // Timestamps
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  
+  // Indexing for performance
+}, (table) => ({
+  userIdIdx: index("idx_system_activity_logs_user_id").on(table.userId),
+  actionIdx: index("idx_system_activity_logs_action").on(table.action),
+  categoryIdx: index("idx_system_activity_logs_category").on(table.actionCategory),
+  createdAtIdx: index("idx_system_activity_logs_created_at").on(table.createdAt),
+  jobIdIdx: index("idx_system_activity_logs_job_id").on(table.jobId),
+  companyIdIdx: index("idx_system_activity_logs_company_id").on(table.companyId),
+  severityIdx: index("idx_system_activity_logs_severity").on(table.severity),
+}));
+
+// System Activity Log Relations
+export const systemActivityLogsRelations = relations(systemActivityLogs, ({ one }) => ({
+  user: one(users, {
+    fields: [systemActivityLogs.userId],
+    references: [users.id],
+  }),
+  job: one(jobs, {
+    fields: [systemActivityLogs.jobId],
+    references: [jobs.id],
+  }),
+  company: one(companies, {
+    fields: [systemActivityLogs.companyId],
+    references: [companies.id],
+  }),
+}));
+
+// System Activity Log Schemas
+export const insertSystemActivityLogSchema = createInsertSchema(systemActivityLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const selectSystemActivityLogSchema = createSelectSchema(systemActivityLogs);
+
+// System Activity Log Types
+export type InsertSystemActivityLog = z.infer<typeof insertSystemActivityLogSchema>;
+export type SystemActivityLog = typeof systemActivityLogs.$inferSelect;
+
+// Log Action Constants
+export const LOG_ACTIONS = {
+  // Authentication
+  LOGIN: 'login',
+  LOGOUT: 'logout',
+  LOGIN_FAILED: 'login_failed',
+  PASSWORD_RESET: 'password_reset',
+  
+  // Job Management
+  JOB_CREATED: 'job_created',
+  JOB_UPDATED: 'job_updated',
+  JOB_ASSIGNED: 'job_assigned',
+  JOB_COMPLETED: 'job_completed',
+  JOB_CANCELLED: 'job_cancelled',
+  JOB_DELETED: 'job_deleted',
+  
+  // User Management
+  USER_REGISTERED: 'user_registered',
+  USER_APPROVED: 'user_approved',
+  USER_REJECTED: 'user_rejected',
+  USER_UPDATED: 'user_updated',
+  USER_DELETED: 'user_deleted',
+  USER_VERIFICATION_BYPASSED: 'user_verification_bypassed',
+  
+  // Company Management
+  COMPANY_REGISTERED: 'company_registered',
+  COMPANY_APPROVED: 'company_approved',
+  COMPANY_REJECTED: 'company_rejected',
+  COMPANY_UPDATED: 'company_updated',
+  COMPANY_DELETED: 'company_deleted',
+  
+  // Document Management
+  DOCUMENT_UPLOADED: 'document_uploaded',
+  DOCUMENT_DOWNLOADED: 'document_downloaded',
+  DOCUMENT_DELETED: 'document_deleted',
+  DOCUMENT_SIGNED: 'document_signed',
+  DOCUMENT_NOTARIZED: 'document_notarized',
+  
+  // Payment
+  PAYMENT_PROCESSED: 'payment_processed',
+  PAYMENT_FAILED: 'payment_failed',
+  PAYMENT_REFUNDED: 'payment_refunded',
+  INVOICE_GENERATED: 'invoice_generated',
+  
+  // System Admin
+  SYSTEM_SETTING_CHANGED: 'system_setting_changed',
+  BACKUP_CREATED: 'backup_created',
+  MAINTENANCE_MODE_ENABLED: 'maintenance_mode_enabled',
+  MAINTENANCE_MODE_DISABLED: 'maintenance_mode_disabled',
+  
+  // Notary Assignment
+  NOTARY_ASSIGNED: 'notary_assigned',
+  NOTARY_ASSIGNMENT_FAILED: 'notary_assignment_failed',
+  NOTARY_REJECTED_JOB: 'notary_rejected_job',
+  
+  // Verification
+  VERIFICATION_STARTED: 'verification_started',
+  VERIFICATION_COMPLETED: 'verification_completed',
+  VERIFICATION_FAILED: 'verification_failed',
+  KBA_STARTED: 'kba_started',
+  KBA_COMPLETED: 'kba_completed',
+  
+  // Session Management
+  SESSION_STARTED: 'session_started',
+  SESSION_ENDED: 'session_ended',
+  SESSION_PARTICIPANT_JOINED: 'session_participant_joined',
+  SESSION_PARTICIPANT_LEFT: 'session_participant_left',
+} as const;
+
+export const LOG_CATEGORIES = {
+  AUTHENTICATION: 'authentication',
+  JOB_MANAGEMENT: 'job_management',
+  USER_MANAGEMENT: 'user_management',
+  COMPANY_MANAGEMENT: 'company_management',
+  DOCUMENT_MANAGEMENT: 'document_management',
+  PAYMENT: 'payment',
+  SYSTEM_ADMIN: 'system_admin',
+  NOTARY_ASSIGNMENT: 'notary_assignment',
+  VERIFICATION: 'verification',
+  SESSION_MANAGEMENT: 'session_management',
+} as const;
+
+export const LOG_SEVERITIES = {
+  INFO: 'info',
+  WARNING: 'warning',
+  ERROR: 'error',
+  CRITICAL: 'critical',
+} as const;

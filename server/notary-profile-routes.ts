@@ -1,5 +1,5 @@
 import { Express } from 'express';
-import { verifyToken } from './auth';
+import { verifyToken, hasNotaryPrivileges } from './auth';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -42,8 +42,8 @@ export function registerNotaryProfileRoutes(app: Express) {
     { name: 'signingAgentFile', maxCount: 1 }
   ]), async (req: any, res) => {
     try {
-      if (req.user.role !== 'notary') {
-        return res.status(403).json({ message: 'Only notaries can upload documents' });
+      if (!hasNotaryPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Notary privileges required to upload documents' });
       }
 
       const files = req.files as any;
@@ -109,11 +109,23 @@ export function registerNotaryProfileRoutes(app: Express) {
    */
   app.post('/api/notary/profile/complete', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'notary') {
-        return res.status(403).json({ message: 'Only notaries can complete profile' });
+      if (!hasNotaryPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Notary privileges required to complete profile' });
       }
 
       const {
+        // Basic personal information
+        firstName,
+        lastName,
+        fullName,
+        phoneNumber,
+        // Personal address
+        address1,
+        address2,
+        city,
+        state,
+        zipCode,
+        // Notary-specific fields
         nameOnCommission,
         commissionAddress1,
         commissionAddress2,
@@ -151,6 +163,18 @@ export function registerNotaryProfileRoutes(app: Express) {
 
       // Update user profile with comprehensive notary information
       const updateData = {
+        // Basic personal information
+        firstName,
+        lastName,
+        fullName: fullName || (firstName && lastName ? `${firstName} ${lastName}`.trim() : undefined),
+        phoneNumber,
+        // Personal address
+        address1,
+        address2,
+        city,
+        state,
+        zipCode,
+        // Notary-specific fields
         nameOnCommission,
         commissionAddress1,
         commissionAddress2,
@@ -180,7 +204,8 @@ export function registerNotaryProfileRoutes(app: Express) {
         // Update approval status and timestamps
         approvalStatus: 'pending', // Reset to pending for admin review
         lastProfileUpdate: new Date(),
-        // Mark profile as complete for initial checks
+        // Mark profile as submitted - indicates user has gone through the completion process
+        profileSubmitted: true,
         profileCompleted: true
       };
 
@@ -203,8 +228,8 @@ export function registerNotaryProfileRoutes(app: Express) {
    */
   app.get('/api/notary/profile/status', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'notary') {
-        return res.status(403).json({ message: 'Only notaries can check profile status' });
+      if (!hasNotaryPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Notary privileges required to check profile status' });
       }
 
       const user = await storage.getUser(req.user.id);
@@ -213,7 +238,24 @@ export function registerNotaryProfileRoutes(app: Express) {
       }
 
       // Check if profile is complete
-      const requiredFields = [
+      // Profile is considered complete if:
+      // 1. User has submitted the profile form (profileSubmitted = true), OR
+      // 2. User has all core required fields filled
+      
+      const coreRequiredFields = [
+        'nameOnCommission',
+        'commissionNumber',
+        'commissionExpiration',
+        'commissionState'
+      ];
+
+      const missingCoreFields = coreRequiredFields.filter(field => !user[field]);
+      
+      // Profile is complete if user has submitted it OR has core fields
+      const profileComplete = user.profileSubmitted || missingCoreFields.length === 0;
+
+      // For detailed status, check all recommended fields
+      const allRecommendedFields = [
         'nameOnCommission',
         'commissionAddress1', 
         'commissionCity',
@@ -232,17 +274,15 @@ export function registerNotaryProfileRoutes(app: Express) {
         'bondExpiration'
       ];
 
-      const requiredFiles = [
+      const allRecommendedFiles = [
         'notaryCommissionFile',
         'eoInsuranceFile', 
         'publicCertificateFile',
         'bondFile'
       ];
 
-      const missingFields = requiredFields.filter(field => !user[field]);
-      const missingFiles = requiredFiles.filter(field => !user[field]);
-
-      const profileComplete = missingFields.length === 0 && missingFiles.length === 0;
+      const missingFields = allRecommendedFields.filter(field => !user[field]);
+      const missingFiles = allRecommendedFiles.filter(field => !user[field]);
 
       res.json({
         profileComplete,
@@ -266,8 +306,8 @@ export function registerNotaryProfileRoutes(app: Express) {
    */
   app.get('/api/notary/profile/comprehensive', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'notary') {
-        return res.status(403).json({ message: 'Only notaries can access profile data' });
+      if (!hasNotaryPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Notary privileges required to access profile data' });
       }
 
       const user = await storage.getUser(req.user.id);
@@ -284,6 +324,13 @@ export function registerNotaryProfileRoutes(app: Express) {
         firstName: user.firstName,
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
+        
+        // Personal address
+        address1: user.address1,
+        address2: user.address2,
+        city: user.city,
+        state: user.state,
+        zipCode: user.zipCode,
         
         // Commission information
         nameOnCommission: user.nameOnCommission,

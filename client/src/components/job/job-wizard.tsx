@@ -32,6 +32,7 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { ArrowLeft, ArrowRight, Plus, Trash2, Upload, FileText, CheckCircle, AlertCircle, User as UserIcon, Clock } from 'lucide-react';
 import { type TitleCompany, type ClosingType, type User } from '@shared/schema';
+import { NotaryAvailabilitySelector } from './notary-availability-selector';
 
 const jobSchema = z.object({
   titleCompany: z.string().min(1, 'Title company is required'),
@@ -45,8 +46,9 @@ const jobSchema = z.object({
   propertyZipCode: z.string()
     .min(1, 'ZIP code is required')
     .regex(/^\d{5}(-\d{4})?$/, 'Invalid ZIP code format (12345 or 12345-6789)'),
-  notaryOption: z.enum(['assign', 'auto']),
+  notaryOption: z.enum(['assign', 'auto', 'admin_self', 'id_code']),
   selectedNotary: z.string().optional(),
+  notaryIdCode: z.string().optional(),
   selectedDate: z.string().optional(),
   selectedTime: z.string().optional(),
   requiresNSA: z.boolean().default(false),
@@ -103,16 +105,32 @@ export function JobWizard() {
   const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
   const [preferredNotary, setPreferredNotary] = useState<any>(null);
 
+  // Notary ID Code lookup state
+  const [notaryIdCodeLookup, setNotaryIdCodeLookup] = useState<{
+    isLoading: boolean;
+    result: any | null;
+    error: string | null;
+  }>({
+    isLoading: false,
+    result: null,
+    error: null
+  });
+
   // Get current user data to check permissions
-  const { data: currentUser } = useQuery({
+  const { data: currentUser } = useQuery<User & { 
+    companyName?: string; 
+    isAdmin?: boolean; 
+    isNotary?: boolean; 
+  }>({
     queryKey: ['/api/auth/me'],
   });
 
   // Check if user has permission to create jobs
   const canCreateJob = currentUser && (
-    currentUser.role === 'admin' ||
-    currentUser.role === 'title_company' ||
-    (currentUser.role === 'notary' && currentUser.notaryType === 'subscriber')
+    (currentUser as any).isAdmin ||
+    (currentUser as any).role === 'admin' ||
+    (currentUser as any).role === 'title_company' ||
+    ((currentUser as any).role === 'notary' && (currentUser as any).notaryType === 'subscriber')
   );
 
   // Redirect if user doesn't have permission
@@ -134,6 +152,10 @@ export function JobWizard() {
       notaryOption: currentUser?.role === 'admin' ? 'admin_self' : 'auto',
       requiresNSA: false,
       requiresSpanishSpeaking: false,
+      // Pre-fill title company for title company users
+      titleCompany: currentUser?.role === 'title_company' && currentUser?.companyName 
+        ? currentUser.companyName 
+        : '',
     },
   });
 
@@ -173,6 +195,21 @@ export function JobWizard() {
 
   const { data: closingTypes = [] } = useQuery<ClosingType[]>({
     queryKey: ['/api/closing-types/active'],
+  });
+
+  const { data: participantRoles = [] } = useQuery<any[]>({
+    queryKey: ['/api/participant-roles/active'],
+    queryFn: async () => {
+      const response = await fetch('/api/participant-roles/active', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch participant roles');
+      }
+      return response.json();
+    }
   });
 
   const createJobMutation = useMutation({
@@ -248,6 +285,76 @@ export function JobWizard() {
     }
   };
 
+  // Lookup notary by ID code
+  const lookupNotaryByCode = async (notaryCode: string) => {
+    if (!notaryCode || notaryCode.length < 5) {
+      setNotaryIdCodeLookup({ isLoading: false, result: null, error: null });
+      form.setValue('selectedNotary', undefined);
+      return;
+    }
+
+    // Validate format (CY followed by 4 digits)
+    if (!/^CY\d{4}$/i.test(notaryCode)) {
+      setNotaryIdCodeLookup({ 
+        isLoading: false, 
+        result: null, 
+        error: 'Invalid format. Expected: CY#### (e.g., CY0123)' 
+      });
+      form.setValue('selectedNotary', undefined);
+      return;
+    }
+
+    setNotaryIdCodeLookup({ isLoading: true, result: null, error: null });
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Authentication required');
+      }
+
+      const response = await fetch(`/api/notaries/by-code/${notaryCode.toUpperCase()}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const notary = await response.json();
+        setNotaryIdCodeLookup({ 
+          isLoading: false, 
+          result: notary, 
+          error: null 
+        });
+        form.setValue('selectedNotary', notary.id.toString());
+      } else if (response.status === 404) {
+        setNotaryIdCodeLookup({ 
+          isLoading: false, 
+          result: null, 
+          error: 'Notary not found or inactive' 
+        });
+        form.setValue('selectedNotary', undefined);
+      } else if (response.status === 403) {
+        setNotaryIdCodeLookup({ 
+          isLoading: false, 
+          result: null, 
+          error: 'Access denied' 
+        });
+        form.setValue('selectedNotary', undefined);
+      } else {
+        throw new Error('Lookup failed');
+      }
+    } catch (error) {
+      console.error('Error looking up notary by code:', error);
+      setNotaryIdCodeLookup({ 
+        isLoading: false, 
+        result: null, 
+        error: 'Lookup failed. Please try again.' 
+      });
+      form.setValue('selectedNotary', undefined);
+    }
+  };
+
   // Load available time slots for random assignment
   const loadAvailableTimeSlots = async (date: string) => {
     if (form.watch('notaryOption') !== 'auto' || preferredNotary) return;
@@ -313,6 +420,12 @@ export function JobWizard() {
     form.setValue('selectedTime', timeSlot.startTime);
   };
 
+  // Handle notary-specific date/time selection
+  const handleNotaryDateTimeSelect = (date: string, time: string) => {
+    form.setValue('selectedDate', date);
+    form.setValue('selectedTime', time);
+  };
+
   const validateStep = async (step: number) => {
     switch (step) {
       case 1:
@@ -347,17 +460,19 @@ export function JobWizard() {
           return false;
         }
 
-        // Validate each signer
+        // Validate each signer and set field-level errors
         const invalidSigners: number[] = [];
+        let hasValidationErrors = false;
+        
         signers.forEach((signer, index) => {
-          try {
-            signerSchema.parse(signer);
-          } catch (error) {
+          const isValid = validateSigner(signer, index);
+          if (!isValid) {
             invalidSigners.push(index + 1);
+            hasValidationErrors = true;
           }
         });
 
-        if (invalidSigners.length > 0) {
+        if (hasValidationErrors) {
           toast({
             variant: "destructive",
             title: "Invalid Participant Information",
@@ -429,7 +544,11 @@ export function JobWizard() {
       signerPhoneNumber: '',
       signerRole: '',
     }]);
-    setSignerModes(prev => ({ ...prev, [newIndex]: 'new' }));
+    // Title companies can only add new participants, others can choose
+    setSignerModes(prev => ({ 
+      ...prev, 
+      [newIndex]: currentUser?.role === 'title_company' ? 'new' : 'new' 
+    }));
   };
 
   const handleRemoveSigner = (index: number) => {
@@ -580,6 +699,11 @@ export function JobWizard() {
     // Prevent double submission
     if (isSubmitting) return;
     
+    // Only allow submission on the final step
+    if (currentStep !== steps.length) {
+      return;
+    }
+    
     // Validate all steps before submitting
     let allValid = true;
     
@@ -594,9 +718,11 @@ export function JobWizard() {
       return;
     }
     
+    const invalidSigners: number[] = [];
     signers.forEach((signer, index) => {
       if (!validateSigner(signer, index)) {
         allValid = false;
+        invalidSigners.push(index + 1);
       }
     });
     
@@ -604,7 +730,7 @@ export function JobWizard() {
       toast({
         variant: "destructive",
         title: "Invalid Participant Information",
-        description: "Please fix participant information errors.",
+        description: `Please fix participant information errors for participant(s): ${invalidSigners.join(', ')}`,
       });
       setCurrentStep(2);
       return;
@@ -736,7 +862,13 @@ export function JobWizard() {
         <Card className="shadow-2xl border-0 bg-white/80 backdrop-blur-sm">
           <CardContent className="p-8 md:p-12">
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
+              <form onSubmit={form.handleSubmit(handleSubmit)} onKeyDown={(e) => {
+                // Prevent form submission on Enter key press
+                if (e.key === 'Enter' && currentStep < steps.length) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              }} className="space-y-8">
                 
                 {/* Step 1: Client Information */}
                 {currentStep === 1 && (
@@ -815,24 +947,51 @@ export function JobWizard() {
                         <FormField
                           control={form.control}
                           name="titleCompany"
-                          render={({ field }) => (
+                          render={({ field, fieldState }) => (
                             <FormItem>
-                              <FormLabel className="text-sm font-medium text-gray-700">Title Company *</FormLabel>
-                              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <FormLabel className={`text-sm font-medium ${fieldState.error ? 'text-red-600' : 'text-gray-700'}`}>
+                                Title Company *
+                              </FormLabel>
+                              {currentUser?.role === 'title_company' ? (
+                                // Title company users see their own company name (read-only)
                                 <FormControl>
-                                  <SelectTrigger className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500">
-                                    <SelectValue placeholder="Select title company" />
-                                  </SelectTrigger>
+                                  <Input
+                                    {...field}
+                                    value={currentUser?.companyName || ''}
+                                    disabled
+                                    className={`h-12 border-gray-200 bg-gray-50 cursor-not-allowed ${fieldState.error ? 'border-red-300' : ''}`}
+                                  />
                                 </FormControl>
-                                <SelectContent>
-                                  {titleCompanies.map((company: any) => (
-                                    <SelectItem key={company.id} value={company.companyName}>
-                                      {company.companyName}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
+                              ) : (
+                                // Other users can select from available companies
+                                <Select 
+                                  onValueChange={(value) => {
+                                    field.onChange(value);
+                                    // Trigger validation after change
+                                    setTimeout(() => form.trigger('titleCompany'), 0);
+                                  }} 
+                                  defaultValue={field.value}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
+                                      <SelectValue placeholder="Select title company" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {titleCompanies.map((company: any) => (
+                                      <SelectItem key={company.id} value={company.companyName}>
+                                        {company.companyName}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                              <FormMessage className="text-red-600 text-sm mt-1" />
+                              {currentUser?.role === 'title_company' && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  You can only create jobs for your own company
+                                </p>
+                              )}
                             </FormItem>
                           )}
                         />
@@ -840,12 +999,21 @@ export function JobWizard() {
                         <FormField
                           control={form.control}
                           name="closingType"
-                          render={({ field }) => (
+                          render={({ field, fieldState }) => (
                             <FormItem>
-                              <FormLabel className="text-sm font-medium text-gray-700">Closing Type *</FormLabel>
-                              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <FormLabel className={`text-sm font-medium ${fieldState.error ? 'text-red-600' : 'text-gray-700'}`}>
+                                Closing Type *
+                              </FormLabel>
+                              <Select 
+                                onValueChange={(value) => {
+                                  field.onChange(value);
+                                  // Trigger validation after change
+                                  setTimeout(() => form.trigger('closingType'), 0);
+                                }} 
+                                defaultValue={field.value}
+                              >
                                 <FormControl>
-                                  <SelectTrigger className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500">
+                                  <SelectTrigger className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
                                     <SelectValue placeholder="Select closing type" />
                                   </SelectTrigger>
                                 </FormControl>
@@ -857,7 +1025,7 @@ export function JobWizard() {
                                   ))}
                                 </SelectContent>
                               </Select>
-                              <FormMessage />
+                              <FormMessage className="text-red-600 text-sm mt-1" />
                             </FormItem>
                           )}
                         />
@@ -867,17 +1035,20 @@ export function JobWizard() {
                         <FormField
                           control={form.control}
                           name="internalReference"
-                          render={({ field }) => (
+                          render={({ field, fieldState }) => (
                             <FormItem>
-                              <FormLabel className="text-sm font-medium text-gray-700">Internal Reference</FormLabel>
+                              <FormLabel className={`text-sm font-medium ${fieldState.error ? 'text-red-600' : 'text-gray-700'}`}>
+                                Internal Reference
+                              </FormLabel>
                               <FormControl>
                                 <Input 
                                   placeholder="Enter internal reference" 
-                                  className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-                                  {...field} 
+                                  className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                  {...field}
+                                  onBlur={() => form.trigger('internalReference')}
                                 />
                               </FormControl>
-                              <FormMessage />
+                              <FormMessage className="text-red-600 text-sm mt-1" />
                             </FormItem>
                           )}
                         />
@@ -885,12 +1056,18 @@ export function JobWizard() {
                         <FormField
                           control={form.control}
                           name="kbaRequired"
-                          render={({ field }) => (
+                          render={({ field, fieldState }) => (
                             <FormItem>
-                              <FormLabel className="text-sm font-medium text-gray-700">KBA Required</FormLabel>
+                              <FormLabel className={`text-sm font-medium ${fieldState.error ? 'text-red-600' : 'text-gray-700'}`}>
+                                KBA Required
+                              </FormLabel>
                               <FormControl>
                                 <RadioGroup
-                                  onValueChange={(value) => field.onChange(value === 'true')}
+                                  onValueChange={(value) => {
+                                    field.onChange(value === 'true');
+                                    // Trigger validation after change
+                                    setTimeout(() => form.trigger('kbaRequired'), 0);
+                                  }}
                                   defaultValue={field.value ? 'true' : 'false'}
                                   className="flex items-center space-x-8 mt-2"
                                 >
@@ -904,7 +1081,7 @@ export function JobWizard() {
                                   </div>
                                 </RadioGroup>
                               </FormControl>
-                              <FormMessage />
+                              <FormMessage className="text-red-600 text-sm mt-1" />
                             </FormItem>
                           )}
                         />
@@ -922,17 +1099,20 @@ export function JobWizard() {
                         <FormField
                           control={form.control}
                           name="propertyAddressOne"
-                          render={({ field }) => (
+                          render={({ field, fieldState }) => (
                             <FormItem>
-                              <FormLabel className="text-sm font-medium text-gray-700">Address Line 1 *</FormLabel>
+                              <FormLabel className={`text-sm font-medium ${fieldState.error ? 'text-red-600' : 'text-gray-700'}`}>
+                                Address Line 1 *
+                              </FormLabel>
                               <FormControl>
                                 <Input 
                                   placeholder="Enter street address" 
-                                  className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-                                  {...field} 
+                                  className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                  {...field}
+                                  onBlur={() => form.trigger('propertyAddressOne')}
                                 />
                               </FormControl>
-                              <FormMessage />
+                              <FormMessage className="text-red-600 text-sm mt-1" />
                             </FormItem>
                           )}
                         />
@@ -940,17 +1120,20 @@ export function JobWizard() {
                         <FormField
                           control={form.control}
                           name="propertyAddressTwo"
-                          render={({ field }) => (
+                          render={({ field, fieldState }) => (
                             <FormItem>
-                              <FormLabel className="text-sm font-medium text-gray-700">Address Line 2</FormLabel>
+                              <FormLabel className={`text-sm font-medium ${fieldState.error ? 'text-red-600' : 'text-gray-700'}`}>
+                                Address Line 2
+                              </FormLabel>
                               <FormControl>
                                 <Input 
                                   placeholder="Apt, suite, etc. (optional)" 
-                                  className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-                                  {...field} 
+                                  className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                  {...field}
+                                  onBlur={() => form.trigger('propertyAddressTwo')}
                                 />
                               </FormControl>
-                              <FormMessage />
+                              <FormMessage className="text-red-600 text-sm mt-1" />
                             </FormItem>
                           )}
                         />
@@ -959,17 +1142,20 @@ export function JobWizard() {
                           <FormField
                             control={form.control}
                             name="propertyCity"
-                            render={({ field }) => (
+                            render={({ field, fieldState }) => (
                               <FormItem>
-                                <FormLabel className="text-sm font-medium text-gray-700">City *</FormLabel>
+                                <FormLabel className={`text-sm font-medium ${fieldState.error ? 'text-red-600' : 'text-gray-700'}`}>
+                                  City *
+                                </FormLabel>
                                 <FormControl>
                                   <Input 
                                     placeholder="Enter city" 
-                                    className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-                                    {...field} 
+                                    className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                    {...field}
+                                    onBlur={() => form.trigger('propertyCity')}
                                   />
                                 </FormControl>
-                                <FormMessage />
+                                <FormMessage className="text-red-600 text-sm mt-1" />
                               </FormItem>
                             )}
                           />
@@ -977,12 +1163,21 @@ export function JobWizard() {
                           <FormField
                             control={form.control}
                             name="propertyState"
-                            render={({ field }) => (
+                            render={({ field, fieldState }) => (
                               <FormItem>
-                                <FormLabel className="text-sm font-medium text-gray-700">State *</FormLabel>
-                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <FormLabel className={`text-sm font-medium ${fieldState.error ? 'text-red-600' : 'text-gray-700'}`}>
+                                  State *
+                                </FormLabel>
+                                <Select 
+                                  onValueChange={(value) => {
+                                    field.onChange(value);
+                                    // Trigger validation after change
+                                    setTimeout(() => form.trigger('propertyState'), 0);
+                                  }} 
+                                  defaultValue={field.value}
+                                >
                                   <FormControl>
-                                    <SelectTrigger className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500">
+                                    <SelectTrigger className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
                                       <SelectValue placeholder="Select state" />
                                     </SelectTrigger>
                                   </FormControl>
@@ -1039,7 +1234,7 @@ export function JobWizard() {
                                     <SelectItem value="WY">Wyoming</SelectItem>
                                   </SelectContent>
                                 </Select>
-                                <FormMessage />
+                                <FormMessage className="text-red-600 text-sm mt-1" />
                               </FormItem>
                             )}
                           />
@@ -1047,17 +1242,20 @@ export function JobWizard() {
                           <FormField
                             control={form.control}
                             name="propertyZipCode"
-                            render={({ field }) => (
+                            render={({ field, fieldState }) => (
                               <FormItem>
-                                <FormLabel className="text-sm font-medium text-gray-700">ZIP Code *</FormLabel>
+                                <FormLabel className={`text-sm font-medium ${fieldState.error ? 'text-red-600' : 'text-gray-700'}`}>
+                                  ZIP Code *
+                                </FormLabel>
                                 <FormControl>
                                   <Input 
                                     placeholder="Enter ZIP code" 
-                                    className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-                                    {...field} 
+                                    className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                    {...field}
+                                    onBlur={() => form.trigger('propertyZipCode')}
                                   />
                                 </FormControl>
-                                <FormMessage />
+                                <FormMessage className="text-red-600 text-sm mt-1" />
                               </FormItem>
                             )}
                           />
@@ -1095,20 +1293,37 @@ export function JobWizard() {
                       </Button>
                     </div>
 
-                    {signers.length === 0 ? (
-                                              <div className="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
-                          <UserIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                          <h3 className="text-lg font-medium text-gray-900 mb-2">No participants added yet</h3>
-                          <p className="text-gray-600 mb-6">Click "Add Participant" to add signers and witnesses</p>
-                          <Button 
-                            type="button" 
-                            onClick={handleAddSigner} 
-                            className="bg-blue-600 hover:bg-blue-700 text-white"
-                          >
-                            <Plus className="h-4 w-4 mr-2" />
-                            Add Your First Participant
-                          </Button>
+                    {/* Show validation warning if no participants */}
+                    {signers.length === 0 && (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                        <div className="flex items-start">
+                          <div className="flex-shrink-0">
+                            <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                          </div>
+                          <div className="ml-3">
+                            <h4 className="text-sm font-medium text-yellow-800">No Participants Added</h4>
+                            <p className="text-sm text-yellow-700 mt-1">
+                              Please add at least one participant (signer or witness) before proceeding to the next step.
+                            </p>
+                          </div>
                         </div>
+                      </div>
+                    )}
+
+                    {signers.length === 0 ? (
+                      <div className="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                        <UserIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">No participants added yet</h3>
+                        <p className="text-gray-600 mb-6">Click "Add Participant" to add signers and witnesses</p>
+                        <Button 
+                          type="button" 
+                          onClick={handleAddSigner} 
+                          className="bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add Your First Participant
+                        </Button>
+                      </div>
                     ) : (
                       <div className="space-y-6">
                         {signers.map((signer, index) => (
@@ -1141,30 +1356,47 @@ export function JobWizard() {
                             </CardHeader>
                             
                             <CardContent className="p-6">
-                              {/* Mode Selection */}
-                              <div className="mb-6">
-                                <Label className="text-sm font-medium text-gray-700 mb-3 block">Participant Type</Label>
-                                <RadioGroup
-                                  value={signerModes[index] || 'new'}
-                                  onValueChange={(value: 'existing' | 'new') => handleSignerModeChange(index, value)}
-                                  className="grid grid-cols-2 gap-4"
-                                >
-                                  <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                                    <RadioGroupItem value="existing" id={`existing-${index}`} />
+                              {/* Mode Selection - Title companies can only invite new users */}
+                              {currentUser?.role !== 'title_company' && (
+                                <div className="mb-6">
+                                  <Label className="text-sm font-medium text-gray-700 mb-3 block">Participant Type</Label>
+                                  <RadioGroup
+                                    value={signerModes[index] || 'new'}
+                                    onValueChange={(value: 'existing' | 'new') => handleSignerModeChange(index, value)}
+                                    className="grid grid-cols-2 gap-4"
+                                  >
+                                    <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                                      <RadioGroupItem value="existing" id={`existing-${index}`} />
+                                      <div>
+                                        <Label htmlFor={`existing-${index}`} className="font-medium text-gray-900">Existing User</Label>
+                                        <p className="text-xs text-gray-600">Select from registered users</p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                                      <RadioGroupItem value="new" id={`new-${index}`} />
+                                      <div>
+                                        <Label htmlFor={`new-${index}`} className="font-medium text-gray-900">New Participant</Label>
+                                        <p className="text-xs text-gray-600">Add new person details</p>
+                                      </div>
+                                    </div>
+                                  </RadioGroup>
+                                </div>
+                              )}
+
+                              {/* Title Company Info - Only new participants allowed */}
+                              {currentUser?.role === 'title_company' && (
+                                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                  <div className="flex items-center">
+                                    <AlertCircle className="w-5 h-5 text-blue-600 mr-2" />
                                     <div>
-                                      <Label htmlFor={`existing-${index}`} className="font-medium text-gray-900">Existing User</Label>
-                                      <p className="text-xs text-gray-600">Select from registered users</p>
+                                      <h4 className="text-sm font-medium text-blue-800">New Participant Only</h4>
+                                      <p className="text-xs text-blue-700 mt-1">
+                                        Title companies can only invite new users to join jobs. Please enter the participant's details below.
+                                      </p>
                                     </div>
                                   </div>
-                                  <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                                    <RadioGroupItem value="new" id={`new-${index}`} />
-                                    <div>
-                                      <Label htmlFor={`new-${index}`} className="font-medium text-gray-900">New Participant</Label>
-                                      <p className="text-xs text-gray-600">Add new person details</p>
-                                    </div>
-                                  </div>
-                                </RadioGroup>
-                              </div>
+                                </div>
+                              )}
 
                               {/* Existing User Selection */}
                               {signerModes[index] === 'existing' && (
@@ -1268,11 +1500,11 @@ export function JobWizard() {
                                       <SelectValue placeholder="Select role" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      <SelectItem value="borrower">Borrower (Signs documents)</SelectItem>
-                                      <SelectItem value="co-borrower">Co-Borrower (Signs documents)</SelectItem>
-                                      <SelectItem value="seller">Seller (Signs documents)</SelectItem>
-                                      <SelectItem value="buyer">Buyer (Signs documents)</SelectItem>
-                                      <SelectItem value="witness">Witness (Observes signing)</SelectItem>
+                                      {participantRoles.map((role: any) => (
+                                        <SelectItem key={role.id} value={role.name}>
+                                          {role.displayName}
+                                        </SelectItem>
+                                      ))}
                                     </SelectContent>
                                   </Select>
                                   {signerErrors[index]?.signerRole && (
@@ -1345,46 +1577,15 @@ export function JobWizard() {
                         <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
                           <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
                             <div className="w-2 h-6 bg-purple-500 rounded-full mr-3"></div>
-                            Appointment Details
+                            Your Available Times
                           </h3>
                           
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <FormField
-                              control={form.control}
-                              name="selectedDate"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel className="text-sm font-medium text-gray-700">Appointment Date</FormLabel>
-                                  <FormControl>
-                                    <Input
-                                      type="date"
-                                      {...field}
-                                      className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-                                    />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-
-                            <FormField
-                              control={form.control}
-                              name="selectedTime"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel className="text-sm font-medium text-gray-700">Appointment Time</FormLabel>
-                                  <FormControl>
-                                    <Input
-                                      type="time"
-                                      {...field}
-                                      className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-                                    />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          </div>
+                          <NotaryAvailabilitySelector
+                            notaryId={currentUser?.id || 0}
+                            selectedDate={form.watch('selectedDate')}
+                            selectedTime={form.watch('selectedTime')}
+                            onDateTimeSelect={handleNotaryDateTimeSelect}
+                          />
                         </div>
                       </div>
                     ) : (
@@ -1398,9 +1599,11 @@ export function JobWizard() {
                         <FormField
                           control={form.control}
                           name="notaryOption"
-                          render={({ field }) => (
+                          render={({ field, fieldState }) => (
                             <FormItem>
-                              <FormLabel className="text-sm font-medium text-gray-700 mb-4 block">Assignment Method</FormLabel>
+                              <FormLabel className={`text-sm font-medium ${fieldState.error ? 'text-red-600' : 'text-gray-700'} mb-4 block`}>
+                                Assignment Method
+                              </FormLabel>
                               <FormControl>
                                 <RadioGroup
                                   onValueChange={(value) => {
@@ -1415,7 +1618,7 @@ export function JobWizard() {
                                     }
                                   }}
                                   defaultValue={field.value}
-                                  className={`grid grid-cols-1 ${currentUser?.role === 'admin' ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-6`}
+                                  className={`grid grid-cols-1 ${currentUser?.role === 'admin' ? 'md:grid-cols-3' : currentUser?.role === 'title_company' ? 'md:grid-cols-2' : 'md:grid-cols-2'} gap-6`}
                                 >
                                   {/* Admin Self-Assignment Option */}
                                   {currentUser?.role === 'admin' && (
@@ -1434,19 +1637,24 @@ export function JobWizard() {
                                     </div>
                                   )}
 
-                                  <div className="relative">
-                                    <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-blue-200 transition-colors cursor-pointer">
-                                      <RadioGroupItem value="assign" id="assign" className="mt-1" />
-                                      <div className="flex-1">
-                                        <Label htmlFor="assign" className="text-lg font-semibold text-gray-900 cursor-pointer">Assign Specific Notary</Label>
-                                        <p className="text-sm text-gray-600 mt-1">Choose from available contractor notaries</p>
-                                        <div className="mt-3 flex items-center text-xs text-blue-600">
-                                          <CheckCircle className="w-4 h-4 mr-1" />
-                                          Direct selection control
+                                  {/* Manual Notary Assignment - Only for admins */}
+                                  {currentUser?.role === 'admin' && (
+                                    <div className="relative">
+                                      <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-blue-200 transition-colors cursor-pointer">
+                                        <RadioGroupItem value="assign" id="assign" className="mt-1" />
+                                        <div className="flex-1">
+                                          <Label htmlFor="assign" className="text-lg font-semibold text-gray-900 cursor-pointer">Assign Specific Notary</Label>
+                                          <p className="text-sm text-gray-600 mt-1">Choose from available contractor notaries</p>
+                                          <div className="mt-3 flex items-center text-xs text-blue-600">
+                                            <CheckCircle className="w-4 h-4 mr-1" />
+                                            Direct selection control
+                                          </div>
                                         </div>
                                       </div>
                                     </div>
-                                  </div>
+                                  )}
+
+                                  {/* Auto Assignment - Available to all */}
                                   <div className="relative">
                                     <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-blue-200 transition-colors cursor-pointer">
                                       <RadioGroupItem value="auto" id="auto" className="mt-1" />
@@ -1460,9 +1668,46 @@ export function JobWizard() {
                                       </div>
                                     </div>
                                   </div>
+
+                                  {/* Notary ID Code Assignment - Available to title companies and admins */}
+                                  {(currentUser?.role === 'admin' || currentUser?.role === 'title_company') && (
+                                    <div className="relative">
+                                      <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-orange-200 transition-colors cursor-pointer">
+                                        <RadioGroupItem value="id_code" id="id_code" className="mt-1" />
+                                        <div className="flex-1">
+                                          <Label htmlFor="id_code" className="text-lg font-semibold text-gray-900 cursor-pointer">Enter Notary ID Code</Label>
+                                          <p className="text-sm text-gray-600 mt-1">Assign a specific notary using their ID code</p>
+                                          <div className="mt-3 flex items-center text-xs text-orange-600">
+                                            <UserIcon className="w-4 h-4 mr-1" />
+                                            Direct assignment by code
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Title Company Notice - Security Update */}
+                                  {currentUser?.role === 'title_company' && (
+                                    <div className="col-span-full mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                      <div className="flex items-center">
+                                        <CheckCircle className="w-5 h-5 text-blue-600 mr-2" />
+                                        <div>
+                                          <h4 className="text-sm font-medium text-blue-800">Title Company Assignment Options</h4>
+                                          <p className="text-xs text-blue-700 mt-1">
+                                            For security, you can no longer browse notary lists. Use auto assignment (with preferred notary priority) or enter a specific notary's ID code for direct assignment.
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
                                 </RadioGroup>
                               </FormControl>
-                              <FormMessage />
+                              <FormMessage className="text-red-600 text-sm mt-1" />
+                              {currentUser?.role === 'title_company' && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  You can only create jobs for your own company
+                                </p>
+                              )}
                             </FormItem>
                           )}
                         />
@@ -1490,12 +1735,21 @@ export function JobWizard() {
                             <FormField
                               control={form.control}
                               name="selectedNotary"
-                              render={({ field }) => (
+                              render={({ field, fieldState }) => (
                                 <FormItem>
-                                  <FormLabel className="text-sm font-medium text-gray-700">Select Contractor Notary</FormLabel>
-                                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                  <FormLabel className={`text-sm font-medium ${fieldState.error ? 'text-red-600' : 'text-gray-700'}`}>
+                                    Select Contractor Notary
+                                  </FormLabel>
+                                  <Select 
+                                    onValueChange={(value) => {
+                                      field.onChange(value);
+                                      // Trigger validation after change
+                                      setTimeout(() => form.trigger('selectedNotary'), 0);
+                                    }} 
+                                    defaultValue={field.value}
+                                  >
                                     <FormControl>
-                                      <SelectTrigger className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 mt-2">
+                                      <SelectTrigger className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 mt-2 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
                                         <SelectValue placeholder="Choose a contractor notary" />
                                       </SelectTrigger>
                                     </FormControl>
@@ -1510,10 +1764,167 @@ export function JobWizard() {
                                       ))}
                                     </SelectContent>
                                   </Select>
-                                  <FormMessage />
+                                  <FormMessage className="text-red-600 text-sm mt-1" />
                                 </FormItem>
                               )}
                             />
+                          </div>
+                        )}
+
+                        {/* Notary ID Code Input - for title companies and admins */}
+                        {form.watch('notaryOption') === 'id_code' && (
+                          <div className="mt-6">
+                            <FormField
+                              control={form.control}
+                              name="notaryIdCode"
+                              render={({ field, fieldState }) => (
+                                <FormItem>
+                                  <FormLabel className={`text-sm font-medium ${fieldState.error ? 'text-red-600' : 'text-gray-700'}`}>
+                                    Enter Notary ID Code
+                                  </FormLabel>
+                                  <FormControl>
+                                    <div className="relative">
+                                      <Input
+                                        {...field}
+                                        placeholder="CY0123"
+                                        className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 mt-2 uppercase ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                        onChange={(e) => {
+                                          const value = e.target.value.toUpperCase();
+                                          field.onChange(value);
+                                          lookupNotaryByCode(value);
+                                        }}
+                                        maxLength={6}
+                                      />
+                                      {notaryIdCodeLookup.isLoading && (
+                                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2 mt-1">
+                                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </FormControl>
+                                  <div className="mt-2 text-xs text-gray-500">
+                                    Format: CY#### (e.g., CY0123)
+                                  </div>
+                                  <FormMessage className="text-red-600 text-sm mt-1" />
+                                </FormItem>
+                              )}
+                            />
+
+                            {/* Lookup Results */}
+                            {form.watch('notaryIdCode') && (
+                              <div className="mt-4">
+                                {notaryIdCodeLookup.error && (
+                                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                                    <div className="flex items-center">
+                                      <AlertCircle className="w-5 h-5 text-red-600 mr-2" />
+                                      <div>
+                                        <h4 className="text-sm font-medium text-red-800">Lookup Failed</h4>
+                                        <p className="text-xs text-red-700 mt-1">{notaryIdCodeLookup.error}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {notaryIdCodeLookup.result && (
+                                  <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                                    <div className="flex items-center">
+                                      <CheckCircle className="w-5 h-5 text-green-600 mr-3" />
+                                      <div className="flex-1">
+                                        <h4 className="text-sm font-medium text-green-800">
+                                          Notary Found: {notaryIdCodeLookup.result.firstName} {notaryIdCodeLookup.result.lastName}
+                                        </h4>
+                                        <p className="text-xs text-green-700 mt-1">
+                                          Code: {notaryIdCodeLookup.result.notaryIdCode}
+                                        </p>
+                                        <div className="flex items-center space-x-4 mt-2">
+                                          {notaryIdCodeLookup.result.isNotarySigningAgent && (
+                                            <Badge variant="outline" className="text-xs border-green-300 text-green-700">
+                                              NSA Certified
+                                            </Badge>
+                                          )}
+                                          {notaryIdCodeLookup.result.isSpanishSpeaking && (
+                                            <Badge variant="outline" className="text-xs border-blue-300 text-blue-700">
+                                              Spanish Speaking
+                                            </Badge>
+                                          )}
+                                          <Badge variant="outline" className="text-xs border-gray-300 text-gray-600">
+                                            {notaryIdCodeLookup.result.isActive ? 'Active' : 'Inactive'}
+                                          </Badge>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Availability Selector for Manual Assignment */}
+                        {form.watch('notaryOption') === 'assign' && form.watch('selectedNotary') && (
+                          <div className="mt-6">
+                            <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
+                              <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                                <div className="w-2 h-6 bg-blue-500 rounded-full mr-3"></div>
+                                Available Appointment Times
+                                <Badge variant="outline" className="ml-3">
+                                  {(() => {
+                                    const selectedNotary = notaries.find(n => n.id.toString() === form.watch('selectedNotary'));
+                                    return selectedNotary ? selectedNotary.fullName : 'Selected Notary';
+                                  })()}
+                                </Badge>
+                              </h3>
+                              <NotaryAvailabilitySelector
+                                notaryId={parseInt(form.watch('selectedNotary') || '0')}
+                                selectedDate={form.watch('selectedDate')}
+                                selectedTime={form.watch('selectedTime')}
+                                onDateTimeSelect={handleNotaryDateTimeSelect}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Availability Selector for ID Code Assignment */}
+                        {form.watch('notaryOption') === 'id_code' && notaryIdCodeLookup.result && notaryIdCodeLookup.result.id && (
+                          <div className="mt-6">
+                            <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
+                              <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                                <div className="w-2 h-6 bg-orange-500 rounded-full mr-3"></div>
+                                Available Appointment Times
+                                <Badge variant="outline" className="ml-3">
+                                  {notaryIdCodeLookup.result.firstName} {notaryIdCodeLookup.result.lastName}
+                                </Badge>
+                              </h3>
+                              <NotaryAvailabilitySelector
+                                notaryId={notaryIdCodeLookup.result.id}
+                                selectedDate={form.watch('selectedDate')}
+                                selectedTime={form.watch('selectedTime')}
+                                onDateTimeSelect={handleNotaryDateTimeSelect}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Self-Assignment Date/Time for Admin */}
+                        {form.watch('notaryOption') === 'admin_self' && (
+                          <div className="mt-6">
+                            <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
+                              <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                                <div className="w-2 h-6 bg-purple-500 rounded-full mr-3"></div>
+                                Your Available Times
+                                <Badge variant="outline" className="ml-3">
+                                  {currentUser?.firstName && currentUser?.lastName 
+                                    ? `${currentUser.firstName} ${currentUser.lastName}` 
+                                    : currentUser?.username || 'Admin'}
+                                </Badge>
+                              </h3>
+                              <NotaryAvailabilitySelector
+                                notaryId={currentUser?.id || 0}
+                                selectedDate={form.watch('selectedDate')}
+                                selectedTime={form.watch('selectedTime')}
+                                onDateTimeSelect={handleNotaryDateTimeSelect}
+                              />
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1593,8 +2004,25 @@ export function JobWizard() {
                         PDF, DOC, DOCX supported • Max 10MB each
                       </div>
                     </div>
+
+                    {/* Show validation warning if no documents */}
+                    {documents.length === 0 && (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                        <div className="flex items-start">
+                          <div className="flex-shrink-0">
+                            <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                          </div>
+                          <div className="ml-3">
+                            <h4 className="text-sm font-medium text-yellow-800">No Documents Uploaded</h4>
+                            <p className="text-sm text-yellow-700 mt-1">
+                              Please upload at least one document that needs to be notarized before proceeding.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     
-                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-blue-400 transition-colors">
+                    <div className={`border-2 border-dashed rounded-xl p-12 text-center hover:border-blue-400 transition-colors ${documents.length === 0 ? 'border-yellow-300 bg-yellow-50' : 'border-gray-300'}`}>
                       <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
                         <Upload className="h-8 w-8 text-blue-600" />
                       </div>
@@ -1825,7 +2253,11 @@ export function JobWizard() {
                   {currentStep < steps.length ? (
                     <Button 
                       type="button" 
-                      onClick={handleNext}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleNext();
+                      }}
                       className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl transition-shadow"
                     >
                       Next Step

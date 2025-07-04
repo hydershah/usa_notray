@@ -2,6 +2,7 @@ import { db } from "../server/db";
 import { signers } from "../shared/schema";
 import crypto from "crypto";
 
+
 async function repopulateTestSigners() {
   console.log("Repopulating test signers data...");
   
@@ -45,7 +46,7 @@ async function repopulateTestSigners() {
     console.log("\n📧 Test invitation links:");
     const allSigners = await db.select().from(signers);
     allSigners.forEach(signer => {
-      console.log(`${signer.signerName}: http://localhost:3000/sign/${signer.invitationToken}`);
+              console.log(`${signer.signerName}: ${process.env.CLIENT_URL || 'http://localhost:5173'}/sign/${signer.invitationToken}`);
     });
     
   } catch (error) {

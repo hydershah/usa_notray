@@ -22,6 +22,7 @@ import { Download, FileText, User, Video, Tag, Eye, Upload, Edit3, Save, X, Tras
 import { useLocation } from 'wouter';
 import { useToast } from '@/hooks/use-toast';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
+import { useQuery } from '@tanstack/react-query';
 
 interface JobDetailsModalProps {
   job: any;
@@ -45,6 +46,14 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
   const [notarySearchCode, setNotarySearchCode] = useState<string>('');
   const [loadingNotaries, setLoadingNotaries] = useState(false);
   const [changingNotary, setChangingNotary] = useState(false);
+  
+  // Get current user data to check permissions
+  const { data: currentUser } = useQuery<any>({
+    queryKey: ['/api/auth/me'],
+  });
+  
+  // Check if user can change notaries (only admins)
+  const canChangeNotary = currentUser && (currentUser.role === 'admin');
   
   // Confirmation dialog state
   const [confirmationDialog, setConfirmationDialog] = useState<{
@@ -328,12 +337,27 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
       if (response.ok) {
         const notaries = await response.json();
         setAvailableNotaries(notaries);
+      } else if (response.status === 403) {
+        // Handle security restriction for title companies
+        const errorData = await response.json();
+        toast({
+          variant: "destructive",
+          title: "Access Restricted",
+          description: errorData.message || "You cannot browse notary lists. Please contact an administrator for notary changes.",
+        });
+        setAvailableNotaries([]);
+        setIsChangingNotary(false);
       } else {
         console.warn('Failed to load available notaries');
         setAvailableNotaries([]);
       }
     } catch (error) {
       console.error('Error loading available notaries:', error);
+      toast({
+        variant: "destructive",
+        title: "Error Loading Notaries",
+        description: "Unable to load notary list. Please try again or contact support.",
+      });
       setAvailableNotaries([]);
     } finally {
       setLoadingNotaries(false);
@@ -510,7 +534,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
               <div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Notary:</span>
-                  {job.selectedNotary && !isChangingNotary && (
+                  {job.selectedNotary && !isChangingNotary && canChangeNotary && (
                     <Button
                       variant="ghost"
                       size="sm"

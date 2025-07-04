@@ -19,7 +19,7 @@ export function useNotaryProfileStatus() {
 
   useEffect(() => {
     const checkProfileStatus = async () => {
-      if (!user || user.role !== 'notary') {
+      if (!user || (!user.isNotary && user.role !== 'notary')) {
         setIsLoading(false);
         return;
       }

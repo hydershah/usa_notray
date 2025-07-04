@@ -12,7 +12,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { 
   FileText, 
   Upload, 
@@ -23,42 +22,58 @@ import {
   CheckCircle,
   AlertTriangle,
   Globe,
-  FileUp
+  FileUp,
+  Save,
+  User
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
+// Updated schema with all optional fields including basic user information
 const notaryProfileSchema = z.object({
+  // Basic Personal Information
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  fullName: z.string().optional(),
+  phoneNumber: z.string().optional(),
+  
+  // Personal Address Information  
+  address1: z.string().optional(),
+  address2: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  zipCode: z.string().optional(),
+  
   // Name on Commission
-  nameOnCommission: z.string().min(1, 'Name on commission is required'),
+  nameOnCommission: z.string().optional(),
   
   // Commission Address
-  commissionAddress1: z.string().min(1, 'Commission address is required'),
+  commissionAddress1: z.string().optional(),
   commissionAddress2: z.string().optional(),
-  commissionCity: z.string().min(1, 'Commission city is required'),
-  commissionState: z.string().min(2, 'Commission state is required').max(2, 'Use 2-letter state code'),
-  commissionZipCode: z.string().regex(/^\d{5}(-\d{4})?$/, 'Invalid ZIP code format'),
-  commissionCounty: z.string().min(1, 'Commission county/parish is required'),
+  commissionCity: z.string().optional(),
+  commissionState: z.string().optional(),
+  commissionZipCode: z.string().optional(),
+  commissionCounty: z.string().optional(),
   
   // Commission Details
-  commissionNumber: z.string().min(1, 'Commission number is required'),
-  commissionExpiration: z.string().min(1, 'Commission expiration date is required'),
+  commissionNumber: z.string().optional(),
+  commissionExpiration: z.string().optional(),
   
   // E&O Insurance
-  eoInsuranceCompany: z.string().min(1, 'E&O insurance company is required'),
-  eoInsuranceAmount: z.number().min(1, 'E&O insurance amount is required'),
-  eoInsuranceExpiration: z.string().min(1, 'E&O insurance expiration is required'),
+  eoInsuranceCompany: z.string().optional(),
+  eoInsuranceAmount: z.number().optional(),
+  eoInsuranceExpiration: z.string().optional(),
   
   // Public Certificate
-  publicCertificateExpiration: z.string().min(1, 'Public certificate expiration is required'),
-  publicCertificatePassword: z.string().min(1, 'Public certificate password is required'),
+  publicCertificateExpiration: z.string().optional(),
+  publicCertificatePassword: z.string().optional(),
   
   // Bond Information
-  bondCompanyName: z.string().min(1, 'Bond company name is required'),
-  bondAmount: z.number().min(1, 'Bond amount is required'),
-  bondExpiration: z.string().min(1, 'Bond expiration date is required'),
+  bondCompanyName: z.string().optional(),
+  bondAmount: z.number().optional(),
+  bondExpiration: z.string().optional(),
   
   // Signing Agent Certification
-  signingAgentCertified: z.boolean(),
+  signingAgentCertified: z.boolean().optional(),
   signingAgentExpirationDate: z.string().optional(),
   
   // Foreign Languages
@@ -95,6 +110,7 @@ interface FileUploadStatus {
 export function NotaryProfileCompletion() {
   const [, setLocation] = useLocation();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [uploadedFiles, setUploadedFiles] = useState<FileUploadStatus>({
     notaryCommissionFile: null,
     eoInsuranceFile: null,
@@ -103,12 +119,20 @@ export function NotaryProfileCompletion() {
     signingAgentFile: null,
   });
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
-  const [completionProgress, setCompletionProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const form = useForm<NotaryProfileFormData>({
     resolver: zodResolver(notaryProfileSchema),
     defaultValues: {
+      firstName: '',
+      lastName: '',
+      fullName: '',
+      phoneNumber: '',
+      address1: '',
+      address2: '',
+      city: '',
+      state: '',
+      zipCode: '',
       nameOnCommission: '',
       commissionAddress1: '',
       commissionAddress2: '',
@@ -132,30 +156,80 @@ export function NotaryProfileCompletion() {
     },
   });
 
-  // Calculate completion progress
+  // Load existing profile data on component mount
   useEffect(() => {
+    loadExistingProfile();
+  }, []);
+
+  const loadExistingProfile = async () => {
     try {
-      const watchedValues = form.watch();
-      const totalFields = Object.keys(watchedValues).length;
-      const completedFields = Object.values(watchedValues).filter(value => {
-        if (typeof value === 'string') return value.trim() !== '';
-        if (typeof value === 'number') return value > 0;
-        if (typeof value === 'boolean') return true; // Booleans are always "complete"
-        if (Array.isArray(value)) return true; // Arrays are always "complete"
-        return false;
-      }).length;
-      
-      // Add file uploads to completion calculation
-      const uploadedFileCount = Object.values(uploadedFiles).filter(file => file !== null).length;
-      const requiredFiles = 4; // Commission, E&O, Certificate, Bond (Signing Agent is optional)
-      
-      const progress = Math.round(((completedFields + uploadedFileCount) / (totalFields + requiredFiles)) * 100);
-      setCompletionProgress(Math.min(progress, 100));
-    } catch (err) {
-      console.error('Error calculating progress:', err);
-      setCompletionProgress(0);
+      setIsLoading(true);
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.log('No token found, skipping profile load');
+        setIsLoading(false);
+        return;
+      }
+
+      const response = await fetch('/api/notary/profile/comprehensive', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const profileData = await response.json();
+        console.log('Loaded existing profile:', profileData);
+
+        // Pre-populate form with existing data
+        const formValues = {
+          firstName: profileData.firstName || '',
+          lastName: profileData.lastName || '',
+          fullName: profileData.fullName || '',
+          phoneNumber: profileData.phoneNumber || '',
+          address1: profileData.address1 || '',
+          address2: profileData.address2 || '',
+          city: profileData.city || '',
+          state: profileData.state || '',
+          zipCode: profileData.zipCode || '',
+          nameOnCommission: profileData.nameOnCommission || '',
+          commissionAddress1: profileData.commissionAddress1 || '',
+          commissionAddress2: profileData.commissionAddress2 || '',
+          commissionCity: profileData.commissionCity || '',
+          commissionState: profileData.commissionState || '',
+          commissionZipCode: profileData.commissionZipCode || '',
+          commissionCounty: profileData.commissionCounty || '',
+          commissionNumber: profileData.commissionNumber || '',
+          commissionExpiration: profileData.commissionExpiration || '',
+          eoInsuranceCompany: profileData.eoInsuranceCompany || '',
+          eoInsuranceAmount: profileData.eoInsuranceAmount || 0,
+          eoInsuranceExpiration: profileData.eoInsuranceExpiration || '',
+          publicCertificateExpiration: profileData.publicCertificateExpiration || '',
+          publicCertificatePassword: '', // Always empty for security
+          bondCompanyName: profileData.bondCompanyName || '',
+          bondAmount: profileData.bondAmount || 0,
+          bondExpiration: profileData.bondExpiration || '',
+          signingAgentCertified: profileData.signingAgentCertified || false,
+          signingAgentExpirationDate: profileData.signingAgentExpirationDate || '',
+          foreignLanguages: profileData.foreignLanguages || [],
+        };
+
+        // Reset form with loaded data
+        form.reset(formValues);
+        
+        // Set selected languages
+        setSelectedLanguages(profileData.foreignLanguages || []);
+
+        console.log('Form pre-populated with existing data');
+      } else {
+        console.log('No existing profile found or error loading profile');
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    } finally {
+      setIsLoading(false);
     }
-  }, [form.watch(), uploadedFiles]);
+  };
 
   const handleFileUpload = (fileType: keyof FileUploadStatus, file: File) => {
     try {
@@ -207,60 +281,65 @@ export function NotaryProfileCompletion() {
       setIsSubmitting(true);
       setError(null);
 
-      // Check required files
-      const requiredFiles = ['notaryCommissionFile', 'eoInsuranceFile', 'publicCertificateFile', 'bondFile'] as const;
-      const missingFiles = requiredFiles.filter(fileType => !uploadedFiles[fileType]);
-      
-      if (missingFiles.length > 0) {
-        toast({
-          title: 'Missing required files',
-          description: 'Please upload all required documents.',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      // Upload files first
-      const formData = new FormData();
-      Object.entries(uploadedFiles).forEach(([key, file]) => {
-        if (file) {
-          formData.append(key, file);
-        }
-      });
+      console.log('Starting form submission...', data);
 
       const token = localStorage.getItem('token');
       if (!token) {
         throw new Error('Authentication token not found');
       }
 
-      const fileUploadResponse = await fetch('/api/notary/profile/upload-documents', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
+      let fileUploadResult: any = {};
 
-      if (!fileUploadResponse.ok) {
-        const errorText = await fileUploadResponse.text();
-        throw new Error(`Failed to upload documents: ${fileUploadResponse.status} ${errorText}`);
+      // Only upload files if any are provided
+      const hasFiles = Object.values(uploadedFiles).some(file => file !== null);
+      
+      if (hasFiles) {
+        console.log('Uploading files...');
+        const formData = new FormData();
+        Object.entries(uploadedFiles).forEach(([key, file]) => {
+          if (file) {
+            formData.append(key, file);
+          }
+        });
+
+        const fileUploadResponse = await fetch('/api/notary/profile/upload-documents', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        });
+
+        if (!fileUploadResponse.ok) {
+          const errorText = await fileUploadResponse.text();
+          console.warn(`File upload failed: ${fileUploadResponse.status} ${errorText}`);
+          // Continue with submission even if file upload fails
+          toast({
+            title: 'File upload warning',
+            description: 'Some files could not be uploaded, but your profile will be saved.',
+            variant: 'default',
+          });
+        } else {
+          fileUploadResult = await fileUploadResponse.json();
+          console.log('File upload successful:', fileUploadResult);
+        }
       }
 
-      const fileUploadResult = await fileUploadResponse.json();
-
-      // Submit profile data with file paths
+      // Submit profile data with optional file paths
       const profileData = {
         ...data,
-        eoInsuranceAmount: data.eoInsuranceAmount * 100, // Convert to cents
-        bondAmount: data.bondAmount * 100, // Convert to cents
+        eoInsuranceAmount: data.eoInsuranceAmount ? data.eoInsuranceAmount * 100 : undefined, // Convert to cents if provided
+        bondAmount: data.bondAmount ? data.bondAmount * 100 : undefined, // Convert to cents if provided
         foreignLanguages: selectedLanguages,
-        // Add file paths from upload response
-        notaryCommissionFile: fileUploadResult.notaryCommissionFile,
-        eoInsuranceFile: fileUploadResult.eoInsuranceFile,
-        publicCertificateFile: fileUploadResult.publicCertificateFile,
-        bondFile: fileUploadResult.bondFile,
-        signingAgentFile: fileUploadResult.signingAgentFile,
+        // Add file paths from upload response if available
+        notaryCommissionFile: fileUploadResult.notaryCommissionFile || null,
+        eoInsuranceFile: fileUploadResult.eoInsuranceFile || null,
+        publicCertificateFile: fileUploadResult.publicCertificateFile || null,
+        bondFile: fileUploadResult.bondFile || null,
+        signingAgentFile: fileUploadResult.signingAgentFile || null,
       };
+
+      console.log('Submitting profile data...', profileData);
 
       const response = await fetch('/api/notary/profile/complete', {
         method: 'POST',
@@ -273,16 +352,24 @@ export function NotaryProfileCompletion() {
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('Profile submission failed:', response.status, errorText);
         throw new Error(`Failed to save profile: ${response.status} ${errorText}`);
       }
 
+      const result = await response.json();
+      console.log('Profile submission successful:', result);
+
       toast({
-        title: 'Profile completed successfully!',
-        description: 'Your profile has been submitted for admin approval.',
+        title: 'Profile saved successfully!',
+        description: 'Your notary profile has been updated. Redirecting to your profile page...',
+        duration: 3000,
       });
 
-      // Redirect to dashboard
-      setLocation('/dashboard');
+      // Add a small delay to let the user see the success message
+      setTimeout(() => {
+        console.log('Redirecting to profile page...');
+        setLocation('/profile');
+      }, 1500);
 
     } catch (error) {
       console.error('Profile completion error:', error);
@@ -290,7 +377,7 @@ export function NotaryProfileCompletion() {
       setError(errorMessage);
       toast({
         title: 'Error',
-        description: 'Failed to complete profile. Please try again.',
+        description: 'Failed to save profile. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -301,20 +388,17 @@ export function NotaryProfileCompletion() {
   const FileUploadCard = ({ 
     title, 
     fileType, 
-    required = true,
     description 
   }: { 
     title: string; 
     fileType: keyof FileUploadStatus; 
-    required?: boolean;
     description: string;
   }) => (
-    <Card className="border-dashed">
+    <Card className="border-dashed hover:border-blue-300 transition-colors duration-200">
       <CardHeader className="pb-4">
         <CardTitle className="text-sm flex items-center gap-2">
-          <FileUp className="h-4 w-4" />
+          <FileUp className="h-4 w-4 text-blue-600" />
           {title}
-          {required && <span className="text-red-500">*</span>}
         </CardTitle>
         <CardDescription className="text-xs">{description}</CardDescription>
       </CardHeader>
@@ -327,7 +411,7 @@ export function NotaryProfileCompletion() {
               const file = e.target.files?.[0];
               if (file) handleFileUpload(fileType, file);
             }}
-            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-colors duration-200"
           />
           {uploadedFiles[fileType] && (
             <div className="flex items-center gap-2 text-sm text-green-600">
@@ -341,148 +425,144 @@ export function NotaryProfileCompletion() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="container mx-auto px-4 max-w-4xl">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Complete Your Notary Profile</h1>
-          <p className="text-gray-600 mb-4">
-            Please complete all required fields to activate your notary account
-          </p>
-          <div className="max-w-md mx-auto">
-            <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
-              <span>Completion Progress</span>
-              <span>{completionProgress}%</span>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Enhanced Header */}
+        <div className="relative mb-8">
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-3xl opacity-90"></div>
+          <div className="relative bg-white/10 backdrop-blur-sm rounded-3xl p-8 shadow-2xl border border-white/20">
+            <div className="text-center text-white">
+              <div className="w-16 h-16 bg-gradient-to-br from-white/20 to-white/10 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg ring-4 ring-white/20">
+                <User className="w-8 h-8" />
+              </div>
+              <h1 className="text-3xl font-bold mb-2">Complete Your Notary Profile</h1>
+              <p className="text-white/80 text-lg">
+                Fill out any information you'd like to provide. All fields are optional and can be completed later.
+              </p>
             </div>
-            <Progress value={completionProgress} className="h-2" />
           </div>
-          
-          {error && (
-            <Alert className="mt-6 border-red-200 bg-red-50">
-              <AlertTriangle className="h-4 w-4 text-red-600" />
-              <AlertDescription className="text-red-800">
-                <strong>Error:</strong> {error}
-              </AlertDescription>
-            </Alert>
-          )}
         </div>
 
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-          {/* Commission Information */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Shield className="h-5 w-5" />
-                Commission Information
+        {error && (
+          <Alert className="mb-6 border-red-200 bg-red-50">
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-800">
+              <strong>Error:</strong> {error}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {isLoading ? (
+          <div className="flex justify-center items-center py-12">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading your profile...</p>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+            {/* Basic Personal Information */}
+          <Card className="border-2 border-gray-100 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50">
+              <CardTitle className="flex items-center gap-3 text-xl">
+                <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center">
+                  <User className="h-5 w-5 text-white" />
+                </div>
+                Basic Personal Information
               </CardTitle>
               <CardDescription>
-                Provide your notary commission details exactly as they appear on your commission certificate
+                Provide your basic personal information
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-6 p-6">
               <div>
-                <Label htmlFor="nameOnCommission">Name on Commission *</Label>
+                <Label htmlFor="firstName">First Name</Label>
                 <Input
-                  id="nameOnCommission"
-                  {...form.register('nameOnCommission')}
-                  placeholder="Full name as it appears on commission"
+                  id="firstName"
+                  {...form.register('firstName')}
+                  placeholder="Your first name"
+                  className="mt-1 h-11"
                 />
-                {form.formState.errors.nameOnCommission && (
-                  <p className="text-sm text-red-600 mt-1">
-                    {form.formState.errors.nameOnCommission.message}
-                  </p>
-                )}
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="commissionNumber">Commission Number *</Label>
-                  <Input
-                    id="commissionNumber"
-                    {...form.register('commissionNumber')}
-                    placeholder="Commission number"
-                  />
-                  {form.formState.errors.commissionNumber && (
-                    <p className="text-sm text-red-600 mt-1">
-                      {form.formState.errors.commissionNumber.message}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <Label htmlFor="commissionExpiration">Commission Expiration Date *</Label>
-                  <Input
-                    id="commissionExpiration"
-                    type="date"
-                    {...form.register('commissionExpiration')}
-                  />
-                  {form.formState.errors.commissionExpiration && (
-                    <p className="text-sm text-red-600 mt-1">
-                      {form.formState.errors.commissionExpiration.message}
-                    </p>
-                  )}
-                </div>
+              <div>
+                <Label htmlFor="lastName">Last Name</Label>
+                <Input
+                  id="lastName"
+                  {...form.register('lastName')}
+                  placeholder="Your last name"
+                  className="mt-1 h-11"
+                />
+              </div>
+              <div>
+                <Label htmlFor="fullName">Full Name (as it appears on commission)</Label>
+                <Input
+                  id="fullName"
+                  {...form.register('fullName')}
+                  placeholder="Full name as it appears on commission (optional)"
+                  className="mt-1 h-11"
+                />
+              </div>
+              <div>
+                <Label htmlFor="phoneNumber">Phone Number</Label>
+                <Input
+                  id="phoneNumber"
+                  {...form.register('phoneNumber')}
+                  placeholder="Your phone number (optional)"
+                  className="mt-1 h-11"
+                />
               </div>
             </CardContent>
           </Card>
 
-          {/* Commission Address */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MapPin className="h-5 w-5" />
-                Commission Address
+          {/* Personal Address */}
+          <Card className="border-2 border-gray-100 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50">
+              <CardTitle className="flex items-center gap-3 text-xl">
+                <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center">
+                  <MapPin className="h-5 w-5 text-white" />
+                </div>
+                Personal Address
               </CardTitle>
               <CardDescription>
-                Address associated with your notary commission
+                Your current residential address (optional)
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 p-6">
               <div>
-                <Label htmlFor="commissionAddress1">Address Line 1 *</Label>
+                <Label htmlFor="address1">Address Line 1</Label>
                 <Input
-                  id="commissionAddress1"
-                  {...form.register('commissionAddress1')}
-                  placeholder="Street address"
-                />
-                {form.formState.errors.commissionAddress1 && (
-                  <p className="text-sm text-red-600 mt-1">
-                    {form.formState.errors.commissionAddress1.message}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <Label htmlFor="commissionAddress2">Address Line 2</Label>
-                <Input
-                  id="commissionAddress2"
-                  {...form.register('commissionAddress2')}
-                  placeholder="Apartment, suite, etc."
+                  id="address1"
+                  {...form.register('address1')}
+                  placeholder="Street address (optional)"
+                  className="mt-1 h-11"
                 />
               </div>
-
+              <div>
+                <Label htmlFor="address2">Address Line 2</Label>
+                <Input
+                  id="address2"
+                  {...form.register('address2')}
+                  placeholder="Apartment, suite, etc. (optional)"
+                  className="mt-1 h-11"
+                />
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="md:col-span-2">
-                  <Label htmlFor="commissionCity">City *</Label>
+                  <Label htmlFor="city">City</Label>
                   <Input
-                    id="commissionCity"
-                    {...form.register('commissionCity')}
-                    placeholder="City"
+                    id="city"
+                    {...form.register('city')}
+                    placeholder="City (optional)"
+                    className="mt-1 h-11"
                   />
-                  {form.formState.errors.commissionCity && (
-                    <p className="text-sm text-red-600 mt-1">
-                      {form.formState.errors.commissionCity.message}
-                    </p>
-                  )}
                 </div>
-
                 <div>
-                  <Label htmlFor="commissionState">State *</Label>
+                  <Label htmlFor="state">State</Label>
                   <Select
-                    value={form.watch('commissionState')}
-                    onValueChange={(value) => form.setValue('commissionState', value)}
+                    value={form.watch('state') || ''}
+                    onValueChange={(value) => form.setValue('state', value)}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="mt-1 h-11">
                       <SelectValue placeholder="State" />
                     </SelectTrigger>
                     <SelectContent>
@@ -493,150 +573,239 @@ export function NotaryProfileCompletion() {
                       ))}
                     </SelectContent>
                   </Select>
-                  {form.formState.errors.commissionState && (
-                    <p className="text-sm text-red-600 mt-1">
-                      {form.formState.errors.commissionState.message}
-                    </p>
-                  )}
+                </div>
+                <div>
+                  <Label htmlFor="zipCode">ZIP Code</Label>
+                  <Input
+                    id="zipCode"
+                    {...form.register('zipCode')}
+                    placeholder="ZIP Code (optional)"
+                    className="mt-1 h-11"
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Commission Information */}
+          <Card className="border-2 border-gray-100 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50">
+              <CardTitle className="flex items-center gap-3 text-xl">
+                <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center">
+                  <Shield className="h-5 w-5 text-white" />
+                </div>
+                Commission Information
+              </CardTitle>
+              <CardDescription>
+                Provide your notary commission details if available
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6 p-6">
+              <div>
+                <Label htmlFor="nameOnCommission">Name on Commission</Label>
+                <Input
+                  id="nameOnCommission"
+                  {...form.register('nameOnCommission')}
+                  placeholder="Full name as it appears on commission (optional)"
+                  className="mt-1 h-11"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="commissionNumber">Commission Number</Label>
+                  <Input
+                    id="commissionNumber"
+                    {...form.register('commissionNumber')}
+                    placeholder="Commission number (optional)"
+                    className="mt-1 h-11"
+                  />
                 </div>
 
                 <div>
-                  <Label htmlFor="commissionZipCode">ZIP Code *</Label>
+                  <Label htmlFor="commissionExpiration">Commission Expiration Date</Label>
+                  <Input
+                    id="commissionExpiration"
+                    type="date"
+                    {...form.register('commissionExpiration')}
+                    className="mt-1 h-11"
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Commission Address */}
+          <Card className="border-2 border-gray-100 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-yellow-50 to-orange-50">
+              <CardTitle className="flex items-center gap-3 text-xl">
+                <div className="w-10 h-10 bg-yellow-500 rounded-xl flex items-center justify-center">
+                  <FileText className="h-5 w-5 text-white" />
+                </div>
+                Commission Address
+              </CardTitle>
+              <CardDescription>
+                Address associated with your notary commission (optional)
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 p-6">
+              <div>
+                <Label htmlFor="commissionAddress1">Address Line 1</Label>
+                <Input
+                  id="commissionAddress1"
+                  {...form.register('commissionAddress1')}
+                  placeholder="Street address (optional)"
+                  className="mt-1 h-11"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="commissionAddress2">Address Line 2</Label>
+                <Input
+                  id="commissionAddress2"
+                  {...form.register('commissionAddress2')}
+                  placeholder="Apartment, suite, etc. (optional)"
+                  className="mt-1 h-11"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="md:col-span-2">
+                  <Label htmlFor="commissionCity">City</Label>
+                  <Input
+                    id="commissionCity"
+                    {...form.register('commissionCity')}
+                    placeholder="City (optional)"
+                    className="mt-1 h-11"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="commissionState">State</Label>
+                  <Select
+                    value={form.watch('commissionState') || ''}
+                    onValueChange={(value) => form.setValue('commissionState', value)}
+                  >
+                    <SelectTrigger className="mt-1 h-11">
+                      <SelectValue placeholder="State" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {US_STATES.map((state) => (
+                        <SelectItem key={state} value={state}>
+                          {state}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="commissionZipCode">ZIP Code</Label>
                   <Input
                     id="commissionZipCode"
                     {...form.register('commissionZipCode')}
-                    placeholder="ZIP Code"
+                    placeholder="ZIP Code (optional)"
+                    className="mt-1 h-11"
                   />
-                  {form.formState.errors.commissionZipCode && (
-                    <p className="text-sm text-red-600 mt-1">
-                      {form.formState.errors.commissionZipCode.message}
-                    </p>
-                  )}
                 </div>
               </div>
 
               <div>
-                <Label htmlFor="commissionCounty">County/Parish *</Label>
+                <Label htmlFor="commissionCounty">County/Parish</Label>
                 <Input
                   id="commissionCounty"
                   {...form.register('commissionCounty')}
-                  placeholder="County or Parish"
+                  placeholder="County or Parish (optional)"
+                  className="mt-1 h-11"
                 />
-                {form.formState.errors.commissionCounty && (
-                  <p className="text-sm text-red-600 mt-1">
-                    {form.formState.errors.commissionCounty.message}
-                  </p>
-                )}
               </div>
             </CardContent>
           </Card>
 
           {/* Insurance & Bond Information */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5" />
+          <Card className="border-2 border-gray-100 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-orange-50 to-yellow-50">
+              <CardTitle className="flex items-center gap-3 text-xl">
+                <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center">
+                  <DollarSign className="h-5 w-5 text-white" />
+                </div>
                 Insurance & Bond Information
               </CardTitle>
               <CardDescription>
-                Errors & Omissions Insurance and Bond details
+                E&O Insurance and Bond details (optional)
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-6 p-6">
               {/* E&O Insurance */}
               <div className="space-y-4">
-                <h4 className="font-medium">Errors & Omissions Insurance</h4>
+                <h4 className="font-medium text-lg">Errors & Omissions Insurance</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <Label htmlFor="eoInsuranceCompany">Insurance Company *</Label>
+                    <Label htmlFor="eoInsuranceCompany">Insurance Company</Label>
                     <Input
                       id="eoInsuranceCompany"
                       {...form.register('eoInsuranceCompany')}
-                      placeholder="Insurance company name"
+                      placeholder="Insurance company name (optional)"
+                      className="mt-1 h-11"
                     />
-                    {form.formState.errors.eoInsuranceCompany && (
-                      <p className="text-sm text-red-600 mt-1">
-                        {form.formState.errors.eoInsuranceCompany.message}
-                      </p>
-                    )}
                   </div>
 
                   <div>
-                    <Label htmlFor="eoInsuranceAmount">Insurance Amount ($) *</Label>
+                    <Label htmlFor="eoInsuranceAmount">Insurance Amount ($)</Label>
                     <Input
                       id="eoInsuranceAmount"
                       type="number"
                       {...form.register('eoInsuranceAmount', { valueAsNumber: true })}
-                      placeholder="25000"
+                      placeholder="25000 (optional)"
+                      className="mt-1 h-11"
                     />
-                    {form.formState.errors.eoInsuranceAmount && (
-                      <p className="text-sm text-red-600 mt-1">
-                        {form.formState.errors.eoInsuranceAmount.message}
-                      </p>
-                    )}
                   </div>
 
                   <div>
-                    <Label htmlFor="eoInsuranceExpiration">Expiration Date *</Label>
+                    <Label htmlFor="eoInsuranceExpiration">Expiration Date</Label>
                     <Input
                       id="eoInsuranceExpiration"
                       type="date"
                       {...form.register('eoInsuranceExpiration')}
+                      className="mt-1 h-11"
                     />
-                    {form.formState.errors.eoInsuranceExpiration && (
-                      <p className="text-sm text-red-600 mt-1">
-                        {form.formState.errors.eoInsuranceExpiration.message}
-                      </p>
-                    )}
                   </div>
                 </div>
               </div>
 
               {/* Bond Information */}
               <div className="space-y-4">
-                <h4 className="font-medium">Bond Information</h4>
+                <h4 className="font-medium text-lg">Bond Information</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <Label htmlFor="bondCompanyName">Bond Company *</Label>
+                    <Label htmlFor="bondCompanyName">Bond Company</Label>
                     <Input
                       id="bondCompanyName"
                       {...form.register('bondCompanyName')}
-                      placeholder="Bond company name"
+                      placeholder="Bond company name (optional)"
+                      className="mt-1 h-11"
                     />
-                    {form.formState.errors.bondCompanyName && (
-                      <p className="text-sm text-red-600 mt-1">
-                        {form.formState.errors.bondCompanyName.message}
-                      </p>
-                    )}
                   </div>
 
                   <div>
-                    <Label htmlFor="bondAmount">Bond Amount ($) *</Label>
+                    <Label htmlFor="bondAmount">Bond Amount ($)</Label>
                     <Input
                       id="bondAmount"
                       type="number"
                       {...form.register('bondAmount', { valueAsNumber: true })}
-                      placeholder="15000"
+                      placeholder="15000 (optional)"
+                      className="mt-1 h-11"
                     />
-                    {form.formState.errors.bondAmount && (
-                      <p className="text-sm text-red-600 mt-1">
-                        {form.formState.errors.bondAmount.message}
-                      </p>
-                    )}
                   </div>
 
                   <div>
-                    <Label htmlFor="bondExpiration">Expiration Date *</Label>
+                    <Label htmlFor="bondExpiration">Expiration Date</Label>
                     <Input
                       id="bondExpiration"
                       type="date"
                       {...form.register('bondExpiration')}
+                      className="mt-1 h-11"
                     />
-                    {form.formState.errors.bondExpiration && (
-                      <p className="text-sm text-red-600 mt-1">
-                        {form.formState.errors.bondExpiration.message}
-                      </p>
-                    )}
                   </div>
                 </div>
               </div>
@@ -644,66 +813,62 @@ export function NotaryProfileCompletion() {
           </Card>
 
           {/* Public Certificate */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Shield className="h-5 w-5" />
+          <Card className="border-2 border-gray-100 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50">
+              <CardTitle className="flex items-center gap-3 text-xl">
+                <div className="w-10 h-10 bg-purple-500 rounded-xl flex items-center justify-center">
+                  <Shield className="h-5 w-5 text-white" />
+                </div>
                 Public Certificate Information
               </CardTitle>
               <CardDescription>
-                Digital certificate details for electronic notarization
+                Digital certificate details for electronic notarization (optional)
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="publicCertificateExpiration">Certificate Expiration Date *</Label>
+                  <Label htmlFor="publicCertificateExpiration">Certificate Expiration Date</Label>
                   <Input
                     id="publicCertificateExpiration"
                     type="date"
                     {...form.register('publicCertificateExpiration')}
+                    className="mt-1 h-11"
                   />
-                  {form.formState.errors.publicCertificateExpiration && (
-                    <p className="text-sm text-red-600 mt-1">
-                      {form.formState.errors.publicCertificateExpiration.message}
-                    </p>
-                  )}
                 </div>
 
                 <div>
-                  <Label htmlFor="publicCertificatePassword">Certificate Password *</Label>
+                  <Label htmlFor="publicCertificatePassword">Certificate Password</Label>
                   <Input
                     id="publicCertificatePassword"
                     type="password"
                     {...form.register('publicCertificatePassword')}
-                    placeholder="Certificate password"
+                    placeholder="Certificate password (optional)"
+                    className="mt-1 h-11"
                   />
-                  {form.formState.errors.publicCertificatePassword && (
-                    <p className="text-sm text-red-600 mt-1">
-                      {form.formState.errors.publicCertificatePassword.message}
-                    </p>
-                  )}
                 </div>
               </div>
             </CardContent>
           </Card>
 
           {/* Signing Agent Certification */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="h-5 w-5" />
+          <Card className="border-2 border-gray-100 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-teal-50 to-cyan-50">
+              <CardTitle className="flex items-center gap-3 text-xl">
+                <div className="w-10 h-10 bg-teal-500 rounded-xl flex items-center justify-center">
+                  <Calendar className="h-5 w-5 text-white" />
+                </div>
                 Signing Agent Certification
               </CardTitle>
               <CardDescription>
-                Notary Signing Agent certification details (if applicable)
+                Notary Signing Agent certification details (optional)
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center space-x-2">
+            <CardContent className="space-y-4 p-6">
+              <div className="flex items-center space-x-3">
                 <Checkbox
                   id="signingAgentCertified"
-                  checked={form.watch('signingAgentCertified')}
+                  checked={form.watch('signingAgentCertified') || false}
                   onCheckedChange={(checked) => 
                     form.setValue('signingAgentCertified', checked as boolean)
                   }
@@ -720,6 +885,7 @@ export function NotaryProfileCompletion() {
                     id="signingAgentExpirationDate"
                     type="date"
                     {...form.register('signingAgentExpirationDate')}
+                    className="mt-1 h-11"
                   />
                 </div>
               )}
@@ -727,17 +893,19 @@ export function NotaryProfileCompletion() {
           </Card>
 
           {/* Foreign Languages */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Globe className="h-5 w-5" />
+          <Card className="border-2 border-gray-100 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-indigo-50 to-blue-50">
+              <CardTitle className="flex items-center gap-3 text-xl">
+                <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center">
+                  <Globe className="h-5 w-5 text-white" />
+                </div>
                 Foreign Languages
               </CardTitle>
               <CardDescription>
                 Select languages you can provide notary services in (besides English)
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-6">
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {FOREIGN_LANGUAGES.map((language) => (
                   <div key={language} className="flex items-center space-x-2">
@@ -756,7 +924,7 @@ export function NotaryProfileCompletion() {
                   <p className="text-sm text-gray-600 mb-2">Selected languages:</p>
                   <div className="flex flex-wrap gap-2">
                     {selectedLanguages.map((language) => (
-                      <Badge key={language} variant="secondary">
+                      <Badge key={language} variant="secondary" className="bg-indigo-100 text-indigo-800">
                         {language}
                       </Badge>
                     ))}
@@ -767,18 +935,20 @@ export function NotaryProfileCompletion() {
           </Card>
 
           {/* File Uploads */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                Required Documents
+          <Card className="border-2 border-gray-100 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-gray-50 to-gray-100">
+              <CardTitle className="flex items-center gap-3 text-xl">
+                <div className="w-10 h-10 bg-gray-500 rounded-xl flex items-center justify-center">
+                  <FileText className="h-5 w-5 text-white" />
+                </div>
+                Document Uploads
               </CardTitle>
               <CardDescription>
-                Upload all required notary documents (PDF, JPG, PNG - max 10MB each)
+                Upload notary documents when available (all optional - PDF, JPG, PNG - max 10MB each)
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <CardContent className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FileUploadCard
                   title="Notary Commission Certificate"
                   fileType="notaryCommissionFile"
@@ -804,26 +974,27 @@ export function NotaryProfileCompletion() {
                 />
 
                 {form.watch('signingAgentCertified') && (
-                  <FileUploadCard
-                    title="NSA Certification"
-                    fileType="signingAgentFile"
-                    required={false}
-                    description="Upload your NSA certification document"
-                  />
+                  <div className="md:col-span-2">
+                    <FileUploadCard
+                      title="NSA Certification"
+                      fileType="signingAgentFile"
+                      description="Upload your NSA certification document"
+                    />
+                  </div>
                 )}
               </div>
             </CardContent>
           </Card>
 
           {/* Submit Section */}
-          <Card>
-            <CardContent className="pt-6">
-              <div className="space-y-4">
-                <Alert>
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertDescription>
-                    By submitting this form, you confirm that all information provided is accurate and complete. 
-                    Your profile will be reviewed by an administrator before your account is activated.
+          <Card className="border-2 border-gray-100 shadow-lg">
+            <CardContent className="p-6">
+              <div className="space-y-6">
+                <Alert className="bg-blue-50 border-blue-200">
+                  <AlertTriangle className="h-4 w-4 text-blue-600" />
+                  <AlertDescription className="text-blue-800">
+                    <strong>Note:</strong> All fields are optional. You can save your profile with any amount of information 
+                    and complete additional details later. Your profile can be updated at any time.
                   </AlertDescription>
                 </Alert>
 
@@ -831,29 +1002,26 @@ export function NotaryProfileCompletion() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => setLocation('/login')}
+                    onClick={() => setLocation('/dashboard')}
                     disabled={isSubmitting}
+                    className="border-2 border-gray-300 hover:border-gray-400"
                   >
-                    Save as Draft & Logout
+                    Cancel
                   </Button>
                   <Button
                     type="submit"
-                    disabled={isSubmitting || completionProgress < 90}
-                    className="min-w-[200px]"
+                    disabled={isSubmitting}
+                    className="min-w-[200px] bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg"
                   >
-                    {isSubmitting ? 'Submitting...' : 'Complete Profile'}
+                    <Save className="w-4 h-4 mr-2" />
+                    {isSubmitting ? 'Saving...' : 'Save Profile'}
                   </Button>
                 </div>
-                
-                {completionProgress < 90 && (
-                  <p className="text-sm text-orange-600 text-center">
-                    Please complete at least 90% of the form to submit
-                  </p>
-                )}
               </div>
             </CardContent>
           </Card>
         </form>
+        )}
       </div>
     </div>
   );

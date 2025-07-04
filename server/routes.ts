@@ -7,8 +7,11 @@ import { registerUserManagementRoutes } from "./user-management-routes";
 import { registerNotaryProfileRoutes } from "./notary-profile-routes";
 import { registerApprovalWorkflowRoutes } from "./approval-workflow-routes";
 import { registerFeeRoutes } from "./fee-routes";
+import { registerAdminVerificationRoutes } from "./routes/admin-verification-routes";
+import adminLogsRoutes from "./routes/admin-logs-routes";
+import { auditLoggingService } from "./services/audit-logging-service";
 import { notificationService } from "./notification-service";
-import { verifyToken } from "./auth";
+import { verifyToken, hasAdminPrivileges, hasNotaryPrivileges } from "./auth";
 import { eq, and, gte, lte, desc, inArray, sql } from "drizzle-orm";
 import { randomNotaryService, NotaryQualifications, TimeSlotRequest } from "./random-notary-service";
 import bcrypt from "bcrypt";
@@ -18,6 +21,7 @@ import nodemailer from "nodemailer";
 import crypto from "crypto";
 import path from "path";
 import fs from "fs";
+import { promises as fsPromises } from "fs";
 import { 
   insertUserSchema, 
   insertTitleCompanySchema,
@@ -115,6 +119,23 @@ const upload = multer({
 // Import the professional email service
 import { emailService } from './lib/email-service';
 
+// Import security middleware
+import { 
+  authLimiter, 
+  registrationLimiter, 
+  passwordResetLimiter,
+  apiLimiter 
+} from './middleware/rate-limiter';
+import { 
+  sanitizeHtml, 
+  preventSqlInjection 
+} from './middleware/sanitization';
+import { 
+  checkAccountLockout, 
+  recordFailedLogin, 
+  clearFailedAttempts 
+} from './middleware/account-lockout';
+
 // Import email template routes
 import {
   getAllTemplates,
@@ -131,8 +152,11 @@ import {
 
 export async function registerRoutes(app: Express): Promise<Server> {
 
+  // Add audit logging middleware to all routes
+  app.use(auditLoggingService.auditMiddleware());
+
   // Authentication routes
-  app.post('/api/auth/login', async (req, res) => {
+  app.post('/api/auth/login', authLimiter, sanitizeHtml, preventSqlInjection, checkAccountLockout, async (req, res) => {
     try {
       const { email, password } = req.body;
       
@@ -142,19 +166,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const user = await storage.getUserByEmail(email);
       if (!user) {
+        recordFailedLogin(email);
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
       const isValidPassword = await bcrypt.compare(password, user.password);
       if (!isValidPassword) {
+        recordFailedLogin(email);
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
+      // Clear failed attempts on successful login
+      clearFailedAttempts(email);
+
+      // Generate token with privileges included
       const token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role },
+        { 
+          id: user.id, 
+          email: user.email, 
+          role: user.role,
+          privileges: user.privileges || []
+        },
         JWT_SECRET,
         { expiresIn: '24h' }
       );
+
+      // Check privileges for frontend
+      const isAdmin = user.role === 'admin' || 
+                     (user.privileges && user.privileges.includes('admin'));
+      const isNotary = user.role === 'notary' || 
+                      (user.privileges && user.privileges.includes('notary'));
 
       res.json({
         token,
@@ -163,7 +204,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           username: user.username,
           email: user.email,
           role: user.role,
-          privileges: user.privileges
+          privileges: user.privileges,
+          // Include privilege flags for easy frontend checking
+          isAdmin,
+          isNotary
         }
       });
     } catch (error) {
@@ -172,7 +216,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/auth/register', async (req, res) => {
+  app.post('/api/auth/register', registrationLimiter, sanitizeHtml, preventSqlInjection, async (req, res) => {
     try {
       const userData = insertUserSchema.parse(req.body);
       
@@ -209,12 +253,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'User not found' });
       }
 
+      // Check privileges for frontend
+      const isAdmin = user.role === 'admin' || 
+                     (user.privileges && user.privileges.includes('admin'));
+      const isNotary = user.role === 'notary' || 
+                      (user.privileges && user.privileges.includes('notary'));
+
+      // Get company information for title company users
+      let companyInfo = null;
+      if (user.role === 'title_company' && user.companyId) {
+        try {
+          companyInfo = await storage.getCompany(user.companyId);
+        } catch (error) {
+          console.warn('Failed to fetch company info for user:', user.id, error);
+        }
+      }
+
       res.json({
         id: user.id,
         username: user.username,
         email: user.email,
         role: user.role,
-        privileges: user.privileges
+        privileges: user.privileges,
+        // Include privilege flags for easy frontend checking
+        isAdmin,
+        isNotary,
+        notaryType: user.notaryType,
+        // Include company information for title company users
+        companyId: user.companyId,
+        companyName: companyInfo?.companyName || null,
+        firstName: user.firstName,
+        lastName: user.lastName
       });
     } catch (error) {
       console.error('Get user error:', error);
@@ -241,7 +310,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User management routes
   app.get('/api/users', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      // Check for admin privileges (either role='admin' or privileges includes 'admin')
+      const hasAdminAccess = req.user.role === 'admin' || 
+                           (req.user.privileges && req.user.privileges.includes('admin'));
+      
+      if (!hasAdminAccess) {
         return res.status(403).json({ message: 'Admin access required' });
       }
       const users = await storage.getUsers();
@@ -254,6 +327,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/users/notaries', verifyToken, async (req: any, res) => {
     try {
+      // SECURITY RESTRICTION: Only allow admin access to notary listing
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ 
+          message: 'Admin access required',
+          error: 'Access denied to notary listing'
+        });
+      }
+      
       const notaries = await storage.getNotaryUsers();
       res.json(notaries.map(user => ({
         id: user.id,
@@ -271,13 +352,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Check if user has permission to access this endpoint
       const userCanCreateJob = 
-        req.user.role === 'admin' ||
+        hasAdminPrivileges(req.user) ||
         req.user.role === 'title_company' ||
+        req.user.role === 'client' ||
         (req.user.role === 'notary' && req.user.notaryType === 'subscriber');
 
       if (!userCanCreateJob) {
         return res.status(403).json({ 
-          message: 'Access denied. Only administrators, title companies, and subscriber notaries can access signers.' 
+          message: 'Access denied. Only administrators, title companies, clients, and subscriber notaries can access signers.' 
         });
       }
 
@@ -312,7 +394,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put('/api/users/:id', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -343,7 +425,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete('/api/users/:id', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -367,18 +449,179 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = parseInt(req.params.id);
       
       // Check if user can access these signatures
-      if (req.user.role !== 'admin' && req.user.id !== userId) {
+      if (!hasAdminPrivileges(req.user) && req.user.id !== userId) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // In a real app, this would query from database
-      // For now, we'll return empty array since signatures are stored in localStorage on frontend
-      // The dashboard component manages signatures locally
-      const signatures: any[] = [];
+      // Get signatures from storage (in production, this would be a database query)
+      const signatures = await storage.getUserSignatures(userId);
       
       res.json(signatures);
     } catch (error) {
       console.error('Get user signatures error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Create new signature endpoint
+  app.post('/api/users/:id/signatures', verifyToken, 
+    upload.single('signature'), async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      
+      // Check if user can create signatures for this user
+      if (!hasAdminPrivileges(req.user) && req.user.id !== userId) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { name, type, text, fontFamily, fontSize } = req.body;
+      
+      if (!name || !type) {
+        return res.status(400).json({ message: 'Name and type are required' });
+      }
+
+      let imageUrl = '';
+      let metadata = {};
+
+      if (type === 'uploaded' && req.file) {
+        // Handle uploaded signature
+        const uploadDir = path.join(process.cwd(), 'uploads', 'signatures', userId.toString());
+        await fsPromises.mkdir(uploadDir, { recursive: true });
+        
+        const filename = `${Date.now()}_${req.file.originalname}`;
+        const filePath = path.join(uploadDir, filename);
+        
+        await fsPromises.writeFile(filePath, req.file.buffer);
+        imageUrl = `/uploads/signatures/${userId}/${filename}`;
+        metadata = { originalName: req.file.originalname };
+      } else if (type === 'drawn') {
+        // Handle drawn signature from canvas
+        const { imageData } = req.body;
+        if (!imageData) {
+          return res.status(400).json({ message: 'Image data is required for drawn signatures' });
+        }
+        
+        const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+        
+        const uploadDir = path.join(process.cwd(), 'uploads', 'signatures', userId.toString());
+        await fsPromises.mkdir(uploadDir, { recursive: true });
+        
+        const filename = `drawn_${Date.now()}.png`;
+        const filePath = path.join(uploadDir, filename);
+        
+        await fsPromises.writeFile(filePath, buffer);
+        imageUrl = `/uploads/signatures/${userId}/${filename}`;
+        metadata = { style: 'handwritten' };
+             } else if (type === 'generated') {
+        // Handle generated signature
+        if (!text) {
+          return res.status(400).json({ message: 'Text is required for generated signatures' });
+        }
+        
+        try {
+          // Generate signature image using canvas (server-side)
+          const { createCanvas } = await import('canvas');
+          const canvas = createCanvas(400, 100);
+          const ctx = canvas.getContext('2d');
+          
+          ctx.fillStyle = 'white';
+          ctx.fillRect(0, 0, 400, 100);
+          
+          ctx.fillStyle = 'black';
+          ctx.font = `${fontSize || 48}px ${fontFamily || 'serif'}`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(text, 200, 50);
+          
+          const buffer = canvas.toBuffer('image/png');
+          
+          const uploadDir = path.join(process.cwd(), 'uploads', 'signatures', userId.toString());
+          await fsPromises.mkdir(uploadDir, { recursive: true });
+          
+          const filename = `generated_${Date.now()}.png`;
+          const filePath = path.join(uploadDir, filename);
+          
+          await fsPromises.writeFile(filePath, buffer);
+          imageUrl = `/uploads/signatures/${userId}/${filename}`;
+          metadata = { fontFamily, fontSize, text };
+        } catch (canvasError) {
+          console.error('Canvas generation failed, using fallback:', canvasError);
+          
+          // Fallback: Create a simple SVG-based signature
+          const svgContent = `
+            <svg width="400" height="100" xmlns="http://www.w3.org/2000/svg">
+              <rect width="400" height="100" fill="white"/>
+              <text x="200" y="55" font-family="${fontFamily || 'serif'}" font-size="${fontSize || 48}" 
+                    text-anchor="middle" fill="black">${text}</text>
+            </svg>
+          `;
+          
+          const uploadDir = path.join(process.cwd(), 'uploads', 'signatures', userId.toString());
+          await fsPromises.mkdir(uploadDir, { recursive: true });
+          
+          const filename = `generated_${Date.now()}.svg`;
+          const filePath = path.join(uploadDir, filename);
+          
+          await fsPromises.writeFile(filePath, svgContent);
+          imageUrl = `/uploads/signatures/${userId}/${filename}`;
+          metadata = { fontFamily, fontSize, text, fallback: 'svg' };
+        }
+      }
+
+      // Create signature record
+      const signature = await storage.createUserSignature({
+        userId,
+        name,
+        type,
+        imageUrl,
+        metadata,
+        isDefault: false
+      });
+
+      res.json(signature);
+    } catch (error) {
+      console.error('Create signature error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Set default signature endpoint
+  app.put('/api/users/:id/signatures/:signatureId/default', verifyToken, async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      const signatureId = req.params.signatureId;
+      
+      // Check if user can modify signatures for this user
+      if (req.user.role !== 'admin' && req.user.id !== userId) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      await storage.setDefaultSignature(userId, signatureId);
+      
+      res.json({ message: 'Default signature set successfully' });
+    } catch (error) {
+      console.error('Set default signature error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Delete signature endpoint
+  app.delete('/api/users/:id/signatures/:signatureId', verifyToken, async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      const signatureId = req.params.signatureId;
+      
+      // Check if user can delete signatures for this user
+      if (req.user.role !== 'admin' && req.user.id !== userId) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      await storage.deleteUserSignature(userId, signatureId);
+      
+      res.json({ message: 'Signature deleted successfully' });
+    } catch (error) {
+      console.error('Delete signature error:', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   });
@@ -623,9 +866,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/jobs', verifyToken, upload.array('documents', 10), async (req: any, res) => {
     try {
+      // Define privilege checks once at the top using proper functions
+      const hasAdminAccess = hasAdminPrivileges(req.user);
+      const hasNotaryAccess = hasNotaryPrivileges(req.user);
+      
       // Check if user has permission to create jobs
       const userCanCreateJob = 
-        req.user.role === 'admin' ||
+        hasAdminAccess ||
         req.user.role === 'title_company' ||
         (req.user.role === 'notary' && req.user.notaryType === 'subscriber');
 
@@ -645,6 +892,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       delete jobData.uploadedFile;
       delete jobData.notarizedFile;
 
+      // CRITICAL FIX: Ensure constraint compliance for notary assignments
+      console.log(`🔧 Job creation - notaryOption: ${jobData.notaryOption}, selectedNotary: ${jobData.selectedNotary}, notaryId: ${jobData.notaryId}`);
+      
+      // Handle notary ID code assignments where selectedNotary contains the actual notary ID
+      if (jobData.notaryOption === 'id_code' && jobData.selectedNotary) {
+        // For ID code assignments, selectedNotary contains the actual notary ID
+        const parsedNotaryId = parseInt(jobData.selectedNotary);
+        if (isNaN(parsedNotaryId)) {
+          console.error(`❌ Invalid notary ID for id_code assignment: ${jobData.selectedNotary}`);
+          return res.status(400).json({ message: 'Invalid notary ID for ID code assignment' });
+        }
+        jobData.notaryId = parsedNotaryId;
+        jobData.selectedNotary = parsedNotaryId.toString(); // Ensure string representation
+        console.log(`✅ ID code assignment: notaryId=${jobData.notaryId}, selectedNotary=${jobData.selectedNotary}`);
+      } else if (jobData.notaryId && !jobData.selectedNotary) {
+        jobData.selectedNotary = jobData.notaryId.toString();
+        console.log(`✅ Set selectedNotary from notaryId: ${jobData.selectedNotary}`);
+      } else if (jobData.notaryId && jobData.selectedNotary && jobData.selectedNotary !== jobData.notaryId.toString()) {
+        // Ensure consistency - if both are set, they must match
+        jobData.selectedNotary = jobData.notaryId.toString();
+        console.log(`✅ Fixed notary consistency: selectedNotary=${jobData.selectedNotary}`);
+      }
+
+      // For initial job creation, ensure no constraint violations
+      // If we don't have a proper notary assignment yet, clear both fields
+      if (!jobData.notaryId && jobData.selectedNotary && jobData.notaryOption !== 'id_code') {
+        console.log(`🔧 Clearing inconsistent notary data: selectedNotary=${jobData.selectedNotary}, notaryOption=${jobData.notaryOption}`);
+        delete jobData.selectedNotary;
+        delete jobData.notaryId;
+      }
+      
+      console.log(`🔧 Final job data - notaryId: ${jobData.notaryId}, selectedNotary: ${jobData.selectedNotary}`);
+
       const job = await storage.createJob(jobData);
 
       // Handle automatic notary assignment based on who creates the job
@@ -656,14 +936,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         assignedNotary = req.user;
         console.log(`🔧 Subscriber notary created job ${job.id} - auto-assigning themselves as notary`);
         
-      } else if (req.user.role === 'admin' && (!jobData.notaryOption || jobData.notaryOption === 'admin_self')) {
-        // Admin creates job without specifying notaryOption OR explicitly chooses admin_self → Admin as notary
+      } else if (hasAdminAccess && hasNotaryAccess && (!jobData.notaryOption || jobData.notaryOption === 'admin_self')) {
+        // Admin with notary privileges creates job → Admin as notary
         assignedNotary = req.user;
-        console.log(`🔧 Admin created job ${job.id} - assigning admin as notary (option: ${jobData.notaryOption || 'default'})`);
+        console.log(`🔧 Admin-notary created job ${job.id} - assigning admin as notary (option: ${jobData.notaryOption || 'default'})`);
         
-      } else if (req.user.role === 'admin' || req.user.role === 'title_company') {
+      } else if (hasAdminAccess || req.user.role === 'title_company') {
         // Admin or Title company creates job → Use assignment flow based on notaryOption
-        console.log(`🔧 ${req.user.role} created job ${job.id} with notaryOption: ${jobData.notaryOption} - will use assignment flow`);
+        console.log(`🔧 ${hasAdminAccess ? 'Admin' : req.user.role} created job ${job.id} with notaryOption: ${jobData.notaryOption} - will use assignment flow`);
       }
 
       // If we have a default assignment from creator role, apply it immediately
@@ -676,10 +956,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
         // Log the automatic assignment
+        const assignmentType = hasAdminAccess && hasNotaryAccess ? 'subscriber_self' :
+                              hasAdminAccess ? 'manual' : 'subscriber_self';
+        
         await db.insert(notaryAssignmentLog).values({
           jobId: job.id,
           notaryId: assignedNotary.id,
-          assignmentType: req.user.role === 'admin' ? 'admin_default' : 'subscriber_default',
+          assignmentType,
           assignmentStatus: 'assigned'
         });
 
@@ -771,6 +1054,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const selectedNotaryId = parseInt(jobData.selectedNotary);
         await storage.updateJob(job.id, {
           notaryId: selectedNotaryId,
+          selectedNotary: selectedNotaryId.toString(), // This was missing!
           jobStatus: 'open', // Keep as open until notary approves
           notaryApprovalStatus: 'assigned_pending_approval'
         });
@@ -809,6 +1093,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
           } catch (error) {
             console.warn('Failed to create calendar event for manual notary assignment:', error);
+          }
+        }
+      } else if (!assignedNotary && jobData.notaryOption === 'id_code' && jobData.notaryId) {
+        // Notary ID Code assignment - notary already assigned during initial creation
+        // Just need to update the approval status and log the assignment
+        await storage.updateJob(job.id, {
+          jobStatus: 'open', // Keep as open until notary approves
+          notaryApprovalStatus: 'assigned_pending_approval'
+        });
+
+        // Log the ID code assignment (using 'manual' since ID code is a manual assignment method)
+        await db.insert(notaryAssignmentLog).values({
+          jobId: job.id,
+          notaryId: jobData.notaryId,
+          assignmentType: 'manual',
+          assignmentStatus: 'assigned'
+        });
+
+        // Send job assignment notification to notary (requires approval)
+        try {
+          await notificationService.sendJobAssignmentNotification(job.id, jobData.notaryId);
+        } catch (notificationError) {
+          console.error('Failed to send job assignment notification:', notificationError);
+        }
+
+        // Create calendar event for the assigned notary if date and time are provided
+        if (jobData.selectedDate && jobData.selectedTime) {
+          try {
+            const startDateTime = new Date(`${jobData.selectedDate} ${jobData.selectedTime}`);
+            const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour duration
+            
+            await db.insert(calendarEvents).values({
+              notaryId: jobData.notaryId,
+              title: `Notarization Job #${job.id}`,
+              description: `Job for ${jobData.titleCompany} - ${jobData.closingType}\nProperty: ${jobData.propertyAddressOne}, ${jobData.propertyCity}, ${jobData.propertyState}`,
+              startDateTime,
+              endDateTime,
+              location: `${jobData.propertyAddressOne}, ${jobData.propertyCity}, ${jobData.propertyState} ${jobData.propertyZipCode}`,
+              eventType: 'job',
+              jobId: job.id,
+              isAllDay: false
+            });
+          } catch (error) {
+            console.warn('Failed to create calendar event for ID code notary assignment:', error);
           }
         }
       }
@@ -880,6 +1208,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               isVerified: false, // Account not verified yet
               verificationStatus: 'pending', // Pending verification
               accountSetupComplete: false, // Password needs to be set
+              // Auto-approve signers and witnesses - they don't need admin approval
+              approvalStatus: 'approved',
+              isActive: true,
               createdAt: new Date()
             }).returning();
             userId = newUser.id;
@@ -1258,7 +1589,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/payments', verifyToken, async (req: any, res) => {
     try {
       let payments: Payment[];
-      if (req.user.role === 'admin') {
+      if (hasAdminPrivileges(req.user)) {
         // Admin can see all payments - for demo purposes, return empty array
         payments = [];
       } else {
@@ -1300,11 +1631,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get dashboard revenue stats (admin only)
+  app.get('/api/admin/revenue-stats', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      // Calculate revenue from payments and invoices
+      const currentMonth = new Date();
+      const firstDayOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+      
+      const revenue = await db.execute(sql`
+        SELECT 
+          COALESCE(SUM(p.amount), 0) as monthly_revenue,
+          COUNT(CASE WHEN p.status = 'pending' THEN 1 END) as pending_payments,
+          COUNT(CASE WHEN p.status = 'completed' THEN 1 END) as completed_payments
+        FROM payments p
+        WHERE p.created_at >= ${firstDayOfMonth.toISOString()}
+      `);
+
+      res.json(revenue.rows[0]);
+    } catch (error) {
+      console.error('Get revenue stats error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
   // Invoice management routes
   app.get('/api/invoices', verifyToken, async (req: any, res) => {
     try {
       let invoices: Invoice[];
-      if (req.user.role === 'admin') {
+      if (hasAdminPrivileges(req.user)) {
         // Admin gets all invoices - for demo purposes, return empty array
         invoices = [];
       } else if (req.user.role === 'notary') {
@@ -1386,7 +1744,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put('/api/closing-types/:id', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -1406,7 +1764,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete('/api/closing-types/:id', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -1420,6 +1778,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: 'Closing type deleted successfully' });
     } catch (error) {
       console.error('Delete closing type error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Participant Roles management routes
+  app.get('/api/participant-roles', verifyToken, async (req: any, res) => {
+    try {
+      const roles = await storage.getParticipantRoles();
+      res.json(roles);
+    } catch (error) {
+      console.error('Get participant roles error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.get('/api/participant-roles/active', verifyToken, async (req: any, res) => {
+    try {
+      const roles = await storage.getActiveParticipantRoles();
+      res.json(roles);
+    } catch (error) {
+      console.error('Get active participant roles error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/participant-roles', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const roleData = req.body;
+      const role = await storage.createParticipantRole(roleData);
+      res.status(201).json(role);
+    } catch (error) {
+      console.error('Create participant role error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.put('/api/participant-roles/:id', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const roleId = parseInt(req.params.id);
+      const updateData = req.body;
+      const role = await storage.updateParticipantRole(roleId, updateData);
+      
+      if (!role) {
+        return res.status(404).json({ message: 'Participant role not found' });
+      }
+      
+      res.json(role);
+    } catch (error) {
+      console.error('Update participant role error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.delete('/api/participant-roles/:id', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const roleId = parseInt(req.params.id);
+      const deleted = await storage.deleteParticipantRole(roleId);
+      
+      if (!deleted) {
+        return res.status(404).json({ message: 'Participant role not found' });
+      }
+      
+      res.json({ message: 'Participant role deleted successfully' });
+    } catch (error) {
+      console.error('Delete participant role error:', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   });
@@ -1857,6 +2292,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.sendFile(path.resolve(filePath));
     } catch (error) {
       console.error('Serve stamp image error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Serve uploaded signature images (with authentication)
+  app.get('/uploads/signatures/:userId/:filename', 
+    // In development, bypass authentication for images
+    process.env.NODE_ENV === 'development' ? 
+      (req: any, res: any, next: any) => {
+        console.log(`Development mode: serving signature image ${req.params.userId}/${req.params.filename}`);
+        req.user = { id: 1, role: 'admin' };
+        next();
+      } : verifyToken, 
+    async (req: any, res) => {
+    try {
+      const { userId, filename } = req.params;
+      
+      // Check if user can access this signature
+      if (req.user.role !== 'admin' && req.user.id.toString() !== userId) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const filePath = path.join(process.cwd(), 'uploads', 'signatures', userId, filename);
+      
+      // Check if file exists
+      if (!fs.existsSync(filePath)) {
+        console.error(`Signature image not found: ${filePath}`);
+        return res.status(404).json({ message: 'Signature image not found' });
+      }
+      
+      // Set appropriate headers based on file type
+      const fileExtension = path.extname(filename).toLowerCase();
+      const contentType = fileExtension === '.svg' ? 'image/svg+xml' : 'image/png';
+      
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'private, max-age=3600');
+      
+      // Send the file
+      res.sendFile(path.resolve(filePath));
+    } catch (error) {
+      console.error('Serve signature image error:', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   });
@@ -2727,6 +3203,179 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
     }
   });
 
+  // Bulk create time slots
+  app.post('/api/calendar/bulk-slots', verifyToken, async (req, res) => {
+    try {
+      const notaryId = req.user?.id;
+      const { date, startTime, endTime, status, blockReason } = req.body;
+
+      if (req.user?.role !== 'notary' && req.user?.role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      // Generate time slots in 15-minute intervals
+      const slots = [];
+      const start = new Date(`1970-01-01T${startTime}:00`);
+      const end = new Date(`1970-01-01T${endTime}:00`);
+      
+      while (start < end) {
+        const slotStartTime = start.toTimeString().slice(0, 5);
+        const slotEndTime = new Date(start.getTime() + 15 * 60000).toTimeString().slice(0, 5);
+        
+        // Check if slot already exists
+        const existingSlot = await db
+          .select()
+          .from(notaryTimeSlots)
+          .where(
+            and(
+              eq(notaryTimeSlots.notaryId, notaryId),
+              eq(notaryTimeSlots.date, date),
+              eq(notaryTimeSlots.startTime, slotStartTime)
+            )
+          );
+
+        if (existingSlot.length === 0) {
+          slots.push({
+            notaryId,
+            date,
+            startTime: slotStartTime,
+            endTime: slotEndTime,
+            status: status || 'available',
+            blockReason: status === 'blocked' ? blockReason : null,
+            isManualBlock: status === 'blocked'
+          });
+        }
+        
+        start.setMinutes(start.getMinutes() + 15);
+      }
+
+      if (slots.length > 0) {
+        await db.insert(notaryTimeSlots).values(slots);
+      }
+
+      res.json({ 
+        success: true, 
+        message: `Created ${slots.length} time slots`,
+        slotsCreated: slots.length
+      });
+    } catch (error) {
+      console.error('Error creating bulk time slots:', error);
+      res.status(500).json({ error: 'Failed to create bulk time slots' });
+    }
+  });
+
+  // Enhanced bulk availability setup with date range and days of week
+  app.post('/api/calendar/bulk-availability', verifyToken, async (req, res) => {
+    try {
+      const notaryId = req.user?.id;
+      const { dateRange, timeRange, daysOfWeek, type, blockReason } = req.body;
+
+      if (req.user?.role !== 'notary' && req.user?.role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const startDate = new Date(dateRange.start);
+      const endDate = new Date(dateRange.end);
+      
+      // Validate date range
+      const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysDiff > 365) {
+        return res.status(400).json({ error: 'Date range cannot exceed 365 days' });
+      }
+
+      // Get existing slots for this notary in one query to avoid checking each slot individually
+      const existingSlots = await db
+        .select({
+          date: notaryTimeSlots.date,
+          startTime: notaryTimeSlots.startTime
+        })
+        .from(notaryTimeSlots)
+        .where(
+          and(
+            eq(notaryTimeSlots.notaryId, notaryId),
+            gte(notaryTimeSlots.date, dateRange.start),
+            lte(notaryTimeSlots.date, dateRange.end)
+          )
+        );
+
+      // Create a Set for fast lookup of existing slots
+      const existingSlotsSet = new Set(
+        existingSlots.map(slot => `${slot.date}-${slot.startTime}`)
+      );
+
+      const allSlots = [];
+      
+      // Generate time slots array first
+      const timeSlotTemplates = [];
+      const start = new Date(`1970-01-01T${timeRange.start}:00`);
+      const end = new Date(`1970-01-01T${timeRange.end}:00`);
+      
+      while (start < end) {
+        const slotStartTime = start.toTimeString().slice(0, 5);
+        const slotEndTime = new Date(start.getTime() + 15 * 60000).toTimeString().slice(0, 5);
+        timeSlotTemplates.push({ startTime: slotStartTime, endTime: slotEndTime });
+        start.setMinutes(start.getMinutes() + 15);
+      }
+
+      // Loop through each date in the range
+      for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
+        const dayOfWeek = date.getDay();
+        
+        // Check if this day of week is selected
+        if (daysOfWeek.includes(dayOfWeek)) {
+          const dateString = date.toISOString().split('T')[0];
+          
+          // Add all time slots for this date if they don't exist
+          for (const timeSlot of timeSlotTemplates) {
+            const slotKey = `${dateString}-${timeSlot.startTime}`;
+            
+            if (!existingSlotsSet.has(slotKey)) {
+              allSlots.push({
+                notaryId,
+                date: dateString,
+                startTime: timeSlot.startTime,
+                endTime: timeSlot.endTime,
+                status: type || 'available',
+                blockReason: type === 'blocked' ? blockReason : null,
+                isManualBlock: type === 'blocked'
+              });
+            }
+          }
+        }
+      }
+
+      // Insert all slots in larger batches for better performance
+      let totalCreated = 0;
+      
+      if (allSlots.length > 0) {
+        const batchSize = 500; // Larger batch size for better performance
+        
+        for (let i = 0; i < allSlots.length; i += batchSize) {
+          const batch = allSlots.slice(i, i + batchSize);
+          
+          try {
+            await db.insert(notaryTimeSlots).values(batch);
+            totalCreated += batch.length;
+          } catch (batchError) {
+            console.error(`Error inserting batch ${i / batchSize + 1}:`, batchError);
+            // Continue with next batch even if one fails
+          }
+        }
+      }
+
+      res.json({ 
+        success: true, 
+        message: `Created ${totalCreated} time slots across ${daysDiff + 1} days`,
+        slotsCreated: totalCreated,
+        totalDays: daysDiff + 1,
+        slotsPerDay: timeSlotTemplates.length
+      });
+    } catch (error) {
+      console.error('Error creating bulk availability:', error);
+      res.status(500).json({ error: 'Failed to create bulk availability' });
+    }
+  });
+
   // Update time slot
   app.put('/api/calendar/time-slots/:id', verifyToken, async (req, res) => {
     try {
@@ -2994,11 +3643,54 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
     }
   });
 
+  // Get specific notary's availability for a date range
+  app.get('/api/calendar/notary-availability/:notaryId', verifyToken, async (req, res) => {
+    try {
+      const notaryId = parseInt(req.params.notaryId);
+      const { startDate, endDate } = req.query;
+
+      if (!notaryId) {
+        return res.status(400).json({ error: 'Notary ID is required' });
+      }
+
+      // Default to current date and 60 days ahead
+      const defaultStartDate = new Date().toISOString().split('T')[0];
+      const defaultEndDate = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+      const timeSlots = await db
+        .select()
+        .from(notaryTimeSlots)
+        .where(
+          and(
+            eq(notaryTimeSlots.notaryId, notaryId),
+            gte(notaryTimeSlots.date, (startDate as string) || defaultStartDate),
+            lte(notaryTimeSlots.date, (endDate as string) || defaultEndDate)
+          )
+        )
+        .orderBy(notaryTimeSlots.date, notaryTimeSlots.startTime);
+
+      res.json(timeSlots);
+    } catch (error) {
+      console.error('Error fetching notary availability:', error);
+      res.status(500).json({ error: 'Failed to fetch notary availability' });
+    }
+  });
+
   // Get all available notaries (for notary change functionality)
   app.get('/api/notaries/available', verifyToken, async (req, res) => {
     try {
-      if (req.user.role !== 'admin' && req.user.role !== 'title_company') {
-        return res.status(403).json({ error: 'Access denied' });
+      // SECURITY RESTRICTION: Title companies can no longer browse notary lists
+      // They must use auto assignment or notary ID code lookup instead
+      const canViewNotaries = 
+        hasAdminPrivileges(req.user) ||
+        req.user.role === 'client' ||
+        (req.user.role === 'notary' && req.user.notaryType === 'subscriber');
+
+      if (!canViewNotaries) {
+        return res.status(403).json({ 
+          error: 'Access denied', 
+          message: 'Title companies cannot browse notary lists. Please use auto assignment or notary ID code lookup instead.' 
+        });
       }
 
       const availableNotaries = await db
@@ -3313,6 +4005,78 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
     }
   });
 
+  // Get notary by ID code (for title company manual assignment)
+  app.get('/api/notaries/by-code/:notaryIdCode', verifyToken, async (req: any, res) => {
+    try {
+      // Verify user is title company or admin
+      if (req.user.role !== 'title_company' && req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { notaryIdCode } = req.params;
+      
+      // Validate notary ID code format (CY followed by 4 digits)
+      if (!/^CY\d{4}$/i.test(notaryIdCode)) {
+        return res.status(400).json({ error: 'Invalid notary ID code format. Expected format: CY####' });
+      }
+
+      // Find notary by ID code (case-insensitive)
+      const notary = await db
+        .select({
+          id: users.id,
+          notaryIdCode: users.notaryIdCode,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          username: users.username,
+          email: users.email,
+          isActive: users.isActive,
+          isNotarySigningAgent: users.isNotarySigningAgent,
+          isSpanishSpeaking: users.isSpanishSpeaking,
+          commissionNumber: users.commissionNumber,
+          commissionExpiration: users.commissionExpiration,
+          state: users.state,
+          notaryType: users.notaryType
+        })
+        .from(users)
+        .where(
+          and(
+            sql`UPPER(${users.notaryIdCode}) = UPPER(${notaryIdCode})`,
+            eq(users.role, 'notary'),
+            eq(users.isActive, true)
+          )
+        )
+        .limit(1);
+
+      if (notary.length === 0) {
+        return res.status(404).json({ error: 'Notary not found or inactive' });
+      }
+
+      // Return notary information (without sensitive data)
+      const notaryData = notary[0];
+      res.json({
+        id: notaryData.id,
+        notaryIdCode: notaryData.notaryIdCode,
+        name: `${notaryData.firstName} ${notaryData.lastName}`.trim() || notaryData.username,
+        firstName: notaryData.firstName,
+        lastName: notaryData.lastName,
+        email: notaryData.email,
+        isNotarySigningAgent: notaryData.isNotarySigningAgent,
+        isSpanishSpeaking: notaryData.isSpanishSpeaking,
+        commissionNumber: notaryData.commissionNumber,
+        commissionExpiration: notaryData.commissionExpiration,
+        state: notaryData.state,
+        notaryType: notaryData.notaryType,
+        qualifications: {
+          nsa: notaryData.isNotarySigningAgent,
+          spanish: notaryData.isSpanishSpeaking
+        }
+      });
+    } catch (error) {
+      console.error('Error finding notary by code:', error);
+      res.status(500).json({ error: 'Failed to find notary' });
+    }
+  });
+
   // Email Settings API Routes
   app.get('/api/settings/email', verifyToken, async (req: any, res) => {
     try {
@@ -3488,6 +4252,10 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
   registerApprovalWorkflowRoutes(app);
   registerNotaryProfileRoutes(app);
   registerFeeRoutes(app);
+  registerAdminVerificationRoutes(app);
+  
+  // Register admin logs routes
+  app.use('/api/admin', adminLogsRoutes);
   
   // ==========================================
   // ADMIN VERIFICATION ROUTES (Missing endpoints for dashboard)
@@ -3495,7 +4263,7 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
   
   // Middleware to ensure only admins can access these routes
   const requireAdmin = (req: any, res: any, next: any) => {
-    if (req.user?.role !== 'admin') {
+    if (!hasAdminPrivileges(req.user)) {
       return res.status(403).json({ error: 'Admin access required' });
     }
     next();
@@ -3548,7 +4316,7 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
   app.get('/api/admin/verification-stats', verifyToken, requireAdmin, async (req: any, res) => {
     try {
       // Get basic verification statistics
-      const [verificationStats] = await db.execute(sql`
+      const result = await db.execute(sql`
         SELECT 
           COUNT(*) as total_users,
           COUNT(CASE WHEN role IN ('signer', 'witness') THEN 1 END) as verification_required_users,
@@ -3559,6 +4327,9 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
         FROM users
         WHERE is_active = true
       `);
+
+      // Handle different result structures
+      const verificationStats = result?.rows?.[0] || result?.[0] || {};
 
       res.json({
         totalUsers: verificationStats?.total_users || 0,
@@ -3615,7 +4386,7 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
   });
 
   // Password reset and setup routes
-  app.post('/api/auth/validate-password-reset-token', async (req, res) => {
+  app.post('/api/auth/validate-password-reset-token', passwordResetLimiter, sanitizeHtml, async (req, res) => {
     try {
       const { token } = req.body;
       

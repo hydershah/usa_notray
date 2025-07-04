@@ -21,7 +21,9 @@ import {
   AlertCircle,
   AlertTriangle,
   Shield,
-  XCircle
+  XCircle,
+  ToggleLeft,
+  ToggleRight
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,6 +36,7 @@ import { EVSVerification } from '@/components/verification/evs-verification';
 import { AdminDashboard } from '@/components/admin/AdminDashboard';
 import { NotaryDashboard } from '@/components/notary/NotaryDashboard';
 import { ClientDashboard } from '@/components/client/ClientDashboard';
+import { TitleCompanyDashboard } from '@/components/admin/ManagerDashboard';
 
 interface DashboardStats {
   totalJobs: number;
@@ -56,14 +59,13 @@ function CompanyUserDashboard() {
   const recentJobsSlice = recentJobs.slice(0, 3);
 
   return (
-    <MainLayout>
-      <div className="space-y-8">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Welcome back, {user?.username}</h1>
-            <p className="text-gray-600 mt-1">Title Company Dashboard - Manage your notary orders</p>
-          </div>
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Welcome back, {user?.username}</h1>
+          <p className="text-gray-600 mt-1">Title Company Dashboard - Manage your notary orders</p>
+        </div>
           <div className="flex gap-3">
             <Button asChild variant="outline" size="sm">
               <Link to="/jobs">
@@ -204,7 +206,6 @@ function CompanyUserDashboard() {
           </CardContent>
         </Card>
       </div>
-    </MainLayout>
   );
 }
 
@@ -320,14 +321,12 @@ function WitnessDashboard() {
 
   if (loading) {
     return (
-      <MainLayout>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading your dashboard...</p>
-          </div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading your dashboard...</p>
         </div>
-      </MainLayout>
+      </div>
     );
   }
 
@@ -353,18 +352,20 @@ function WitnessDashboard() {
           </div>
         </div>
 
-        {/* Verification Alert */}
-        {!profile?.isVerified && (
+        {/* Verification Status Alert */}
+        {!profile?.isVerified ? (
           <Alert className="border-orange-200 bg-orange-50">
             <AlertCircle className="h-4 w-4 text-orange-600" />
             <AlertDescription className="text-orange-800">
-              <strong>ID Verification Required:</strong> As a witness, you must complete identity verification before participating in any notarization sessions.
-              <div className="flex gap-2 mt-2">
+              <strong>ID Verification Required:</strong> Complete identity verification to participate in notarization sessions.
+              <div className="flex gap-2 mt-3">
                 <Button 
                   size="sm" 
                   onClick={() => setShowVerification(true)}
+                  className="bg-orange-600 hover:bg-orange-700 text-white"
                 >
-                  Verify Now
+                  <Shield className="h-4 w-4 mr-2" />
+                  Start Verification
                 </Button>
                 <Button 
                   size="sm" 
@@ -377,6 +378,13 @@ function WitnessDashboard() {
                   Refresh Status
                 </Button>
               </div>
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <Alert className="border-green-200 bg-green-50">
+            <CheckCircle className="h-4 w-4 text-green-600" />
+            <AlertDescription className="text-green-800">
+              <strong>Verification Complete:</strong> You're ready to participate in notarization sessions!
             </AlertDescription>
           </Alert>
         )}
@@ -423,44 +431,70 @@ function WitnessDashboard() {
         )}
 
         {/* Quick Actions for Witness */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Button 
-            asChild 
-            variant="outline" 
-            className="h-20 flex flex-col items-center justify-center"
-            disabled={!profile?.isVerified}
-          >
-            <Link to="/jobs">
-              <Eye className="h-6 w-6 mb-2" />
-              <span>View Sessions</span>
-            </Link>
-          </Button>
-          <Button 
-            asChild 
-            variant="outline" 
-            className="h-20 flex flex-col items-center justify-center"
-            disabled={!profile?.isVerified}
-          >
-            <Link to="/jobs">
-              <Briefcase className="h-6 w-6 mb-2" />
-              <span>Pending Invitations</span>
-            </Link>
-          </Button>
-          <Button asChild variant="outline" className="h-20 flex flex-col items-center justify-center">
-            <Link to="/profile">
-              <User className="h-6 w-6 mb-2" />
-              <span>Profile Update</span>
-            </Link>
-          </Button>
-          <Button 
-            onClick={() => setShowVerification(true)}
-            variant="outline" 
-            className="h-20 flex flex-col items-center justify-center"
-            disabled={profile?.isVerified}
-          >
-            <Shield className="h-6 w-6 mb-2" />
-            <span>{profile?.isVerified ? 'Verified' : 'Verify ID'}</span>
-          </Button>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card className="border-0 shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <Button 
+                asChild 
+                variant="ghost" 
+                className="w-full h-auto p-0 flex flex-col items-center justify-center gap-3"
+                disabled={!profile?.isVerified}
+              >
+                <Link to="/jobs">
+                  <div className={`p-3 rounded-lg ${profile?.isVerified ? 'bg-blue-100' : 'bg-gray-100'}`}>
+                    <Eye className={`h-8 w-8 ${profile?.isVerified ? 'text-blue-600' : 'text-gray-400'}`} />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="font-medium text-gray-900">Available Sessions</h3>
+                    <p className="text-sm text-gray-600 mt-1">View and join witnessing sessions</p>
+                  </div>
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <Button 
+                asChild 
+                variant="ghost" 
+                className="w-full h-auto p-0 flex flex-col items-center justify-center gap-3"
+              >
+                <Link to="/profile">
+                  <div className="p-3 rounded-lg bg-green-100">
+                    <User className="h-8 w-8 text-green-600" />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="font-medium text-gray-900">Profile Settings</h3>
+                    <p className="text-sm text-gray-600 mt-1">Update your account information</p>
+                  </div>
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <Button 
+                onClick={() => profile?.isVerified ? null : setShowVerification(true)}
+                variant="ghost" 
+                className="w-full h-auto p-0 flex flex-col items-center justify-center gap-3"
+                disabled={profile?.isVerified}
+              >
+                <div className={`p-3 rounded-lg ${profile?.isVerified ? 'bg-green-100' : 'bg-orange-100'}`}>
+                  <Shield className={`h-8 w-8 ${profile?.isVerified ? 'text-green-600' : 'text-orange-600'}`} />
+                </div>
+                <div className="text-center">
+                  <h3 className="font-medium text-gray-900">
+                    {profile?.isVerified ? 'ID Verified' : 'Verify Identity'}
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {profile?.isVerified ? 'Verification complete' : 'Complete ID verification'}
+                  </p>
+                </div>
+              </Button>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Statistics Cards */}
@@ -633,54 +667,54 @@ function ObserverDashboard() {
           <p className="text-gray-600 mt-1">Observer Dashboard - Monitor signing sessions</p>
         </div>
 
-        {/* Quick Actions for Observer */}
-        <div className="grid grid-cols-2 gap-4">
-          <Button asChild variant="outline" className="h-20 flex flex-col items-center justify-center">
-            <Link to="/jobs">
-              <Eye className="h-6 w-6 mb-2" />
-              <span>View Sessions</span>
-            </Link>
-          </Button>
-          <Button asChild variant="outline" className="h-20 flex flex-col items-center justify-center">
-            <Link to="/profile">
-              <User className="h-6 w-6 mb-2" />
-              <span>Profile</span>
-            </Link>
-          </Button>
+          {/* Quick Actions for Observer */}
+          <div className="grid grid-cols-2 gap-4">
+            <Button asChild variant="outline" className="h-20 flex flex-col items-center justify-center">
+              <Link to="/jobs">
+                <Eye className="h-6 w-6 mb-2" />
+                <span>View Sessions</span>
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className="h-20 flex flex-col items-center justify-center">
+              <Link to="/profile">
+                <User className="h-6 w-6 mb-2" />
+                <span>Profile</span>
+              </Link>
+            </Button>
+          </div>
+
+          <Alert className="border-gray-200 bg-gray-50">
+            <Eye className="h-4 w-4 text-gray-600" />
+            <AlertDescription className="text-gray-800">
+              As an observer, you can monitor signing sessions when granted access. 
+              <Link to="/jobs" className="ml-1 underline font-medium">Check for available sessions →</Link>
+            </AlertDescription>
+          </Alert>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Your Role: Observer</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <Eye className="h-5 w-5 text-gray-600" />
+                  <div>
+                    <p className="font-medium">Monitor Sessions</p>
+                    <p className="text-sm text-gray-600">Observe signing sessions as permitted</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <UserCheck className="h-5 w-5 text-gray-600" />
+                  <div>
+                    <p className="font-medium">Limited Access</p>
+                    <p className="text-sm text-gray-600">View-only access to authorized sessions</p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
-
-        <Alert className="border-gray-200 bg-gray-50">
-          <Eye className="h-4 w-4 text-gray-600" />
-          <AlertDescription className="text-gray-800">
-            As an observer, you can monitor signing sessions when granted access. 
-            <Link to="/jobs" className="ml-1 underline font-medium">Check for available sessions →</Link>
-          </AlertDescription>
-        </Alert>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Your Role: Observer</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <Eye className="h-5 w-5 text-gray-600" />
-                <div>
-                  <p className="font-medium">Monitor Sessions</p>
-                  <p className="text-sm text-gray-600">Observe signing sessions as permitted</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <FileText className="h-5 w-5 text-gray-600" />
-                <div>
-                  <p className="font-medium">View Documentation</p>
-                  <p className="text-sm text-gray-600">Access session logs and documentation</p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
     </MainLayout>
   );
 }
@@ -696,21 +730,41 @@ export default function Dashboard() {
     isLoading: profileStatusLoading 
   } = useNotaryProfileStatus();
   const [, setLocation] = useLocation();
+  
+  // State for role switching (for users with multiple privileges)
+  const [activeRole, setActiveRole] = useState<'admin' | 'notary' | null>(null);
+
+  // Determine if user has multiple privileges
+  const hasMultiplePrivileges = user && 
+    ((user.isAdmin || user.role === 'admin') && (user.isNotary || user.role === 'notary'));
+
+  // Set default active role - ALWAYS prioritize admin for admin users
+  useEffect(() => {
+    if (user && !activeRole) {
+      // Admin users ALWAYS default to admin view, regardless of other privileges
+      if (user.isAdmin || user.role === 'admin') {
+        setActiveRole('admin');
+      } else if (user.role === 'notary' || user.isNotary) {
+        setActiveRole('notary');
+      }
+    }
+  }, [user, activeRole, hasMultiplePrivileges]);
 
   // Use effect to handle navigation instead of during render
+  // Only redirect pure notary users (not admin users with notary privileges) to profile completion
   useEffect(() => {
-    if (user?.role === 'notary' && !profileStatusLoading && needsProfileCompletion) {
+    if (user?.role === 'notary' && !user?.isAdmin && !profileStatusLoading && needsProfileCompletion) {
       setLocation('/notary/profile/complete');
     }
-  }, [user?.role, profileStatusLoading, needsProfileCompletion, setLocation]);
+  }, [user?.role, user?.isAdmin, profileStatusLoading, needsProfileCompletion, setLocation]);
 
-  // Check if notary needs to complete profile
-  if (user?.role === 'notary' && !profileStatusLoading && needsProfileCompletion) {
+  // Check if pure notary user (not admin) needs to complete profile
+  if (user?.role === 'notary' && !user?.isAdmin && !profileStatusLoading && needsProfileCompletion) {
     return null; // Return null while navigating
   }
 
-  // Show pending approval status for notaries
-  if (user?.role === 'notary' && !profileStatusLoading && needsApproval) {
+  // Show pending approval status for notaries (but not admin users with notary privileges)
+  if (user?.role === 'notary' && !user?.isAdmin && !profileStatusLoading && needsApproval) {
     return (
       <MainLayout>
         <div className="flex items-center justify-center min-h-screen">
@@ -732,8 +786,8 @@ export default function Dashboard() {
     );
   }
 
-  // Show rejection status for notaries
-  if (user?.role === 'notary' && !profileStatusLoading && isRejected) {
+  // Show rejection status for notaries (but not admin users with notary privileges)
+  if (user?.role === 'notary' && !user?.isAdmin && !profileStatusLoading && isRejected) {
     return (
       <MainLayout>
         <div className="flex items-center justify-center min-h-screen">
@@ -767,71 +821,144 @@ export default function Dashboard() {
     );
   }
 
-  // Route to appropriate dashboard based on user role
-  switch (user?.role) {
-    case 'admin':
-      return (
-        <MainLayout>
-          <AdminDashboard />
-        </MainLayout>
-      );
+  // Route to appropriate dashboard - ALWAYS prioritize admin access
+  const getCurrentDashboard = () => {
+    // FIRST: Check if user has admin privileges - admin always takes precedence
+    if (user?.isAdmin || user?.role === 'admin') {
+      // For admin users with multiple privileges, respect their chosen view
+      if (hasMultiplePrivileges && activeRole === 'notary') {
+        return <NotaryDashboard />;
+      }
+      // Default to admin dashboard for all admin users
+      return <AdminDashboard />;
+    }
     
-    case 'notary':
-      return (
-        <MainLayout>
-          <NotaryDashboard />
-        </MainLayout>
-      );
-    
-    case 'client':
-      return (
-        <MainLayout>
-          <ClientDashboard />
-        </MainLayout>
-      );
-    
-    case 'company_user':
-    case 'title_company':
-    case 'manager':
-      return <CompanyUserDashboard />;
-    
-    case 'witness':
+    // THEN: Handle non-admin users based on their role
+    if (user?.isNotary || user?.role === 'notary') {
+      return <NotaryDashboard />;
+    } else if (user?.role === 'client') {
+      return <ClientDashboard />;
+    } else if (['company_user', 'title_company'].includes(user?.role)) {
+      return <TitleCompanyDashboard />;
+    } else if (user?.role === 'witness') {
       return <WitnessDashboard />;
-    
-    case 'observer':
+    } else if (user?.role === 'observer') {
       return <ObserverDashboard />;
-    
-    default:
+    } else {
       // Fallback for unknown roles
       return (
-        <MainLayout>
-          <div className="space-y-8">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Welcome to USA Notary</h1>
-              <p className="text-gray-600 mt-1">Your account is being set up. Please contact support if you need assistance.</p>
-            </div>
-            
-            <Alert className="border-yellow-200 bg-yellow-50">
-              <AlertCircle className="h-4 w-4 text-yellow-600" />
-              <AlertDescription className="text-yellow-800">
-                Your user role is not recognized. Please contact support for assistance.
-              </AlertDescription>
-            </Alert>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Account Information</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <p><strong>Username:</strong> {user?.username}</p>
-                  <p><strong>Email:</strong> {user?.email}</p>
-                  <p><strong>Role:</strong> {user?.role || 'Not assigned'}</p>
-                </div>
-              </CardContent>
-            </Card>
+        <div className="space-y-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Welcome to USA Notary</h1>
+            <p className="text-gray-600 mt-1">Your account is being set up. Please contact support if you need assistance.</p>
           </div>
-        </MainLayout>
+          
+          <Alert className="border-yellow-200 bg-yellow-50">
+            <AlertCircle className="h-4 w-4 text-yellow-600" />
+            <AlertDescription className="text-yellow-800">
+              Your user role is not recognized. Please contact support for assistance.
+            </AlertDescription>
+          </Alert>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Account Information</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <p><strong>Username:</strong> {user?.username}</p>
+                <p><strong>Email:</strong> {user?.email}</p>
+                <p><strong>Role:</strong> {user?.role || 'Not assigned'}</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       );
-  }
+    }
+  };
+
+  return (
+    <MainLayout>
+      {/* Role Switcher for admin users with notary privileges - Admin is default */}
+      {hasMultiplePrivileges && (
+        <div className="mb-6 bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Shield className="w-5 h-5 text-blue-600" />
+              <span className="font-medium text-gray-900">Dashboard View:</span>
+              <div className="flex items-center gap-2">
+                <Badge variant={activeRole === 'admin' ? 'default' : 'outline'}>
+                  Administrator (Default)
+                </Badge>
+                <Badge variant={activeRole === 'notary' ? 'default' : 'outline'}>
+                  Notary Public (Optional)
+                </Badge>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant={activeRole === 'admin' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setActiveRole('admin')}
+                className="flex items-center gap-2"
+              >
+                <Settings className="w-4 h-4" />
+                Admin View
+              </Button>
+              <Button
+                variant={activeRole === 'notary' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setActiveRole('notary')}
+                className="flex items-center gap-2"
+              >
+                <FileText className="w-4 h-4" />
+                Notary View
+              </Button>
+            </div>
+          </div>
+          <p className="text-sm text-gray-600 mt-2">
+            <strong>Administrator privileges:</strong> You have full system access by default. 
+            Optionally switch to notary view to use notary-specific features.
+          </p>
+        </div>
+      )}
+
+      {/* Optional Notary Profile Notice for Admin Users - Only show in notary view */}
+      {user?.isAdmin && user?.isNotary && needsProfileCompletion && activeRole === 'notary' && (
+        <Alert className="mb-6 border-blue-200 bg-blue-50">
+          <AlertCircle className="h-4 w-4 text-blue-600" />
+          <AlertDescription className="text-blue-800">
+            <div className="flex items-center justify-between">
+              <div>
+                <strong>Optional Notary Setup:</strong> Complete your notary profile to access notary-specific features. 
+                <div className="text-sm mt-1 text-blue-600">
+                  ℹ️ This is completely optional - your admin privileges provide full system access.
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setActiveRole('admin')}
+                  className="border-blue-300 text-blue-700 hover:bg-blue-100"
+                >
+                  Back to Admin
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setLocation('/notary/profile/complete')}
+                  className="border-blue-300 text-blue-700 hover:bg-blue-100"
+                >
+                  Complete Profile
+                </Button>
+              </div>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+      
+      {getCurrentDashboard()}
+    </MainLayout>
+  );
 }

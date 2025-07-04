@@ -1,5 +1,6 @@
 import { pool } from './db';
 import { emailService } from './lib/email-service';
+
 import { eq, and, desc } from 'drizzle-orm';
 
 // Define the schema types for our email templates
@@ -114,7 +115,7 @@ class EmailTemplateService {
       current_year: new Date().getFullYear(),
       current_date: new Date().toLocaleDateString(),
       expiration_time: '24 hours',
-      client_url: process.env.CLIENT_URL || 'https://notary.usanotaryservices.com'
+      client_url: process.env.CLIENT_URL || 'http://localhost:5173'
     };
   }
 

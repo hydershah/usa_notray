@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { VerificationDataView } from './VerificationDataView';
 import { VerificationManagement } from './VerificationManagement';
+import { SystemLogsView } from './SystemLogsView';
 import { 
   Users, 
   Building2, 
@@ -155,7 +156,7 @@ export function AdminDashboard() {
       }
       
       // Fetch dashboard statistics
-      const [usersRes, companiesRes, jobsRes, pendingRes, pendingCompaniesRes] = await Promise.all([
+      const [usersRes, companiesRes, jobsRes, pendingRes, pendingCompaniesRes, revenueRes] = await Promise.all([
         fetch('/api/users', {
           headers: { Authorization: `Bearer ${token}` }
         }),
@@ -170,12 +171,15 @@ export function AdminDashboard() {
         }),
         fetch('/api/admin/companies/pending', {
           headers: { Authorization: `Bearer ${token}` }
+        }),
+        fetch('/api/admin/revenue-stats', {
+          headers: { Authorization: `Bearer ${token}` }
         })
       ]);
 
       // Check if any response failed with authentication error
       if (usersRes.status === 401 || companiesRes.status === 401 || jobsRes.status === 401 || 
-          pendingRes.status === 401 || pendingCompaniesRes.status === 401) {
+          pendingRes.status === 401 || pendingCompaniesRes.status === 401 || revenueRes.status === 401) {
         console.error('Authentication failed - invalid or expired token');
         localStorage.removeItem('token'); // Clear invalid token
         window.location.href = '/login';
@@ -183,7 +187,7 @@ export function AdminDashboard() {
       }
 
       // Check if all responses are successful
-      if (!usersRes.ok || !companiesRes.ok || !jobsRes.ok || !pendingRes.ok || !pendingCompaniesRes.ok) {
+      if (!usersRes.ok || !companiesRes.ok || !jobsRes.ok || !pendingRes.ok || !pendingCompaniesRes.ok || !revenueRes.ok) {
         throw new Error('One or more API requests failed');
       }
 
@@ -192,6 +196,7 @@ export function AdminDashboard() {
       const jobs = await jobsRes.json();
       const pending = await pendingRes.json();
       const pendingCompaniesData = await pendingCompaniesRes.json();
+      const revenueData = await revenueRes.json();
 
       // Ensure all data is arrays before processing
       const usersArray = Array.isArray(users) ? users : [];
@@ -224,8 +229,8 @@ export function AdminDashboard() {
         pendingCompanies: pendingCompaniesArray.length,
         activeJobs,
         completedJobs,
-        monthlyRevenue: 15750, // Mock data - TODO: Calculate from payments
-        pendingPayments: 3 // Mock data - TODO: Calculate from payments
+        monthlyRevenue: parseFloat(revenueData.monthly_revenue) || 0,
+        pendingPayments: parseInt(revenueData.pending_payments) || 0
       });
 
       setPendingUsers(pendingArray);
@@ -270,34 +275,8 @@ export function AdminDashboard() {
     }
   };
 
-  const handleManualVerificationAction = async (userId: number, action: 'approve' | 'reject', notes?: string) => {
-    try {
-      const response = await fetch(`/api/admin/users/${userId}/verification-action`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({ action, notes })
-      });
-
-      if (response.ok) {
-        // Refresh user data
-        await fetchDashboardData();
-        await fetchVerificationStats();
-        
-        // Update selected user if it's the same one
-        if (selectedUser?.id === userId) {
-          const updatedUser = allUsers.find(u => u.id === userId);
-          if (updatedUser) {
-            setSelectedUser(updatedUser);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error performing manual verification action:', error);
-    }
-  };
+  // Removed handleManualVerificationAction as it used a non-existent endpoint
+  // Use approveUser and rejectUser functions instead
 
   const approveUser = async (userId: number) => {
     try {
@@ -541,7 +520,7 @@ export function AdminDashboard() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-7 h-14 bg-gradient-to-r from-blue-50 via-purple-50 to-blue-50 border rounded-lg p-1 shadow-md">
+        <TabsList className="grid w-full grid-cols-8 h-14 bg-gradient-to-r from-blue-50 via-purple-50 to-blue-50 border rounded-lg p-1 shadow-md">
           <TabsTrigger value="overview" className="flex items-center gap-2 data-[state=active]:bg-blue-500 data-[state=active]:text-white hover:bg-blue-100">
             <BarChart3 className="h-4 w-4" />
             <span className="hidden sm:inline">Overview</span>
@@ -565,6 +544,10 @@ export function AdminDashboard() {
           <TabsTrigger value="notaries" className="flex items-center gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-white hover:bg-amber-100">
             <Award className="h-4 w-4" />
             <span className="hidden sm:inline">Notaries</span>
+          </TabsTrigger>
+          <TabsTrigger value="logs" className="flex items-center gap-2 data-[state=active]:bg-red-500 data-[state=active]:text-white hover:bg-red-100">
+            <Activity className="h-4 w-4" />
+            <span className="hidden sm:inline">Logs</span>
           </TabsTrigger>
           <TabsTrigger value="settings" className="flex items-center gap-2 data-[state=active]:bg-gray-500 data-[state=active]:text-white hover:bg-gray-100">
             <Settings className="h-4 w-4" />
@@ -1633,6 +1616,11 @@ export function AdminDashboard() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* System Logs Tab */}
+        <TabsContent value="logs" className="mt-8">
+          <SystemLogsView />
         </TabsContent>
 
         {/* Enhanced Settings Tab */}

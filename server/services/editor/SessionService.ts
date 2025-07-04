@@ -3,6 +3,7 @@ import { editorSessions, jobs, users, jobDocuments } from "../../../shared/schem
 import { eq, and, desc } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
+
 export interface CreateSessionRequest {
   jobId: number;
   sessionType: 'tagging' | 'notary';

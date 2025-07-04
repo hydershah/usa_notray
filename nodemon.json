@@ -1,0 +1,24 @@
+{
+  "watch": ["server/**/*.ts", "shared/**/*.ts"],
+  "ignore": [
+    "node_modules/**/*",
+    "dist/**/*",
+    "client/**/*",
+    "uploads/**/*",
+    "recordings/**/*",
+    "temp/**/*",
+    "*.log",
+    "*.db",
+    "*.sqlite*",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ],
+  "ext": "ts,js,json",
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "delay": "2000",
+  "exec": "npx tsx server/index.ts",
+  "verbose": false,
+  "restartable": "rs"
+} 

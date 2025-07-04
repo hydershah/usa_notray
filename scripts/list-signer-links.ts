@@ -2,6 +2,7 @@ import { db } from "../server/db";
 import { signers, jobs } from "../shared/schema";
 import { desc, eq } from "drizzle-orm";
 
+
 async function listSignerLinks() {
   console.log("📋 Listing All Signers and Their Invitation Links\n");
   console.log("=" .repeat(80));
@@ -26,9 +27,9 @@ async function listSignerLinks() {
     
     allSigners.forEach((row, index) => {
       const { signer, job } = row;
-      const invitationLink = signer.invitationToken 
-        ? `http://localhost:3000/sign/${signer.invitationToken}`
-        : 'No invitation token';
+              const invitationLink = signer.invitationToken 
+        ? `${process.env.CLIENT_URL || 'http://localhost:5173'}/sign/${signer.invitationToken}`
+          : 'No invitation token';
       
       console.log(`${index + 1}. ${signer.signerName}`);
       console.log(`   📧 Email: ${signer.signerEmail}`);

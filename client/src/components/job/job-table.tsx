@@ -76,7 +76,11 @@ import {
   RefreshCw,
   Copy,
   ExternalLink,
-  Briefcase
+  Briefcase,
+  Zap,
+  Target,
+  Settings,
+  Grid3X3
 } from 'lucide-react';
 import { type Job } from '@shared/schema';
 
@@ -98,6 +102,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
   const [selectedJobs, setSelectedJobs] = useState<number[]>([]);
   const [isBulkActionOpen, setIsBulkActionOpen] = useState(false);
   const [bulkAction, setBulkAction] = useState('');
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -336,19 +341,44 @@ export function JobTable({ onCreateJob }: JobTableProps) {
 
   const getStatusBadge = (status: string) => {
     const config = {
-      open: { variant: 'secondary' as const, icon: AlertCircle, color: 'text-blue-600' },
-      pending: { variant: 'secondary' as const, icon: Clock, color: 'text-yellow-600' },
-      completed: { variant: 'default' as const, icon: CheckCircle, color: 'text-green-600' },
-      cancelled: { variant: 'destructive' as const, icon: XCircle, color: 'text-red-600' },
-      expired: { variant: 'secondary' as const, icon: XCircle, color: 'text-gray-600' },
+      open: { 
+        variant: 'secondary' as const, 
+        icon: AlertCircle, 
+        color: 'text-blue-600',
+        bgColor: 'bg-blue-50 border-blue-200'
+      },
+      pending: { 
+        variant: 'secondary' as const, 
+        icon: Clock, 
+        color: 'text-yellow-600',
+        bgColor: 'bg-yellow-50 border-yellow-200'
+      },
+      completed: { 
+        variant: 'default' as const, 
+        icon: CheckCircle, 
+        color: 'text-green-600',
+        bgColor: 'bg-green-50 border-green-200'
+      },
+      cancelled: { 
+        variant: 'destructive' as const, 
+        icon: XCircle, 
+        color: 'text-red-600',
+        bgColor: 'bg-red-50 border-red-200'
+      },
+      expired: { 
+        variant: 'secondary' as const, 
+        icon: XCircle, 
+        color: 'text-gray-600',
+        bgColor: 'bg-gray-50 border-gray-200'
+      },
     };
 
-    const { variant, icon: Icon, color } = config[status as keyof typeof config] || config.open;
+    const { icon: Icon, color, bgColor } = config[status as keyof typeof config] || config.open;
 
     return (
-      <Badge variant={variant} className="flex items-center gap-1">
-        <Icon className={`w-3 h-3 ${color}`} />
-        {status}
+      <Badge className={`flex items-center gap-1 ${bgColor} ${color} border hover:shadow-sm transition-all duration-200`}>
+        <Icon className={`w-3 h-3`} />
+        {status.charAt(0).toUpperCase() + status.slice(1)}
       </Badge>
     );
   };
@@ -371,7 +401,6 @@ export function JobTable({ onCreateJob }: JobTableProps) {
       if (bulkAction === 'delete') {
         setIsBulkActionOpen(true);
       } else {
-        // Handle other bulk actions
         bulkUpdateMutation.mutate({ 
           jobIds: selectedJobs, 
           action: bulkAction.split('-')[0], 
@@ -390,25 +419,49 @@ export function JobTable({ onCreateJob }: JobTableProps) {
 
   return (
     <TooltipProvider>
-      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-gray-50">
-        <CardHeader className="pb-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-3 text-2xl">
-                <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg">
-                  <Briefcase className="h-6 w-6 text-white" />
-                </div>
-                Job Management
-              </CardTitle>
-              <p className="text-gray-600 mt-2">
-                Manage notary jobs and track their progress
-              </p>
+      <div className="space-y-6">
+        {/* Enhanced Header */}
+        <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-6 rounded-t-3xl border-b border-gray-200">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                <FileText className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">All Jobs</h2>
+                <p className="text-sm text-gray-600">
+                  Showing {paginatedJobs.length} of {filteredAndSortedJobs.length} jobs
+                  {searchTerm && ` matching "${searchTerm}"`}
+                </p>
+              </div>
             </div>
-            <div className="flex gap-2 mt-4 sm:mt-0">
+            
+            <div className="flex items-center gap-3">
+              {/* View Mode Toggle */}
+              <div className="flex bg-gray-200 rounded-lg p-1">
+                <Button
+                  variant={viewMode === 'table' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('table')}
+                  className="h-8 px-3"
+                >
+                  <FileText className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('grid')}
+                  className="h-8 px-3"
+                >
+                  <Grid3X3 className="w-4 h-4" />
+                </Button>
+              </div>
+
+              {/* Bulk Actions */}
               {selectedJobs.length > 0 && (
                 <>
                   <Select value={bulkAction} onValueChange={setBulkAction}>
-                    <SelectTrigger className="w-[140px]">
+                    <SelectTrigger className="w-[140px] bg-white border-2 border-gray-200">
                       <SelectValue placeholder="Bulk Action" />
                     </SelectTrigger>
                     <SelectContent>
@@ -421,46 +474,55 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                     variant="outline"
                     onClick={handleBulkAction}
                     disabled={!bulkAction || bulkUpdateMutation.isPending}
-                    size="sm"
+                    className="bg-white border-2 border-gray-200 hover:border-blue-300 hover:bg-blue-50"
                   >
-                    <Activity className="h-4 w-4 mr-2" />
+                    <Zap className="h-4 w-4 mr-2" />
                     Apply ({selectedJobs.length})
                   </Button>
                 </>
               )}
-              <Button variant="outline" onClick={() => window.location.reload()} size="sm">
+
+              <Button 
+                variant="outline" 
+                onClick={() => window.location.reload()}
+                className="bg-white border-2 border-gray-200 hover:border-blue-300 hover:bg-blue-50"
+              >
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Refresh
               </Button>
+
               {canCreateJob && (
-                <Button onClick={onCreateJob} className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+                <Button 
+                  onClick={onCreateJob} 
+                  className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg"
+                >
                   <Plus className="h-4 w-4 mr-2" />
-                  Create New Job
+                  Create Job
                 </Button>
               )}
             </div>
           </div>
-        </CardHeader>
-        
-        <CardContent>
-          {/* Enhanced Filters */}
-          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+        </div>
+
+        {/* Enhanced Filters */}
+        <div className="px-6 space-y-4">
+          <div className="flex flex-col lg:flex-row gap-4">
             <div className="flex-1">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <Input
-                  placeholder="Search by reference, company, address, or closing type..."
+                  placeholder="Search jobs by reference, company, address, or closing type..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="pl-12 h-11 bg-white border-2 border-gray-200 focus:border-blue-500 rounded-xl shadow-sm"
                 />
               </div>
             </div>
             
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-3 flex-wrap">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[120px]">
-                  <Filter className="h-4 w-4 mr-2" />
+                <SelectTrigger className="w-[130px] h-11 bg-white border-2 border-gray-200 rounded-xl">
+                  <Filter className="h-4 w-4 mr-2 text-gray-500" />
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -474,7 +536,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
               </Select>
               
               <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                <SelectTrigger className="w-[160px]">
+                <SelectTrigger className="w-[160px] h-11 bg-white border-2 border-gray-200 rounded-xl">
                   <SelectValue placeholder="Company" />
                 </SelectTrigger>
                 <SelectContent>
@@ -486,7 +548,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
               </Select>
 
               <Select value={dateFilter} onValueChange={setDateFilter}>
-                <SelectTrigger className="w-[120px]">
+                <SelectTrigger className="w-[130px] h-11 bg-white border-2 border-gray-200 rounded-xl">
                   <SelectValue placeholder="Date" />
                 </SelectTrigger>
                 <SelectContent>
@@ -498,116 +560,207 @@ export function JobTable({ onCreateJob }: JobTableProps) {
               </Select>
             </div>
           </div>
+        </div>
 
-          {/* Results Summary */}
-          <div className="flex justify-between items-center mb-4 text-sm text-gray-600">
-            <span>
-              Showing {paginatedJobs.length} of {filteredAndSortedJobs.length} jobs
-              {searchTerm && ` matching "${searchTerm}"`}
-            </span>
-            <span>Total: {Array.isArray(jobs) ? jobs.length : 0} jobs</span>
-          </div>
+        {/* Content Area */}
+        <div className="px-6 pb-6">
+          {isLoading ? (
+            <div className="text-center py-16">
+              <div className="inline-flex items-center gap-3 text-gray-600">
+                <RefreshCw className="h-6 w-6 animate-spin" />
+                <span className="text-lg">Loading jobs...</span>
+              </div>
+            </div>
+          ) : filteredAndSortedJobs.length === 0 ? (
+            <div className="text-center py-16">
+              <div className="w-20 h-20 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <FileText className="h-10 w-10 text-gray-400" />
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                {searchTerm ? `No jobs found matching "${searchTerm}"` : "No jobs found"}
+              </h3>
+              <p className="text-gray-600 mb-6">
+                {searchTerm ? "Try adjusting your search criteria" : "Get started by creating your first job"}
+              </p>
+              {canCreateJob && !searchTerm && (
+                <Button onClick={onCreateJob} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create your first job
+                </Button>
+              )}
+            </div>
+          ) : viewMode === 'grid' ? (
+            // Grid View
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {paginatedJobs.map((job) => (
+                <Card key={job.id} className="group hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-2 border-gray-100 hover:border-blue-200">
+                  <CardHeader className="pb-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <Checkbox
+                          checked={selectedJobs.includes(job.id)}
+                          onCheckedChange={(checked) => handleSelectJob(job.id, !!checked)}
+                        />
+                        <Avatar className="h-10 w-10">
+                          <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+                            <Building className="h-5 w-5" />
+                          </AvatarFallback>
+                        </Avatar>
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleViewDetails(job)}>
+                            <Eye className="h-4 w-4 mr-2" />
+                            View Details
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => navigator.clipboard.writeText(`Job #${job.id}`)}>
+                            <Copy className="h-4 w-4 mr-2" />
+                            Copy Job ID
+                          </DropdownMenuItem>
+                          {job.uploadedFile && (
+                            <DropdownMenuItem onClick={() => handleDownload(job.id, 'original')}>
+                              <Download className="h-4 w-4 mr-2" />
+                              Download Original
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                    <CardTitle className="text-lg font-semibold">
+                      {job.internalReference || `Job #${job.id}`}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Building className="h-4 w-4 text-gray-500" />
+                        <span className="font-medium">{job.titleCompany}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <MapPin className="h-4 w-4" />
+                        <span>{job.propertyAddressOne}</span>
+                      </div>
+                      {job.closingType && (
+                        <Badge variant="outline" className="text-xs">
+                          {job.closingType}
+                        </Badge>
+                      )}
+                    </div>
 
-          {/* Enhanced Jobs Table */}
-          <div className="overflow-x-auto">
-            {isLoading ? (
-              <div className="text-center py-12">
-                <div className="inline-flex items-center gap-2 text-gray-600">
-                  <RefreshCw className="h-5 w-5 animate-spin" />
-                  Loading jobs...
-                </div>
-              </div>
-            ) : filteredAndSortedJobs.length === 0 ? (
-              <div className="text-center py-12">
-                <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500 text-lg mb-2">
-                  {searchTerm ? `No jobs found matching "${searchTerm}"` : "No jobs found"}
-                </p>
-                {canCreateJob && !searchTerm && (
-                  <Button onClick={onCreateJob} variant="outline" className="mt-2">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create your first job
-                  </Button>
-                )}
-              </div>
-            ) : (
+                    <div className="space-y-2">
+                      {getStatusBadge(job.jobStatus)}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs text-gray-600">
+                          <span>Progress</span>
+                          <span>{getJobProgress(job)}%</span>
+                        </div>
+                        <Progress value={getJobProgress(job)} className="h-2" />
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-gray-100">
+                      <Button
+                        onClick={() => handleViewDetails(job)}
+                        className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                      >
+                        <Eye className="w-4 h-4 mr-2" />
+                        View Details
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            // Enhanced Table View
+            <div className="bg-white rounded-2xl border-2 border-gray-100 overflow-hidden shadow-sm">
               <Table>
                 <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="w-12">
+                  <TableRow className="hover:bg-transparent bg-gray-50/50">
+                    <TableHead className="w-12 py-4">
                       <Checkbox
                         checked={selectedJobs.length === paginatedJobs.length && paginatedJobs.length > 0}
                         onCheckedChange={handleSelectAll}
                       />
                     </TableHead>
-                    <TableHead>
+                    <TableHead className="py-4">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleSort('title')}
-                        className="h-8 px-2 font-medium"
+                        className="h-8 px-3 font-semibold text-gray-700 hover:text-blue-600"
                       >
                         Job Details
                         {getSortIcon('title')}
                       </Button>
                     </TableHead>
-                    <TableHead>
+                    <TableHead className="py-4">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleSort('status')}
-                        className="h-8 px-2 font-medium"
+                        className="h-8 px-3 font-semibold text-gray-700 hover:text-blue-600"
                       >
                         Status & Progress
                         {getSortIcon('status')}
                       </Button>
                     </TableHead>
-                    <TableHead>
+                    <TableHead className="py-4">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleSort('date')}
-                        className="h-8 px-2 font-medium"
+                        className="h-8 px-3 font-semibold text-gray-700 hover:text-blue-600"
                       >
                         Schedule
                         {getSortIcon('date')}
                       </Button>
                     </TableHead>
-                    <TableHead>
+                    <TableHead className="py-4">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleSort('created')}
-                        className="h-8 px-2 font-medium"
+                        className="h-8 px-3 font-semibold text-gray-700 hover:text-blue-600"
                       >
                         Created
                         {getSortIcon('created')}
                       </Button>
                     </TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead className="py-4 font-semibold text-gray-700">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {paginatedJobs.map((job) => (
-                    <TableRow key={job.id} className="hover:bg-muted/50 transition-colors">
-                      <TableCell>
+                  {paginatedJobs.map((job, index) => (
+                    <TableRow 
+                      key={job.id} 
+                      className={`hover:bg-blue-50/50 transition-colors border-b border-gray-100 ${
+                        index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'
+                      }`}
+                    >
+                      <TableCell className="py-4">
                         <Checkbox
                           checked={selectedJobs.includes(job.id)}
                           onCheckedChange={(checked) => handleSelectJob(job.id, !!checked)}
                         />
                       </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-10 w-10">
-                            <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-                              <Building className="h-5 w-5" />
+                      <TableCell className="py-4">
+                        <div className="flex items-center gap-4">
+                          <Avatar className="h-12 w-12 shadow-md">
+                            <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
+                              <Building className="h-6 w-6" />
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <div className="font-medium text-gray-900">
+                            <div className="font-semibold text-gray-900 text-base">
                               {job.internalReference || `Job #${job.id}`}
                             </div>
-                            <div className="text-sm text-gray-600 flex items-center gap-1">
+                            <div className="text-sm text-gray-600 flex items-center gap-1 mt-1">
                               <Building className="h-3 w-3" />
                               {job.titleCompany}
                             </div>
@@ -616,57 +769,61 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                               {job.propertyAddressOne}
                             </div>
                             {job.closingType && (
-                              <Badge variant="outline" className="text-xs mt-1">
+                              <Badge variant="outline" className="text-xs mt-2">
                                 {job.closingType}
                               </Badge>
                             )}
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <div className="space-y-2">
+                      <TableCell className="py-4">
+                        <div className="space-y-3">
                           {getStatusBadge(job.jobStatus)}
-                          <div className="space-y-1">
+                          <div className="space-y-2">
                             <div className="flex items-center justify-between text-xs text-gray-600">
-                              <span>Progress</span>
-                              <span>{getJobProgress(job)}%</span>
+                              <span className="font-medium">Progress</span>
+                              <span className="font-semibold">{getJobProgress(job)}%</span>
                             </div>
-                            <Progress value={getJobProgress(job)} className="h-1" />
+                            <Progress value={getJobProgress(job)} className="h-2" />
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="py-4">
                         {job.selectedDate && job.selectedTime ? (
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-1 text-sm font-medium">
-                              <Calendar className="h-3 w-3 text-blue-600" />
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-sm font-medium">
+                              <Calendar className="h-4 w-4 text-blue-600" />
                               {formatDate(job.selectedDate)}
                             </div>
-                            <div className="flex items-center gap-1 text-sm text-gray-600">
-                              <Clock className="h-3 w-3" />
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                              <Clock className="h-4 w-4" />
                               {job.selectedTime}
                             </div>
                           </div>
                         ) : (
-                          <div className="text-sm text-gray-500 flex items-center gap-1">
-                            <AlertCircle className="h-3 w-3" />
+                          <div className="text-sm text-gray-500 flex items-center gap-2">
+                            <AlertCircle className="h-4 w-4" />
                             Not scheduled
                           </div>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <div className="text-sm text-gray-500">
+                      <TableCell className="py-4">
+                        <div className="text-sm text-gray-600">
                           {formatDateTime(job.createdAt)}
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="py-4">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm">
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              className="h-9 w-9 p-0 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                            >
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
+                          <DropdownMenuContent align="end" className="w-48">
                             <DropdownMenuItem onClick={() => handleViewDetails(job)}>
                               <Eye className="h-4 w-4 mr-2" />
                               View Details
@@ -688,8 +845,11 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                               </DropdownMenuItem>
                             )}
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => updateStatusMutation.mutate({ jobId: job.id, status: 'cancelled' })}>
-                              <XCircle className="h-4 w-4 mr-2 text-red-600" />
+                            <DropdownMenuItem 
+                              onClick={() => updateStatusMutation.mutate({ jobId: job.id, status: 'cancelled' })}
+                              className="text-red-600"
+                            >
+                              <XCircle className="h-4 w-4 mr-2" />
                               Cancel Job
                             </DropdownMenuItem>
                           </DropdownMenuContent>
@@ -699,13 +859,13 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   ))}
                 </TableBody>
               </Table>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Enhanced Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-6">
-              <div className="text-sm text-gray-600">
+            <div className="flex items-center justify-between mt-8 bg-white rounded-xl p-4 border-2 border-gray-100">
+              <div className="text-sm text-gray-600 font-medium">
                 Page {currentPage} of {totalPages} • {filteredAndSortedJobs.length} total results
               </div>
               <div className="flex gap-2">
@@ -714,6 +874,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   size="sm"
                   onClick={() => handlePageChange(1)}
                   disabled={currentPage === 1}
+                  className="border-2"
                 >
                   First
                 </Button>
@@ -722,6 +883,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   size="sm"
                   onClick={() => handlePageChange(currentPage - 1)}
                   disabled={currentPage === 1}
+                  className="border-2"
                 >
                   <ChevronLeft className="h-4 w-4" />
                   Previous
@@ -737,7 +899,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                         variant={pageNum === currentPage ? "default" : "outline"}
                         size="sm"
                         onClick={() => handlePageChange(pageNum)}
-                        className="w-10"
+                        className={`w-10 ${pageNum === currentPage ? 'bg-blue-600 hover:bg-blue-700' : 'border-2'}`}
                       >
                         {pageNum}
                       </Button>
@@ -750,6 +912,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   size="sm"
                   onClick={() => handlePageChange(currentPage + 1)}
                   disabled={currentPage === totalPages}
+                  className="border-2"
                 >
                   Next
                   <ChevronRight className="h-4 w-4" />
@@ -759,14 +922,15 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   size="sm"
                   onClick={() => handlePageChange(totalPages)}
                   disabled={currentPage === totalPages}
+                  className="border-2"
                 >
                   Last
                 </Button>
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       <JobDetailsModal
         job={selectedJob}
@@ -782,18 +946,18 @@ export function JobTable({ onCreateJob }: JobTableProps) {
 
       {/* Bulk Action Confirmation Dialog */}
       <AlertDialog open={isBulkActionOpen} onOpenChange={setIsBulkActionOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="sm:max-w-lg">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <Trash2 className="h-5 w-5 text-red-600" />
               Confirm Bulk Action
             </AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription className="text-base">
               Are you sure you want to delete {selectedJobs.length} selected jobs? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="border-2">Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmBulkAction}
               className="bg-red-600 hover:bg-red-700"

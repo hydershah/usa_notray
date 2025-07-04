@@ -31,6 +31,7 @@ interface NotaryProfile {
   phoneNumber: string;
   role: string;
   notaryType: string;
+  notaryIdCode: string;
   approvalStatus: string;
   isActive: boolean;
   
@@ -505,6 +506,10 @@ export function NotaryDashboard() {
                 <div className="space-y-4">
                   <h3 className="font-semibold text-lg">Basic Information</h3>
                   <div className="space-y-3">
+                    <div>
+                      <label className="text-sm font-medium">Notary ID Code</label>
+                      <p className="text-sm text-gray-600 font-mono">{profile?.notaryIdCode || 'Not assigned'}</p>
+                    </div>
                     <div>
                       <label className="text-sm font-medium">Full Name</label>
                       <p className="text-sm text-gray-600">{profile?.fullName}</p>

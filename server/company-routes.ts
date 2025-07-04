@@ -2,7 +2,7 @@ import { Express } from 'express';
 import { insertCompanySchema, insertUserSchema } from '../shared/schema.js';
 import { storage } from './storage';
 import bcrypt from 'bcrypt';
-import { verifyToken } from './auth.js';
+import { verifyToken, hasAdminPrivileges } from './auth.js';
 
 export function registerCompanyRoutes(app: Express) {
   
@@ -153,7 +153,7 @@ export function registerCompanyRoutes(app: Express) {
       const { status } = req.body;
 
       // Check permissions - only admins can change company status
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -196,7 +196,7 @@ export function registerCompanyRoutes(app: Express) {
         return res.status(404).json({ message: 'Company not found' });
       }
 
-      const canUpdate = req.user.role === 'admin' || 
+      const canUpdate = hasAdminPrivileges(req.user) || 
                        (req.user.role === 'company_manager' && req.user.companyId === companyId);
 
       if (!canUpdate) {
@@ -238,7 +238,7 @@ export function registerCompanyRoutes(app: Express) {
    */
   app.get('/api/admin/companies/pending', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -256,7 +256,7 @@ export function registerCompanyRoutes(app: Express) {
    */
   app.post('/api/admin/companies/:id/approve', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -303,7 +303,7 @@ export function registerCompanyRoutes(app: Express) {
    */
   app.post('/api/admin/companies/:id/reject', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
