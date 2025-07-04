@@ -929,7 +929,7 @@ export function JobWizard() {
                           <div className="ml-3">
                             <h4 className="text-sm font-medium text-green-900">Title Company Job</h4>
                             <p className="text-sm text-green-800 mt-1">
-                              You're creating a job for USA Notary clients. The system will assign a qualified contractor notary based on your preferences.
+                              You're creating a job for Sharp Note clients. The system will assign a qualified contractor notary based on your preferences.
                               The assigned notary will be paid from the client fees.
                             </p>
                           </div>

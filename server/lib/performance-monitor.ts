@@ -1,6 +1,6 @@
 import { performance } from 'perf_hooks';
 import { pool } from '../db';
-import { cacheService } from './cache-service';
+import { redisCache } from '../services/redis-cache';
 
 interface PerformanceMetric {
   operation: string;
@@ -162,7 +162,7 @@ class PerformanceMonitor {
    */
   async getCacheMetrics(): Promise<SystemMetrics['cache']> {
     try {
-      const stats = cacheService.getStats();
+      const stats = await redisCache.getStats();
       const totalOperations = stats.hits + stats.misses;
       const hitRate = totalOperations > 0 ? (stats.hits / totalOperations) * 100 : 0;
 

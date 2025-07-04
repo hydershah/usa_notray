@@ -39,9 +39,9 @@ class CertificateAuthority {
       country: 'US',
       state: 'California',
       city: 'San Francisco',
-      organization: 'USA Notary Platform',
+      organization: 'Sharp Note',
       organizationUnit: 'Digital Notary Services',
-      commonName: 'USA Notary CA',
+      commonName: 'Sharp Note CA',
       emailAddress: 'ca@usanotary.com',
       keySize: 4096,
       validityDays: 3650 // 10 years
@@ -106,7 +106,7 @@ class CertificateAuthority {
       const userP12Path = join(this.caPath, `user-${serialNumber}.p12`);
       
       // Build subject for user certificate
-      const userSubject = `/C=US/ST=${userConfig.state}/L=Notary/O=USA Notary Platform/OU=${userConfig.organizationUnit}/CN=${userConfig.fullName}/emailAddress=${userConfig.email}`;
+      const userSubject = `/C=US/ST=${userConfig.state}/L=Notary/O=Sharp Note/OU=${userConfig.organizationUnit}/CN=${userConfig.fullName}/emailAddress=${userConfig.email}`;
       
       console.log(`🔧 Generating certificate for: ${userConfig.fullName}`);
       

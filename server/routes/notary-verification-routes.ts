@@ -42,6 +42,7 @@ router.get('/job-participants/:jobId', verifyToken, requireNotaryOrAdmin, async 
     }
 
     // Get all participants for this job with their verification status
+    // Exclude admin and notary users who shouldn't be participants
     const participants = await db.execute(sql`
       SELECT 
         jp.id as participant_id,
@@ -50,34 +51,61 @@ router.get('/job-participants/:jobId', verifyToken, requireNotaryOrAdmin, async 
         jp.role as participant_role,
         jp.invite_status,
         jp.joined_at,
+        jp.email as participant_email,
+        jp.created_at as participant_created_at,
         u.username,
-        u.email,
         u.first_name,
         u.last_name,
-        u.full_name,
         u.phone_number,
-        u.is_verified,
-        u.verification_status,
-        u.is_verification_bypassed as admin_bypassed,
-        u.notary_verification_bypassed,
-        u.notary_verification_bypassed_by,
-        u.notary_verification_bypassed_at,
-        u.notary_verification_bypass_reason,
-        bypass_notary.full_name as bypassed_by_notary_name,
-        u.evs_transaction_id,
-        u.evs_verification_confidence,
-        u.evs_verified_at,
         u.id_type,
         u.id_number,
         u.verification_retry_count,
         u.created_at,
-        u.last_login_at
+        u.last_login_at,
+        u.evs_transaction_id,
+        u.evs_verification_confidence,
+        u.evs_verified_at,
+        u.notary_verification_bypassed_by,
+        u.notary_verification_bypassed_at,
+        u.notary_verification_bypass_reason,
+        bypass_notary.full_name as bypassed_by_notary_name,
+        -- Handle participants without user accounts
+        CASE 
+          WHEN u.id IS NULL THEN FALSE
+          ELSE COALESCE(u.is_verified, FALSE)
+        END as is_verified,
+        CASE 
+          WHEN u.id IS NULL THEN 'pending'
+          ELSE COALESCE(u.verification_status, 'pending')
+        END as verification_status,
+        CASE 
+          WHEN u.id IS NULL THEN FALSE
+          ELSE COALESCE(u.is_verification_bypassed, FALSE)
+        END as admin_bypassed,
+        CASE 
+          WHEN u.id IS NULL THEN FALSE
+          ELSE COALESCE(u.notary_verification_bypassed, FALSE)
+        END as notary_verification_bypassed,
+        CASE 
+          WHEN u.id IS NULL THEN jp.email
+          ELSE COALESCE(u.email, jp.email)
+        END as email,
+        CASE 
+          WHEN u.id IS NULL THEN SPLIT_PART(jp.email, '@', 1)
+          ELSE COALESCE(u.full_name, u.first_name || ' ' || u.last_name, SPLIT_PART(jp.email, '@', 1))
+        END as full_name
       FROM job_participants jp
-      INNER JOIN users u ON jp.user_id = u.id
+      LEFT JOIN users u ON jp.user_id = u.id
       LEFT JOIN users bypass_notary ON u.notary_verification_bypassed_by = bypass_notary.id
       WHERE jp.job_id = ${jobId}
       AND jp.role IN ('signer', 'witness')
-      ORDER BY jp.role, u.full_name
+      -- Exclude admin and notary users who shouldn't be participants
+      AND (u.id IS NULL OR u.role NOT IN ('admin', 'notary'))
+      ORDER BY jp.role, 
+               CASE 
+                 WHEN u.id IS NULL THEN SPLIT_PART(jp.email, '@', 1)
+                 ELSE COALESCE(u.full_name, u.first_name || ' ' || u.last_name, SPLIT_PART(jp.email, '@', 1))
+               END
     `);
 
     res.json(participants.rows);
@@ -108,12 +136,24 @@ router.get('/assigned-jobs', verifyToken, requireNotaryOrAdmin, async (req: any,
         j.property_city,
         j.property_state,
         j.created_at,
-        COUNT(jp.id) as total_participants,
-        COUNT(CASE WHEN u.is_verified = true OR u.is_verification_bypassed = true OR u.notary_verification_bypassed = true THEN 1 END) as verified_participants,
-        COUNT(CASE WHEN jp.role = 'signer' THEN 1 END) as signer_count,
-        COUNT(CASE WHEN jp.role = 'witness' THEN 1 END) as witness_count
+        COUNT(CASE 
+          WHEN jp.role IN ('signer', 'witness') AND (u.id IS NULL OR u.role NOT IN ('admin', 'notary')) THEN 1 
+          ELSE NULL 
+        END) as total_participants,
+        COUNT(CASE 
+          WHEN jp.user_id IS NOT NULL AND jp.role IN ('signer', 'witness') AND (u.is_verified = true OR u.is_verification_bypassed = true OR u.notary_verification_bypassed = true) AND u.role NOT IN ('admin', 'notary') THEN 1 
+          ELSE NULL 
+        END) as verified_participants,
+        COUNT(CASE 
+          WHEN jp.role = 'signer' AND (u.id IS NULL OR u.role NOT IN ('admin', 'notary')) THEN 1 
+          ELSE NULL 
+        END) as signer_count,
+        COUNT(CASE 
+          WHEN jp.role = 'witness' AND (u.id IS NULL OR u.role NOT IN ('admin', 'notary')) THEN 1 
+          ELSE NULL 
+        END) as witness_count
       FROM jobs j
-      LEFT JOIN job_participants jp ON j.id = jp.job_id AND jp.role IN ('signer', 'witness')
+      LEFT JOIN job_participants jp ON j.id = jp.job_id
       LEFT JOIN users u ON jp.user_id = u.id
       WHERE j.notary_id = ${notaryId}
       AND j.job_status IN ('open', 'pending')
@@ -169,6 +209,11 @@ router.post('/bypass-verification/:userId/:jobId', verifyToken, requireNotaryOrA
 
     if (participant.length === 0) {
       return res.status(404).json({ error: 'Participant not found in this job' });
+    }
+
+    // Check if participant has a user account
+    if (!participant[0].userId) {
+      return res.status(400).json({ error: 'Participant must have a user account before verification can be bypassed. Please ensure they have registered and joined the job.' });
     }
 
     // Get current verification status for logging
@@ -257,6 +302,21 @@ router.post('/remove-bypass/:userId/:jobId', verifyToken, requireNotaryOrAdmin, 
 
     if (user.length === 0) {
       return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Also check if this user is a participant in the job
+    const participant = await db
+      .select()
+      .from(jobParticipants)
+      .where(and(
+        eq(jobParticipants.jobId, jobId),
+        eq(jobParticipants.userId, userId),
+        or(eq(jobParticipants.role, 'signer'), eq(jobParticipants.role, 'witness'))
+      ))
+      .limit(1);
+
+    if (participant.length === 0) {
+      return res.status(404).json({ error: 'Participant not found in this job' });
     }
 
     if (!user[0].notaryVerificationBypassed) {

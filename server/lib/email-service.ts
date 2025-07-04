@@ -57,7 +57,7 @@ class EmailService {
         smtp_pass: settings.smtp_pass || process.env.SMTP_PASS || '',
         smtp_secure: settings.smtp_secure || (process.env.SMTP_PORT === '465' ? 'true' : 'false'),
         from_email: settings.from_email || process.env.SMTP_USER || 'noreply@usanotaryservices.com',
-        from_name: settings.from_name || 'USA Notary Services'
+        from_name: settings.from_name || 'Sharp Note'
       };
 
       return this.settings;
@@ -104,7 +104,7 @@ class EmailService {
 
       // Professional anti-spam headers
       const headers = {
-        'X-Mailer': 'USA Notary Services v1.0',
+        'X-Mailer': 'Sharp Note v1.0',
         'X-Priority': '3',
         'X-MSMail-Priority': 'Normal',
         'Importance': 'Normal',
@@ -143,7 +143,7 @@ class EmailService {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>USA Notary Services</title>
+        <title>Sharp Note</title>
         <style>
             body { 
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
@@ -226,17 +226,16 @@ class EmailService {
     </head>
     <body>
         <div class="container">
-            <div class="header">
-                <h1>🏛️ USA Notary Services</h1>
-                <p style="margin: 5px 0 0 0; opacity: 0.9;">Professional Digital Notarization Platform</p>
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px 0; text-align: center;">
+              <h1>🏛️ Sharp Note</h1>
             </div>
             <div class="content">
                 ${content}
             </div>
             <div class="footer">
-                <p><strong>USA Notary Services</strong> | Professional Digital Notarization</p>
+                <p><strong>Sharp Note</strong> | Digital Notarization</p>
                 <p>This is an automated message from our secure notarization platform.</p>
-                <p>© ${new Date().getFullYear()} USA Notary Services. All rights reserved.</p>
+                <p>© ${new Date().getFullYear()} Sharp Note. All rights reserved.</p>
                 <p style="margin-top: 10px;">
                     <a href="mailto:support@usanotaryservices.com" style="color: #6b7280;">Support</a> | 
                     <a href="#" style="color: #6b7280;">Privacy Policy</a> | 
@@ -344,7 +343,7 @@ class EmailService {
         
         <p>Dear <strong>${data.userName}</strong>,</p>
         
-        <p>You have been invited to join USA Notary Services platform as a <strong>${data.role}</strong> by ${data.invitedBy}.</p>
+        <p>You have been invited to join Sharp Note platform as a <strong>${data.role}</strong> by ${data.invitedBy}.</p>
         
         <div class="info-box">
             <h3 style="margin-top: 0; color: #1e40af;">Account Details</h3>
@@ -375,7 +374,7 @@ class EmailService {
       to: data.userEmail,
       subject: `🏛️ Platform Access Invitation - ${data.role}`,
       html: this.getBaseTemplate(content),
-      text: `You have been invited to join USA Notary Services as ${data.role}. Complete registration: ${invitationLink}`
+              text: `You have been invited to join Sharp Note as ${data.role}. Complete registration: ${invitationLink}`
     });
   }
 
@@ -398,7 +397,7 @@ class EmailService {
         
         <p>Dear <strong>${data.signerName}</strong>,</p>
         
-        <p>An account has been created for you at USA Notary Services for an upcoming document signing session. Please complete your account setup to participate in the notarization process.</p>
+        <p>An account has been created for you at Sharp Note for an upcoming document signing session. Please complete your account setup to participate in the notarization process.</p>
         
         <div class="info-box">
             <h3 style="margin-top: 0; color: #1e40af;">Session Details</h3>
@@ -473,7 +472,7 @@ class EmailService {
         
         <p>Dear <strong>${data.userName}</strong>,</p>
         
-        <p>We received a request to reset your password for USA Notary Services platform.</p>
+        <p>We received a request to reset your password for Sharp Note platform.</p>
         
         <div style="text-align: center; margin: 30px 0;">
             <a href="${resetLink}" class="button">
@@ -500,9 +499,9 @@ class EmailService {
 
     await this.sendEmail({
       to: data.userEmail,
-      subject: `🔑 Password Reset - USA Notary Services`,
+      subject: `🔑 Password Reset - Sharp Note`,
       html: this.getBaseTemplate(content),
-      text: `Password reset requested for USA Notary Services. Reset your password: ${resetLink}`
+      text: `Password reset requested for Sharp Note. Reset your password: ${resetLink}`
     });
   }
 
@@ -542,9 +541,9 @@ class EmailService {
 
     await this.sendEmail({
       to: testEmail,
-      subject: `✅ Email Test Successful - USA Notary Services`,
+      subject: `✅ Email Test Successful - Sharp Note`,
       html: this.getBaseTemplate(content),
-      text: `Email configuration test successful! Your USA Notary Services email system is ready.`
+      text: `Email configuration test successful! Your Sharp Note email system is ready.`
     });
 
     return 'Test email sent successfully';

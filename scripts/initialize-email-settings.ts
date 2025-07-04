@@ -52,7 +52,7 @@ async function initializeEmailSettings() {
       },
       {
         key: 'from_name',
-        value: process.env.FROM_NAME || 'USA Notary Services',
+        value: process.env.FROM_NAME || 'Sharp Note',
         type: 'string',
         description: 'From display name',
         isProtected: false
@@ -107,7 +107,7 @@ async function initializeEmailSettings() {
     const host = process.env.SMTP_HOST || 'smtp.hostinger.com';
     const port = process.env.SMTP_PORT || '465';
     const secure = (process.env.SMTP_PORT === '465' || process.env.SMTP_SECURE === 'true') ? 'SSL' : 'STARTTLS';
-    const fromName = process.env.FROM_NAME || 'USA Notary Services';
+    const fromName = process.env.FROM_NAME || 'Sharp Note';
     
     console.log(`  📧 Host: ${host}`);
     console.log(`  🔌 Port: ${port} (${secure})`);

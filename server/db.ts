@@ -29,22 +29,22 @@ export const supabase = createClient(
   SUPABASE_ANON_KEY
 );
 
-// PostgreSQL connection pool with maximum Supabase configuration
+// PostgreSQL connection pool with optimal Supabase configuration
 export const pool = new Pool({ 
   connectionString: DATABASE_URL,
-  // Maximum connection pool settings for Supabase
-  max: 50, // Maximum connections for Supabase (can handle high load)
-  min: 10, // Higher minimum to maintain warm connections
-  idleTimeoutMillis: 300000, // Keep connections for 5 minutes (300 seconds)
-  connectionTimeoutMillis: 60000, // Extended timeout for new connections (60 seconds)
-  acquireTimeoutMillis: 30000, // Extended timeout for acquiring from pool (30 seconds)
+  // Conservative connection pool settings for Supabase
+  max: 15, // Reduced from 50 to prevent connection exhaustion
+  min: 2,  // Reduced from 10 to save resources
+  idleTimeoutMillis: 30000, // Reduced from 300000 (30 seconds vs 5 minutes)
+  connectionTimeoutMillis: 15000, // Reduced from 60000 (15 seconds)
+  acquireTimeoutMillis: 10000, // Reduced from 30000 (10 seconds)
   // Enable connection reuse and health checks
   allowExitOnIdle: false,
   keepAlive: true,
-  keepAliveInitialDelayMillis: 10000,
-  // Extended statement timeout for complex queries
-  statement_timeout: 300000, // Extended to 5 minutes for complex operations
-  query_timeout: 300000, // Extended to 5 minutes for complex operations
+  keepAliveInitialDelayMillis: 5000, // Reduced from 10000
+  // Reduced statement timeout for better responsiveness
+  statement_timeout: 30000, // Reduced from 300000 (30 seconds vs 5 minutes)
+  query_timeout: 30000, // Reduced from 300000 (30 seconds vs 5 minutes)
 });
 
 // Pool event handlers for monitoring and debugging

@@ -110,7 +110,7 @@ class EmailTemplateService {
   // Get default variables with current values
   private getDefaultVariables(): Record<string, any> {
     return {
-      platform_name: 'USA Notary Services',
+      platform_name: 'Sharp Note',
       support_email: 'support@usanotaryservices.com',
       current_year: new Date().getFullYear(),
       current_date: new Date().toLocaleDateString(),
@@ -594,7 +594,7 @@ class EmailTemplateService {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>USA Notary Services</title>
+        <title>Sharp Note</title>
         <style>
             body { 
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
@@ -678,16 +678,16 @@ class EmailTemplateService {
     <body>
         <div class="container">
             <div class="header">
-                <h1>🏛️ USA Notary Services</h1>
-                <p style="margin: 5px 0 0 0; opacity: 0.9;">Professional Digital Notarization Platform</p>
+                <h1>🏛️ Sharp Note</h1>
+                <p style="margin: 5px 0 0 0; opacity: 0.9;">Digital Notarization</p>
             </div>
             <div class="content">
                 ${content}
             </div>
             <div class="footer">
-                <p><strong>USA Notary Services</strong> | Professional Digital Notarization</p>
+                <p><strong>Sharp Note</strong> | Digital Notarization</p>
                 <p>This is an automated message from our secure notarization platform.</p>
-                <p>© ${new Date().getFullYear()} USA Notary Services. All rights reserved.</p>
+                <p>© ${new Date().getFullYear()} Sharp Note. All rights reserved.</p>
                 <p style="margin-top: 10px;">
                     <a href="mailto:support@usanotaryservices.com" style="color: #6b7280;">Support</a> | 
                     <a href="#" style="color: #6b7280;">Privacy Policy</a> | 
@@ -715,7 +715,7 @@ class EmailTemplateService {
       .trim();
 
     // Add footer
-    text += `\n\n---\nUSA Notary Services | Professional Digital Notarization\n© ${new Date().getFullYear()} USA Notary Services. All rights reserved.\nSupport: support@usanotaryservices.com`;
+    text += `\n\n---\nSharp Note | Digital Notarization\n© ${new Date().getFullYear()} Sharp Note. All rights reserved.\nSupport: support@usanotaryservices.com`;
 
     return text;
   }

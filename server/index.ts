@@ -4,10 +4,58 @@ dotenv.config();
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { performanceMonitor } from './middleware/performance-monitor';
+import { healthCheck } from './health-check';
+import { redisCache } from './services/redis-cache';
+import { 
+  errorHandler, 
+  notFoundHandler, 
+  requestIdMiddleware, 
+  performanceTracker, 
+  asyncHandler 
+} from './middleware/error-handler';
+import { 
+  preventSqlInjection, 
+  rateLimiters 
+} from './middleware/validation';
+import { gracefulDegradation } from './middleware/circuit-breaker';
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+
+// Security and request processing middleware
+app.use(requestIdMiddleware);
+app.use(performanceTracker);
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+
+// Security middleware
+app.use(preventSqlInjection);
+app.use(rateLimiters.general);
+
+// Graceful degradation for service failures
+app.use(gracefulDegradation());
+
+// Add performance monitoring middleware
+app.use(performanceMonitor.middleware());
+
+// Add enhanced health check endpoint
+app.get('/health', asyncHandler(async (req: Request, res: Response) => {
+  await healthCheck(req, res);
+}));
+
+// Initialize Redis cache on startup
+console.log('🔄 Initializing Redis cache...');
+redisCache.healthCheck()
+  .then(result => {
+    if (result.healthy) {
+      console.log(`✅ Redis cache initialized successfully (${result.latency?.toFixed(2)}ms latency)`);
+    } else {
+      console.warn('⚠️ Redis cache not available:', result.error);
+    }
+  })
+  .catch(error => {
+    console.error('❌ Redis cache initialization failed:', error);
+  });
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -42,13 +90,11 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+  // 404 handler for unmatched routes
+  app.use(notFoundHandler);
 
-    res.status(status).json({ message });
-    throw err;
-  });
+  // Global error handler (must be last)
+  app.use(errorHandler);
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
@@ -73,6 +119,10 @@ app.use((req, res, next) => {
       host: "0.0.0.0",
     }, () => {
       log(`serving on port ${port}`);
+      console.log('✅ Enhanced error handling active');
+      console.log('✅ Circuit breakers monitoring services');
+      console.log('✅ SQL injection protection enabled');
+      console.log('✅ Rate limiting configured');
     });
 
     server.on('error', (error: any) => {
@@ -104,6 +154,17 @@ app.use((req, res, next) => {
       console.log('Server closed');
       process.exit(0);
     });
+  });
+
+  // Handle uncaught exceptions
+  process.on('uncaughtException', (error) => {
+    console.error('🚨 UNCAUGHT EXCEPTION:', error);
+    process.exit(1);
+  });
+
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('🚨 UNHANDLED REJECTION at:', promise, 'reason:', reason);
+    process.exit(1);
   });
 
   startServer();

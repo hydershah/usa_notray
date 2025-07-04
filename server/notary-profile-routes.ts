@@ -1,5 +1,6 @@
 import { Express } from 'express';
 import { verifyToken, hasNotaryPrivileges } from './auth';
+import { cacheUserData } from './middleware/cache-middleware';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -226,7 +227,7 @@ export function registerNotaryProfileRoutes(app: Express) {
    * GET /api/notary/profile/status
    * Check if notary profile is complete and approved
    */
-  app.get('/api/notary/profile/status', verifyToken, async (req: any, res) => {
+  app.get('/api/notary/profile/status', verifyToken, cacheUserData(300), async (req: any, res) => {
     try {
       if (!hasNotaryPrivileges(req.user)) {
         return res.status(403).json({ message: 'Notary privileges required to check profile status' });

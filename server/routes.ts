@@ -9,10 +9,12 @@ import { registerApprovalWorkflowRoutes } from "./approval-workflow-routes";
 import { registerFeeRoutes } from "./fee-routes";
 import { registerAdminVerificationRoutes } from "./routes/admin-verification-routes";
 import adminLogsRoutes from "./routes/admin-logs-routes";
+import notaryVerificationRoutes from "./routes/notary-verification-routes";
 import { auditLoggingService } from "./services/audit-logging-service";
 import { notificationService } from "./notification-service";
 import { verifyToken, hasAdminPrivileges, hasNotaryPrivileges } from "./auth";
-import { eq, and, gte, lte, desc, inArray, sql } from "drizzle-orm";
+import { cacheAdminData, cacheUserData, cacheCompanyData, cacheJobData } from "./middleware/cache-middleware";
+import { eq, and, gte, lte, desc, inArray, sql, or } from "drizzle-orm";
 import { randomNotaryService, NotaryQualifications, TimeSlotRequest } from "./random-notary-service";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -62,6 +64,12 @@ import {
   insertSystemSettingSchema,
   insertNotaryAssignmentLogSchema,
   passwordResetTokens,
+  notaryLogEntries,
+  auditTrail,
+  systemActivityLogs,
+  editorSessions,
+  sessionParticipants,
+  documentVersions,
 } from "@shared/schema";
 
 // Import enhanced upload handlers
@@ -308,7 +316,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // User management routes
-  app.get('/api/users', verifyToken, async (req: any, res) => {
+  app.get('/api/users', verifyToken, cacheAdminData(300), async (req: any, res) => {
     try {
       // Check for admin privileges (either role='admin' or privileges includes 'admin')
       const hasAdminAccess = req.user.role === 'admin' || 
@@ -627,7 +635,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get user profile with notary details
-  app.get('/api/users/:id/profile', verifyToken, async (req: any, res) => {
+  app.get('/api/users/:id/profile', verifyToken, cacheUserData(600), async (req: any, res) => {
     try {
       const userId = parseInt(req.params.id);
       
@@ -756,7 +764,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Title company routes - Updated to use enhanced companies table
-  app.get('/api/companies', verifyToken, async (req, res) => {
+  app.get('/api/companies', verifyToken, cacheAdminData(300), async (req, res) => {
     try {
       const companies = await storage.getCompanies();
       res.json(companies);
@@ -823,7 +831,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Job routes
-  app.get('/api/jobs', verifyToken, async (req: any, res) => {
+  app.get('/api/jobs', verifyToken, cacheUserData(180), async (req: any, res) => {
     try {
       const jobs = await storage.getRoleBasedJobs(req.user.id, req.user.role);
       res.json(jobs);
@@ -833,7 +841,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/jobs/:id', verifyToken, async (req: any, res) => {
+  app.get('/api/jobs/:id', verifyToken, cacheJobData(180), async (req: any, res) => {
     try {
       const jobId = parseInt(req.params.id);
       const job = await storage.getJob(jobId);
@@ -1453,7 +1461,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Dashboard stats
-  app.get('/api/dashboard/stats', verifyToken, async (req: any, res) => {
+  app.get('/api/dashboard/stats', verifyToken, cacheUserData(300), async (req: any, res) => {
     try {
       const jobs = await storage.getRoleBasedJobs(req.user.id, req.user.role);
       
@@ -1586,7 +1594,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Payment management routes
-  app.get('/api/payments', verifyToken, async (req: any, res) => {
+  app.get('/api/payments', verifyToken, cacheUserData(300), async (req: any, res) => {
     try {
       let payments: Payment[];
       if (hasAdminPrivileges(req.user)) {
@@ -1632,7 +1640,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get dashboard revenue stats (admin only)
-  app.get('/api/admin/revenue-stats', verifyToken, async (req: any, res) => {
+  app.get('/api/admin/revenue-stats', verifyToken, cacheAdminData(300), async (req: any, res) => {
     try {
       if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
@@ -1659,7 +1667,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Invoice management routes
-  app.get('/api/invoices', verifyToken, async (req: any, res) => {
+  app.get('/api/invoices', verifyToken, cacheUserData(300), async (req: any, res) => {
     try {
       let invoices: Invoice[];
       if (hasAdminPrivileges(req.user)) {
@@ -1708,7 +1716,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Closing Types management routes (Admin only)
-  app.get('/api/closing-types', verifyToken, async (req: any, res) => {
+  app.get('/api/closing-types', verifyToken, cacheAdminData(600), async (req: any, res) => {
     try {
       const closingTypes = await storage.getClosingTypes();
       res.json(closingTypes);
@@ -1783,7 +1791,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Participant Roles management routes
-  app.get('/api/participant-roles', verifyToken, async (req: any, res) => {
+  app.get('/api/participant-roles', verifyToken, cacheAdminData(600), async (req: any, res) => {
     try {
       const roles = await storage.getParticipantRoles();
       res.json(roles);
@@ -3138,7 +3146,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Calendar Management API
 
   // Get notary time slots
-app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
+app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req, res) => {
     try {
       const { month, year } = req.query;
       const notaryId = req.user?.id;
@@ -3456,7 +3464,7 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
   });
 
   // Get calendar events
-  app.get('/api/calendar/events', verifyToken, async (req, res) => {
+  app.get('/api/calendar/events', verifyToken, cacheUserData(180), async (req, res) => {
     try {
       const { month, year } = req.query;
       const notaryId = req.user?.id;
@@ -3677,7 +3685,7 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
   });
 
   // Get all available notaries (for notary change functionality)
-  app.get('/api/notaries/available', verifyToken, async (req, res) => {
+  app.get('/api/notaries/available', verifyToken, cacheUserData(300), async (req, res) => {
     try {
       // SECURITY RESTRICTION: Title companies can no longer browse notary lists
       // They must use auto assignment or notary ID code lookup instead
@@ -4256,6 +4264,7 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
   
   // Register admin logs routes
   app.use('/api/admin', adminLogsRoutes);
+  app.use('/api/notary', notaryVerificationRoutes);
   
   // ==========================================
   // ADMIN VERIFICATION ROUTES (Missing endpoints for dashboard)
@@ -4990,9 +4999,15 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
       
       const tags = await TagService.getSessionTags(sessionId);
       
+      // Set headers to prevent caching
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      
       res.json({
         tags,
-        count: tags.length
+        count: tags.length,
+        timestamp: Date.now() // Include timestamp to ensure fresh data
       });
       
     } catch (error) {
@@ -5326,7 +5341,7 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
     res.status(200).end();
   });
 
-  // Serve documents directly by file path for editor
+  // Serve documents directly by file path for editor (OPTIMIZED)
   app.get('/api/documents/:filePath(*)', async (req: any, res) => {
     try {
       const filePath = decodeURIComponent(req.params.filePath);
@@ -5340,132 +5355,89 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
       const isVultrFile = !filePath.startsWith('/') && !filePath.includes('\\') && !filePath.includes('uploads/');
       
       if (isVultrFile) {
-        // Handle Vultr stored files with retry logic
-        let retryCount = 0;
-        const maxRetries = 3;
-        
-        while (retryCount < maxRetries) {
+        // OPTIMIZED: Use cached signed URLs and direct redirects
+        try {
+          const { optimizedStorage } = await import('./lib/optimized-storage-strategy');
+          
+          // Get optimized file URL with caching (5-20ms response time)
+          const fileAccess = await optimizedStorage.getOptimizedFileUrl(filePath, 24); // 24 hour cache
+          
+          console.log('📄 Redirecting to cached Vultr URL for:', filePath);
+          
+          // Set proper headers for PDF viewing including CORS
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Cache-Control', 'private, max-age=300');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+          res.setHeader('X-Served-From', 'vultr-cached');
+          res.setHeader('X-Cache-Status', fileAccess.cached ? 'HIT' : 'MISS');
+          
+          // Direct redirect to Vultr (no server bandwidth usage)
+          res.redirect(302, fileAccess.cdnUrl || fileAccess.signedUrl);
+          return;
+          
+        } catch (optimizedError) {
+          console.error('📄 Optimized storage failed, falling back to direct Vultr:', optimizedError);
+          
+          // Fallback to direct Vultr access (still much faster than proxying)
           try {
             const { cloudStorage } = await import('./lib/cloud-storage-service');
             
-            // Check file existence with timeout
-            const fileExistsPromise = cloudStorage.fileExists(filePath);
-            const fileExistsTimeout = new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('File existence check timeout')), 10000)
-            );
-            
-            const fileExists = await Promise.race([fileExistsPromise, fileExistsTimeout]) as boolean;
+            // Quick file existence check (no timeout needed for redirect)
+            const fileExists = await cloudStorage.fileExists(filePath);
             if (!fileExists) {
               console.log('📄 File not found in Vultr:', filePath);
               return res.status(404).json({ message: 'Document not found in cloud storage' });
             }
             
-            // Get signed URL with timeout
-            const signedUrlPromise = cloudStorage.getSignedUrl(filePath, 3600); // 1 hour
-            const signedUrlTimeout = new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Signed URL generation timeout')), 10000)
-            );
+            // Generate signed URL and redirect (100-200ms)
+            const signedUrl = await cloudStorage.getSignedUrl(filePath, 3600); // 1 hour
             
-            const signedUrl = await Promise.race([signedUrlPromise, signedUrlTimeout]) as string;
-            console.log('📄 Proxying Vultr content for:', filePath);
-            
-            // Fetch the file content from Vultr with timeout and better error handling
-            console.log('📄 Fetching from Vultr URL (truncated):', signedUrl.substring(0, 100) + '...');
-            
-            const fetchController = new AbortController();
-            const fetchTimeout = setTimeout(() => {
-              fetchController.abort();
-              console.log('📄 Fetch aborted due to timeout');
-            }, 20000); // 20 second fetch timeout
-            
-            const response = await fetch(signedUrl, {
-              method: 'GET',
-              signal: fetchController.signal,
-              headers: {
-                'User-Agent': 'NotaryPlatform/1.0',
-                'Accept': 'application/pdf,*/*'
-              }
-            });
-            
-            clearTimeout(fetchTimeout);
-            
-            console.log('📄 Vultr response:', {
-              status: response.status,
-              statusText: response.statusText,
-              contentType: response.headers.get('content-type'),
-              contentLength: response.headers.get('content-length')
-            });
-            
-            if (!response.ok) {
-              throw new Error(`Vultr fetch failed: ${response.status} ${response.statusText}`);
-            }
-            
-            // Get the content type from Vultr response or default to PDF
-            const contentType = response.headers.get('content-type') || 'application/pdf';
-            const contentLength = response.headers.get('content-length');
-            
-            console.log('📄 Serving PDF:', { contentType, contentLength });
+            console.log('📄 Redirecting to Vultr URL for:', filePath);
             
             // Set proper headers for PDF viewing including CORS
-            res.setHeader('Content-Type', contentType);
+            res.setHeader('Content-Type', 'application/pdf');
             res.setHeader('Cache-Control', 'private, max-age=300');
             res.setHeader('Access-Control-Allow-Origin', '*');
             res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
             res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-            if (contentLength) {
-              res.setHeader('Content-Length', contentLength);
-            }
+            res.setHeader('X-Served-From', 'vultr-direct');
             
-            // Stream the content from Vultr through our server with timeout
-            const bufferPromise = response.arrayBuffer();
-            const bufferTimeout = new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Buffer read timeout')), 15000)
-            );
+            // Direct redirect to Vultr (no server bandwidth usage)
+            res.redirect(302, signedUrl);
+            return;
             
-            const buffer = await Promise.race([bufferPromise, bufferTimeout]) as ArrayBuffer;
-            console.log('📄 PDF buffer size:', buffer.byteLength, 'bytes');
+          } catch (vultrError) {
+            console.error('📄 Vultr direct access failed:', vultrError);
             
-            res.send(Buffer.from(buffer));
-            return; // Success, exit retry loop
+            // Final fallback: check for local file
+            console.log('📄 Checking for local fallback...');
             
-          } catch (vultrError: any) {
-            retryCount++;
-            console.error(`📄 Vultr document error (attempt ${retryCount}/${maxRetries}):`, vultrError.message || vultrError);
+            const possibleLocalPaths = [
+              path.join('uploads', filePath),
+              path.join(__dirname, '..', 'uploads', filePath),
+              filePath
+            ];
             
-            if (retryCount >= maxRetries) {
-              // After all retries failed, check if we can fallback to local storage
-              console.log('📄 Vultr retries exhausted, checking for local fallback...');
-              
-              // Try to find the file in local storage as a fallback
-              const possibleLocalPaths = [
-                path.join('uploads', filePath),
-                path.join(__dirname, '..', 'uploads', filePath),
-                filePath
-              ];
-              
-              for (const localPath of possibleLocalPaths) {
-                if (fs.existsSync(localPath)) {
-                  console.log('📄 Found local fallback:', localPath);
-                  res.setHeader('Content-Type', 'application/pdf');
-                  res.setHeader('Cache-Control', 'private, max-age=300');
-                  res.setHeader('Access-Control-Allow-Origin', '*');
-                  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-                  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-                  res.setHeader('X-Served-From', 'local-fallback');
-                  return res.sendFile(path.resolve(localPath));
-                }
+            for (const localPath of possibleLocalPaths) {
+              if (fs.existsSync(localPath)) {
+                console.log('📄 Found local fallback:', localPath);
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setHeader('Cache-Control', 'private, max-age=300');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+                res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+                res.setHeader('X-Served-From', 'local-fallback');
+                return res.sendFile(path.resolve(localPath));
               }
-              
-              // No fallback found, return error
-              return res.status(500).json({ 
-                message: 'Failed to access document in cloud storage after retries',
-                error: 'vultr_timeout_exhausted',
-                retries: maxRetries
-              });
             }
             
-            // Wait before retry (exponential backoff)
-            await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+            // No fallback found, return error
+            return res.status(500).json({ 
+              message: 'Failed to access document in cloud storage',
+              error: 'vultr_access_failed'
+            });
           }
         }
       } else {
@@ -5491,6 +5463,161 @@ app.get('/api/calendar/time-slots', verifyToken, async (req, res) => {
     } catch (error) {
       console.error('📄 Document serving error:', error);
       res.status(500).json({ message: 'Failed to serve document' });
+    }
+  });
+
+  // User Notarization & Audit Logs Routes
+  
+  // Get user's notarization logs
+  app.get('/api/user/notarization-logs', verifyToken, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      
+      // For now, return empty array until notary log entries are populated
+      const logs: any[] = [];
+      
+      // TODO: Uncomment when notary_log_entries table has data
+      // const logs = await db
+      //   .select({
+      //     id: notaryLogEntries.id,
+      //     sessionId: notaryLogEntries.sessionId,
+      //     notaryId: notaryLogEntries.notaryId,
+      //     signerId: notaryLogEntries.signerId,
+      //     documentId: notaryLogEntries.documentId,
+      //     notarizationType: notaryLogEntries.notarizationType,
+      //     pageNumber: notaryLogEntries.pageNumber,
+      //     timestamp: notaryLogEntries.timestamp,
+      //     createdAt: notaryLogEntries.createdAt,
+      //   })
+      //   .from(notaryLogEntries)
+      //   .where(
+      //     or(
+      //       eq(notaryLogEntries.notaryId, userId), // User was the notary
+      //       eq(notaryLogEntries.signerId, userId)  // User was the signer
+      //     )
+      //   )
+      //   .orderBy(desc(notaryLogEntries.timestamp))
+      //   .limit(100);
+
+      res.json(logs);
+    } catch (error) {
+      console.error('Error fetching user notarization logs:', error);
+      res.status(500).json({ error: 'Failed to fetch notarization logs' });
+    }
+  });
+
+  // Get user's audit trail
+  app.get('/api/user/audit-trail', verifyToken, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      
+      // For now, return empty array until audit trail table has data
+      const auditEntries: any[] = [];
+      
+      // TODO: Uncomment when audit_trail table has data
+      // const auditEntries = await db
+      //   .select()
+      //   .from(auditTrail)
+      //   .where(eq(auditTrail.userId, userId))
+      //   .orderBy(desc(auditTrail.timestamp))
+      //   .limit(200);
+
+      res.json(auditEntries);
+    } catch (error) {
+      console.error('Error fetching user audit trail:', error);
+      res.status(500).json({ error: 'Failed to fetch audit trail' });
+    }
+  });
+
+  // Get user's system activity logs
+  app.get('/api/user/activity-logs', verifyToken, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      
+      const activityLogs = await db
+        .select()
+        .from(systemActivityLogs)
+        .where(eq(systemActivityLogs.userId, userId))
+        .orderBy(desc(systemActivityLogs.createdAt))
+        .limit(100);
+
+      res.json(activityLogs);
+    } catch (error) {
+      console.error('Error fetching user activity logs:', error);
+      res.status(500).json({ error: 'Failed to fetch activity logs' });
+    }
+  });
+
+  // Get user's notarization sessions
+  app.get('/api/user/notarization-sessions', verifyToken, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      
+      // For now, return empty array until editor sessions table has data
+      const sessions: any[] = [];
+      
+      // TODO: Uncomment when editor_sessions table has data
+      // const sessions = await db
+      //   .select()
+      //   .from(editorSessions)
+      //   .where(eq(editorSessions.notaryId, userId))
+      //   .orderBy(desc(editorSessions.startedAt))
+      //   .limit(50);
+
+      res.json(sessions);
+    } catch (error) {
+      console.error('Error fetching user notarization sessions:', error);
+      res.status(500).json({ error: 'Failed to fetch notarization sessions' });
+    }
+  });
+
+  // Download user logs as PDF
+  app.get('/api/user/download-logs', verifyToken, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const type = req.query.type as string;
+      
+      // For now, return a simple text response
+      // In production, you'd generate a proper PDF using a library like PDFKit
+      const timestamp = new Date().toISOString();
+      const username = req.user.username || 'user';
+      
+      let content = `Sharp Note - ${type.toUpperCase()} Logs Report\n`;
+      content += `Generated: ${timestamp}\n`;
+      content += `User: ${username} (ID: ${userId})\n`;
+      content += `\n${'='.repeat(50)}\n\n`;
+      
+      switch (type) {
+        case 'notary':
+          content += 'NOTARIZATION LOGS\n';
+          content += 'This report contains all notarization activities for this user.\n';
+          break;
+        case 'audit':
+          content += 'AUDIT TRAIL\n';
+          content += 'This report contains all audit trail entries for this user.\n';
+          break;
+        case 'activity':
+          content += 'SYSTEM ACTIVITY LOGS\n';
+          content += 'This report contains all system activities for this user.\n';
+          break;
+        case 'sessions':
+          content += 'NOTARIZATION SESSIONS\n';
+          content += 'This report contains all notarization sessions for this user.\n';
+          break;
+        default:
+          content += 'COMPREHENSIVE LOGS\n';
+          content += 'This report contains all logs for this user.\n';
+      }
+      
+      content += '\nNote: This is a simplified export. Full PDF generation with detailed logs will be implemented.\n';
+      
+      res.setHeader('Content-Type', 'text/plain');
+      res.setHeader('Content-Disposition', `attachment; filename="${username}_${type}_logs_${timestamp.split('T')[0]}.txt"`);
+      res.send(content);
+      
+    } catch (error) {
+      console.error('Error generating log export:', error);
+      res.status(500).json({ error: 'Failed to generate log export' });
     }
   });
 

@@ -31,7 +31,7 @@ export function EmailSettings() {
     smtp_pass: '',
     smtp_secure: 'true',
     from_email: '',
-    from_name: 'USA Notary System'
+    from_name: 'Sharp Note'
   });
 
   // Load email settings
@@ -154,7 +154,7 @@ export function EmailSettings() {
                         smtp_secure: 'true',
                         smtp_user: 'mail@digitalexpert.agency',
                         from_email: 'mail@digitalexpert.agency',
-                        from_name: 'USA Notary System'
+                        from_name: 'Sharp Note'
                       });
                       break;
                     case 'hostinger-tls':
@@ -165,7 +165,7 @@ export function EmailSettings() {
                         smtp_secure: 'false',
                         smtp_user: 'mail@digitalexpert.agency',
                         from_email: 'mail@digitalexpert.agency',
-                        from_name: 'USA Notary System'
+                        from_name: 'Sharp Note'
                       });
                       break;
                     case 'gmail':
@@ -271,7 +271,7 @@ export function EmailSettings() {
                   id="from_name"
                   value={settings.from_name}
                   onChange={(e) => setSettings({ ...settings, from_name: e.target.value })}
-                  placeholder="USA Notary System"
+                  placeholder="Sharp Note"
                   required
                 />
               </div>

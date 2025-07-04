@@ -34,6 +34,7 @@ export const useEditorInitialization = ({
     setMode,
     setTags,
     clearSession,
+    tags // Add tags to dependencies
   } = useEditorStore();
 
   const loadSessionTags = useCallback(async () => {
@@ -97,4 +98,46 @@ export const useEditorInitialization = ({
       }
     };
   }, [sessionId, documents, participants, currentUserId, mode]);
+
+  // Cleanup stale temporary tags periodically
+  useEffect(() => {
+    const cleanupStaleTags = () => {
+      const now = Date.now();
+      const staleThreshold = 30000; // 30 seconds
+      
+      const currentTags = useEditorStore.getState().tags;
+      const staleTempTags = currentTags.filter(tag => {
+        if (!tag.id.toString().startsWith('temp_')) return false;
+        
+        // Extract timestamp from temp ID format: temp_TIMESTAMP_RANDOM
+        const parts = tag.id.split('_');
+        if (parts.length >= 2) {
+          const timestamp = parseInt(parts[1]);
+          if (!isNaN(timestamp) && (now - timestamp) > staleThreshold) {
+            console.warn(`Found stale temporary tag: ${tag.id} (age: ${now - timestamp}ms)`);
+            return true;
+          }
+        }
+        return false;
+      });
+      
+      if (staleTempTags.length > 0) {
+        console.log(`🧹 Cleaning up ${staleTempTags.length} stale temporary tags`);
+        // Remove stale tags from store
+        const { deleteTag } = useEditorStore.getState();
+        staleTempTags.forEach(tag => deleteTag(tag.id));
+      }
+    };
+    
+    // Run cleanup every 30 seconds
+    const interval = setInterval(cleanupStaleTags, 30000);
+    
+    // Also run cleanup on mount after a short delay
+    const timeout = setTimeout(cleanupStaleTags, 2000);
+    
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, []);
 }; 

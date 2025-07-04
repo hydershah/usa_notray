@@ -133,7 +133,7 @@ export class ExternalCertificateAuthorityService {
       const certRequest: CertificateRequest = {
         commonName: user.nameOnCommission || user.fullName || user.email,
         email: user.email,
-        organization: 'USA Notary Services',
+        organization: 'Sharp Note',
         organizationUnit: user.notaryType === 'contractor' ? 'Contractor Notary' : 'Subscriber Notary',
         country: 'US',
         state: user.commissionState || user.state || 'CA',

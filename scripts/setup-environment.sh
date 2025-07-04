@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 Setting up USA Notary Platform Environment..."
+echo "🚀 Setting up Sharp Note Environment..."
 
 # Create .env file with all required configurations
 cat > .env << EOF
@@ -16,7 +16,7 @@ SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER="your-email@yourdomain.com"
 SMTP_PASS="your-email-password"
-EMAIL_FROM="USA Notary Platform <noreply@yourdomain.com>"
+EMAIL_FROM="Sharp Note <noreply@yourdomain.com>"
 
 # EVS Solutions (BlueAssure) API Configuration
 EVS_API_KEY="E27235-CE567A22-0D31-474A-B551-252882763208"

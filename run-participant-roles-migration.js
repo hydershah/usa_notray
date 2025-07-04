@@ -1,10 +1,10 @@
-const { Pool } = require('pg');
-const fs = require('fs');
-const path = require('path');
+import { Pool } from 'pg';
+import fs from 'fs';
+import path from 'path';
 
 // Database configuration
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/notary_db',
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres.ueoqbwsigpowzbdlqezz:Xymax@123@aws-0-us-east-2.pooler.supabase.com:6543/postgres',
 });
 
 async function runMigration() {
@@ -14,7 +14,7 @@ async function runMigration() {
     console.log('🚀 Running participant roles migration...');
     
     // Read the migration file
-    const migrationPath = path.join(__dirname, 'migration-participant-roles-system.sql');
+    const migrationPath = path.join(process.cwd(), 'migration-participant-roles-system.sql');
     const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
     
     // Execute the migration
@@ -41,5 +41,4 @@ async function runMigration() {
   }
 }
 
-// Run the migration
 runMigration(); 

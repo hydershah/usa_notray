@@ -1,16 +1,50 @@
 import { Header } from './header';
 import { Sidebar } from './sidebar';
 import { useState } from 'react';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, ChevronRight, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useLocation } from 'wouter';
 
 interface MainLayoutProps {
   children: React.ReactNode;
 }
 
+// Navigation breadcrumb mapping
+const breadcrumbMap: Record<string, { label: string; parent?: string }> = {
+  '/dashboard': { label: 'Dashboard' },
+  '/jobs': { label: 'My Jobs' },
+  '/create-job': { label: 'New Job' },
+  '/calendar': { label: 'Calendar' },
+  '/profile': { label: 'My Profile' },
+  '/payments': { label: 'Payments' },
+  '/my-logs': { label: 'My Records' },
+  '/user-management': { label: 'Users', parent: 'Management' },
+  '/notary-management': { label: 'Notaries', parent: 'Management' },
+  '/title-companies': { label: 'Companies', parent: 'Management' },
+  '/logs': { label: 'System Logs', parent: 'Management' },
+  '/closing-types': { label: 'Closing Types', parent: 'System' },
+  '/email-settings': { label: 'Email Settings', parent: 'System' },
+  '/email-templates': { label: 'Email Templates', parent: 'System' },
+};
+
 export function MainLayout({ children }: MainLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [location] = useLocation();
+
+  const getBreadcrumbs = () => {
+    const current = breadcrumbMap[location];
+    if (!current) return [];
+    
+    const breadcrumbs = [];
+    if (current.parent) {
+      breadcrumbs.push({ label: current.parent, path: null });
+    }
+    breadcrumbs.push({ label: current.label, path: location });
+    return breadcrumbs;
+  };
+
+  const breadcrumbs = getBreadcrumbs();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30">
@@ -43,18 +77,54 @@ export function MainLayout({ children }: MainLayoutProps) {
           </div>
           
           <div className="relative z-10 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
-            {/* Mobile menu button */}
-            <Button
-              variant="outline"
-              size="icon"
-              className="lg:hidden mb-6 border-gray-200 bg-white/80 backdrop-blur-sm hover:bg-white hover:shadow-md transition-all duration-200"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-            >
-              {sidebarOpen ? 
-                <X className="h-5 w-5" /> : 
-                <Menu className="h-5 w-5" />
-              }
-            </Button>
+            {/* Top Bar with Mobile Menu + Breadcrumbs */}
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-4">
+                {/* Mobile menu button */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="lg:hidden border-gray-200 bg-white/80 backdrop-blur-sm hover:bg-white hover:shadow-md transition-all duration-200"
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                >
+                  {sidebarOpen ? 
+                    <X className="h-5 w-5" /> : 
+                    <Menu className="h-5 w-5" />
+                  }
+                </Button>
+                
+                {/* Breadcrumbs */}
+                {breadcrumbs.length > 0 && (
+                  <nav className="flex items-center space-x-2 text-sm">
+                    <Home className="h-4 w-4 text-gray-400" />
+                    {breadcrumbs.map((breadcrumb, index) => (
+                      <div key={index} className="flex items-center">
+                        <ChevronRight className="h-4 w-4 text-gray-400 mx-2" />
+                        <span className={cn(
+                          "font-medium",
+                          index === breadcrumbs.length - 1 
+                            ? "text-gray-900" 
+                            : "text-gray-500"
+                        )}>
+                          {breadcrumb.label}
+                        </span>
+                      </div>
+                    ))}
+                  </nav>
+                )}
+              </div>
+              
+              {/* Quick Actions */}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="hidden sm:flex bg-white/80 backdrop-blur-sm hover:bg-white hover:shadow-md transition-all duration-200"
+                >
+                  Quick Actions
+                </Button>
+              </div>
+            </div>
             
             {/* Page content */}
             <div className="animate-in fade-in-50 slide-in-from-bottom-4 duration-700">

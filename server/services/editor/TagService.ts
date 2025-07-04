@@ -77,7 +77,8 @@ export class TagService {
       }
       
       // If session is completed, reactivate it since user is making changes
-      if (session.status === 'completed') {
+      // Only reactivate for tagging sessions, not for notary sessions
+      if (session.status === 'completed' && session.sessionType === 'tagging') {
         await db
           .update(editorSessions)
           .set({ 
@@ -86,7 +87,7 @@ export class TagService {
           })
           .where(eq(editorSessions.sessionId, request.sessionId));
         
-        console.log(`🔄 Reactivated completed session: ${request.sessionId} (user making new changes)`);
+        console.log(`🔄 Reactivated completed tagging session: ${request.sessionId} (user making new changes)`);
       }
       
       // Get assigned user info for display

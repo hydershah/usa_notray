@@ -167,38 +167,59 @@ export const useEditorStore = create<EditorStore>()(
       },
       
       // Tag Management Actions
-      setTags: (tags) => set({ tags }),
+      setTags: (tags) => set({ 
+        tags: tags.filter(tag => {
+          // Filter out any temporary tags when setting tags from server
+          if (tag.id.toString().startsWith('temp_')) {
+            console.warn('Filtering out temporary tag during setTags:', tag.id);
+            return false;
+          }
+          return true;
+        })
+      }),
       
       addTag: (tag) => 
-        set((state) => ({
-          tags: [...state.tags, tag],
-          selectedTag: tag
-        })),
+        set((state) => {
+          // Remove any existing tag with the same ID before adding
+          const filteredTags = state.tags.filter(t => t.id !== tag.id);
+          return {
+            tags: [...filteredTags, tag],
+            selectedTag: tag
+          };
+        }),
       
       updateTag: (tagId, updates) =>
-        set((state) => ({
-          tags: state.tags.map(tag =>
-            tag.id === tagId 
+        set((state) => {
+          // Don't update temporary tags - they should be replaced by server tags
+          if (tagId.startsWith('temp_')) {
+            console.warn('Attempted to update temporary tag:', tagId);
+            return state;
+          }
+          
+          return {
+            tags: state.tags.map(tag =>
+              tag.id === tagId 
+                ? { 
+                    ...tag, 
+                    ...updates,
+                    coordinates: updates.coordinates 
+                      ? { ...tag.coordinates, ...updates.coordinates }
+                      : tag.coordinates,
+                    updatedAt: new Date() 
+                  }
+                : tag
+            ),
+            selectedTag: state.selectedTag?.id === tagId 
               ? { 
-                  ...tag, 
+                  ...state.selectedTag, 
                   ...updates,
                   coordinates: updates.coordinates 
-                    ? { ...tag.coordinates, ...updates.coordinates }
-                    : tag.coordinates,
-                  updatedAt: new Date() 
+                    ? { ...state.selectedTag.coordinates, ...updates.coordinates }
+                    : state.selectedTag.coordinates,
                 }
-              : tag
-          ),
-          selectedTag: state.selectedTag?.id === tagId 
-            ? { 
-                ...state.selectedTag, 
-                ...updates,
-                coordinates: updates.coordinates 
-                  ? { ...state.selectedTag.coordinates, ...updates.coordinates }
-                  : state.selectedTag.coordinates,
-              }
-            : state.selectedTag
-        })),
+              : state.selectedTag
+          };
+        }),
       
       deleteTag: (tagId) =>
         set((state) => ({

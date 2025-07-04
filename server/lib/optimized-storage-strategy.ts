@@ -1,5 +1,5 @@
 import { cloudStorage } from './cloud-storage-service';
-import { cacheService } from './cache-service';
+import { redisCache } from '../services/redis-cache';
 
 /**
  * Optimized Storage Strategy for Maximum Performance
@@ -34,7 +34,7 @@ export class OptimizedStorageStrategy {
     const cacheKey = `file:url:${fileKey}`;
     
     // Try cache first (5ms response)
-    const cached = await cacheService.get<OptimizedFileOperation>(cacheKey);
+    const cached = await redisCache.get<OptimizedFileOperation>(cacheKey);
     if (cached && new Date(cached.expiresAt) > new Date()) {
       return { ...cached, cached: true };
     }
@@ -52,7 +52,7 @@ export class OptimizedStorageStrategy {
     };
 
     // Cache for fast future access
-    await cacheService.set(cacheKey, result, { ttl: (expiresInHours - 1) * 3600 });
+    await redisCache.set(cacheKey, result, (expiresInHours - 1) * 3600);
     
     return result;
   }

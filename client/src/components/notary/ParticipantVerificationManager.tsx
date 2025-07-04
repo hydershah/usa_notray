@@ -187,6 +187,16 @@ export function ParticipantVerificationManager() {
       return;
     }
 
+    // Check if participant has a user account
+    if (!bypassDialog.participant.user_id) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Participant must have a user account before verification can be bypassed. Please ensure they have registered and joined the job."
+      });
+      return;
+    }
+
     try {
       const endpoint = bypassDialog.action === 'bypass' 
         ? `/api/notary/bypass-verification/${bypassDialog.participant.user_id}/${selectedJob.id}`
@@ -237,6 +247,11 @@ export function ParticipantVerificationManager() {
   };
 
   const getVerificationStatus = (participant: JobParticipant) => {
+    // Check if participant has a user account
+    if (!participant.user_id) {
+      return { label: 'Not Registered', color: 'bg-orange-100 text-orange-800' };
+    }
+    
     if (participant.is_verified) {
       if (participant.notary_verification_bypassed) {
         return { label: 'Notary Bypassed', color: 'bg-purple-100 text-purple-800' };
@@ -351,9 +366,14 @@ export function ParticipantVerificationManager() {
                             <User className="w-8 h-8 text-gray-400" />
                             <div>
                               <h4 className="font-semibold text-lg">
-                                {participant.full_name || `${participant.first_name} ${participant.last_name}`}
+                                {participant.full_name || `${participant.first_name} ${participant.last_name}` || 'Pending Registration'}
                               </h4>
                               <p className="text-sm text-gray-600">{participant.email}</p>
+                              {!participant.user_id && (
+                                <p className="text-xs text-orange-600 mt-1">
+                                  Participant has not registered yet. They need to create an account to join the session.
+                                </p>
+                              )}
                             </div>
                             <Badge variant="outline" className="ml-2">
                               {participant.participant_role}
@@ -363,63 +383,88 @@ export function ParticipantVerificationManager() {
                             </Badge>
                           </div>
 
-                          {participant.notary_verification_bypassed && (
-                            <Alert>
-                              <ShieldCheck className="h-4 w-4" />
-                              <AlertDescription>
-                                <strong>Bypassed by:</strong> {participant.bypassed_by_notary_name || 'You'} on{' '}
-                                {new Date(participant.notary_verification_bypassed_at!).toLocaleString()}
-                                <br />
-                                <strong>Reason:</strong> {participant.notary_verification_bypass_reason}
-                              </AlertDescription>
-                            </Alert>
-                          )}
-
-                          {participant.admin_bypassed && !participant.notary_verification_bypassed && (
+                          {!participant.user_id ? (
                             <Alert>
                               <AlertCircle className="h-4 w-4" />
                               <AlertDescription>
-                                This participant was already verified by an administrator
+                                <strong>Registration Required:</strong> This participant needs to create an account and accept the invitation before they can join the signing session. 
+                                They will receive an email with instructions to register.
                               </AlertDescription>
                             </Alert>
-                          )}
+                          ) : (
+                            <>
+                              {participant.notary_verification_bypassed && (
+                                <Alert>
+                                  <ShieldCheck className="h-4 w-4" />
+                                  <AlertDescription>
+                                    <strong>Bypassed by:</strong> {participant.bypassed_by_notary_name || 'You'} on{' '}
+                                    {new Date(participant.notary_verification_bypassed_at!).toLocaleString()}
+                                    <br />
+                                    <strong>Reason:</strong> {participant.notary_verification_bypass_reason}
+                                  </AlertDescription>
+                                </Alert>
+                              )}
 
-                          {participant.evs_transaction_id && !participant.notary_verification_bypassed && !participant.admin_bypassed && (
-                            <div className="text-sm text-gray-600">
-                              <strong>EVS Verified:</strong> Confidence {participant.evs_verification_confidence}%
-                            </div>
+                              {participant.admin_bypassed && !participant.notary_verification_bypassed && (
+                                <Alert>
+                                  <AlertCircle className="h-4 w-4" />
+                                  <AlertDescription>
+                                    This participant was already verified by an administrator
+                                  </AlertDescription>
+                                </Alert>
+                              )}
+
+                              {participant.evs_transaction_id && !participant.notary_verification_bypassed && !participant.admin_bypassed && (
+                                <div className="text-sm text-gray-600">
+                                  <strong>EVS Verified:</strong> Confidence {participant.evs_verification_confidence}%
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
 
                         <div className="flex gap-2">
-                          {!participant.is_verified && (
+                          {!participant.user_id ? (
                             <Button
-                              onClick={() => setBypassDialog({ 
-                                open: true, 
-                                participant, 
-                                action: 'bypass' 
-                              })}
+                              disabled
                               variant="outline"
-                              className="text-purple-600 border-purple-300 hover:bg-purple-50"
+                              className="text-gray-400 border-gray-300"
                             >
-                              <ShieldCheck className="w-4 h-4 mr-2" />
-                              Bypass Verification
+                              <User className="w-4 h-4 mr-2" />
+                              Awaiting Registration
                             </Button>
-                          )}
-                          
-                          {participant.notary_verification_bypassed && (
-                            <Button
-                              onClick={() => setBypassDialog({ 
-                                open: true, 
-                                participant, 
-                                action: 'remove' 
-                              })}
-                              variant="outline"
-                              className="text-red-600 border-red-300 hover:bg-red-50"
-                            >
-                              <XCircle className="w-4 h-4 mr-2" />
-                              Remove Bypass
-                            </Button>
+                          ) : (
+                            <>
+                              {!participant.is_verified && (
+                                <Button
+                                  onClick={() => setBypassDialog({ 
+                                    open: true, 
+                                    participant, 
+                                    action: 'bypass' 
+                                  })}
+                                  variant="outline"
+                                  className="text-purple-600 border-purple-300 hover:bg-purple-50"
+                                >
+                                  <ShieldCheck className="w-4 h-4 mr-2" />
+                                  Bypass Verification
+                                </Button>
+                              )}
+                              
+                              {participant.notary_verification_bypassed && (
+                                <Button
+                                  onClick={() => setBypassDialog({ 
+                                    open: true, 
+                                    participant, 
+                                    action: 'remove' 
+                                  })}
+                                  variant="outline"
+                                  className="text-red-600 border-red-300 hover:bg-red-50"
+                                >
+                                  <XCircle className="w-4 h-4 mr-2" />
+                                  Remove Bypass
+                                </Button>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>

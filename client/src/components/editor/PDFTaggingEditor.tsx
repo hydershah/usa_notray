@@ -106,18 +106,30 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
 
         // Load existing tags
         console.log(`🔍 Loading existing tags for session: ${sessionId}`);
-        const response = await fetch(`/api/editor/session/${sessionId}/tags`, {
+        const response = await fetch(`/api/editor/session/${sessionId}/tags?t=${Date.now()}`, {
           headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
           }
         });
 
         if (response.ok) {
           const { tags: existingTags } = await response.json();
           console.log(`✅ Loaded ${existingTags.length} existing tags:`, existingTags);
-          setTags(existingTags);
           
-          if (existingTags.length > 0) {
+          // Filter out any temporary tags that might have persisted
+          const validTags = existingTags.filter((tag: any) => {
+            if (tag.id && tag.id.toString().startsWith('temp_')) {
+              console.warn('Filtering out temporary tag:', tag.id);
+              return false;
+            }
+            return true;
+          });
+          
+          setTags(validTags);
+          
+          if (validTags.length > 0) {
             console.log(`🏷️  Tags loaded successfully - session appears to be a continuation of previous work`);
           } else {
             console.log(`📝 No existing tags found - starting fresh tagging session`);
@@ -176,13 +188,17 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
   const handleUserSwitch = useCallback((userIndex: number) => {
     if (userIndex === 0) {
       // Backtick = notary
-      const notary = participants.find(p => p.role === 'notary');
-      if (notary) setSelectedUser(notary);
+      const notary = participants.find(p => p.userType === 'notary');
+      if (notary) {
+        setSelectedUser(notary);
+        console.log('🔄 Switched to notary:', notary.displayName);
+      }
     } else if (userIndex <= participants.length) {
       // 1-9 = signers
-      const signers = participants.filter(p => p.role === 'signer');
+      const signers = participants.filter(p => p.userType === 'signer');
       if (signers[userIndex - 1]) {
         setSelectedUser(signers[userIndex - 1]);
+        console.log('🔄 Switched to signer:', signers[userIndex - 1].displayName);
       }
     }
   }, [participants, setSelectedUser]);

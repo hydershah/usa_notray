@@ -34,7 +34,7 @@ const TagTypeButton: React.FC<TagTypeButtonProps> = ({
       onClick={onClick}
       disabled={isDisabled}
       className={`
-        relative p-3 rounded-lg border-2 transition-all duration-200 text-left
+        relative flex items-center gap-2 p-2 rounded-lg border-2 transition-all duration-150
         ${isSelected 
           ? 'border-blue-500 bg-blue-50 text-blue-700' 
           : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
@@ -43,22 +43,20 @@ const TagTypeButton: React.FC<TagTypeButtonProps> = ({
           ? 'opacity-50 cursor-not-allowed' 
           : 'cursor-pointer'
         }
-        min-w-[120px]
+        w-full text-left
       `}
       title={`${tagInfo.description} (Press ${shortcut})`}
     >
-      {/* Shortcut Key Indicator */}
-      <div className="absolute top-1 right-1 w-6 h-6 bg-gray-700 text-white text-xs rounded flex items-center justify-center font-mono">
+      {/* Shortcut Key */}
+      <div className="absolute top-1 right-1 w-5 h-5 bg-gray-700 text-white text-xs rounded flex items-center justify-center font-mono">
         {shortcut}
       </div>
       
-      {/* Tag Icon and Label */}
-      <div className="flex items-center gap-2">
-        <span className="text-xl">{tagInfo.icon}</span>
-        <div>
-          <div className="font-medium text-sm">{tagInfo.label}</div>
-          <div className="text-xs text-gray-500 truncate">{tagInfo.description}</div>
-        </div>
+      {/* Tag Content */}
+      <span className="text-lg">{tagInfo.icon}</span>
+      <div className="flex-1">
+        <div className="font-medium text-sm">{tagInfo.label}</div>
+        <div className="text-xs text-gray-500">{tagInfo.description}</div>
       </div>
     </button>
   );
@@ -77,47 +75,63 @@ const UserSelector: React.FC<UserSelectorProps> = ({
   currentUser,
   onUserSelect
 }) => {
+  // Calculate signer-specific indices for correct keyboard shortcuts
+  const signers = participants.filter(p => p.userType === 'signer');
+  
   return (
-    <div className="space-y-3">
-      <h3 className="font-medium text-gray-700 text-sm">Select User for Tag Assignment</h3>
+    <div className="space-y-2">
+      <h3 className="text-sm font-semibold text-gray-700">Select User for Tag Assignment</h3>
       
-      <div className="grid grid-cols-1 gap-3">
+      <div className="space-y-2">
         {participants.map((participant, index) => {
           const isSelected = selectedUser?.userId === participant.userId;
           const isCurrentUser = currentUser?.userId === participant.userId;
-          const shortcut = participant.userType === 'notary' ? '`' : (index + 1).toString();
+          
+          // Calculate correct shortcut based on user type
+          let shortcut: string;
+          if (participant.userType === 'notary') {
+            shortcut = '`';
+          } else if (participant.userType === 'signer') {
+            // Find the signer's position among signers (1-based)
+            const signerIndex = signers.findIndex(s => s.userId === participant.userId);
+            shortcut = (signerIndex + 1).toString();
+          } else {
+            shortcut = ''; // Other user types don't have shortcuts
+          }
           
           return (
             <button
               key={participant.userId}
               onClick={() => onUserSelect(participant)}
               className={`
-                relative p-3 rounded-lg border-2 text-left transition-all duration-200
+                relative w-full p-3 rounded-lg border-2 text-left transition-all duration-150
                 ${isSelected 
-                  ? 'border-blue-500 bg-blue-50' 
+                  ? participant.userType === 'notary' 
+                    ? 'border-red-500 bg-red-50' 
+                    : 'border-blue-500 bg-blue-50'
                   : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
                 }
               `}
               title={`Switch to ${participant.displayName} (Press ${shortcut})`}
             >
-              {/* Shortcut Key Indicator */}
-              <div className="absolute top-2 right-2 w-6 h-6 bg-gray-700 text-white text-xs rounded flex items-center justify-center font-mono">
+              {/* Shortcut Key */}
+              <div className="absolute top-2 right-2 w-5 h-5 bg-gray-700 text-white text-xs rounded flex items-center justify-center font-mono">
                 {shortcut}
               </div>
               
-              {/* User Info */}
               <div className="flex items-center gap-3">
-                {/* Color Indicator */}
+                {/* Color dot */}
                 <div 
-                  className="w-4 h-4 rounded-full border-2 border-white shadow-sm"
+                  className="w-3 h-3 rounded-full"
                   style={{ backgroundColor: participant.colorCode }}
                 />
                 
-                <div className="flex-1 min-w-0">
+                {/* User info */}
+                <div className="flex-1">
                   <div className="font-medium text-sm flex items-center gap-2">
                     {participant.displayName}
                     {isCurrentUser && (
-                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
+                      <span className="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded">
                         You
                       </span>
                     )}
@@ -126,13 +140,6 @@ const UserSelector: React.FC<UserSelectorProps> = ({
                     {participant.userType}
                   </div>
                 </div>
-                
-                {/* Status */}
-                <div className={`
-                  w-2 h-2 rounded-full
-                  ${participant.status === 'active' ? 'bg-green-400' : 
-                    participant.status === 'joined' ? 'bg-yellow-400' : 'bg-gray-400'}
-                `} />
               </div>
             </button>
           );
@@ -202,51 +209,59 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
     setSelectedTagType(null);
   }, [setSelectedUser, setSelectedTagType, selectedUser]);
 
-  // Handle session completion
-  const handleCompleteSession = useCallback(async () => {
-    if (!sessionId) {
-      setCompletionError('No session ID available');
-      return;
-    }
-
+  // Handle completion
+  const handleComplete = useCallback(async () => {
+    if (isCompleting) return;
+    
+    setIsCompleting(true);
+    setCompletionError(null);
+    
     try {
-      setIsCompleting(true);
-      setCompletionError(null);
-
+      if (!sessionId) {
+        throw new Error('No session ID available');
+      }
+      
       const response = await fetch(`/api/editor/session/${sessionId}/complete`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({
-          force: false // Can be made configurable if needed
-        })
+        body: JSON.stringify({ force: false })
       });
-
+      
       const result = await response.json();
-
+      
       if (!response.ok) {
-        // Handle specific error cases
-        if (result.error === 'no_tags_placed') {
-          setCompletionError('Please place at least one tag before completing the session.');
-          return;
-        } else if (result.error === 'insufficient_tags') {
-          setCompletionError(`${result.message}. You can still complete the session if needed.`);
-          return;
+        if (result.canForce) {
+          // Allow user to force completion if they want
+          const forceComplete = window.confirm(result.message + '\n\nDo you want to complete anyway?');
+          if (forceComplete) {
+            const forceResponse = await fetch(`/api/editor/session/${sessionId}/complete`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+              },
+              body: JSON.stringify({ force: true })
+            });
+            
+            if (forceResponse.ok) {
+              console.log('✅ Session force completed successfully');
+              if (onSessionComplete) {
+                onSessionComplete();
+              }
+            }
+          }
+        } else {
+          throw new Error(result.message || 'Failed to complete session');
         }
-        throw new Error(result.message || 'Failed to complete session');
+      } else {
+        console.log('✅ Session completed successfully');
+        if (onSessionComplete) {
+          onSessionComplete();
+        }
       }
-
-      console.log('✅ Session completed successfully:', result);
-      
-      // Show success message to user
-      if (result.document?.canContinueEditing) {
-        console.log('📝 User can continue editing this tagged document later');
-      }
-      
-      // Call the parent completion handler
-      onSessionComplete?.();
       
     } catch (error) {
       console.error('❌ Failed to complete session:', error);
@@ -254,19 +269,31 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
     } finally {
       setIsCompleting(false);
     }
-  }, [sessionId, onSessionComplete]);
-
-  if (mode.mode !== 'tagging' || !mode.canPlaceTags) {
-    return null;
-  }
+  }, [sessionId, onSessionComplete, isCompleting]);
 
   return (
-    <div className={`bg-white rounded-xl shadow-md p-6 space-y-6 ${className}`}>
-      {/* Header */}
-      <div className="border-b pb-4">
-        <h2 className="text-xl font-semibold text-gray-900">Tag Placement</h2>
-        <p className="text-sm text-gray-600 mt-2">Select user and tag type to begin</p>
+    <div className={`bg-white rounded-lg flex flex-col ${className}`}>
+      {/* Fixed Header */}
+      <div className="p-4 border-b">
+        <h2 className="text-lg font-semibold text-gray-900">Tag Placement</h2>
+        <p className="text-sm text-gray-600">
+          Place tags on the document for signers
+        </p>
+        <div className="mt-2 text-sm text-gray-700">
+          <span className="font-medium">{tags.length}</span> tags placed
+        </div>
       </div>
+
+      {/* Scrollable Content */}
+      <div 
+        className="flex-1 overflow-y-auto p-4 space-y-4" 
+        style={{ 
+          maxHeight: 'calc(100vh - 300px)', 
+          minHeight: '400px',
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#d1d5db #f3f4f6'
+        }}
+      >
 
       {/* User Selection */}
       <UserSelector
@@ -278,70 +305,117 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
 
       {/* Tag Type Selection */}
       {selectedUser && availableTagTypes.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="font-medium text-gray-700 text-sm">
-            Tag Types for {selectedUser.displayName}
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold text-gray-700">
+            Available Tag Types
           </h3>
           
-          <div className="grid grid-cols-1 gap-3">
-            {availableTagTypes.map(tagType => (
-              <TagTypeButton
-                key={tagType}
-                tagType={tagType}
-                isSelected={selectedTagType === tagType}
-                isDisabled={false}
-                onClick={() => handleTagTypeSelect(tagType)}
-                shortcut={tagType}
-              />
-            ))}
-          </div>
+          {/* Universal Tags */}
+          {availableTagTypes.filter(t => ['T', 'D'].includes(t)).length > 0 && (
+            <>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Universal</p>
+              <div className="space-y-1">
+                {availableTagTypes.filter(t => ['T', 'D'].includes(t)).map(tagType => (
+                  <TagTypeButton
+                    key={tagType}
+                    tagType={tagType}
+                    isSelected={selectedTagType === tagType}
+                    isDisabled={false}
+                    onClick={() => handleTagTypeSelect(tagType)}
+                    shortcut={tagType}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+          
+          {/* Signer Tags */}
+          {availableTagTypes.filter(t => ['A', 'S', 'I'].includes(t)).length > 0 && (
+            <>
+              <p className="text-xs text-gray-500 uppercase tracking-wide mt-3">Signer Tags</p>
+              <div className="space-y-1">
+                {availableTagTypes.filter(t => ['A', 'S', 'I'].includes(t)).map(tagType => (
+                  <TagTypeButton
+                    key={tagType}
+                    tagType={tagType}
+                    isSelected={selectedTagType === tagType}
+                    isDisabled={false}
+                    onClick={() => handleTagTypeSelect(tagType)}
+                    shortcut={tagType}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+          
+          {/* Notary Tags */}
+          {availableTagTypes.filter(t => ['N', 'X', 'O', 'E', 'W'].includes(t)).length > 0 && (
+            <>
+              <p className="text-xs text-gray-500 uppercase tracking-wide mt-3">Notary Tags</p>
+              <div className="space-y-1">
+                {availableTagTypes.filter(t => ['N', 'X', 'O', 'E', 'W'].includes(t)).map(tagType => (
+                  <TagTypeButton
+                    key={tagType}
+                    tagType={tagType}
+                    isSelected={selectedTagType === tagType}
+                    isDisabled={false}
+                    onClick={() => handleTagTypeSelect(tagType)}
+                    shortcut={tagType}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
 
       {/* Current Selection Display */}
       {selectedUser && selectedTagType && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-          <div className="text-sm font-medium text-blue-800 mb-1">
-            Ready to Place Tag
+          <div className="text-sm font-medium text-blue-800">
+            Ready to Place
           </div>
-          <div className="text-xs text-blue-600">
-            {TAG_TYPE_INFO[selectedTagType].icon} {TAG_TYPE_INFO[selectedTagType].label} for {selectedUser.displayName}
+          <div className="text-xs text-blue-600 mt-1">
+            Click on the document to place {TAG_TYPE_INFO[selectedTagType].icon} {TAG_TYPE_INFO[selectedTagType].label} for {selectedUser.displayName}
           </div>
         </div>
       )}
 
       {/* Instructions */}
       <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1">
-        <div className="font-medium mb-2">Keyboard Shortcuts:</div>
-        <div>• <kbd className="kbd">` (backtick)</kbd> to switch to notary</div>
-        <div>• <kbd className="kbd">1-8</kbd> to switch to signers</div>
-        <div>• <kbd className="kbd">A, S, I, etc.</kbd> to select tag types</div>
-        <div>• <kbd className="kbd">Delete</kbd> to remove selected tag</div>
-        <div>• <kbd className="kbd">Esc</kbd> to deselect</div>
+        <div className="font-medium">Quick Tips:</div>
+        <div>• Use keyboard shortcuts for faster tagging</div>
+        <div>• Click and drag to resize tags</div>
+        <div>• Press Delete to remove selected tags</div>
       </div>
 
-      {/* Session Stats */}
-      <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-        <div className="text-sm font-medium text-green-800 mb-1">
-          Session Progress
-        </div>
-        <div className="text-xs text-green-600 space-y-1">
-          <div>📌 {tags.length} tags placed</div>
-          <div>👥 {participants.length} participants</div>
-        </div>
-      </div>
-
-      {/* Completion Error Display */}
-      {completionError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-          <div className="text-sm font-medium text-red-800 mb-1">
-            ⚠️ Error
-          </div>
-          <div className="text-xs text-red-600">
-            {completionError}
-          </div>
+      {/* Completion Button */}
+      {mode?.mode === 'tagging' && (
+        <div className="pt-4 border-t">
+          <button
+            onClick={handleComplete}
+            disabled={isCompleting || tags.length === 0}
+            className={`
+              w-full py-2 px-4 rounded-lg font-medium transition-colors
+              ${tags.length === 0
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : isCompleting
+                ? 'bg-gray-400 text-white cursor-wait'
+                : 'bg-green-600 text-white hover:bg-green-700'
+              }
+            `}
+          >
+            {isCompleting ? 'Completing...' : 'Complete Tagging Session'}
+          </button>
+          
+          {completionError && (
+            <div className="mt-2 text-sm text-red-600">
+              {completionError}
+            </div>
+          )}
         </div>
       )}
+      </div>
     </div>
   );
 };

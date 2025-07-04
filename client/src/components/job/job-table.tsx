@@ -932,6 +932,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
         </div>
       </div>
 
+      {/* Replace the existing JobDetailsModal with EnhancedJobDetailsModal */}
       <JobDetailsModal
         job={selectedJob}
         isOpen={isModalOpen}

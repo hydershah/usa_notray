@@ -57,7 +57,7 @@ async function testEmailConfiguration() {
     const info = await transporter.sendMail({
       from: process.env.SMTP_USER,
       to: testEmail,
-      subject: 'USA Notary System - Email Configuration Test',
+      subject: 'Sharp Note - Email Configuration Test',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
           <h2 style="color: #2563eb; text-align: center;">📧 Email Test Successful!</h2>
@@ -73,7 +73,7 @@ async function testEmailConfiguration() {
             </ul>
           </div>
           
-          <p style="color: #16a34a;">✅ Your USA Notary system is ready to send:</p>
+          <p style="color: #16a34a;">✅ Your Sharp Note system is ready to send:</p>
           <ul>
             <li>Guest signer invitations</li>
             <li>User registration invites</li>

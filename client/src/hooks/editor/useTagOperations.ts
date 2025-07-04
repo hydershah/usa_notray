@@ -118,43 +118,83 @@ export const useTagOperations = (sessionId: string) => {
         console.log(`✅ Saved ${operation.type} operation`);
       } catch (error) {
         console.error(`❌ Failed to save ${operation.type} operation:`, error);
+        
+        // Handle rollback for failed operations
+        if (operation.type === 'place' && operation.data.tempTagId) {
+          // Remove the optimistic tag if placement failed
+          removeTagFromStore(operation.data.tempTagId);
+          console.log(`🔄 Rolled back failed tag placement: ${operation.data.tempTagId}`);
+        }
+        
+        // Show user-friendly error
+        if (error instanceof Error && error.message.includes('temporary tag')) {
+          console.warn('Attempted operation on temporary tag - ignoring');
+        } else {
+          // You might want to show a toast notification here
+          console.error('Tag operation failed:', error);
+        }
       } finally {
         setIsProcessing(false);
       }
-    }, 2000) // 2 second debounce for less frequent saves
+    }, 500) // Reduced from 2000ms to 500ms for more responsive saves
   ).current;
 
-  // Single tag place API call
+  // Single tag place API call with better error handling
   const savePlaceTag = async (operation: TagOperation) => {
     const response = await fetch(`/api/editor/session/${sessionId}/place-tag`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Cache-Control': 'no-cache' // Prevent caching issues
       },
       body: JSON.stringify(operation.data)
     });
 
     if (!response.ok) {
-      throw new Error(`Place tag failed: ${response.statusText}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Place tag failed: ${response.statusText}`);
     }
 
-    return response.json();
+    const result = await response.json();
+    
+    // Replace the temporary tag with the server-generated one
+    if (operation.data.tempTagId && result.tag) {
+      removeTagFromStore(operation.data.tempTagId);
+      addTag({
+        ...result.tag,
+        // Ensure the tag has proper typing and required fields
+        id: result.tag.id.toString(),
+        sessionId: result.tag.sessionId.toString(),
+        documentId: result.tag.documentId.toString()
+      });
+      console.log(`✅ Replaced temp tag ${operation.data.tempTagId} with server tag ${result.tag.id}`);
+    }
+
+    return result;
   };
 
   // Single tag update API call
   const saveUpdateTag = async (operation: TagOperation) => {
+    // Skip if it's a temporary tag
+    if (operation.tagId && operation.tagId.startsWith('temp_')) {
+      console.warn('Skipping save for temporary tag:', operation.tagId);
+      return;
+    }
+
     const response = await fetch(`/api/editor/session/${sessionId}/tag/${operation.tagId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Cache-Control': 'no-cache'
       },
       body: JSON.stringify(operation.data)
     });
 
     if (!response.ok) {
-      throw new Error(`Update tag failed: ${response.statusText}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Update tag failed: ${response.statusText}`);
     }
 
     return response.json();
@@ -162,16 +202,24 @@ export const useTagOperations = (sessionId: string) => {
 
   // Single tag delete API call
   const saveDeleteTag = async (operation: TagOperation) => {
+    // Skip if it's a temporary tag
+    if (operation.tagId && operation.tagId.startsWith('temp_')) {
+      console.warn('Skipping delete for temporary tag:', operation.tagId);
+      return;
+    }
+
     const response = await fetch(`/api/editor/session/${sessionId}/tag/${operation.tagId}`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Cache-Control': 'no-cache'
       }
     });
 
     if (!response.ok) {
-      throw new Error(`Delete tag failed: ${response.statusText}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Delete tag failed: ${response.statusText}`);
     }
 
     return response.json();

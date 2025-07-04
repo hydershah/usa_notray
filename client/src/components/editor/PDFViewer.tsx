@@ -219,7 +219,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     return result;
   }, [mode, editorMode.canPlaceTags]);
 
-  // Load PDF document with improved error handling
+  // Load PDF document with improved error handling and redirect support
   const loadPDF = useCallback(async (url: string) => {
     try {
       console.log('📄 Starting PDF load for URL:', url);
@@ -244,8 +244,34 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         await new Promise(resolve => setTimeout(resolve, 50)); // Wait for cleanup
       }
       
+      // FIXED: First fetch the PDF as a blob to handle redirects properly
+      let pdfData: ArrayBuffer;
+      try {
+        console.log('📄 Fetching PDF document...');
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          credentials: 'same-origin'
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        // Get the PDF data as ArrayBuffer
+        pdfData = await response.arrayBuffer();
+        console.log('✅ PDF data fetched successfully, size:', pdfData.byteLength);
+        
+      } catch (fetchError) {
+        console.error('❌ Failed to fetch PDF:', fetchError);
+        throw new Error('Failed to download PDF from server');
+      }
+      
+      // Load the PDF from the ArrayBuffer
       const loadingTask = pdfjsLib.getDocument({
-        url,
+        data: pdfData,
         useWorkerFetch: false,
         isEvalSupported: false,
         useSystemFonts: true,
@@ -278,7 +304,22 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     } catch (err) {
       if (!isMountedRef.current) return;
       console.error('❌ PDF load error:', err);
-      setError(`Failed to load PDF: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      
+      // Provide more specific error messages
+      let errorMessage = 'Failed to load PDF';
+      if (err instanceof Error) {
+        if (err.message.includes('NetworkError') || err.message.includes('fetch')) {
+          errorMessage = 'Network error: Unable to download PDF. Please check your connection and try again.';
+        } else if (err.message.includes('Invalid PDF')) {
+          errorMessage = 'Invalid PDF file. The document may be corrupted or not a valid PDF.';
+        } else if (err.message.includes('Password')) {
+          errorMessage = 'PDF is password protected. Please provide the password.';
+        } else {
+          errorMessage = `Failed to load PDF: ${err.message}`;
+        }
+      }
+      
+      setError(errorMessage);
       setLoading(false);
     }
   }, []);
@@ -379,24 +420,43 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     };
   }, [documentUrl, loadPDF]);
 
-  // Initial page rendering when PDF loads
+  // Initial page rendering when PDF loads (OPTIMIZED)
   useEffect(() => {
     if (!pdfDoc) return;
     
     console.log('📖 PDF loaded, starting initial page rendering...');
     
     const renderInitialPages = async () => {
-      // Render first few pages initially for better UX
-      const pagesToRender = Math.min(5, pdfDoc.numPages);
+      // OPTIMIZED: Render only first 2 pages initially for faster loading
+      const pagesToRender = Math.min(2, pdfDoc.numPages);
+      
+      // Render pages in parallel for better performance
+      const renderPromises = [];
       for (let i = 1; i <= pagesToRender; i++) {
-        try {
-          await renderPage(i, false);
-          await new Promise(resolve => setTimeout(resolve, 10)); // Small delay between renders
-        } catch (error) {
-          console.error(`Failed to render initial page ${i}:`, error);
-        }
+        renderPromises.push(
+          renderPage(i, false).catch(error => {
+            console.error(`Failed to render initial page ${i}:`, error);
+          })
+        );
       }
-      console.log(`✅ Initial ${pagesToRender} pages rendered`);
+      
+      await Promise.all(renderPromises);
+      console.log(`✅ Initial ${pagesToRender} pages rendered in parallel`);
+      
+      // Render remaining pages in background (if any)
+      if (pdfDoc.numPages > pagesToRender) {
+        setTimeout(async () => {
+          for (let i = pagesToRender + 1; i <= Math.min(5, pdfDoc.numPages); i++) {
+            try {
+              await renderPage(i, false);
+              await new Promise(resolve => setTimeout(resolve, 5)); // Shorter delay
+            } catch (error) {
+              console.error(`Failed to render background page ${i}:`, error);
+            }
+          }
+          console.log(`✅ Background pages rendered`);
+        }, 100);
+      }
     };
     
     renderInitialPages();
@@ -551,7 +611,11 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       <div className={`flex items-center justify-center h-full ${className}`}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading PDF...</p>
+          <p className="text-gray-600 mb-2">Loading PDF...</p>
+          <p className="text-sm text-gray-500">This may take a few seconds for large documents</p>
+          <div className="mt-4 w-64 bg-gray-200 rounded-full h-2 mx-auto">
+            <div className="bg-blue-600 h-2 rounded-full animate-pulse" style={{ width: '60%' }}></div>
+          </div>
         </div>
       </div>
     );

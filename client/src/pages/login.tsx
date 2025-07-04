@@ -8,7 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
-import { IdCard, Shield, Smartphone } from 'lucide-react';
+import { IdCard, Shield, Smartphone, FileText, NotebookPen, Building, User, ArrowRight, Eye, EyeOff } from 'lucide-react';
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -18,6 +18,8 @@ export default function Login() {
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showSignupOptions, setShowSignupOptions] = useState(false);
   const { toast } = useToast();
   const { login } = useAuth();
 
@@ -50,7 +52,7 @@ export default function Login() {
           localStorage.setItem('token', data.token);
           localStorage.setItem('user', JSON.stringify(data.user));
           toast({
-            title: "Success",
+            title: "Welcome back!",
             description: "You have been logged in successfully.",
           });
           setLocation('/dashboard');
@@ -58,145 +60,363 @@ export default function Login() {
       } else {
         toast({
           variant: "destructive",
-          title: "Error",
-          description: data.message || "Login failed. Please try again.",
+          title: "Login Failed",
+          description: data.message || "Invalid credentials. Please try again.",
         });
       }
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error.message || "Login failed. Please try again.",
+        title: "Connection Error",
+        description: error.message || "Unable to connect. Please try again.",
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/10 to-accent/10 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto h-12 w-12 bg-primary rounded-full flex items-center justify-center mb-4">
-            <IdCard className="h-6 w-6 text-white" />
-          </div>
-          <CardTitle className="text-3xl font-bold">USA Notary</CardTitle>
-          <CardDescription>Professional Notary Services</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email Address</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                disabled={requiresTwoFactor}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                disabled={requiresTwoFactor}
-              />
-            </div>
-            
-            {requiresTwoFactor && (
-              <div className="space-y-3 p-4 border rounded-lg bg-blue-50">
-                <div className="flex items-center gap-2 text-blue-700">
-                  <Shield className="h-4 w-4" />
-                  <span className="font-medium">Two-Factor Authentication Required</span>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="two-factor">Enter 6-digit code from your authenticator app</Label>
-                  <div className="flex justify-center">
-                    <InputOTP
-                      maxLength={6}
-                      value={twoFactorCode}
-                      onChange={setTwoFactorCode}
-                    >
-                      <InputOTPGroup>
-                        <InputOTPSlot index={0} />
-                        <InputOTPSlot index={1} />
-                        <InputOTPSlot index={2} />
-                        <InputOTPSlot index={3} />
-                        <InputOTPSlot index={4} />
-                        <InputOTPSlot index={5} />
-                      </InputOTPGroup>
-                    </InputOTP>
-                  </div>
-                  <div className="flex items-center gap-1 text-xs text-gray-600 justify-center">
-                    <Smartphone className="h-3 w-3" />
-                    <span>Open your authenticator app to get the current code</span>
-                  </div>
+  const SignupOptions = () => (
+    <div className="space-y-6">
+      <div className="text-center">
+        <h3 className="text-2xl font-bold text-gray-900 mb-2">Join Sharp Note</h3>
+        <p className="text-gray-600">Choose how you'd like to get started</p>
+      </div>
+      
+      <div className="space-y-4">
+        {/* User Signup */}
+        <Card className="group cursor-pointer hover:shadow-xl transition-all duration-300 border-2 border-gray-200 hover:border-blue-400 hover:bg-blue-50/50">
+          <CardContent className="p-6">
+            <div className="flex items-center space-x-4">
+              <div className="flex-shrink-0">
+                <div className="h-14 w-14 bg-blue-100 group-hover:bg-blue-600 rounded-xl flex items-center justify-center transition-colors duration-300 shadow-sm">
+                  <FileText className="h-7 w-7 text-blue-600 group-hover:text-white transition-colors duration-300" />
                 </div>
               </div>
-            )}
-            
-            {!requiresTwoFactor && (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="remember" 
-                    checked={rememberMe}
-                    onCheckedChange={(checked) => setRememberMe(checked as boolean)}
-                  />
-                  <Label htmlFor="remember" className="text-sm">Remember me</Label>
-                </div>
-                <Button variant="link" className="p-0 h-auto text-sm">
-                  Forgot password?
-                </Button>
-              </div>
-            )}
-            
-            <div className="space-y-2">
-              <Button 
-                type="submit" 
-                className="w-full" 
-                disabled={isLoading || (requiresTwoFactor && twoFactorCode.length !== 6)}
-              >
-                {isLoading ? 'Signing in...' : requiresTwoFactor ? 'Verify & Sign In' : 'Sign In'}
-              </Button>
-              
-              {requiresTwoFactor && (
+              <div className="flex-1">
+                <h4 className="text-lg font-semibold text-gray-900 mb-1">I need documents notarized</h4>
+                <p className="text-sm text-gray-600 mb-4">Get your documents notarized quickly and securely</p>
                 <Button 
-                  type="button" 
-                  variant="outline" 
-                  className="w-full" 
-                  onClick={() => {
-                    setRequiresTwoFactor(false);
-                    setTwoFactorCode('');
-                  }}
+                  onClick={() => setLocation('/register-user')}
+                  className="w-full h-11 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium rounded-lg shadow-md transition-all duration-200 transform group-hover:scale-[1.02]"
                 >
-                  Back to Login
+                  Sign Up as User
+                  <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
-              )}
+              </div>
             </div>
-          </form>
-          
-          <div className="mt-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              Don't have a company account?
-            </p>
-            <Button 
-              variant="link" 
-              className="p-0 h-auto text-sm font-semibold"
-              onClick={() => setLocation('/register-company')}
-            >
-              Register Your Title Company
-            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Notary Signup */}
+        <Card className="group cursor-pointer hover:shadow-xl transition-all duration-300 border-2 border-gray-200 hover:border-green-400 hover:bg-green-50/50">
+          <CardContent className="p-6">
+            <div className="flex items-center space-x-4">
+              <div className="flex-shrink-0">
+                <div className="h-14 w-14 bg-green-100 group-hover:bg-green-600 rounded-xl flex items-center justify-center transition-colors duration-300 shadow-sm">
+                  <NotebookPen className="h-7 w-7 text-green-600 group-hover:text-white transition-colors duration-300" />
+                </div>
+              </div>
+              <div className="flex-1">
+                <h4 className="text-lg font-semibold text-gray-900 mb-1">I'm a notary</h4>
+                <p className="text-sm text-gray-600 mb-4">Join our network of professional notaries</p>
+                <Button 
+                  onClick={() => setLocation('/register-notary')}
+                  className="w-full h-11 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-medium rounded-lg shadow-md transition-all duration-200 transform group-hover:scale-[1.02]"
+                >
+                  Sign Up as Notary
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Divider */}
+        <div className="relative my-6">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-300" />
           </div>
-        </CardContent>
-      </Card>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-4 bg-white text-gray-500 font-medium">or</span>
+          </div>
+        </div>
+
+        {/* Title Company Registration */}
+        <Card className="group cursor-pointer hover:shadow-xl transition-all duration-300 border-2 border-gray-200 hover:border-purple-400 hover:bg-purple-50/50">
+          <CardContent className="p-6">
+            <div className="flex items-center space-x-4">
+              <div className="flex-shrink-0">
+                <div className="h-14 w-14 bg-purple-100 group-hover:bg-purple-600 rounded-xl flex items-center justify-center transition-colors duration-300 shadow-sm">
+                  <Building className="h-7 w-7 text-purple-600 group-hover:text-white transition-colors duration-300" />
+                </div>
+              </div>
+              <div className="flex-1">
+                <h4 className="text-lg font-semibold text-gray-900 mb-1">Register Your Title Company</h4>
+                <p className="text-sm text-gray-600 mb-4">Create an account for your title company and manage your team</p>
+                <Button 
+                  onClick={() => setLocation('/register-company')}
+                  className="w-full h-11 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-medium rounded-lg shadow-md transition-all duration-200 transform group-hover:scale-[1.02]"
+                >
+                  Register Title Company
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="text-center pt-6 border-t border-gray-200">
+        <Button 
+          variant="ghost" 
+          onClick={() => setShowSignupOptions(false)}
+          className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 font-medium transition-colors"
+        >
+          ← Back to Login
+        </Button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50">
+      {/* Left Side - Branding */}
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-gray-900 via-black to-gray-900 relative overflow-hidden">
+        <div className="absolute inset-0 bg-black/20" />
+        <div className="relative z-10 flex flex-col justify-center items-center text-white p-12">
+          <div className="text-center max-w-lg">
+            <div className="mb-8">
+              <img 
+                src="/logo.jpeg" 
+                alt="Sharp Note Logo" 
+                className="h-32 w-auto mx-auto mb-6 object-contain"
+              />
+              <p className="text-xl text-gray-200">Professional Digital Notary Services</p>
+            </div>
+            
+            <div className="space-y-6">
+              <div className="flex items-center space-x-4">
+                <div className="flex-shrink-0">
+                  <div className="h-8 w-8 bg-white/10 rounded-full flex items-center justify-center">
+                    <Shield className="h-4 w-4 text-white" />
+                  </div>
+                </div>
+                <div className="text-left">
+                  <p className="font-semibold text-white">Secure & Compliant</p>
+                  <p className="text-sm text-gray-300">Bank-level security with full legal compliance</p>
+                </div>
+              </div>
+              
+              <div className="flex items-center space-x-4">
+                <div className="flex-shrink-0">
+                  <div className="h-8 w-8 bg-white/10 rounded-full flex items-center justify-center">
+                    <Smartphone className="h-4 w-4 text-white" />
+                  </div>
+                </div>
+                <div className="text-left">
+                  <p className="font-semibold text-white">Remote Notarization</p>
+                  <p className="text-sm text-gray-300">Get documents notarized from anywhere</p>
+                </div>
+              </div>
+              
+              <div className="flex items-center space-x-4">
+                <div className="flex-shrink-0">
+                  <div className="h-8 w-8 bg-white/10 rounded-full flex items-center justify-center">
+                    <FileText className="h-4 w-4 text-white" />
+                  </div>
+                </div>
+                <div className="text-left">
+                  <p className="font-semibold text-white">Digital Workflow</p>
+                  <p className="text-sm text-gray-300">Streamlined process for faster turnaround</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Decorative Elements */}
+        <div className="absolute top-20 left-20 w-32 h-32 bg-white/5 rounded-full blur-xl" />
+        <div className="absolute bottom-20 right-20 w-24 h-24 bg-white/5 rounded-full blur-xl" />
+      </div>
+
+      {/* Right Side - Login Form */}
+      <div className="flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+        <div className="w-full max-w-lg">
+          {!showSignupOptions ? (
+            <Card className="shadow-2xl border-0 bg-white mx-2">
+              <CardHeader className="text-center pb-6">
+                <div className="lg:hidden mb-4">
+                  <img 
+                    src="/logo.jpeg" 
+                    alt="Sharp Note Logo" 
+                    className="h-16 w-auto mx-auto mb-2 object-contain"
+                  />
+                </div>
+                <CardTitle className="text-xl sm:text-2xl font-bold text-gray-900">
+                  {requiresTwoFactor ? 'Verify Your Identity' : 'Welcome Back'}
+                </CardTitle>
+                <CardDescription className="text-gray-600">
+                  {requiresTwoFactor ? 'Enter your two-factor authentication code' : 'Sign in to your Sharp Note account'}
+                </CardDescription>
+              </CardHeader>
+              
+              <CardContent className="space-y-6 px-6 sm:px-8 pb-8">
+                <form onSubmit={handleSubmit} className="space-y-5">
+                  {!requiresTwoFactor && (
+                    <>
+                      <div className="space-y-3">
+                        <Label htmlFor="email" className="text-sm font-medium text-gray-700">
+                          Email Address
+                        </Label>
+                        <Input
+                          id="email"
+                          type="email"
+                          placeholder="Enter your email"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          required
+                          className="h-12 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors text-base"
+                        />
+                      </div>
+                      
+                      <div className="space-y-3">
+                        <Label htmlFor="password" className="text-sm font-medium text-gray-700">
+                          Password
+                        </Label>
+                        <div className="relative">
+                          <Input
+                            id="password"
+                            type={showPassword ? "text" : "password"}
+                            placeholder="Enter your password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            className="h-12 pr-12 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors text-base"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded p-1"
+                            aria-label={showPassword ? 'Hide password' : 'Show password'}
+                          >
+                            {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {requiresTwoFactor && (
+                    <div className="space-y-5 p-6 border border-gray-200 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50">
+                      <div className="flex items-center gap-3 text-gray-800">
+                        <div className="p-2 bg-blue-100 rounded-full">
+                          <Shield className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <span className="font-semibold text-lg">Two-Factor Authentication</span>
+                      </div>
+                      <div className="space-y-4">
+                        <Label className="text-sm font-medium text-gray-700">
+                          Enter the 6-digit code from your authenticator app
+                        </Label>
+                        <div className="flex justify-center">
+                          <InputOTP
+                            maxLength={6}
+                            value={twoFactorCode}
+                            onChange={setTwoFactorCode}
+                          >
+                            <InputOTPGroup className="gap-3">
+                              <InputOTPSlot index={0} className="h-12 w-12 text-lg" />
+                              <InputOTPSlot index={1} className="h-12 w-12 text-lg" />
+                              <InputOTPSlot index={2} className="h-12 w-12 text-lg" />
+                              <InputOTPSlot index={3} className="h-12 w-12 text-lg" />
+                              <InputOTPSlot index={4} className="h-12 w-12 text-lg" />
+                              <InputOTPSlot index={5} className="h-12 w-12 text-lg" />
+                            </InputOTPGroup>
+                          </InputOTP>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-600 justify-center bg-white/60 backdrop-blur-sm rounded-lg p-3">
+                          <Smartphone className="h-4 w-4 text-blue-600" />
+                          <span>Check your authenticator app for the current code</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {!requiresTwoFactor && (
+                    <div className="flex items-center justify-between pt-2">
+                      <div className="flex items-center space-x-3">
+                        <Checkbox 
+                          id="remember" 
+                          checked={rememberMe}
+                          onCheckedChange={(checked) => setRememberMe(checked as boolean)}
+                          className="border-gray-300"
+                        />
+                        <Label htmlFor="remember" className="text-sm text-gray-700 font-medium">
+                          Remember me
+                        </Label>
+                      </div>
+                      <Button variant="link" className="p-0 h-auto text-sm text-blue-600 hover:text-blue-800 font-medium">
+                        Forgot password?
+                      </Button>
+                    </div>
+                  )}
+
+                  <div className="space-y-4 pt-2">
+                    <Button 
+                      type="submit" 
+                      className="w-full h-12 bg-gradient-to-r from-gray-900 to-black hover:from-black hover:to-gray-900 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform hover:scale-[1.02] text-base" 
+                      disabled={isLoading || (requiresTwoFactor && twoFactorCode.length !== 6)}
+                    >
+                      {isLoading ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          Signing in...
+                        </div>
+                      ) : requiresTwoFactor ? 'Verify & Sign In' : 'Sign In'}
+                    </Button>
+                    
+                    {requiresTwoFactor && (
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        className="w-full h-12 border-gray-300 hover:bg-gray-50 font-medium text-base" 
+                        onClick={() => {
+                          setRequiresTwoFactor(false);
+                          setTwoFactorCode('');
+                        }}
+                      >
+                        ← Back to Login
+                      </Button>
+                    )}
+                  </div>
+                </form>
+                
+                {!requiresTwoFactor && (
+                  <div className="text-center pt-4 border-t border-gray-200">
+                    <p className="text-sm text-gray-600 mb-4">
+                      Don't have an account?
+                    </p>
+                    <Button 
+                      variant="outline" 
+                      className="w-full h-12 border-gray-300 hover:bg-blue-50 hover:border-blue-300 text-blue-600 hover:text-blue-700 font-medium text-base transition-colors"
+                      onClick={() => setShowSignupOptions(true)}
+                    >
+                      <User className="mr-2 h-5 w-5" />
+                      Create New Account
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="shadow-2xl border-0 bg-white mx-2">
+              <CardContent className="p-6 sm:p-8">
+                <SignupOptions />
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

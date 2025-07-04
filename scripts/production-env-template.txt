@@ -14,7 +14,7 @@ DATABASE_URL="postgresql://username:password@your-db-host:5432/notary_platform"
 # Email (update domain)
 SMTP_HOST="smtp.yourdomain.com"
 SMTP_USER="noreply@yourdomain.com"
-EMAIL_FROM="USA Notary Platform <noreply@yourdomain.com>"
+EMAIL_FROM="Sharp Note <noreply@yourdomain.com>"
 
 # Security
 JWT_SECRET="your-secure-jwt-secret-production"

@@ -178,6 +178,28 @@ function Router() {
         }
       </Route>
 
+      {/* User registration route - public */}
+      <Route path="/register-user">
+        {(isAuthenticated && !isLoggingOut) ? <Redirect to="/dashboard" /> : 
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/register-user")))}
+            </React.Suspense>
+          </ErrorBoundary>
+        }
+      </Route>
+
+      {/* Notary registration route - public */}
+      <Route path="/register-notary">
+        {(isAuthenticated && !isLoggingOut) ? <Redirect to="/dashboard" /> : 
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/register-notary")))}
+            </React.Suspense>
+          </ErrorBoundary>
+        }
+      </Route>
+
       {/* Protected routes */}
       <Route path="/notary/profile/complete">
         <ProtectedRoute allowedRoles={['notary']}>
@@ -311,6 +333,16 @@ function Router() {
       <Route path="/logs">
         <ProtectedRoute allowedRoles={['admin', 'notary']}>
           <Dashboard />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/my-logs">
+        <ProtectedRoute>
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/my-logs")))}
+            </React.Suspense>
+          </ErrorBoundary>
         </ProtectedRoute>
       </Route>
 

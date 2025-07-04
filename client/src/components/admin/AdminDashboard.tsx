@@ -458,102 +458,99 @@ export function AdminDashboard() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in-50 duration-500">
-      {/* Enhanced Header */}
-      <div className="relative">
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-purple-600 to-blue-800 rounded-2xl opacity-10"></div>
-        <div className="relative bg-white rounded-2xl border border-gray-200 shadow-lg p-8">
-          <div className="flex items-center justify-between">
+    <div className="flex gap-6 animate-in fade-in-50 duration-500 min-h-screen">
+      {/* Left Navigation Sidebar */}
+      <div className="w-80 bg-white rounded-2xl border border-gray-200 shadow-lg p-6 h-fit sticky top-6">
+        {/* Header */}
+        <div className="mb-6">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-3 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl shadow-lg">
+              <Shield className="h-6 w-6 text-white" />
+            </div>
             <div>
-              <div className="flex items-center gap-3 mb-3">
-                <div className="p-3 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl shadow-lg">
-                  <Shield className="h-8 w-8 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
-                    USA Notary Dashboard
-                  </h1>
-                  <p className="text-gray-600 font-medium">Administrator Control Panel</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-4 text-sm text-gray-500">
-                <div className="flex items-center gap-1">
-                  <Activity className="h-4 w-4" />
-                  <span>System Status: Active</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Zap className="h-4 w-4" />
-                  <span>Last Updated: Just now</span>
-                </div>
-              </div>
+              <h1 className="text-xl font-bold text-gray-900">Admin Panel</h1>
+              <p className="text-sm text-gray-600">Control Center</p>
             </div>
-            <div className="hidden lg:block">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                <span className="text-sm text-gray-600">All systems operational</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+            <span>System Status: Active</span>
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wider">Quick Actions</h3>
+          <div className="space-y-2">
+            {[
+              { icon: FileText, label: 'Start New Signing', path: '/create-job', color: 'from-blue-500 to-blue-600' },
+              { icon: ClipboardList, label: 'Pending Jobs', path: '/jobs', color: 'from-amber-500 to-orange-500' }
+            ].map((action, index) => (
+              <Button
+                key={index}
+                onClick={() => setLocation(action.path)}
+                className="w-full justify-start h-12 bg-white border border-gray-200 hover:shadow-md transition-all duration-200 text-gray-700 hover:text-gray-900"
+                variant="outline"
+              >
+                <div className={`p-1.5 rounded-lg bg-gradient-to-br ${action.color} shadow-sm mr-3`}>
+                  <action.icon className="h-4 w-4 text-white" />
+                </div>
+                <span className="text-sm font-medium">{action.label}</span>
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        {/* Navigation Sections */}
+        <div className="space-y-1">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wider">Management</h3>
+          {[
+            { id: 'overview', icon: BarChart3, label: 'Overview', color: 'bg-blue-500' },
+            { id: 'approvals', icon: UserCheck, label: 'Approvals', color: 'bg-orange-500' },
+            { id: 'verification', icon: Shield, label: 'KYC/KBA', color: 'bg-green-500' },
+            { id: 'users', icon: Users, label: 'Users', color: 'bg-purple-500' },
+            { id: 'companies', icon: Building2, label: 'Companies', color: 'bg-indigo-500' },
+            { id: 'notaries', icon: Award, label: 'Notaries', color: 'bg-amber-500' },
+            { id: 'logs', icon: Activity, label: 'Logs', color: 'bg-red-500' },
+            { id: 'settings', icon: Settings, label: 'Settings', color: 'bg-gray-500' }
+          ].map((item) => (
+            <Button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={`w-full justify-start h-11 transition-all duration-200 ${
+                activeTab === item.id
+                  ? 'bg-gradient-to-r from-blue-50 to-purple-50 text-blue-700 shadow-sm border-blue-200'
+                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:shadow-sm'
+              }`}
+              variant="outline"
+            >
+              <div className={`p-1.5 rounded-lg ${
+                activeTab === item.id ? item.color : 'bg-gray-100'
+              } mr-3 transition-all duration-200`}>
+                <item.icon className={`h-4 w-4 ${
+                  activeTab === item.id ? 'text-white' : 'text-gray-500'
+                }`} />
               </div>
+              <span className="text-sm font-medium">{item.label}</span>
+            </Button>
+          ))}
+        </div>
+
+        {/* System Status */}
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+            <div className="flex items-center gap-2 text-green-800 text-sm font-medium">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              All systems operational
             </div>
+            <p className="text-xs text-green-600 mt-1">Last updated: Just now</p>
           </div>
         </div>
       </div>
 
-      {/* Enhanced Quick Actions */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { icon: FileText, label: 'Start New Signing', path: '/create-job', color: 'from-blue-500 to-blue-600', bgColor: 'hover:bg-blue-50' },
-          { icon: ClipboardList, label: 'Pending Jobs', path: '/jobs', color: 'from-amber-500 to-orange-500', bgColor: 'hover:bg-amber-50' },
-          { icon: Building2, label: 'Company Management', action: () => setActiveTab('companies'), color: 'from-purple-500 to-purple-600', bgColor: 'hover:bg-purple-50' },
-          { icon: Users, label: 'User Manager', action: () => setActiveTab('users'), color: 'from-green-500 to-green-600', bgColor: 'hover:bg-green-50' }
-        ].map((action, index) => (
-          <Button
-            key={index}
-            onClick={action.path ? () => setLocation(action.path) : action.action}
-            className={`h-24 flex flex-col items-center justify-center bg-white border border-gray-200 shadow-md hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 ${action.bgColor} text-gray-700 hover:text-gray-900`}
-            variant="outline"
-          >
-            <div className={`p-2 rounded-lg bg-gradient-to-br ${action.color} shadow-lg mb-2`}>
-              <action.icon className="h-5 w-5 text-white" />
-            </div>
-            <span className="text-sm font-medium text-center">{action.label}</span>
-          </Button>
-        ))}
-      </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-8 h-14 bg-gradient-to-r from-blue-50 via-purple-50 to-blue-50 border rounded-lg p-1 shadow-md">
-          <TabsTrigger value="overview" className="flex items-center gap-2 data-[state=active]:bg-blue-500 data-[state=active]:text-white hover:bg-blue-100">
-            <BarChart3 className="h-4 w-4" />
-            <span className="hidden sm:inline">Overview</span>
-          </TabsTrigger>
-          <TabsTrigger value="approvals" className="flex items-center gap-2 data-[state=active]:bg-orange-500 data-[state=active]:text-white hover:bg-orange-100">
-            <UserCheck className="h-4 w-4" />
-            <span className="hidden sm:inline">Approvals</span>
-          </TabsTrigger>
-          <TabsTrigger value="verification" className="flex items-center gap-2 data-[state=active]:bg-green-500 data-[state=active]:text-white hover:bg-green-100">
-            <Shield className="h-4 w-4" />
-            <span className="hidden sm:inline">KYC/KBA</span>
-          </TabsTrigger>
-          <TabsTrigger value="users" className="flex items-center gap-2 data-[state=active]:bg-purple-500 data-[state=active]:text-white hover:bg-purple-100">
-            <Users className="h-4 w-4" />
-            <span className="hidden sm:inline">Users</span>
-          </TabsTrigger>
-          <TabsTrigger value="companies" className="flex items-center gap-2 data-[state=active]:bg-indigo-500 data-[state=active]:text-white hover:bg-indigo-100">
-            <Building2 className="h-4 w-4" />
-            <span className="hidden sm:inline">Companies</span>
-          </TabsTrigger>
-          <TabsTrigger value="notaries" className="flex items-center gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-white hover:bg-amber-100">
-            <Award className="h-4 w-4" />
-            <span className="hidden sm:inline">Notaries</span>
-          </TabsTrigger>
-          <TabsTrigger value="logs" className="flex items-center gap-2 data-[state=active]:bg-red-500 data-[state=active]:text-white hover:bg-red-100">
-            <Activity className="h-4 w-4" />
-            <span className="hidden sm:inline">Logs</span>
-          </TabsTrigger>
-          <TabsTrigger value="settings" className="flex items-center gap-2 data-[state=active]:bg-gray-500 data-[state=active]:text-white hover:bg-gray-100">
-            <Settings className="h-4 w-4" />
-            <span className="hidden sm:inline">Settings</span>
-          </TabsTrigger>
-        </TabsList>
+      {/* Main Content Area */}
+      <div className="flex-1 space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
 
         {/* Enhanced Overview Tab */}
         <TabsContent value="overview" className="space-y-8 mt-8">
@@ -1715,7 +1712,8 @@ export function AdminDashboard() {
             </CardContent>
           </Card>
         </TabsContent>
-      </Tabs>
+        </Tabs>
+      </div>
     </div>
   );
 } 
