@@ -131,7 +131,10 @@ router.get('/users/:userId/verification-data', verifyToken, requireAdmin, async 
         u.is_active,
         u.kba_verified,
         u.kba_verification_date,
-        u.kba_score
+        u.kba_score,
+        u.verification_image_front_url,
+        u.verification_image_back_url,
+        u.verification_image_selfie_url
       FROM users u
       LEFT JOIN users bypass_admin ON u.verification_bypassed_by = bypass_admin.id
       WHERE u.id = ${userId}
@@ -336,6 +339,73 @@ router.get('/verification-stats', verifyToken, requireAdmin, async (req: Request
   } catch (error) {
     console.error('Error fetching verification stats:', error);
     res.status(500).json({ error: 'Failed to fetch verification statistics' });
+  }
+});
+
+// Get verification image with proper authentication
+router.get('/users/:userId/verification-image/:imageType', verifyToken, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const userId = parseInt(req.params.userId);
+    const imageType = req.params.imageType;
+    
+    if (isNaN(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+    
+    if (!['front', 'back', 'selfie'].includes(imageType)) {
+      return res.status(400).json({ error: 'Invalid image type' });
+    }
+    
+    // Get user's verification image URLs
+    const user = await db.execute(sql`
+      SELECT 
+        verification_image_front_url,
+        verification_image_back_url,
+        verification_image_selfie_url
+      FROM users 
+      WHERE id = ${userId}
+    `);
+    
+    if (user.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const userData = user.rows[0];
+    let imageKey;
+    
+    switch (imageType) {
+      case 'front':
+        imageKey = userData.verification_image_front_url;
+        break;
+      case 'back':
+        imageKey = userData.verification_image_back_url;
+        break;
+      case 'selfie':
+        imageKey = userData.verification_image_selfie_url;
+        break;
+    }
+    
+    if (!imageKey) {
+      return res.status(404).json({ error: 'Image not found' });
+    }
+    
+    // Generate signed URL for secure access
+    const { VultrUploadHandler } = await import('../vultr-upload-handler');
+    const signedUrl = await VultrUploadHandler.generateSignedUrl(imageKey);
+    
+    if (!signedUrl) {
+      return res.status(500).json({ error: 'Failed to generate secure image URL' });
+    }
+    
+    res.json({
+      imageUrl: signedUrl,
+      imageKey: imageKey,
+      expiresIn: 3600 // 1 hour
+    });
+    
+  } catch (error) {
+    console.error('Error fetching verification image:', error);
+    res.status(500).json({ error: 'Failed to fetch verification image' });
   }
 });
 

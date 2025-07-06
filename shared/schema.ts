@@ -120,6 +120,11 @@ export const users = pgTable("users", {
   evsDocumentTypeDetected: text("evs_document_type_detected"), // Document type detected by EVS
   evsVerificationMethod: text("evs_verification_method").default("api"), // 'api', 'manual', 'fallback'
   
+  // Verification image URLs stored in Vultr
+  verificationImageFrontUrl: text("verification_image_front_url"), // Front ID image URL
+  verificationImageBackUrl: text("verification_image_back_url"), // Back ID image URL  
+  verificationImageSelfieUrl: text("verification_image_selfie_url"), // Selfie image URL
+  
   // Additional metadata
   verificationIpAddress: text("verification_ip_address"), // IP address during verification
   verificationUserAgent: text("verification_user_agent"), // Browser/device info during verification
@@ -1382,6 +1387,12 @@ export const editorSessions = pgTable("editor_sessions", {
   status: text("status").default("preparing").notNull(), // 'preparing', 'active', 'completed', 'cancelled'
   sessionType: text("session_type").default("notary").notNull(), // 'tagging', 'notary'
   videoSessionId: text("video_session_id"), // Whereby.com session ID
+  // Live signing session fields
+  signingState: text("signing_state").default("waiting"), // 'waiting', 'active', 'paused', 'completing', 'completed'
+  pausedAt: timestamp("paused_at"),
+  resumedAt: timestamp("resumed_at"),
+  activeUserId: integer("active_user_id").references(() => users.id),
+  isLiveSession: boolean("is_live_session").default(false),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -1404,6 +1415,10 @@ export const documentTags = pgTable("document_tags", {
   content: text("content"), // For completed tags
   completedBy: integer("completed_by").references(() => users.id),
   completedAt: timestamp("completed_at"),
+  // Live signing content fields
+  contentType: text("content_type"), // 'signature', 'text', 'date', 'notary'
+  contentData: text("content_data"), // JSON data for complex content
+  isRequired: boolean("is_required").default(true),
   createdBy: integer("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -1479,6 +1494,28 @@ export const sessionSettings = pgTable("session_settings", {
   sessionTimeout: integer("session_timeout").default(7200), // 2 hours in seconds
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Session Participants Status table - for tracking participant status in live signing sessions
+export const sessionParticipantsStatus = pgTable("session_participants_status", {
+  id: serial("id").primaryKey(),
+  sessionId: integer("session_id").references(() => editorSessions.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  joinedAt: timestamp("joined_at").defaultNow(),
+  leftAt: timestamp("left_at"),
+  isActive: boolean("is_active").default(false),
+  lastActivity: timestamp("last_activity").defaultNow(),
+  canInteract: boolean("can_interact").default(false),
+});
+
+// Live Session Events table - for audit trail of live session activities
+export const liveSessionEvents = pgTable("live_session_events", {
+  id: serial("id").primaryKey(),
+  sessionId: integer("session_id").references(() => editorSessions.id).notNull(),
+  userId: integer("user_id").references(() => users.id),
+  eventType: text("event_type").notNull(),
+  eventData: text("event_data"), // JSON string
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
 });
 
 // Relations for new tables
@@ -1585,6 +1622,28 @@ export const sessionSettingsRelations = relations(sessionSettings, ({ one }) => 
   }),
 }));
 
+export const sessionParticipantsStatusRelations = relations(sessionParticipantsStatus, ({ one }) => ({
+  session: one(editorSessions, {
+    fields: [sessionParticipantsStatus.sessionId],
+    references: [editorSessions.id],
+  }),
+  user: one(users, {
+    fields: [sessionParticipantsStatus.userId],
+    references: [users.id],
+  }),
+}));
+
+export const liveSessionEventsRelations = relations(liveSessionEvents, ({ one }) => ({
+  session: one(editorSessions, {
+    fields: [liveSessionEvents.sessionId],
+    references: [editorSessions.id],
+  }),
+  user: one(users, {
+    fields: [liveSessionEvents.userId],
+    references: [users.id],
+  }),
+}));
+
 // Zod schemas for new tables
 export const insertEditorSessionSchema = createInsertSchema(editorSessions);
 export const selectEditorSessionSchema = createSelectSchema(editorSessions);
@@ -1600,6 +1659,10 @@ export const insertDocumentVersionSchema = createInsertSchema(documentVersions);
 export const selectDocumentVersionSchema = createSelectSchema(documentVersions);
 export const insertSessionSettingsSchema = createInsertSchema(sessionSettings);
 export const selectSessionSettingsSchema = createSelectSchema(sessionSettings);
+export const insertSessionParticipantsStatusSchema = createInsertSchema(sessionParticipantsStatus);
+export const selectSessionParticipantsStatusSchema = createSelectSchema(sessionParticipantsStatus);
+export const insertLiveSessionEventsSchema = createInsertSchema(liveSessionEvents);
+export const selectLiveSessionEventsSchema = createSelectSchema(liveSessionEvents);
 
 // Type exports for new tables
 export type InsertEditorSession = z.infer<typeof insertEditorSessionSchema>;
@@ -1616,6 +1679,10 @@ export type InsertDocumentVersion = z.infer<typeof insertDocumentVersionSchema>;
 export type DocumentVersion = typeof documentVersions.$inferSelect;
 export type InsertSessionSettings = z.infer<typeof insertSessionSettingsSchema>;
 export type SessionSettings = typeof sessionSettings.$inferSelect;
+export type InsertSessionParticipantsStatus = z.infer<typeof insertSessionParticipantsStatusSchema>;
+export type SessionParticipantsStatus = typeof sessionParticipantsStatus.$inferSelect;
+export type InsertLiveSessionEvents = z.infer<typeof insertLiveSessionEventsSchema>;
+export type LiveSessionEvents = typeof liveSessionEvents.$inferSelect;
 
 // Add tag types and colors
 export const TAG_TYPES = {

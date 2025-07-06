@@ -244,6 +244,20 @@ export class VultrUploadHandler {
   }
 
   /**
+   * Generate signed URL for a specific file key
+   */
+  static async generateSignedUrl(fileKey: string, expiresInHours: number = 1): Promise<string | null> {
+    try {
+      const { cloudStorage } = await import('./lib/cloud-storage-service');
+      const signedUrl = await cloudStorage.getSignedUrl(fileKey, expiresInHours * 3600);
+      return signedUrl;
+    } catch (error) {
+      console.error('Failed to generate signed URL:', error);
+      return null;
+    }
+  }
+
+  /**
    * Helper method to determine content type
    */
   private static getContentType(filename: string): string {

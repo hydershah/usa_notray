@@ -18,13 +18,13 @@ const TAG_TYPE_INFO = {
 } as const;
 
 const USER_COLORS = {
-  notary: '#1F2937',
+  notary: '#EF4444',
   admin: '#DC2626', 
-  signer1: '#2563EB',
-  signer2: '#059669',
-  signer3: '#7C2D12',
-  witness1: '#9333EA',
-  witness2: '#C2410C'
+  signer1: '#3B82F6',
+  signer2: '#10B981',
+  signer3: '#F59E0B',
+  witness1: '#8B5CF6',
+  witness2: '#F97316'
 } as const;
 
 interface TagRendererProps {
@@ -182,23 +182,140 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   const userInfo = selectedUser || currentUser;
   const userColor = userInfo ? USER_COLORS[userInfo.role as keyof typeof USER_COLORS] || USER_COLORS.signer1 : USER_COLORS.signer1;
 
+  // Utility function to extract user information from tag
+  const extractUserFromTag = (tag: DocumentTag, session: any): { name: string; colorCode: string } | null => {
+    // First try to find by assignedUserId
+    if (tag.assignedUserId && session?.participants) {
+      const assignedUser = session.participants.find((p: any) => p.userId === tag.assignedUserId);
+      if (assignedUser) {
+        return {
+          name: assignedUser.displayName.split(' ')[0], // First name only
+          colorCode: assignedUser.colorCode
+        };
+      }
+    }
+    
+    // Fallback to parsing displayLabel
+    if (tag.displayLabel && tag.displayLabel.includes(' - ')) {
+      const userName = tag.displayLabel.split(' - ')[1];
+      if (userName) {
+        return {
+          name: userName.split(' ')[0], // First name only
+          colorCode: tag.colorCode
+        };
+      }
+    }
+    
+    return null;
+  };
+
+  // Get assigned user info for display
+  const getAssignedUser = () => {
+    if (!tag.assignedUserId || !session?.participants) return null;
+    return session.participants.find(p => p.userId === tag.assignedUserId);
+  };
+
   // Render tag content based on mode and completion status
   const renderTagContent = () => {
-    if (mode.mode === 'tagging' || !tag.isCompleted) {
-      // Show placeholder content
+    if (mode.mode === 'tagging' || (!tag.isCompleted && mode.mode !== 'signing')) {
+      // Show placeholder content in tagging mode
       const tagInfo = TAG_TYPE_INFO[tag.tagType];
+      const userInfo = extractUserFromTag(tag, session);
+      
       return (
-        <div className="flex items-center gap-1 text-white text-xs font-medium text-center">
-          <span className="text-sm">{tagInfo.icon}</span>
-          <span className="truncate">{tagInfo.label}</span>
+        <div className="flex flex-col items-center justify-center w-full h-full p-1">
+          {/* Main tag content */}
+          <div className="flex items-center gap-1">
+            <span className="text-xs opacity-80">{tagInfo.icon}</span>
+            <span className="text-xs font-medium truncate">{tagInfo.label}</span>
+          </div>
+          
+          {/* User identification */}
+          {userInfo && (
+            <div className="flex items-center gap-1 mt-0.5 px-1 py-0.5 bg-white bg-opacity-70 rounded-full">
+              <div 
+                className="w-2 h-2 rounded-full border border-white shadow-sm" 
+                style={{ backgroundColor: userInfo.colorCode }}
+              />
+              <span className="text-xs font-medium opacity-90 truncate">
+                {userInfo.name}
+              </span>
+            </div>
+          )}
         </div>
       );
+    } else if (mode.mode === 'signing') {
+      // In live signing mode, show interactive input or completed content
+      if (tag.isCompleted && tag.contentData) {
+        // Show completed content
+        return (
+          <div className="w-full h-full flex items-center justify-center bg-green-50 border border-green-200 rounded">
+            <div className="text-center p-1">
+              <div className="flex items-center gap-1 justify-center mb-1">
+                <span className="text-xs text-green-600">✓</span>
+                <span className="text-xs font-medium text-green-700">Completed</span>
+              </div>
+              <div className="text-xs text-green-600 truncate max-w-full">
+                {tag.contentData.type === 'signature' ? (
+                  <img 
+                    src={tag.contentData.value} 
+                    alt="Signature" 
+                    className="max-h-6 max-w-full object-contain mx-auto"
+                    style={{ filter: 'hue-rotate(220deg) brightness(0.8)' }}
+                  />
+                ) : (
+                  typeof tag.contentData.value === 'string' 
+                    ? tag.contentData.value.length > 15 
+                      ? `${tag.contentData.value.substring(0, 15)}...` 
+                      : tag.contentData.value
+                    : 'Content'
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      } else {
+        // Show clickable placeholder that will trigger interactive input
+        const tagInfo = TAG_TYPE_INFO[tag.tagType];
+        const isCurrentUserTag = currentUser && (
+          tag.assignedUserId === currentUser.userId || 
+          currentUser.role === 'notary' || 
+          ['T', 'D'].includes(tag.tagType) // Universal tags
+        );
+        
+        return (
+          <div 
+            className={`
+              w-full h-full flex items-center justify-center border-2 border-dashed rounded
+              ${isCurrentUserTag 
+                ? 'border-blue-400 bg-blue-50 hover:bg-blue-100 cursor-pointer' 
+                : 'border-gray-300 bg-gray-50 cursor-not-allowed opacity-60'
+              }
+              transition-colors duration-200
+            `}
+            onClick={(e) => {
+              if (isCurrentUserTag) {
+                e.stopPropagation();
+                // This will be handled by the parent to show interactive input
+                onSelect();
+              }
+            }}
+          >
+            <div className="text-center p-1">
+              <span className="text-lg mb-1 block">{tagInfo.icon}</span>
+              <span className="text-xs font-medium text-gray-700 block">
+                Click to {['S', 'I'].includes(tag.tagType) ? 'apply' : 'enter'}
+              </span>
+              <span className="text-xs text-gray-500">{tagInfo.label}</span>
+            </div>
+          </div>
+        );
+      }
     } else {
-      // Show actual content in live signing mode
+      // Fallback
       return (
-        <div className="w-full h-full flex items-center justify-center text-xs">
-          {/* TODO: Render actual content based on tag type */}
-          <span className="text-gray-700">Content</span>
+        <div className="w-full h-full flex items-center justify-center">
+          <span className="text-xs text-gray-700">Content</span>
         </div>
       );
     }
@@ -225,40 +342,52 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       onKeyDown={handleKeyDown}
       tabIndex={0}
       className={`
-        relative transition-all duration-200 rounded-md overflow-hidden
-        ${isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : ''}
-        ${canModifyTag ? 'cursor-move' : 'cursor-default'}
+        relative transition-all duration-200 overflow-hidden
+        ${isSelected ? 'ring-2 ring-blue-400 ring-opacity-60' : ''}
+        ${canModifyTag ? 'cursor-move hover:shadow-md' : 'cursor-default'}
         ${mode.showPlaceholders || !tag.isCompleted ? 'opacity-90' : 'opacity-100'}
       `}
       style={{
-        backgroundColor: tag.colorCode || userColor,
-        border: isSelected ? '2px solid #3B82F6' : '1px solid rgba(0,0,0,0.1)',
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        border: `2px solid ${tag.colorCode || userColor}`,
+        borderRadius: '6px',
         zIndex: isSelected ? 1000 : 100,
         boxShadow: isSelected 
-          ? '0 8px 25px rgba(0,0,0,0.3)' 
-          : '0 2px 8px rgba(0,0,0,0.2)'
+          ? `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${(tag.colorCode || userColor)}20` 
+          : '0 2px 4px rgba(0,0,0,0.1)',
+        color: tag.colorCode || userColor
       }}
       resizeHandleStyles={{
         bottomRight: {
-          width: '12px',
-          height: '12px',
-          backgroundColor: '#3B82F6',
+          width: '10px',
+          height: '10px',
+          backgroundColor: tag.colorCode || userColor,
           border: '2px solid white',
           borderRadius: '50%',
-          right: '-6px',
-          bottom: '-6px'
+          right: '-5px',
+          bottom: '-5px',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
         }
       }}
     >
       {/* Tag Content */}
-      <div className="w-full h-full flex items-center justify-center p-1">
+      <div className="w-full h-full flex items-center justify-center">
         {renderTagContent()}
       </div>
 
       {/* Selection Indicator */}
       {isSelected && canModifyTag && (
-        <div className="absolute -top-8 left-0 bg-blue-600 text-white text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap">
-          Press Delete to remove • Drag to move • Resize handle: ↘
+        <div className="absolute -top-7 left-0 bg-gray-900 text-white text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap z-10">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <div 
+                className="w-2 h-2 rounded-full border border-white" 
+                style={{ backgroundColor: tag.colorCode }}
+              />
+              <span className="font-medium">Selected</span>
+            </div>
+            <span className="opacity-75">• Delete to remove • Drag to move</span>
+          </div>
         </div>
       )}
 
@@ -420,7 +549,7 @@ export const TagLayer: React.FC<TagLayerProps> = ({
     left: `${left + containerScrollLeft}px`,
     width: `${canvasElement.width}px`,
     height: `${canvasElement.height}px`,
-    pointerEvents: 'none',
+    pointerEvents: 'auto',
   };
 
   return (

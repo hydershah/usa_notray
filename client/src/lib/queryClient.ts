@@ -1,7 +1,40 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+// Global flag to prevent multiple logout attempts
+let isLoggingOut = false;
+
+async function handleUnauthorized() {
+  if (isLoggingOut) {
+    return; // Prevent multiple simultaneous logout attempts
+  }
+  
+  isLoggingOut = true;
+  console.log('🚨 401 Unauthorized - Auto-logging out user');
+  
+  try {
+    // Clear localStorage immediately
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    
+    // Force redirect to login page
+    window.location.href = '/login?reason=expired';
+  } catch (error) {
+    console.error('Error during auto-logout:', error);
+  } finally {
+    isLoggingOut = false;
+  }
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
+    // Handle 401 Unauthorized responses
+    if (res.status === 401) {
+      await handleUnauthorized();
+      const error = new Error('Authentication required');
+      error.name = 'UnauthorizedError';
+      throw error;
+    }
+    
     const text = (await res.text()) || res.statusText;
     throw new Error(`${res.status}: ${text}`);
   }
@@ -52,8 +85,16 @@ export const getQueryFn: <T>(options: {
       credentials: "include",
     });
 
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null;
+    if (res.status === 401) {
+      if (unauthorizedBehavior === "returnNull") {
+        await handleUnauthorized();
+        return null;
+      } else {
+        await handleUnauthorized();
+        const error = new Error('Authentication required');
+        error.name = 'UnauthorizedError';
+        throw error;
+      }
     }
 
     await throwIfResNotOk(res);

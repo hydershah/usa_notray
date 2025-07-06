@@ -121,15 +121,15 @@ export interface NotaryLogEntry {
 
 // User role constants and color mapping
 export const USER_COLORS = {
-  notary: '#FF6B6B',     // Coral Red
-  signer1: '#4ECDC4',    // Turquoise  
-  signer2: '#45B7D1',    // Sky Blue
-  signer3: '#96CEB4',    // Sage Green
-  signer4: '#FFEAA7',    // Soft Yellow
-  signer5: '#DDA0DD',    // Plum
-  signer6: '#98D8C8',    // Mint
-  signer7: '#F7DC6F',    // Light Gold
-  signer8: '#BB8FCE',    // Lavender
+  notary: '#EF4444',     // Red
+  admin: '#DC2626',      // Dark Red
+  signer1: '#3B82F6',    // Blue
+  signer2: '#10B981',    // Green
+  signer3: '#F59E0B',    // Amber
+  signer4: '#8B5CF6',    // Violet
+  signer5: '#F97316',    // Orange
+  witness1: '#8B5CF6',   // Violet
+  witness2: '#F97316',   // Orange
 } as const;
 
 // Tag type metadata

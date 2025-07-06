@@ -7,6 +7,7 @@ import {
   Upload, Camera, FileText, AlertCircle, CheckCircle, 
   XCircle, RefreshCw, Eye, User, CreditCard, Shield 
 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface EVSVerificationProps {
   userId: number;
@@ -351,338 +352,350 @@ export function EVSVerification({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="space-y-6">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h3 className="font-medium text-blue-900 mb-2">EVS Solutions Verification</h3>
-            <p className="text-sm text-blue-800">
-              We use EVS Solutions for secure identity verification. This process is required before you can participate in any signing sessions.
-            </p>
-          </div>
+        <div>
+          <h3 className="text-lg font-medium mb-2">Identity Verification Required</h3>
+          <p className="text-gray-600 mb-4">
+            Upload clear photos of your government-issued ID and take a selfie to verify your identity through EVS Solutions.
+          </p>
+          
+          {/* Image quality requirements removed - pre-validation disabled
+          <Alert className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              <strong>Image Quality Requirements:</strong>
+              <ul className="list-disc ml-6 mt-2">
+                <li>Minimum size: 200KB for ID photos, 150KB for selfie</li>
+                <li>Use good lighting - avoid shadows or glare</li>
+                <li>Ensure entire document is visible and in focus</li>
+                <li>Hold camera steady to avoid blur</li>
+                <li>Supported formats: JPEG or PNG</li>
+              </ul>
+            </AlertDescription>
+          </Alert>
+          */}
 
-          {/* Document Type Selection */}
-          <div>
-            <Label className="text-base font-medium flex items-center mb-3">
-              <FileText className="h-4 w-4 mr-2" />
-              Document Type
-            </Label>
-            <select 
-              value={state.documentType || 'drivers_license'}
-              onChange={(e) => setState(prev => ({ ...prev, documentType: e.target.value }))}
-              className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="drivers_license">Driving License</option>
-              <option value="passport">Passport</option>
-              <option value="state_id">State ID</option>
-              <option value="national_id">National ID</option>
-            </select>
-            <p className="text-xs text-gray-500 mt-1">
-              Select the type of document you're uploading for better recognition
-            </p>
-          </div>
-
-          {/* Front of ID */}
-          <div>
-            <Label className="text-base font-medium flex items-center mb-3">
-              <CreditCard className="h-4 w-4 mr-2" />
-              Front of Government ID
-            </Label>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-              {state.frontImageData ? (
-                <div className="space-y-3">
-                  <img 
-                    src={state.frontImageData} 
-                    alt="Front of ID" 
-                    className="max-h-48 mx-auto rounded border"
-                  />
-                  <div className="flex items-center justify-center space-x-2">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span className="text-sm text-green-600">Front of ID uploaded</span>
-                  </div>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => frontInputRef.current?.click()}
-                  >
-                    Replace Image
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <Upload className="h-12 w-12 text-gray-400 mx-auto" />
-                  <div>
-                    <p className="text-gray-600">Upload front of your ID</p>
-                    <p className="text-sm text-gray-500">Driving License, Passport, or State ID</p>
-                  </div>
-                  <Button 
-                    onClick={() => frontInputRef.current?.click()}
-                    className="w-full"
-                  >
-                    Choose File
-                  </Button>
-                </div>
-              )}
-              <input
-                ref={frontInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => e.target.files?.[0] && handleFileUpload('front', e.target.files[0])}
-              />
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="documentType">Document Type</Label>
+              <select 
+                value={state.documentType || 'drivers_license'}
+                onChange={(e) => setState(prev => ({ ...prev, documentType: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="drivers_license">Driving License</option>
+                <option value="passport">Passport</option>
+                <option value="state_id">State ID</option>
+                <option value="national_id">National ID</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Select the type of document you're uploading for better recognition
+              </p>
             </div>
-          </div>
 
-          {/* Back of ID (Optional) */}
-          <div>
-            <Label className="text-base font-medium flex items-center mb-3">
-              <CreditCard className="h-4 w-4 mr-2" />
-              Back of ID (Optional)
-            </Label>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-              {state.backImageData ? (
-                <div className="space-y-3">
-                  <img 
-                    src={state.backImageData} 
-                    alt="Back of ID" 
-                    className="max-h-48 mx-auto rounded border"
-                  />
-                  <div className="flex items-center justify-center space-x-2">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span className="text-sm text-green-600">Back of ID uploaded</span>
-                  </div>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => backInputRef.current?.click()}
-                  >
-                    Replace Image
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <Upload className="h-12 w-12 text-gray-400 mx-auto" />
-                  <div>
-                    <p className="text-gray-600">Upload back of your ID</p>
-                    <p className="text-sm text-gray-500">Required for Driving License</p>
-                  </div>
-                  <Button 
-                    variant="outline"
-                    onClick={() => backInputRef.current?.click()}
-                    className="w-full"
-                  >
-                    Choose File
-                  </Button>
-                </div>
-              )}
-              <input
-                ref={backInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => e.target.files?.[0] && handleFileUpload('back', e.target.files[0])}
-              />
-            </div>
-          </div>
-
-          {/* Selfie */}
-          <div>
-            <Label className="text-base font-medium flex items-center mb-3">
-              <User className="h-4 w-4 mr-2" />
-              Selfie Photo
-            </Label>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-              {state.selfieData ? (
-                <div className="space-y-3">
-                  <img 
-                    src={state.selfieData} 
-                    alt="Selfie" 
-                    className="max-h-48 mx-auto rounded border"
-                  />
-                  <div className="flex items-center justify-center space-x-2">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span className="text-sm text-green-600">Selfie captured</span>
-                  </div>
-                  <div className="flex space-x-2">
+            {/* Front of ID */}
+            <div>
+              <Label className="text-base font-medium flex items-center mb-3">
+                <CreditCard className="h-4 w-4 mr-2" />
+                Front of Government ID
+              </Label>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                {state.frontImageData ? (
+                  <div className="space-y-3">
+                    <img 
+                      src={state.frontImageData} 
+                      alt="Front of ID" 
+                      className="max-h-48 mx-auto rounded border"
+                    />
+                    <div className="flex items-center justify-center space-x-2">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <span className="text-sm text-green-600">Front of ID uploaded</span>
+                    </div>
                     <Button 
                       variant="outline" 
                       size="sm"
-                      onClick={startCamera}
+                      onClick={() => frontInputRef.current?.click()}
                     >
-                      <Camera className="h-4 w-4 mr-2" />
-                      Retake
+                      Replace Image
                     </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <Upload className="h-12 w-12 text-gray-400 mx-auto" />
+                    <div>
+                      <p className="text-gray-600">Upload front of your ID</p>
+                      <p className="text-sm text-gray-500">Driving License, Passport, or State ID</p>
+                    </div>
+                    <Button 
+                      onClick={() => frontInputRef.current?.click()}
+                      className="w-full"
+                    >
+                      Choose File
+                    </Button>
+                  </div>
+                )}
+                <input
+                  ref={frontInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => e.target.files?.[0] && handleFileUpload('front', e.target.files[0])}
+                />
+              </div>
+            </div>
+
+            {/* Back of ID (Optional) */}
+            <div>
+              <Label className="text-base font-medium flex items-center mb-3">
+                <CreditCard className="h-4 w-4 mr-2" />
+                Back of ID (Optional)
+              </Label>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                {state.backImageData ? (
+                  <div className="space-y-3">
+                    <img 
+                      src={state.backImageData} 
+                      alt="Back of ID" 
+                      className="max-h-48 mx-auto rounded border"
+                    />
+                    <div className="flex items-center justify-center space-x-2">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <span className="text-sm text-green-600">Back of ID uploaded</span>
+                    </div>
                     <Button 
                       variant="outline" 
                       size="sm"
-                      onClick={() => selfieInputRef.current?.click()}
+                      onClick={() => backInputRef.current?.click()}
                     >
-                      <Upload className="h-4 w-4 mr-2" />
-                      Upload
+                      Replace Image
                     </Button>
                   </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <Camera className="h-12 w-12 text-gray-400 mx-auto" />
-                  <div>
-                    <p className="text-gray-600">Take a selfie or upload a photo</p>
-                    <p className="text-sm text-gray-500">Make sure your face is clearly visible</p>
-                  </div>
-                  <div className="flex space-x-2">
-                    <Button 
-                      onClick={startCamera}
-                      className="flex-1"
-                    >
-                      <Camera className="h-4 w-4 mr-2" />
-                      Take Photo
-                    </Button>
+                ) : (
+                  <div className="space-y-3">
+                    <Upload className="h-12 w-12 text-gray-400 mx-auto" />
+                    <div>
+                      <p className="text-gray-600">Upload back of your ID</p>
+                      <p className="text-sm text-gray-500">Required for Driving License</p>
+                    </div>
                     <Button 
                       variant="outline"
-                      onClick={() => selfieInputRef.current?.click()}
-                      className="flex-1"
+                      onClick={() => backInputRef.current?.click()}
+                      className="w-full"
                     >
-                      <Upload className="h-4 w-4 mr-2" />
-                      Upload
+                      Choose File
                     </Button>
                   </div>
-                </div>
-              )}
-              <input
-                ref={selfieInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => e.target.files?.[0] && handleSelfieUpload(e.target.files[0])}
-              />
+                )}
+                <input
+                  ref={backInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => e.target.files?.[0] && handleFileUpload('back', e.target.files[0])}
+                />
+              </div>
             </div>
-          </div>
 
-          {/* Camera Capture Modal */}
-          {showSelfieCapture && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-                <h3 className="text-lg font-medium mb-4">Take Your Selfie</h3>
-                <div className="space-y-4">
-                  <video 
-                    ref={videoRef}
-                    autoPlay 
-                    playsInline
-                    className="w-full rounded border"
-                  />
-                  <canvas ref={canvasRef} className="hidden" />
-                  <div className="flex space-x-2">
-                    <Button onClick={capturePhoto} className="flex-1">
-                      <Camera className="h-4 w-4 mr-2" />
-                      Capture
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      onClick={() => {
-                        if (cameraStream) {
-                          cameraStream.getTracks().forEach(track => track.stop());
-                          setCameraStream(null);
-                        }
-                        setShowSelfieCapture(false);
-                      }}
-                      className="flex-1"
-                    >
-                      Cancel
-                    </Button>
+            {/* Selfie */}
+            <div>
+              <Label className="text-base font-medium flex items-center mb-3">
+                <User className="h-4 w-4 mr-2" />
+                Selfie Photo
+              </Label>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                {state.selfieData ? (
+                  <div className="space-y-3">
+                    <img 
+                      src={state.selfieData} 
+                      alt="Selfie" 
+                      className="max-h-48 mx-auto rounded border"
+                    />
+                    <div className="flex items-center justify-center space-x-2">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <span className="text-sm text-green-600">Selfie captured</span>
+                    </div>
+                    <div className="flex space-x-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={startCamera}
+                      >
+                        <Camera className="h-4 w-4 mr-2" />
+                        Retake
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => selfieInputRef.current?.click()}
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Upload
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <Camera className="h-12 w-12 text-gray-400 mx-auto" />
+                    <div>
+                      <p className="text-gray-600">Take a selfie or upload a photo</p>
+                      <p className="text-sm text-gray-500">Make sure your face is clearly visible</p>
+                    </div>
+                    <div className="flex space-x-2">
+                      <Button 
+                        onClick={startCamera}
+                        className="flex-1"
+                      >
+                        <Camera className="h-4 w-4 mr-2" />
+                        Take Photo
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        onClick={() => selfieInputRef.current?.click()}
+                        className="flex-1"
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Upload
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                <input
+                  ref={selfieInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => e.target.files?.[0] && handleSelfieUpload(e.target.files[0])}
+                />
+              </div>
+            </div>
+
+            {/* Camera Capture Modal */}
+            {showSelfieCapture && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                  <h3 className="text-lg font-medium mb-4">Take Your Selfie</h3>
+                  <div className="space-y-4">
+                    <video 
+                      ref={videoRef}
+                      autoPlay 
+                      playsInline
+                      className="w-full rounded border"
+                    />
+                    <canvas ref={canvasRef} className="hidden" />
+                    <div className="flex space-x-2">
+                      <Button onClick={capturePhoto} className="flex-1">
+                        <Camera className="h-4 w-4 mr-2" />
+                        Capture
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => {
+                          if (cameraStream) {
+                            cameraStream.getTracks().forEach(track => track.stop());
+                            setCameraStream(null);
+                          }
+                          setShowSelfieCapture(false);
+                        }}
+                        className="flex-1"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* Submit Button */}
-          <div className="pt-4">
-            <Button 
-              onClick={submitVerification}
-              disabled={!state.frontImageData || !state.selfieData || loading}
-              className="w-full"
-            >
-              {loading ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <Shield className="h-4 w-4 mr-2" />
-                  Submit for Verification
-                </>
-              )}
-            </Button>
-            
-            {(!state.frontImageData || !state.selfieData) && (
-              <p className="text-sm text-gray-500 text-center mt-2">
-                Please upload front of ID and take a selfie to continue
-              </p>
             )}
-          </div>
 
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-            <div className="flex items-start space-x-2">
-              <AlertCircle className="h-4 w-4 text-gray-600 mt-0.5 flex-shrink-0" />
-              <div className="text-sm text-gray-600">
-                <p className="font-medium mb-1">Privacy & Security</p>
-                <p>Your documents are processed securely through EVS Solutions and are only used for identity verification. Images are encrypted and stored according to industry standards.</p>
-              </div>
+            {/* Submit Button */}
+            <div className="pt-4">
+              <Button 
+                onClick={submitVerification}
+                disabled={!state.frontImageData || !state.selfieData || loading}
+                className="w-full"
+              >
+                {loading ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Shield className="h-4 w-4 mr-2" />
+                    Submit for Verification
+                  </>
+                )}
+              </Button>
+              
+              {(!state.frontImageData || !state.selfieData) && (
+                <p className="text-sm text-gray-500 text-center mt-2">
+                  Please upload front of ID and take a selfie to continue
+                </p>
+              )}
             </div>
-          </div>
 
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-            <div className="flex items-start space-x-2">
-              <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
-              <div className="text-sm text-amber-800">
-                <p className="font-medium mb-2">📸 Critical Photo Requirements</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <p className="font-semibold mb-1">Document Photos:</p>
-                    <ul className="space-y-1">
-                      <li>• High resolution (at least 200KB file size)</li>
-                      <li>• Bright, even lighting - no shadows</li>
-                      <li>• Document completely flat and in frame</li>
-                      <li>• Text must be sharp and readable</li>
-                      <li>• No glare or reflections</li>
-                    </ul>
-                  </div>
-                  <div>
-                    <p className="font-semibold mb-1">Selfie Photo:</p>
-                    <ul className="space-y-1">
-                      <li>• Face clearly visible and well-lit</li>
-                      <li>• Look directly at camera</li>
-                      <li>• Remove glasses if possible</li>
-                      <li>• Plain background preferred</li>
-                      <li>• High quality (at least 200KB)</li>
-                    </ul>
-                  </div>
-                </div>
-                <div className="mt-2 p-2 bg-amber-100 border border-amber-300 rounded text-xs">
-                  <strong>⚠️ Poor quality photos will be rejected.</strong> Most verification failures are due to blurry, dark, or low-resolution images.
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {state.documentType === 'national_id' ? (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
               <div className="flex items-start space-x-2">
-                <AlertCircle className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                <div className="text-sm text-blue-800">
-                  <p className="font-medium mb-2">🌍 International Document Notice</p>
-                  <p className="mb-2">
-                    You've selected an international document. Our system will process this as a passport-type document for better recognition.
-                  </p>
-                  <ul className="space-y-1 text-xs">
-                    <li>• Ensure all text is in English or has English translation visible</li>
-                    <li>• Document must have photo and personal details clearly visible</li>
-                    <li>• International documents may take longer to process</li>
-                    <li>• If verification fails, you may need manual admin approval</li>
-                  </ul>
+                <AlertCircle className="h-4 w-4 text-gray-600 mt-0.5 flex-shrink-0" />
+                <div className="text-sm text-gray-600">
+                  <p className="font-medium mb-1">Privacy & Security</p>
+                  <p>Your documents are processed securely through EVS Solutions and are only used for identity verification. Images are encrypted and stored according to industry standards.</p>
                 </div>
               </div>
             </div>
-          ) : null}
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <div className="flex items-start space-x-2">
+                <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                <div className="text-sm text-amber-800">
+                  <p className="font-medium mb-2">📸 Photo Tips for Better Results</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <p className="font-semibold mb-1">Document Photos:</p>
+                      <ul className="space-y-1">
+                        <li>• Use bright, even lighting - no shadows</li>
+                        <li>• Document completely flat and in frame</li>
+                        <li>• Text must be sharp and readable</li>
+                        <li>• No glare or reflections</li>
+                        <li>• JPEG or PNG format</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="font-semibold mb-1">Selfie Photo:</p>
+                      <ul className="space-y-1">
+                        <li>• Face clearly visible and well-lit</li>
+                        <li>• Look directly at camera</li>
+                        <li>• Remove glasses if possible</li>
+                        <li>• Plain background preferred</li>
+                        <li>• Natural expression</li>
+                      </ul>
+                    </div>
+                  </div>
+                  <div className="mt-2 p-2 bg-amber-100 border border-amber-300 rounded text-xs">
+                    <strong>Note:</strong> All images will be sent to EVS for verification. Poor quality photos may still be rejected by the verification service.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {state.documentType === 'national_id' ? (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start space-x-2">
+                  <AlertCircle className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-blue-800">
+                    <p className="font-medium mb-2">🌍 International Document Notice</p>
+                    <p className="mb-2">
+                      You've selected an international document. Our system will process this as a passport-type document for better recognition.
+                    </p>
+                    <ul className="space-y-1 text-xs">
+                      <li>• Ensure all text is in English or has English translation visible</li>
+                      <li>• Document must have photo and personal details clearly visible</li>
+                      <li>• International documents may take longer to process</li>
+                      <li>• If verification fails, you may need manual admin approval</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
       </CardContent>
     </Card>

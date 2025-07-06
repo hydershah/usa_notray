@@ -381,6 +381,35 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
         </div>
       )}
 
+      {/* Placed Tags Summary */}
+      {tags.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold text-gray-700">Placed Tags ({tags.length})</h3>
+          <div className="space-y-1 max-h-40 overflow-y-auto">
+            {tags.map(tag => {
+              const userInfo = participants.find(p => p.userId === tag.assignedUserId);
+              const tagInfo = TAG_TYPE_INFO[tag.tagType];
+              
+              return (
+                <div key={tag.id} className="flex items-center gap-2 p-2 bg-white rounded border text-xs">
+                  <span className="text-sm">{tagInfo.icon}</span>
+                  <span className="font-medium">{tagInfo.label}</span>
+                  <div className="flex items-center gap-1 ml-auto">
+                    <div 
+                      className="w-2 h-2 rounded-full border border-gray-300" 
+                      style={{ backgroundColor: userInfo?.colorCode || tag.colorCode }}
+                    />
+                    <span className="text-gray-600">
+                      {userInfo?.displayName.split(' ')[0] || 'Unknown'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Instructions */}
       <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1">
         <div className="font-medium">Quick Tips:</div>

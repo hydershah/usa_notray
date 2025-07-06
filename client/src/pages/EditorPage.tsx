@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useLocation } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { PDFTaggingEditor } from '@/components/editor';
+import { LiveSigningInterface } from '@/components/editor/LiveSigningInterface';
 import type { 
   SessionDocument, 
   SessionParticipant, 
@@ -11,6 +12,7 @@ import type {
   EditorSession 
 } from '@/types/editor';
 import { apiRequest } from '@/lib/api';
+import { authenticatedFetch } from '@/lib/auth';
 
 interface EditorPageProps {}
 
@@ -34,16 +36,26 @@ interface SessionData {
 const EditorPage: React.FC<EditorPageProps> = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const [, setLocation] = useLocation();
-  const { user } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
   
   // Get mode from URL search params
   const searchParams = new URLSearchParams(window.location.search);
-  const mode = searchParams.get('mode') as 'tagging' | 'notary' || 'tagging';
+  const mode = searchParams.get('mode') as 'tagging' | 'notary' | 'signing' || 'tagging';
+  const sessionId = searchParams.get('session'); // For live signing sessions
   
   const [sessionData, setSessionData] = useState<SessionData | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Authentication check - redirect if not authenticated
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      console.log('User not authenticated, redirecting to login');
+      window.location.href = '/login?reason=required';
+      return;
+    }
+  }, [isAuthenticated, authLoading]);
 
   // Load job data to verify access
   const { data: job, isLoading: jobLoading, error: jobError } = useQuery<JobData>({
@@ -52,17 +64,22 @@ const EditorPage: React.FC<EditorPageProps> = () => {
       const response = await apiRequest("GET", `/api/jobs/${jobId}`);
       return response.json();
     },
-    enabled: !!jobId
+    enabled: !!jobId && isAuthenticated
   });
 
   // Initialize editor session
   useEffect(() => {
-    if (!jobId || !user || !job) return;
+    if (!jobId || !user || !job || !isAuthenticated) return;
     
     const initializeSession = async () => {
       try {
         setIsInitializing(true);
         setError(null);
+
+        // Double-check authentication
+        if (!localStorage.getItem('token')) {
+          throw new Error('Authentication token not found. Please log in again.');
+        }
 
         // Check user permissions
         if (user.role !== 'admin' && user.role !== 'notary' && 
@@ -70,11 +87,23 @@ const EditorPage: React.FC<EditorPageProps> = () => {
           throw new Error('You do not have permission to access this editor session');
         }
 
-        // Create or get editor session
-        const sessionResponse = await apiRequest("POST", `/api/editor/job/${jobId}/session`, {
-          sessionType: mode,
-          videoSessionId: mode === 'notary' ? `whereby_${jobId}_${Date.now()}` : undefined
+        // Create or get editor session using authenticated fetch
+        // Map 'signing' mode to 'notary' sessionType since live signing is a notary session with different UI
+        const sessionType = mode === 'signing' ? 'notary' : mode;
+        const sessionResponse = await authenticatedFetch(`/api/editor/job/${jobId}/session`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            sessionType,
+            videoSessionId: (mode === 'notary' || mode === 'signing') ? `whereby_${jobId}_${Date.now()}` : undefined
+          })
         });
+
+        if (!sessionResponse.ok) {
+          throw new Error(`Failed to create session: ${sessionResponse.status}`);
+        }
 
         const sessionResult = await sessionResponse.json();
         
@@ -82,8 +111,13 @@ const EditorPage: React.FC<EditorPageProps> = () => {
           throw new Error(sessionResult.message || 'Failed to create session');
         }
 
-        // Get session data with documents and participants
-        const dataResponse = await apiRequest("GET", `/api/editor/session/${sessionResult.session.id}`);
+        // Get session data with documents and participants using authenticated fetch
+        const dataResponse = await authenticatedFetch(`/api/editor/session/${sessionResult.session.id}`);
+        
+        if (!dataResponse.ok) {
+          throw new Error(`Failed to load session data: ${dataResponse.status}`);
+        }
+        
         const data: SessionData = await dataResponse.json();
 
         // Convert documents to include proper URLs
@@ -114,28 +148,45 @@ const EditorPage: React.FC<EditorPageProps> = () => {
           title: "Session Error",
           description: errorMessage
         });
+
+        // If it's an authentication error, redirect to login
+        if (errorMessage.includes('Authentication') || errorMessage.includes('token')) {
+          setTimeout(() => {
+            window.location.href = '/login?reason=expired';
+          }, 2000);
+        }
       } finally {
         setIsInitializing(false);
       }
     };
 
     initializeSession();
-  }, [jobId, user, job, mode, toast]);
+  }, [jobId, user, job, mode, toast, isAuthenticated]);
 
   // Handle session completion
   const handleSessionComplete = async () => {
     if (!sessionData) return;
 
     try {
-      // Update session status to completed
-      await apiRequest("PUT", `/api/editor/session/${sessionData.session.id}/status`, {
-        status: 'completed',
-        completedAt: new Date().toISOString()
+      // Update session status to completed using authenticated fetch
+      const response = await authenticatedFetch(`/api/editor/session/${sessionData.session.id}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          status: 'completed',
+          completedAt: new Date().toISOString()
+        })
       });
+
+      if (!response.ok) {
+        throw new Error(`Failed to complete session: ${response.status}`);
+      }
 
       toast({
         title: "Session Completed",
-        description: `${mode === 'tagging' ? 'Tagging' : 'Notary'} session completed successfully!`
+        description: `${mode === 'tagging' ? 'Tagging' : mode === 'signing' ? 'Live signing' : 'Notary'} session completed successfully!`
       });
 
       // Navigate back to job details
@@ -152,23 +203,47 @@ const EditorPage: React.FC<EditorPageProps> = () => {
   };
 
   // Handle tags change (for progress tracking)
-  const handleTagsChanged = (tags: DocumentTag[]) => {
+  const handleTagsChanged = useCallback((tags: DocumentTag[]) => {
     // Optional: Could send tags to backend for real-time persistence
     console.log(`Tags updated: ${tags.length} total, ${tags.filter(t => t.isCompleted).length} completed`);
-  };
+  }, []);
 
   // Loading states
-  if (jobLoading || isInitializing) {
+  if (authLoading || jobLoading || isInitializing) {
     return (
       <div className="h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <h2 className="text-lg font-semibold text-gray-800 mb-2">
-            {jobLoading ? 'Loading Job Data...' : 'Initializing Editor Session...'}
+            {authLoading ? 'Checking Authentication...' :
+             jobLoading ? 'Loading Job Data...' : 'Initializing Editor Session...'}
           </h2>
           <p className="text-gray-600">
-            {mode === 'tagging' ? 'Setting up document tagging workspace' : 'Preparing notary session'}
+            {mode === 'tagging' ? 'Setting up document tagging workspace' : 
+             mode === 'signing' ? 'Initializing live signing session' : 
+             'Preparing notary session'}
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Authentication check
+  if (!isAuthenticated) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-gray-50">
+        <div className="max-w-md text-center">
+          <div className="text-red-500 text-6xl mb-4">🔒</div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">Authentication Required</h2>
+          <p className="text-gray-600 mb-6">
+            Please log in to access the editor session.
+          </p>
+          <button
+            onClick={() => window.location.href = '/login'}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Go to Login
+          </button>
         </div>
       </div>
     );
@@ -237,18 +312,31 @@ const EditorPage: React.FC<EditorPageProps> = () => {
     );
   }
 
-  // Render PDF Editor
+  // Render appropriate editor based on mode
   return (
     <div className="h-screen bg-gray-100">
-      <PDFTaggingEditor
-        sessionId={sessionData.session.id}
-        mode={mode}
-        documents={sessionData.documents}
-        participants={sessionData.participants}
-        currentUserId={user?.id.toString() || ''}
-        onSessionComplete={handleSessionComplete}
-        onTagsChanged={handleTagsChanged}
-      />
+      {mode === 'signing' ? (
+        <LiveSigningInterface
+          sessionId={sessionData.session.id}
+          liveSessionId={sessionId || undefined}
+          documents={sessionData.documents}
+          participants={sessionData.participants}
+          currentUserId={user?.id.toString() || ''}
+          jobData={job}
+          onSessionComplete={handleSessionComplete}
+          onTagsChanged={handleTagsChanged}
+        />
+      ) : (
+        <PDFTaggingEditor
+          sessionId={sessionData.session.id}
+          mode={mode as 'tagging' | 'notary'}
+          documents={sessionData.documents}
+          participants={sessionData.participants}
+          currentUserId={user?.id.toString() || ''}
+          onSessionComplete={handleSessionComplete}
+          onTagsChanged={handleTagsChanged}
+        />
+      )}
     </div>
   );
 };

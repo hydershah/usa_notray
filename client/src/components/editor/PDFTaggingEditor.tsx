@@ -5,6 +5,10 @@ import PDFViewer from './PDFViewer';
 import TaggingToolbar from './TaggingToolbar';
 import HotkeyHandler from './HotkeyHandler';
 import VideoIntegration from './VideoIntegration';
+import { TagInputModal } from './TagInputModal';
+import { ReplaceAllButton } from './ReplaceAllButton';
+import { authenticatedFetch } from '@/lib/auth';
+import { useToast } from '@/hooks/use-toast';
 import type { 
   SessionDocument, 
   SessionParticipant, 
@@ -15,12 +19,15 @@ import type {
 
 interface PDFTaggingEditorProps {
   sessionId: string;
-  mode: 'tagging' | 'notary';
+  mode: 'tagging' | 'notary' | 'signing';
   documents: SessionDocument[];
   participants: SessionParticipant[];
   currentUserId: string;
   onSessionComplete?: () => void;
   onTagsChanged?: (tags: DocumentTag[]) => void;
+  // Live signing specific props
+  liveSessionState?: any;
+  onSetActiveUser?: (userId: number) => void;
 }
 
 export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
@@ -30,11 +37,20 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
   participants,
   currentUserId,
   onSessionComplete,
-  onTagsChanged
+  onTagsChanged,
+  liveSessionState,
+  onSetActiveUser
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Interactive tag modal state
+  const [selectedTagForInput, setSelectedTagForInput] = useState<DocumentTag | null>(null);
+  const [tagModalPosition, setTagModalPosition] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [userProfiles, setUserProfiles] = useState<Record<string, any>>({});
+  
+  const { toast } = useToast();
 
   // Store state
   const {
@@ -100,7 +116,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         setMode({
           mode: mode,
           canPlaceTags: mode === 'tagging',
-          canModifyContent: mode === 'notary',
+          canModifyContent: mode === 'notary' || mode === 'signing',
           showPlaceholders: mode === 'tagging'
         });
 
@@ -150,6 +166,109 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       initializeSession();
     }
   }, [sessionId, mode, documents, participants, currentUserId]);
+
+  // Load user profiles for content auto-fill
+  useEffect(() => {
+    const loadUserProfiles = async () => {
+      if (mode !== 'signing') return;
+      
+      try {
+        const profiles: Record<string, any> = {};
+        
+        for (const participant of participants) {
+          try {
+            const response = await authenticatedFetch(`/api/users/${participant.userId}/profile`);
+            if (response.ok) {
+              const profile = await response.json();
+              profiles[participant.userId] = profile;
+            }
+          } catch (error) {
+            console.warn(`Failed to load profile for user ${participant.userId}:`, error);
+          }
+        }
+        
+        setUserProfiles(profiles);
+        console.log('✅ User profiles loaded for signing mode:', Object.keys(profiles));
+        
+      } catch (error) {
+        console.error('Failed to load user profiles:', error);
+      }
+    };
+
+    loadUserProfiles();
+  }, [mode, participants]);
+
+  // Handle tag click in signing mode
+  const handleTagClick = useCallback((tag: DocumentTag, position: { x: number; y: number; width: number; height: number }) => {
+    if (mode !== 'signing') return;
+    
+    // Check if user can interact with this tag
+    const currentParticipant = participants.find(p => p.userId === currentUserId);
+    const canEdit = currentParticipant && (
+      tag.assignedUserId === currentUserId ||
+      currentParticipant.userType === 'notary' ||
+      ['T', 'D'].includes(tag.tagType) // Universal tags
+    );
+
+    if (!canEdit) {
+      toast({
+        title: "Cannot Edit Tag",
+        description: "This tag is assigned to another user.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setSelectedTagForInput(tag);
+    setTagModalPosition(position);
+  }, [mode, participants, currentUserId, toast]);
+
+  // Handle tag content save
+  const handleTagContentSave = useCallback(async (content: any) => {
+    if (!selectedTagForInput) return;
+
+    try {
+      const response = await authenticatedFetch(`/api/editor/session/${sessionId}/tag/${selectedTagForInput.id}/content`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          content,
+          completedBy: currentUserId,
+          completedAt: new Date().toISOString()
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save tag content');
+      }
+
+      // Update local state
+      const updatedTags = tags.map(tag =>
+        tag.id === selectedTagForInput.id
+          ? { ...tag, isCompleted: true, contentData: content }
+          : tag
+      );
+      setTags(updatedTags);
+
+      toast({
+        title: "Tag Completed",
+        description: "Content saved successfully.",
+      });
+
+      setSelectedTagForInput(null);
+      setTagModalPosition(null);
+
+    } catch (error) {
+      console.error('Failed to save tag content:', error);
+      toast({
+        title: "Save Failed",
+        description: "Failed to save tag content. Please try again.",
+        variant: "destructive"
+      });
+    }
+  }, [selectedTagForInput, sessionId, currentUserId, tags, setTags, toast]);
 
   // Handle tag placement from PDF click
   const handleTagPlacement = useCallback(async (coordinates: TagCoordinates) => {
@@ -296,11 +415,17 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold text-gray-900">
-              {mode === 'tagging' ? 'Document Tagging' : 'Live Signing Session'}
+              {mode === 'tagging' ? 'Document Tagging' : 
+               mode === 'signing' ? 'Live Signing Session' : 'Live Signing Session'}
             </h1>
             <p className="text-sm text-gray-600 mt-1">
               Session: {sessionId.substring(0, 8)}... • {tags.length} tags placed
-              {tags.length > 0 && (
+              {mode === 'signing' && (
+                <span className="ml-2 text-blue-600 font-medium">
+                  • {tags.filter(t => t.isCompleted).length} completed
+                </span>
+              )}
+              {tags.length > 0 && mode === 'tagging' && (
                 <span className="ml-2 text-green-600 font-medium">
                   (Continue editing previous work)
                 </span>
@@ -310,6 +435,17 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
           
           {/* Action buttons and status */}
           <div className="flex items-center space-x-4">
+            {mode === 'signing' && (
+              <ReplaceAllButton
+                sessionId={sessionId}
+                tags={tags}
+                participants={participants}
+                currentUserId={currentUserId}
+                isNotary={participants.find(p => p.userId === currentUserId)?.userType === 'notary'}
+                onTagsUpdated={setTags}
+              />
+            )}
+            
             {mode === 'tagging' && (
               <div className="flex items-center space-x-3">
                 {isProcessing && (
@@ -347,7 +483,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Column - Video (only in live signing mode) */}
+        {/* Left Column - Video (only in notary mode, not signing mode) */}
         {mode === 'notary' && (
           <div className="w-80 bg-black border-r">
             <VideoIntegration
@@ -364,6 +500,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
           <PDFViewer
             documentUrl={currentDocument.fileUrl}
             onCoordinateClick={handleTagPlacement}
+            onTagClick={mode === 'signing' ? handleTagClick : undefined}
             tags={tags.filter(tag => tag.documentId === currentDocument.id)}
             mode={mode}
             selectedUser={selectedUser}
@@ -387,6 +524,21 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Interactive Tag Input Modal */}
+      {selectedTagForInput && tagModalPosition && (
+        <TagInputModal
+          tag={selectedTagForInput}
+          isOpen={true}
+          onClose={() => {
+            setSelectedTagForInput(null);
+            setTagModalPosition(null);
+          }}
+          onSave={handleTagContentSave}
+          userProfile={userProfiles[selectedTagForInput.assignedUserId || currentUserId]}
+          position={tagModalPosition}
+        />
+      )}
 
       {/* Keyboard shortcuts handler */}
       <HotkeyHandler

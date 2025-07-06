@@ -23,7 +23,8 @@ import {
   Shield,
   XCircle,
   ToggleLeft,
-  ToggleRight
+  ToggleRight,
+  PenTool
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -206,6 +207,277 @@ function CompanyUserDashboard() {
           </CardContent>
         </Card>
       </div>
+  );
+}
+
+// Signer Dashboard - for document signers
+function SignerDashboard() {
+  const { user } = useAuth();
+  const [profile, setProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [showVerification, setShowVerification] = useState(false);
+
+  const fetchSignerProfile = async () => {
+    if (!user?.id) return;
+    
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+
+      const userId = user.id;
+      
+      // Add cache-busting parameter to ensure fresh data
+      const response = await fetch(`/api/users/${userId}/profile/comprehensive?_t=${Date.now()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (!response.ok) {
+        console.error('Profile fetch failed:', response.status, response.statusText);
+        setLoading(false);
+        return;
+      }
+      
+      const data = await response.json();
+      
+      console.log('Signer profile data:', data); // Debug log
+      
+      setProfile({
+        ...data,
+        isVerified: data.isVerified || false,
+        verificationStatus: data.verificationStatus || 'pending',
+        accountSetupComplete: data.accountSetupComplete || false,
+      });
+      
+      // Update localStorage user data if the verification status changed
+      if (data.isVerified !== undefined) {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+          const userData = JSON.parse(storedUser);
+          userData.isVerified = data.isVerified;
+          userData.verificationStatus = data.verificationStatus;
+          localStorage.setItem('user', JSON.stringify(userData));
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching signer profile:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerificationComplete = (result: any) => {
+    fetchSignerProfile(); // Refresh profile
+    setShowVerification(false);
+  };
+
+  const handleVerificationFailed = (error: string) => {
+    console.error('Verification failed:', error);
+  };
+
+  useEffect(() => {
+    fetchSignerProfile();
+  }, [user?.id]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading your dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <MainLayout>
+      <div className="space-y-8">
+        {/* Header */}
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Welcome, {user?.username}</h1>
+          <div className="flex items-center space-x-4 mt-2">
+            <p className="text-gray-600">Signer Dashboard</p>
+            {profile?.isVerified ? (
+              <Badge variant="default" className="bg-green-100 text-green-800">
+                <Shield className="h-3 w-3 mr-1" />
+                ID Verified
+              </Badge>
+            ) : (
+              <Badge variant="default" className="bg-orange-100 text-orange-800">
+                <AlertCircle className="h-3 w-3 mr-1" />
+                Verification Required
+              </Badge>
+            )}
+          </div>
+        </div>
+
+        {/* Verification Status Alert */}
+        {!profile?.isVerified ? (
+          <Alert className="border-orange-200 bg-orange-50">
+            <AlertCircle className="h-4 w-4 text-orange-600" />
+            <AlertDescription className="text-orange-800">
+              <strong>ID Verification Required:</strong> Complete identity verification to participate in document signing sessions.
+              <div className="flex gap-2 mt-3">
+                <Button 
+                  size="sm" 
+                  onClick={() => setShowVerification(true)}
+                  className="bg-orange-600 hover:bg-orange-700 text-white"
+                >
+                  <Shield className="h-4 w-4 mr-2" />
+                  Start Verification
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="outline"
+                  onClick={() => {
+                    setLoading(true);
+                    fetchSignerProfile();
+                  }}
+                >
+                  Refresh Status
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <Alert className="border-green-200 bg-green-50">
+            <CheckCircle className="h-4 w-4 text-green-600" />
+            <AlertDescription className="text-green-800">
+              <strong>Verification Complete:</strong> You're ready to sign documents!
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* ID Verification Modal/Component */}
+        {showVerification && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-4 border-b">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-bold">ID Verification Required</h2>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => setShowVerification(false)}
+                  >
+                    <XCircle className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="p-4">
+                <EVSVerification
+                  userId={(() => {
+                    let id = user?.id;
+                    if (!id) {
+                      const storedUser = localStorage.getItem('user');
+                      if (storedUser) {
+                        try {
+                          const parsedUser = JSON.parse(storedUser);
+                          id = parsedUser.id;
+                        } catch (e) {
+                          console.error('Error parsing stored user:', e);
+                        }
+                      }
+                    }
+                    return id || 0;
+                  })()}
+                  onVerificationComplete={handleVerificationComplete}
+                  onVerificationFailed={handleVerificationFailed}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Your Role: Document Signer</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <PenTool className="h-5 w-5 text-blue-600" />
+                  <div>
+                    <p className="font-medium">Sign Documents</p>
+                    <p className="text-sm text-gray-600">Electronically sign legal documents</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <UserCheck className="h-5 w-5 text-green-600" />
+                  <div>
+                    <p className="font-medium">Identity Verification</p>
+                    <p className="text-sm text-gray-600">Confirm your identity before signing</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <FileText className="h-5 w-5 text-purple-600" />
+                  <div>
+                    <p className="font-medium">Review Documents</p>
+                    <p className="text-sm text-gray-600">Access and review documents before signing</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Shield className="h-5 w-5 text-emerald-600" />
+                  <div>
+                    <p className="font-medium">Secure Process</p>
+                    <p className="text-sm text-gray-600">All signatures are legally binding and secure</p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Account Requirements</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className={`w-4 h-4 rounded-full ${profile?.accountSetupComplete ? 'bg-green-500' : 'bg-gray-300'}`}>
+                    {profile?.accountSetupComplete && <CheckCircle className="w-3 h-3 text-white" />}
+                  </div>
+                  <div>
+                    <p className="font-medium">Account Setup</p>
+                    <p className="text-sm text-gray-600">Complete profile and contact information</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className={`w-4 h-4 rounded-full ${profile?.isVerified ? 'bg-green-500' : 'bg-gray-300'}`}>
+                    {profile?.isVerified && <CheckCircle className="w-3 h-3 text-white" />}
+                  </div>
+                  <div>
+                    <p className="font-medium">ID Verification</p>
+                    <p className="text-sm text-gray-600">Government ID and selfie verification</p>
+                  </div>
+                </div>
+                
+                {!profile?.isVerified && (
+                  <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-sm text-yellow-800 font-medium">⚠️ Verification Required</p>
+                    <p className="text-xs text-yellow-700 mt-1">
+                      Complete ID verification to participate in document signing.
+                    </p>
+                    <Button 
+                      size="sm" 
+                      className="mt-2 w-full"
+                      onClick={() => setShowVerification(true)}
+                    >
+                      Start Verification
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </MainLayout>
   );
 }
 
@@ -840,6 +1112,8 @@ export default function Dashboard() {
       return <ClientDashboard />;
     } else if (['company_user', 'title_company'].includes(user?.role)) {
       return <TitleCompanyDashboard />;
+    } else if (user?.role === 'signer') {
+      return <SignerDashboard />;
     } else if (user?.role === 'witness') {
       return <WitnessDashboard />;
     } else if (user?.role === 'observer') {

@@ -159,6 +159,31 @@ import {
 } from './email-template-routes';
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  
+  // Basic route handlers to prevent 404 errors
+  app.get('/', (req, res) => {
+    res.json({ 
+      status: 'ok', 
+      message: 'Notary API Server', 
+      version: '1.0.0',
+      endpoints: {
+        api: '/api',
+        health: '/health',
+        docs: '/api/docs'
+      }
+    });
+  });
+
+  app.get('/favicon.ico', (req, res) => {
+    res.status(204).send(); // No content
+  });
+
+  app.get('/health', (req, res) => {
+    res.json({ 
+      status: 'healthy', 
+      timestamp: new Date().toISOString() 
+    });
+  });
 
   // Add audit logging middleware to all routes
   app.use(auditLoggingService.auditMiddleware());
@@ -1867,7 +1892,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Mock video session routes (Whereby API removed)
+  // Real WebRTC video session routes
   app.post('/api/jobs/:jobId/video-session', verifyToken, async (req: any, res) => {
     try {
       const jobId = parseInt(req.params.jobId);
@@ -1877,48 +1902,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'Job not found' });
       }
 
-      console.log('Creating mock video session for job:', jobId);
+      console.log('Creating WebRTC video session for job:', jobId);
       
       // Calculate end time (2 hours from now for notary sessions)
       const endDate = new Date();
       endDate.setHours(endDate.getHours() + 2);
 
-      // Create mock session data
-      const mockRoomUrl = `https://mock-video.example.com/notary-session-${jobId}-${Date.now()}`;
-      const mockSessionData = {
+      // Create real WebRTC session data
+      const sessionId = `webrtc-session-${jobId}-${Date.now()}`;
+      const sessionData = {
         jobId,
-        meetingId: `mock-${jobId}-${Date.now()}`,
-        roomUrl: mockRoomUrl,
+        sessionId,
+        meetingId: sessionId,
         roomName: `notary-session-${jobId}`,
-        hostRoomUrl: mockRoomUrl,
         endDate: endDate.toISOString(),
         createdBy: req.user.id,
         createdAt: new Date().toISOString(),
         isActive: true,
         participants: req.body.participants || [],
-        mockMode: true
+        technology: 'webrtc',
+        signalingPath: '/video-signaling',
+        iceServers: [
+          {
+            urls: [
+              'stun:stun.l.google.com:19302',
+              'stun:stun1.l.google.com:19302',
+              'stun:stun2.l.google.com:19302'
+            ]
+          }
+        ]
       };
 
-      console.log('Mock video session created:', {
-        meetingId: mockSessionData.meetingId,
-        roomName: mockSessionData.roomName,
-        endDate: mockSessionData.endDate
+      console.log('WebRTC video session created:', {
+        sessionId: sessionData.sessionId,
+        roomName: sessionData.roomName,
+        endDate: sessionData.endDate
       });
-      
-      console.log('Sending mock room URL to client:', mockRoomUrl);
       
       res.json({
         success: true,
-        roomUrl: mockRoomUrl,
-        roomName: mockSessionData.roomName,
-        meetingId: mockSessionData.meetingId,
-        sessionToken: mockSessionData.roomName,
-        sessionData: mockSessionData
+        sessionId: sessionData.sessionId,
+        roomName: sessionData.roomName,
+        meetingId: sessionData.meetingId,
+        sessionToken: sessionData.sessionId,
+        sessionData: sessionData,
+        technology: 'webrtc'
       });
     } catch (error) {
-      console.error('Create mock video session error:', error);
+      console.error('Create WebRTC video session error:', error);
       res.status(500).json({ 
-        message: 'Failed to create mock video session',
+        message: 'Failed to create WebRTC video session',
         error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
@@ -1933,13 +1966,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'Job not found' });
       }
 
-      // In a real implementation, you would store meeting IDs in your database
-      // For now, return a placeholder indicating no active session
+      // Check for active video sessions (in a real implementation, you'd query your database)
+      // For now, return active session info or placeholder
       const sessionInfo = {
         jobId,
         isActive: false,
         participants: [],
         recordings: [],
+        technology: 'webrtc',
+        signalingPath: '/video-signaling',
         message: 'No active video session. Create one by starting a live signing session.'
       };
 
@@ -1995,10 +2030,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete('/api/jobs/:jobId/video-session', verifyToken, async (req: any, res) => {
     try {
       const jobId = parseInt(req.params.jobId);
-      const { meetingId } = req.body;
+      const { sessionId } = req.body;
       
-      if (meetingId) {
-        console.log(`Mock video session ${meetingId} cleanup - no external API calls needed`);
+      if (sessionId) {
+        console.log(`Ending WebRTC video session ${sessionId} for job ${jobId}`);
+        
+        // In a real implementation, you would:
+        // 1. Signal the WebRTC service to end the session
+        // 2. Clean up any recordings
+        // 3. Update the database
+        // For now, we'll just log the action
       }
       
       // Update job status to completed if needed
@@ -2011,20 +2052,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      console.log(`Mock video session ended for job ${jobId}`);
+      console.log(`WebRTC video session ended for job ${jobId}`);
       
       res.json({
         success: true,
-        message: 'Mock video session ended successfully',
-        jobStatus: 'completed'
+        message: 'WebRTC video session ended successfully',
+        jobStatus: 'completed',
+        technology: 'webrtc'
       });
     } catch (error) {
-      console.error('End mock video session error:', error);
-      res.status(500).json({ message: 'Failed to end mock video session' });
+      console.error('End WebRTC video session error:', error);
+      res.status(500).json({ message: 'Failed to end WebRTC video session' });
     }
   });
 
-  // Get mock session recordings for compliance
+  // Get session recordings for compliance
   app.get('/api/jobs/:jobId/recordings', verifyToken, async (req: any, res) => {
     try {
       const jobId = parseInt(req.params.jobId);
@@ -2039,30 +2081,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      console.log(`Getting mock recordings for job ${jobId}`);
+      console.log(`Getting recordings for job ${jobId}`);
       
-      // Return mock recordings data
-      const mockRecordings = [
-        {
-          id: `mock-recording-${jobId}`,
-          name: `Notary Session ${jobId}`,
-          duration: '15:23',
-          createdAt: new Date().toISOString(),
-          status: 'completed',
-          downloadUrl: null, // No actual recordings in mock mode
-          type: 'mock'
-        }
-      ];
+      // In a real implementation, you would query the database for actual recordings
+      // For now, return empty recordings list
+      const recordings: any[] = [];
       
       res.json({
         success: true,
         jobId,
-        recordings: mockRecordings,
-        message: 'Mock recordings retrieved (no actual recordings available)'
+        recordings,
+        technology: 'webrtc',
+        message: recordings.length > 0 ? 'Recordings retrieved successfully' : 'No recordings found for this session'
       });
     } catch (error) {
-      console.error('Get mock recordings error:', error);
-      res.status(500).json({ message: 'Failed to retrieve mock recordings' });
+      console.error('Get recordings error:', error);
+      res.status(500).json({ message: 'Failed to retrieve recordings' });
     }
   });
 
@@ -4559,60 +4593,181 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
         // Continue with verification even if upload fails, but log the issue
       }
 
-      // TODO: Integrate with actual EVS Solutions API
-      // For now, we'll simulate the verification process
-      
-      // Simulate processing delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Use actual EVS Solutions API
+      let evsResult;
+      let isSuccessful = false;
+      let confidence = 0;
+      let verificationId;
 
-      // Simulate verification result (95% success rate)
-      const isSuccessful = Math.random() > 0.05;
-      const confidence = Math.floor(Math.random() * 20) + 80; // 80-100%
-      const verificationId = `evs_${Date.now()}`;
+      try {
+        const { evsService } = await import('./lib/evs-service');
+        
+        const verificationRequest = {
+          documentType: req.body.documentType || 'drivers_license',
+          frontImage: files.frontImage[0].buffer,
+          backImage: files.backImage?.[0]?.buffer,
+          selfieImage: files.selfieImage[0].buffer,
+          userId: userId.toString()
+        };
+
+        console.log(`🔍 Starting EVS verification for user ${userId}`);
+        evsResult = await evsService.verifyIdentity(verificationRequest);
+        
+        console.log(`📥 EVS Result: ${evsResult.success ? 'SUCCESS' : 'FAILED'} - Status: ${evsResult.status}, Confidence: ${evsResult.confidence}%`);
+        
+        // Handle different EVS result statuses
+        if (evsResult.status === 'error') {
+          // Service configuration error - don't mark as failed, mark as pending for manual review
+          isSuccessful = false;
+          confidence = 0;
+          verificationId = evsResult.transactionId || `evs_config_error_${Date.now()}`;
+          
+          // Add special handling for workflow disabled errors
+          if (evsResult.errors?.some(e => e.includes('workflow')) || evsResult.errors?.some(e => e.includes('configuration'))) {
+            console.log('⚠️ BlueAssure workflow configuration issue detected - marking for manual review');
+            evsResult.status = 'review';  // Change from 'error' to 'review' for workflow issues
+            evsResult.warnings = [
+              ...(evsResult.warnings || []),
+              'Due to service configuration issues, your verification will be reviewed manually.',
+              'This is not a problem with your documents.'
+            ];
+          }
+        } else {
+          isSuccessful = evsResult.success && evsResult.status === 'approved';
+          confidence = evsResult.confidence || 0;
+          verificationId = evsResult.transactionId || `evs_${Date.now()}`;
+        }
+        
+      } catch (evsError) {
+        console.error('❌ EVS API Error:', evsError);
+        
+        // Create a fallback result for EVS API failures
+        evsResult = {
+          success: false,
+          status: 'error',
+          confidence: 0,
+          errors: [`EVS API Error: ${evsError instanceof Error ? evsError.message : 'Unknown error'}`],
+          warnings: [
+            'Verification service temporarily unavailable. Please try again later.',
+            'If this continues, your verification may be processed manually.'
+          ]
+        };
+        
+        isSuccessful = false;
+        confidence = 0;
+        verificationId = `evs_error_${Date.now()}`;
+      }
 
       if (isSuccessful) {
-        // Update user verification status with stored file references
-        await db.update(users)
-          .set({ 
-            isVerified: true,
-            verificationStatus: 'verified',
-            idType: 'drivers_license', // This would come from EVS API
-            idNumber: 'D123456789', // This would come from EVS API  
-            idExpirationDate: '2028-12-31', // This would come from EVS API
-            evsTransactionId: verificationId,
-            evsVerificationConfidence: confidence,
-            evsVerifiedAt: new Date(),
-            updatedAt: new Date()
-          })
-          .where(eq(users.id, parseInt(userId)));
+        // Update user verification status with real EVS data
+        const updateData: any = { 
+          isVerified: true,
+          verificationStatus: 'approved',
+          evsTransactionId: verificationId,
+          evsVerificationConfidence: confidence,
+          evsVerifiedAt: new Date(),
+          updatedAt: new Date()
+        };
+
+        // Add extracted document data if available
+        if (evsResult.document?.extractedData) {
+          const extracted = evsResult.document.extractedData;
+          updateData.evsExtractedFirstName = extracted.firstName;
+          updateData.evsExtractedLastName = extracted.lastName;
+          updateData.evsExtractedDateOfBirth = extracted.dateOfBirth;
+          updateData.evsExtractedAddress = extracted.address;
+          updateData.idType = evsResult.document.type;
+          updateData.idNumber = extracted.documentNumber;
+          updateData.idExpirationDate = extracted.expirationDate;
+          updateData.idIssueDate = extracted.issueDate;
+        }
+
+        // Add biometric data if available
+        if (evsResult.biometric) {
+          updateData.evsFaceMatchResult = evsResult.biometric.faceMatch;
+          updateData.evsFaceMatchConfidence = evsResult.biometric.confidence;
+          updateData.evsLivenessScore = evsResult.biometric.livenessScore;
+        }
+
+        // Add errors and warnings
+        if (evsResult.errors) {
+          updateData.evsVerificationErrors = evsResult.errors;
+        }
+        if (evsResult.warnings) {
+          updateData.evsVerificationWarnings = evsResult.warnings;
+        }
+
+        // Store verification image URLs in database
+        if (uploadedFiles.frontImage) {
+          updateData.verificationImageFrontUrl = uploadedFiles.frontImage;
+        }
+        if (uploadedFiles.backImage) {
+          updateData.verificationImageBackUrl = uploadedFiles.backImage;
+        }
+        if (uploadedFiles.selfieImage) {
+          updateData.verificationImageSelfieUrl = uploadedFiles.selfieImage;
+        }
+
+        await db.update(users).set(updateData).where(eq(users.id, parseInt(userId)));
 
         res.json({
           success: true,
-          status: 'verified',
+          status: 'approved',
           confidence: confidence,
-          message: 'Identity successfully verified',
+          message: 'Identity successfully verified through EVS Solutions',
           verificationId,
           verifiedAt: new Date().toISOString(),
+          extractedData: evsResult.document?.extractedData,
+          biometricResults: evsResult.biometric,
           storedImages: uploadedFiles,
           storageType: 'vultr'
         });
       } else {
-        // Update user verification status as failed
+        // Handle different failure types
+        const finalStatus = evsResult.status === 'review' ? 'review' : 'denied';
+        const httpStatus = evsResult.status === 'review' ? 200 : 400;
+        
+        // Update user verification status
+        const updateData: any = { 
+          isVerified: false,
+          verificationStatus: finalStatus,
+          evsTransactionId: verificationId,
+          evsVerificationConfidence: confidence,
+          updatedAt: new Date()
+        };
+        
+        // Store errors and warnings for admin review
+        if (evsResult.errors) {
+          updateData.evsVerificationErrors = evsResult.errors;
+        }
+        if (evsResult.warnings) {
+          updateData.evsVerificationWarnings = evsResult.warnings;
+        }
+        
+        // Store verification image URLs in database even for failed verification
+        if (uploadedFiles.frontImage) {
+          updateData.verificationImageFrontUrl = uploadedFiles.frontImage;
+        }
+        if (uploadedFiles.backImage) {
+          updateData.verificationImageBackUrl = uploadedFiles.backImage;
+        }
+        if (uploadedFiles.selfieImage) {
+          updateData.verificationImageSelfieUrl = uploadedFiles.selfieImage;
+        }
+        
         await db.update(users)
-          .set({ 
-            isVerified: false,
-            verificationStatus: 'failed',
-            evsTransactionId: verificationId,
-            evsVerificationConfidence: confidence,
-            updatedAt: new Date()
-          })
+          .set(updateData)
           .where(eq(users.id, parseInt(userId)));
 
-        res.status(400).json({
+        res.status(httpStatus).json({
           success: false,
-          status: 'failed',
-          message: 'Identity verification failed. Please ensure your documents are clear and try again.',
-          reasons: ['Low image quality', 'Document not readable'],
+          status: finalStatus,
+          message: evsResult.status === 'review' 
+            ? 'Your verification has been submitted for manual review due to service configuration issues.'
+            : (evsResult.errors?.length ? evsResult.errors.join('; ') : 'Identity verification failed. Please ensure your documents are clear and try again.'),
+          reasons: evsResult.errors || ['Verification failed'],
+          warnings: evsResult.warnings,
+          confidence: confidence,
           verificationId,
           storedImages: uploadedFiles, // Keep images for review even on failure
           storageType: 'vultr'
@@ -4738,6 +4893,160 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
   app.post('/api/email-templates/send-test', verifyToken, sendTestEmail);
 
   // ==========================================
+  // LIVE SIGNING SESSION ROUTES - Session State Management  
+  // ==========================================
+
+  // Start live signing session (transition from tagging to signing)
+  app.post('/api/session/:sessionId/start-signing', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      const notaryUserId = req.user.id;
+
+      const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
+      
+      const result = await LiveSigningSessionService.startLiveSigningSession(sessionId, notaryUserId);
+      
+      res.json({
+        success: true,
+        data: result,
+        message: 'Live signing session started successfully'
+      });
+      
+    } catch (error) {
+      console.error('Start signing session error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to start signing session',
+        error: 'start_signing_failed'
+      });
+    }
+  });
+
+  // Get session state and participants
+  app.get('/api/session/:sessionId/state', verifyToken, cacheJobData(60), async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+
+      const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
+      
+      const sessionState = await LiveSigningSessionService.getSessionState(sessionId);
+      
+      res.json({
+        success: true,
+        data: sessionState
+      });
+      
+    } catch (error) {
+      console.error('Get session state error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to get session state',
+        error: 'get_session_state_failed'
+      });
+    }
+  });
+
+  // Set active user (for user switching via keyboard shortcuts)
+  app.post('/api/session/:sessionId/set-active-user', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      const { userId } = req.body;
+
+      if (!userId) {
+        return res.status(400).json({ message: 'userId is required' });
+      }
+
+      const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
+      
+      await LiveSigningSessionService.setActiveUser(sessionId, userId);
+      
+      res.json({
+        success: true,
+        message: 'Active user set successfully'
+      });
+      
+    } catch (error) {
+      console.error('Set active user error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to set active user',
+        error: 'set_active_user_failed'
+      });
+    }
+  });
+
+  // Pause session
+  app.post('/api/session/:sessionId/pause', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      const { reason } = req.body;
+      const userId = req.user.id;
+
+      const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
+      
+      const result = await LiveSigningSessionService.pauseSession(sessionId, userId, reason);
+      
+      res.json({
+        success: true,
+        data: result,
+        message: 'Session paused successfully'
+      });
+      
+    } catch (error) {
+      console.error('Pause session error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to pause session',
+        error: 'pause_session_failed'
+      });
+    }
+  });
+
+  // Resume session
+  app.post('/api/session/:sessionId/resume', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      const userId = req.user.id;
+
+      const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
+      
+      const result = await LiveSigningSessionService.resumeSession(sessionId, userId);
+      
+      res.json({
+        success: true,
+        data: result,
+        message: 'Session resumed successfully'
+      });
+      
+    } catch (error) {
+      console.error('Resume session error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to resume session',
+        error: 'resume_session_failed'
+      });
+    }
+  });
+
+  // Check if user can interact with session
+  app.get('/api/session/:sessionId/can-interact/:userId', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId, userId } = req.params;
+
+      const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
+      
+      const canInteract = await LiveSigningSessionService.canUserInteract(sessionId, parseInt(userId));
+      
+      res.json({
+        success: true,
+        data: { canInteract }
+      });
+      
+    } catch (error) {
+      console.error('Check interaction permission error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to check permissions',
+        error: 'check_interaction_failed'
+      });
+    }
+  });
+
+  // ==========================================
   // EDITOR ROUTES - PDF Tagging & Signing Sessions
   // ==========================================
 
@@ -4845,7 +5154,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
   });
 
   // Get editor session data
-  app.get('/api/editor/session/:sessionId', verifyToken, async (req: any, res) => {
+  app.get('/api/editor/session/:sessionId', verifyToken, cacheJobData(120), async (req: any, res) => {
     try {
       const { sessionId } = req.params;
       
@@ -4991,18 +5300,13 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
   });
 
   // Get all tags for a session
-  app.get('/api/editor/session/:sessionId/tags', verifyToken, async (req: any, res) => {
+  app.get('/api/editor/session/:sessionId/tags', verifyToken, cacheJobData(10), async (req: any, res) => {
     try {
       const { sessionId } = req.params;
       
       const { TagService } = await import('./services/editor/TagService');
       
       const tags = await TagService.getSessionTags(sessionId);
-      
-      // Set headers to prevent caching
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
       
       res.json({
         tags,

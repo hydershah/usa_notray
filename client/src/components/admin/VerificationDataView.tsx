@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { 
   Shield, 
   CheckCircle, 
@@ -19,7 +20,10 @@ import {
   Activity,
   FileText,
   Smartphone,
-  RefreshCw
+  RefreshCw,
+  Image as ImageIcon,
+  Download,
+  ZoomIn
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -59,6 +63,11 @@ interface VerificationData {
   idNumber?: string;
   idExpirationDate?: string;
   idIssueDate?: string;
+  
+  // Verification image URLs
+  verificationImageFrontUrl?: string;
+  verificationImageBackUrl?: string;
+  verificationImageSelfieUrl?: string;
 }
 
 interface VerificationAttempt {
@@ -238,8 +247,9 @@ export function VerificationDataView({
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="documents">ID Documents</TabsTrigger>
           <TabsTrigger value="extracted">Extracted Data</TabsTrigger>
           <TabsTrigger value="biometric">Biometric</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
@@ -349,6 +359,28 @@ export function VerificationDataView({
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="documents" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <FileText className="w-5 h-5" />
+                <span>ID Verification Documents</span>
+              </CardTitle>
+              <CardDescription>
+                View the identity documents submitted during verification
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <IdDocumentViewer 
+                userId={userId} 
+                frontImageUrl={verificationData.verificationImageFrontUrl}
+                backImageUrl={verificationData.verificationImageBackUrl}
+                selfieImageUrl={verificationData.verificationImageSelfieUrl}
+              />
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="extracted" className="space-y-4">
@@ -532,4 +564,244 @@ export function VerificationDataView({
       </Tabs>
     </div>
   );
-} 
+}
+
+// IdDocumentViewer Component
+interface IdDocumentViewerProps {
+  userId: number;
+  frontImageUrl?: string;
+  backImageUrl?: string;
+  selfieImageUrl?: string;
+}
+
+function IdDocumentViewer({ userId, frontImageUrl, backImageUrl, selfieImageUrl }: IdDocumentViewerProps) {
+  const [imageUrls, setImageUrls] = useState<{
+    front?: string;
+    back?: string;
+    selfie?: string;
+  }>({});
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<{
+    front?: string;
+    back?: string;
+    selfie?: string;
+  }>({});
+
+  useEffect(() => {
+    loadImages();
+  }, [userId, frontImageUrl, backImageUrl, selfieImageUrl]);
+
+  const loadImages = async () => {
+    setLoading(true);
+    setErrors({});
+    const token = localStorage.getItem('token');
+    const newImageUrls: { front?: string; back?: string; selfie?: string } = {};
+    const newErrors: { front?: string; back?: string; selfie?: string } = {};
+
+    // Debug logging
+    console.log('🔍 IdDocumentViewer - loadImages called with:', {
+      userId,
+      frontImageUrl,
+      backImageUrl,
+      selfieImageUrl
+    });
+
+    // Load each image that has a URL
+    const imageTypes = [
+      { type: 'front', url: frontImageUrl },
+      { type: 'back', url: backImageUrl },
+      { type: 'selfie', url: selfieImageUrl }
+    ] as const;
+
+    for (const { type, url } of imageTypes) {
+      if (url) {
+        try {
+          // If the URL is already a full URL (starts with http), use it directly
+          if (url.startsWith('http')) {
+            newImageUrls[type] = url;
+          } else {
+            // Otherwise, treat it as a file key and get signed URL from API
+            const response = await fetch(`/api/admin/users/${userId}/verification-image/${type}`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              newImageUrls[type] = data.imageUrl;
+            } else {
+              newErrors[type] = 'Failed to load image';
+            }
+          }
+        } catch (error) {
+          newErrors[type] = 'Error loading image';
+        }
+      }
+    }
+
+    setImageUrls(newImageUrls);
+    setErrors(newErrors);
+    setLoading(false);
+  };
+
+  const hasAnyImage = frontImageUrl || backImageUrl || selfieImageUrl;
+
+  if (!hasAnyImage) {
+    return (
+      <div className="text-center py-8">
+        <ImageIcon className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+        <p className="text-gray-500">No verification documents uploaded</p>
+        <p className="text-sm text-gray-400 mt-1">
+          Documents will appear here after the user completes ID verification
+        </p>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="animate-pulse">
+            <div className="h-32 bg-gray-200 rounded-lg mb-2"></div>
+            <div className="h-4 bg-gray-200 rounded w-20"></div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  const DocumentImage = ({ 
+    type, 
+    title, 
+    url, 
+    error 
+  }: { 
+    type: 'front' | 'back' | 'selfie'; 
+    title: string; 
+    url?: string; 
+    error?: string; 
+  }) => (
+    <div className="border rounded-lg overflow-hidden">
+      <div className="p-3 bg-gray-50 border-b">
+        <h4 className="text-sm font-medium text-gray-900">{title}</h4>
+      </div>
+      <div className="p-4">
+        {error ? (
+          <div className="h-32 bg-red-50 rounded-lg flex items-center justify-center">
+            <div className="text-center">
+              <XCircle className="w-8 h-8 text-red-400 mx-auto mb-2" />
+              <p className="text-sm text-red-600">{error}</p>
+            </div>
+          </div>
+        ) : url ? (
+          <div className="relative group">
+            <img 
+              src={url} 
+              alt={title}
+              className="w-full h-32 object-cover rounded-lg"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+                setErrors(prev => ({ ...prev, [type]: 'Failed to display image' }));
+              }}
+            />
+            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
+              <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex space-x-2">
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="secondary" className="bg-white/90 hover:bg-white">
+                      <ZoomIn className="w-4 h-4" />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-4xl">
+                    <DialogHeader>
+                      <DialogTitle>{title}</DialogTitle>
+                      <DialogDescription>
+                        Verification document submitted by user
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="mt-4">
+                      <img 
+                        src={url} 
+                        alt={title}
+                        className="w-full h-auto max-h-[70vh] object-contain rounded-lg"
+                      />
+                    </div>
+                  </DialogContent>
+                </Dialog>
+                <Button 
+                  size="sm" 
+                  variant="secondary" 
+                  className="bg-white/90 hover:bg-white"
+                  onClick={() => window.open(url, '_blank')}
+                >
+                  <Download className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="h-32 bg-gray-100 rounded-lg flex items-center justify-center">
+            <div className="text-center">
+              <ImageIcon className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+              <p className="text-sm text-gray-500">Not provided</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <DocumentImage 
+          type="front"
+          title="Front of ID"
+          url={imageUrls.front}
+          error={errors.front}
+        />
+        <DocumentImage 
+          type="back"
+          title="Back of ID"
+          url={imageUrls.back}
+          error={errors.back}
+        />
+        <DocumentImage 
+          type="selfie"
+          title="Selfie Photo"
+          url={imageUrls.selfie}
+          error={errors.selfie}
+        />
+      </div>
+      
+      {(errors.front || errors.back || errors.selfie) && (
+        <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <div className="flex items-start space-x-2">
+            <AlertTriangle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-sm text-yellow-800 font-medium">Some images failed to load</p>
+              <p className="text-xs text-yellow-700 mt-1">
+                This might be due to storage issues or the images may have been deleted. 
+                Contact support if this persists.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t">
+        <span>Images are securely stored and automatically expire after viewing</span>
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={loadImages}
+          className="text-xs"
+        >
+          <RefreshCw className="w-3 h-3 mr-1" />
+          Refresh
+        </Button>
+      </div>
+    </div>
+  );
+}

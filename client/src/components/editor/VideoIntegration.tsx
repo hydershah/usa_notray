@@ -3,7 +3,12 @@ import { useEditorStore } from '../../hooks/editor/useEditorStore';
 
 interface VideoIntegrationProps {
   sessionId: string;
-  mode: 'tagging' | 'notary';
+  isAudioActive?: boolean;
+  isVideoActive?: boolean;
+  participants?: any[];
+  currentUserId?: string;
+  isRecording?: boolean;
+  mode?: 'tagging' | 'notary' | 'signing';
   autoStart?: boolean;
   className?: string;
 }
@@ -24,7 +29,12 @@ interface VideoQuality {
 
 export const VideoIntegration: React.FC<VideoIntegrationProps> = ({
   sessionId,
-  mode,
+  isAudioActive: externalAudioActive,
+  isVideoActive: externalVideoActive,
+  participants: externalParticipants = [],
+  currentUserId,
+  isRecording = false,
+  mode = 'signing',
   autoStart = false,
   className = ''
 }) => {
@@ -32,14 +42,14 @@ export const VideoIntegration: React.FC<VideoIntegrationProps> = ({
   const [isVideoActive, setIsVideoActive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
-  const [participantCount, setParticipantCount] = useState(0);
+  const [participantCount, setParticipantCount] = useState(externalParticipants.length || 0);
   const [videoQuality, setVideoQuality] = useState<VideoQuality>({
     resolution: 'medium',
     bandwidth: 'normal',
     framerate: 30
   });
-  const [isMuted, setIsMuted] = useState(false);
-  const [isVideoEnabled, setIsVideoEnabled] = useState(true);
+  const [isMuted, setIsMuted] = useState(externalAudioActive === false);
+  const [isVideoEnabled, setIsVideoEnabled] = useState(externalVideoActive !== false);
 
   const {
     session,
@@ -190,12 +200,17 @@ export const VideoIntegration: React.FC<VideoIntegrationProps> = ({
     };
   }, [stopVideo]);
 
+  // Update participant count when external participants change
+  useEffect(() => {
+    setParticipantCount(externalParticipants.length || 0);
+  }, [externalParticipants]);
+
   // Auto-start video for live signing sessions
   useEffect(() => {
-    if (autoStart && mode === 'notary' && !isVideoActive && currentUser) {
+    if (autoStart && (mode === 'notary' || mode === 'signing') && !isVideoActive && (currentUser || currentUserId)) {
       startVideo();
     }
-  }, [autoStart, mode, isVideoActive, currentUser, startVideo]);
+  }, [autoStart, mode, isVideoActive, currentUser, currentUserId, startVideo]);
 
   // Auto-stop video when session ends
   useEffect(() => {
@@ -254,6 +269,9 @@ export const VideoIntegration: React.FC<VideoIntegrationProps> = ({
           {/* Session info */}
           <div className="text-white text-sm opacity-75">
             {mode === 'signing' ? 'Live Signing Session' : 'Tagging Session'}
+            {isRecording && (
+              <span className="ml-2 text-red-400">• REC</span>
+            )}
           </div>
         </div>
 

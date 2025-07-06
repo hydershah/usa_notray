@@ -10,6 +10,7 @@ interface PDFViewerProps {
   documentUrl: string;
   onPageLoad?: (pageNumber: number, canvas: HTMLCanvasElement, scaleFactor: number) => void;
   onCoordinateClick?: (coordinates: TagCoordinates) => void;
+  onTagClick?: (tag: DocumentTag, position: { x: number; y: number; width: number; height: number }) => void;
   tags?: DocumentTag[];
   mode?: string;
   selectedUser?: SessionParticipant | null;
@@ -28,6 +29,8 @@ interface TagRendererProps {
   onSave: (coordinates: Partial<TagCoordinates>) => void;
   onDelete: () => void;
   onSelect: () => void;
+  onTagClick?: (tag: DocumentTag, position: { x: number; y: number; width: number; height: number }) => void;
+  mode?: string;
 }
 
 const TagRenderer: React.FC<TagRendererProps> = ({
@@ -38,7 +41,9 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   onUpdate,
   onSave,
   onDelete,
-  onSelect
+  onSelect,
+  onTagClick,
+  mode
 }) => {
   const tagInfo = TAG_TYPE_INFO[tag.tagType];
   
@@ -145,34 +150,131 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       enableResizing={canEdit}
       disableDragging={!canEdit}
       bounds="parent"
-      onClick={onSelect}
+      onClick={(e) => {
+        e.stopPropagation();
+        console.log('🏷️ Tag clicked in PDFViewer:', {
+          tagId: tag.id,
+          mode,
+          isCompleted: tag.isCompleted,
+          hasOnTagClick: !!onTagClick,
+          canEdit,
+          isSelected
+        });
+        
+        if (mode === 'signing' && onTagClick && !tag.isCompleted) {
+          // In signing mode, trigger interactive input for incomplete tags
+          const rect = e.currentTarget.getBoundingClientRect();
+          console.log('🎯 Triggering interactive input for tag:', tag.id);
+          onTagClick(tag, {
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height
+          });
+        } else {
+          // In tagging mode or for completed tags, just select
+          console.log('🔗 Selecting tag:', tag.id, 'onSelect function:', typeof onSelect);
+          onSelect();
+        }
+      }}
       onKeyDown={handleKeyDown}
       tabIndex={0}
       className={`
-        border-2 rounded transition-all cursor-pointer
-        ${isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-400 bg-white bg-opacity-90'}
-        ${canEdit ? 'hover:border-blue-400' : ''}
+        transition-all cursor-pointer overflow-hidden
+        ${isSelected ? 'ring-2 ring-blue-400 ring-opacity-60' : ''}
+        ${canEdit ? 'hover:shadow-md' : ''}
       `}
       style={{
-        backgroundColor: tag.colorCode || '#4ECDC4',
-        borderColor: isSelected ? '#3B82F6' : tag.colorCode || '#4ECDC4',
+        backgroundColor: mode === 'signing' && tag.isCompleted 
+          ? 'rgba(34, 197, 94, 0.1)' // Green background for completed
+          : mode === 'signing' && !tag.isCompleted
+          ? 'rgba(59, 130, 246, 0.1)' // Blue background for incomplete/clickable
+          : 'rgba(255, 255, 255, 0.95)', // White for tagging mode
+        border: mode === 'signing' && tag.isCompleted
+          ? '2px solid #22c55e' // Green border for completed
+          : mode === 'signing' && !tag.isCompleted
+          ? '2px dashed #3b82f6' // Dashed blue border for clickable
+          : `2px solid ${tag.colorCode || '#3B82F6'}`, // Normal border for tagging
+        borderRadius: '6px',
+        color: mode === 'signing' && tag.isCompleted 
+          ? '#15803d' // Dark green text for completed
+          : tag.colorCode || '#3B82F6',
         zIndex: isSelected ? 1000 : 100,
-        pointerEvents: 'auto'
+        pointerEvents: 'auto',
+        cursor: mode === 'signing' && !tag.isCompleted ? 'pointer' : 'default',
+        boxShadow: isSelected 
+          ? `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${(tag.colorCode || '#3B82F6')}20` 
+          : mode === 'signing' && !tag.isCompleted
+          ? '0 2px 8px rgba(59, 130, 246, 0.3)' // Blue glow for clickable
+          : '0 2px 4px rgba(0,0,0,0.1)'
       }}
       resizeHandleStyles={canEdit ? {
         bottomRight: { 
-          width: '12px', 
-          height: '12px', 
-          backgroundColor: '#3B82F6',
+          width: '10px', 
+          height: '10px', 
+          backgroundColor: tag.colorCode || '#3B82F6',
           border: '2px solid white',
-          borderRadius: '50%'
+          borderRadius: '50%',
+          right: '-5px',
+          bottom: '-5px',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
         }
       } : undefined}
     >
-      <div className="w-full h-full flex items-center justify-center text-white text-xs font-medium text-center p-1">
-        <span className="truncate">
-          {tagInfo.icon} {tag.displayLabel || `${tagInfo.label}`}
-        </span>
+      <div className="w-full h-full flex flex-col items-center justify-center p-1">
+        {mode === 'signing' ? (
+          // Signing mode: Show interactive state
+          tag.isCompleted ? (
+            // Completed tag - show content preview
+            <div className="text-center">
+              <div className="flex items-center gap-1 justify-center mb-1">
+                <span className="text-xs text-green-600">✓</span>
+                <span className="text-xs font-medium text-green-700">Completed</span>
+              </div>
+              {tag.contentData && (
+                <div className="text-xs text-green-600 truncate max-w-full">
+                  {tag.contentData.type === 'signature' ? 'Signature Applied' : 
+                   typeof tag.contentData.value === 'string' 
+                     ? tag.contentData.value.length > 15 
+                       ? `${tag.contentData.value.substring(0, 15)}...` 
+                       : tag.contentData.value
+                     : 'Content Added'}
+                </div>
+              )}
+            </div>
+          ) : (
+            // Incomplete tag - show clickable state
+            <div className="text-center">
+              <span className="text-lg mb-1 block">{tagInfo.icon}</span>
+              <span className="text-xs font-medium text-gray-700 block">
+                Click to {['S', 'I'].includes(tag.tagType) ? 'apply' : 'enter'}
+              </span>
+              <span className="text-xs text-gray-500">{tagInfo.label}</span>
+            </div>
+          )
+        ) : (
+          // Tagging mode: Show tag info
+          <>
+            {/* Main tag content */}
+            <div className="flex items-center gap-1">
+              <span className="text-xs opacity-80">{tagInfo.icon}</span>
+              <span className="text-xs font-medium truncate">{tagInfo.label}</span>
+            </div>
+            
+            {/* User identification - extract from displayLabel */}
+            {tag.displayLabel && tag.displayLabel.includes(' - ') && (
+              <div className="flex items-center gap-1 mt-0.5 px-1 py-0.5 bg-white bg-opacity-70 rounded-full">
+                <div 
+                  className="w-2 h-2 rounded-full border border-white shadow-sm" 
+                  style={{ backgroundColor: tag.colorCode }}
+                />
+                <span className="text-xs font-medium opacity-90 truncate">
+                  {tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
+                </span>
+              </div>
+            )}
+          </>
+        )}
       </div>
     </Rnd>
   );
@@ -182,6 +284,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   documentUrl,
   onPageLoad,
   onCoordinateClick,
+  onTagClick,
   tags = [],
   mode = 'tagging',
   selectedUser,
@@ -194,6 +297,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const canvasRefs = useRef<HTMLCanvasElement[]>([]);
   const pageContainerRefs = useRef<HTMLDivElement[]>([]);
   const loadingTaskRef = useRef<pdfjsLib.PDFDocumentLoadingTask | null>(null);
+  const renderTasksRef = useRef<Map<number, any>>(new Map()); // Track render tasks
   
   const { 
     viewer, 
@@ -214,8 +318,15 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
   // Determine if user can edit tags
   const canEditTags = useMemo(() => {
-    const result = mode === 'tagging' && editorMode.canPlaceTags;
-    console.log('🏷️  Can edit tags calculation:', { mode, canPlaceTags: editorMode.canPlaceTags, result });
+    // In tagging mode, check if user can place tags
+    // In signing mode, allow interaction with existing tags
+    const result = (mode === 'tagging' && editorMode.canPlaceTags) || mode === 'signing';
+    console.log('🏷️ Can edit tags calculation:', { 
+      mode, 
+      canPlaceTags: editorMode.canPlaceTags, 
+      editorMode: editorMode,
+      result 
+    });
     return result;
   }, [mode, editorMode.canPlaceTags]);
 
@@ -331,6 +442,18 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     // Check if already rendered (unless force render)
     if (!forceRender && renderedPages.has(pageNumber)) return;
 
+    // Cancel any existing render task for this page
+    const existingTask = renderTasksRef.current.get(pageNumber);
+    if (existingTask && typeof existingTask.cancel === 'function') {
+      try {
+        existingTask.cancel();
+        console.log(`🚫 Cancelled existing render task for page ${pageNumber}`);
+      } catch (e) {
+        // Ignore cancellation errors
+      }
+    }
+    renderTasksRef.current.delete(pageNumber);
+
     try {
       console.log(`🖼️  Rendering page ${pageNumber}...`);
       const page = await pdfDoc.getPage(pageNumber);
@@ -383,25 +506,35 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         intent: 'display'
       };
 
-      // Wait for any existing render to complete
-      await new Promise(resolve => setTimeout(resolve, 10)); // Small delay to prevent race conditions
-      
+      // Create and track render task
       const renderTask = page.render(renderContext);
+      renderTasksRef.current.set(pageNumber, renderTask);
+      
       await renderTask.promise;
+      
+      // Remove from tracking after successful render
+      renderTasksRef.current.delete(pageNumber);
       
       setRenderedPages(prev => new Set(prev.add(pageNumber)));
       onPageLoad?.(pageNumber, canvas, finalScale);
       
       console.log(`✅ Page ${pageNumber} rendered successfully`);
       
-    } catch (err) {
-      console.error(`❌ Error rendering page ${pageNumber}:`, err);
+    } catch (err: any) {
+      // Check if it was a cancellation
+      if (err?.name === 'RenderingCancelledException') {
+        console.log(`🛑 Page ${pageNumber} rendering was cancelled`);
+      } else {
+        console.error(`❌ Error rendering page ${pageNumber}:`, err);
+      }
       // Remove from rendered set so it can be retried
       setRenderedPages(prev => {
         const newSet = new Set(prev);
         newSet.delete(pageNumber);
         return newSet;
       });
+      // Clean up from tracking
+      renderTasksRef.current.delete(pageNumber);
     }
   }, [pdfDoc, viewer.zoomLevel, onPageLoad]);
 
@@ -414,6 +547,21 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     return () => {
       isMountedRef.current = false;
       console.log('🧹 PDFViewer cleanup triggered');
+      
+      // Cancel all active render tasks
+      renderTasksRef.current.forEach((task, pageNumber) => {
+        if (task && typeof task.cancel === 'function') {
+          try {
+            task.cancel();
+            console.log(`🚫 Cancelled render task for page ${pageNumber} on cleanup`);
+          } catch (e) {
+            // Ignore cancellation errors
+          }
+        }
+      });
+      renderTasksRef.current.clear();
+      
+      // Destroy PDF loading task
       if (loadingTaskRef.current) {
         setTimeout(() => loadingTaskRef.current?.destroy(), 100);
       }
@@ -487,26 +635,43 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     renderAllPages();
   }, [pdfDoc, viewer.zoomLevel, renderPage]);
 
-  // Log component state changes
+  // Log component state changes (debounced to prevent spam)
   useEffect(() => {
-    console.log('📊 PDFViewer state update:', {
-      documentUrl,
-      pdfDocLoaded: !!pdfDoc,
-      numPages: pdfDoc?.numPages,
-      loading,
-      error,
-      canEditTags,
-      tagsCount: tags.length,
-      scaleFactorsSize: scaleFactors.size,
-      renderedPagesSize: renderedPages.size
-    });
+    const timeout = setTimeout(() => {
+      console.log('📊 PDFViewer state update:', {
+        documentUrl: documentUrl?.substring(0, 50) + '...',
+        pdfDocLoaded: !!pdfDoc,
+        numPages: pdfDoc?.numPages,
+        loading,
+        error: !!error,
+        canEditTags,
+        tagsCount: tags.length,
+        scaleFactorsSize: scaleFactors.size,
+        renderedPagesSize: renderedPages.size
+      });
+    }, 500);
+    
+    return () => clearTimeout(timeout);
   }, [documentUrl, pdfDoc, loading, error, canEditTags, tags.length, scaleFactors.size, renderedPages.size]);
 
   // Handle canvas clicks for tag placement
   const handleCanvasClick = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
-    console.log('🖱️  Canvas click detected', { canEditTags, hasClickHandler: !!onCoordinateClick });
+    console.log('🖱️ Canvas clicked:', {
+      mode,
+      canEditTags,
+      hasOnCoordinateClick: !!onCoordinateClick,
+      editorMode: editorMode
+    });
     
-    if (!canEditTags || !onCoordinateClick) return;
+    // Only allow new tag placement in tagging mode
+    if (mode !== 'tagging' || !canEditTags || !onCoordinateClick) {
+      console.log('❌ Canvas click blocked:', {
+        isTaggingMode: mode === 'tagging',
+        canEditTags,
+        hasOnCoordinateClick: !!onCoordinateClick
+      });
+      return;
+    }
 
     const canvas = event.currentTarget;
     const rect = canvas.getBoundingClientRect();
@@ -557,7 +722,6 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       pageNumber
     };
 
-    console.log('✅ Valid tag coordinates calculated:', coordinates);
     onCoordinateClick(coordinates);
   }, [canEditTags, onCoordinateClick, scaleFactors]);
 
@@ -713,41 +877,19 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                   {/* PDF Canvas */}
                   <canvas
                     ref={el => { 
-                      if (el) {
+                      if (el && !canvasRefs.current[index]) {
                         canvasRefs.current[index] = el;
                         console.log(`🎯 Canvas ${pageNumber} created and ref set`);
-                        
-                        // Add debugging for canvas state
-                        console.log(`🔍 Canvas ${pageNumber} debug:`, {
-                          hasElement: !!el,
-                          width: el.width,
-                          height: el.height,
-                          clientWidth: el.clientWidth, 
-                          clientHeight: el.clientHeight,
-                          canEditTags,
-                          pageNumber
-                        });
                       }
                     }}
                     data-page-number={pageNumber}
-                    onClick={(e) => {
-                      console.log(`🖱️  Canvas ${pageNumber} DIRECT CLICK detected:`, {
-                        pageNumber,
-                        canEditTags,
-                        clientX: e.clientX,
-                        clientY: e.clientY,
-                        targetWidth: e.currentTarget.clientWidth,
-                        targetHeight: e.currentTarget.clientHeight
-                      });
-                      handleCanvasClick(e);
-                    }}
-                    onMouseDown={(e) => {
-                      console.log(`👆 Canvas ${pageNumber} MOUSE DOWN:`, { pageNumber, button: e.button });
-                    }}
+                    onClick={handleCanvasClick}
                     className={`
                       block transition-all duration-200
-                      ${canEditTags 
+                      ${mode === 'tagging' && canEditTags
                         ? 'cursor-crosshair hover:ring-2 hover:ring-blue-300 hover:ring-opacity-50' 
+                        : mode === 'signing'
+                        ? 'cursor-default'
                         : 'cursor-default'
                       }
                     `}
@@ -760,18 +902,18 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                   {/* Tags overlay */}
                   {pageTags.map(tag => (
                     <div key={`${tag.id}-${scaleFactor}`} className="absolute top-0 left-0 w-full h-full pointer-events-none">
-                      <div className="relative w-full h-full pointer-events-none">
-                        <TagRenderer
-                          tag={tag}
-                          scaleFactor={scaleFactor}
-                          isSelected={selectedTag?.id === tag.id}
-                          canEdit={canEditTags}
-                          onUpdate={(coords) => handleTagUpdate(tag.id, coords)}
-                          onSave={(coords) => handleTagSave(tag.id, coords)}
-                          onDelete={() => handleTagDelete(tag.id)}
-                          onSelect={() => handleTagSelect(tag)}
-                        />
-                      </div>
+                      <TagRenderer
+                        tag={tag}
+                        scaleFactor={scaleFactor}
+                        isSelected={selectedTag?.id === tag.id}
+                        canEdit={canEditTags}
+                        onUpdate={(coords) => handleTagUpdate(tag.id, coords)}
+                        onSave={(coords) => handleTagSave(tag.id, coords)}
+                        onDelete={() => handleTagDelete(tag.id)}
+                        onSelect={() => handleTagSelect(tag)}
+                        onTagClick={onTagClick}
+                        mode={mode}
+                      />
                     </div>
                   ))}
                 </div>

@@ -1165,14 +1165,48 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                   Start Tagging
                 </Button>
                 <Button
-                  onClick={() => {
-                    setLocation(`/editor/${job.id}?mode=signing`);
-                    onClose();
+                  onClick={async () => {
+                    try {
+                      // First, start the live signing session
+                      const response = await fetch(`/api/session/${job.sessionId || job.id}/start-signing`, {
+                        method: 'POST',
+                        headers: {
+                          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                          'Content-Type': 'application/json'
+                        }
+                      });
+
+                      if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.message || 'Failed to start live signing session');
+                      }
+
+                      const result = await response.json();
+                      console.log('✅ Live signing session started:', result);
+
+                      // Show success toast
+                      toast({
+                        title: "Live Signing Session Started",
+                        description: "Session is now active for signing",
+                      });
+
+                      // Navigate to editor in signing mode
+                      setLocation(`/editor/${job.id}?mode=signing&session=${job.sessionId || job.id}`);
+                      onClose();
+
+                    } catch (error) {
+                      console.error('❌ Failed to start live signing session:', error);
+                      toast({
+                        variant: "destructive",
+                        title: "Failed to Start Session",
+                        description: error instanceof Error ? error.message : "Unable to start live signing session. Please try again.",
+                      });
+                    }
                   }}
                   className="bg-blue-600 hover:bg-blue-700 text-white"
                 >
                   <Video className="h-4 w-4 mr-2" />
-                  Start Signing
+                  Start Live Signing
                 </Button>
               </>
             )}

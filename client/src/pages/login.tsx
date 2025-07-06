@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,6 +9,7 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { IdCard, Shield, Smartphone, FileText, NotebookPen, Building, User, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import TwoFactorAuth from '@/components/TwoFactorAuth';
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -21,7 +22,45 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [showSignupOptions, setShowSignupOptions] = useState(false);
   const { toast } = useToast();
-  const { login } = useAuth();
+  const { login, isAuthenticated } = useAuth();
+
+  // Check for redirect reasons and show appropriate messages
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const reason = urlParams.get('reason');
+    
+    if (reason === 'expired') {
+      toast({
+        variant: "destructive",
+        title: "Session Expired",
+        description: "Your session has expired. Please log in again to continue.",
+      });
+    } else if (reason === 'required') {
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to access the requested page.",
+      });
+    } else if (reason === 'no-token') {
+      toast({
+        variant: "destructive",
+        title: "Authentication Required",
+        description: "No valid authentication token found. Please log in.",
+      });
+    }
+
+    // Clear the URL parameter
+    if (reason) {
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  }, []);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      setLocation('/dashboard');
+    }
+  }, [isAuthenticated, setLocation]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

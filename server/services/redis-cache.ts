@@ -14,10 +14,20 @@ export class RedisCache {
       retryDelayOnFailover: 100,
       maxRetriesPerRequest: 3,
       lazyConnect: true,
+      connectTimeout: 10000,
+      commandTimeout: 5000,
+      keepAlive: 30000,
+      family: 4,
+      maxLoadingTimeout: 1000,
+      enableReadyCheck: true,
+      maxRetriesPerRequest: 2,
+      retryDelayOnFailover: 50,
       reconnectOnError: (err) => {
         console.log('Redis reconnection error:', err.message);
-        return true;
-      }
+        const targetError = 'READONLY';
+        return err.message.includes(targetError) || err.message.includes('ECONNRESET') || err.message.includes('ENOTFOUND');
+      },
+      showFriendlyErrorStack: true
     });
 
     this.redis.on('connect', () => {
@@ -33,6 +43,16 @@ export class RedisCache {
     this.redis.on('error', (err) => {
       console.error('❌ Redis connection error:', err.message);
       this.isConnected = false;
+      
+      if (this.connectionAttempts < this.maxRetries) {
+        this.connectionAttempts++;
+        setTimeout(() => {
+          console.log(`🔄 Redis reconnection attempt ${this.connectionAttempts}/${this.maxRetries}`);
+          this.redis.connect().catch(reconnectErr => {
+            console.error(`❌ Redis reconnection attempt ${this.connectionAttempts} failed:`, reconnectErr.message);
+          });
+        }, 1000 * this.connectionAttempts);
+      }
     });
 
     this.redis.on('close', () => {
@@ -40,9 +60,13 @@ export class RedisCache {
       console.log('🔌 Redis connection closed');
     });
 
-    // Establish initial connection
+    this.redis.on('reconnecting', () => {
+      console.log('�� Redis reconnecting...');
+    });
+
     this.redis.connect().catch(err => {
       console.error('❌ Failed to establish initial Redis connection:', err.message);
+      this.isConnected = false;
     });
   }
 
