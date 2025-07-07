@@ -65,9 +65,11 @@ async function testEmailConnection() {
   // Test 3: Send test email
   console.log("\n📨 Sending Test Email:");
   try {
+    const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.EMAIL_FROM || 'mail@sharpnote.net';
+    const fromName = process.env.SMTP_FROM_NAME || 'Sharp Note';
     const testEmail = await transporter.sendMail({
-      from: smtpUser,
-      to: 'test@example.com', // Change this to your email
+      from: `${fromName} <${fromEmail}>`,
+      to: process.env.TEST_EMAIL || 'delivered@resend.dev', // Resend testing email
       subject: 'Test Email from NotaryPro',
       html: `
         <div style="font-family: Arial, sans-serif; padding: 20px;">

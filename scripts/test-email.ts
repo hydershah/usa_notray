@@ -46,7 +46,7 @@ async function testEmailConfiguration() {
     console.log('✅ SMTP connection successful!\n');
 
     // Send test email
-    const testEmail = process.env.TEST_EMAIL || process.env.SMTP_USER;
+    const testEmail = process.env.TEST_EMAIL || 'delivered@resend.dev';
     if (!testEmail) {
       console.log('⚠️  No test email specified. Set TEST_EMAIL environment variable to send a test email.');
       return;
@@ -55,7 +55,7 @@ async function testEmailConfiguration() {
     console.log(`📨 Sending test email to ${testEmail}...`);
     
     const info = await transporter.sendMail({
-      from: process.env.SMTP_USER,
+      from: `${process.env.SMTP_FROM_NAME || 'Sharp Note'} <${process.env.SMTP_FROM_EMAIL || 'mail@sharpnote.net'}>`,
       to: testEmail,
       subject: 'Sharp Note - Email Configuration Test',
       html: `
