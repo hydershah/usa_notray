@@ -112,6 +112,9 @@ const SimpleVideoConference: React.FC<SimpleVideoConferenceProps> = ({
 
   // For now, we'll just show the local user and placeholder boxes for other participants
   // In a real implementation, you would connect to a video service here
+  // Filter out the current user from participants to prevent duplicates
+  const otherParticipants = participants.filter(p => p.userId !== currentUser.id);
+  
   const allParticipants: Participant[] = [
     {
       id: 'local',
@@ -121,7 +124,7 @@ const SimpleVideoConference: React.FC<SimpleVideoConferenceProps> = ({
       isAudioEnabled,
       isVideoEnabled
     },
-    ...participants.slice(0, 7).map(p => ({
+    ...otherParticipants.slice(0, 7).map(p => ({
       id: p.userId,
       name: p.displayName,
       role: p.userType as 'notary' | 'signer' | 'witness' | 'admin',
