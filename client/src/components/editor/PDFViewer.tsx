@@ -6,17 +6,30 @@ import { initializePDFWorker, isPDFWorkerReady } from '../../lib/pdf-worker';
 import type { TagCoordinates, DocumentTag, SessionParticipant } from '../../types/editor';
 import { TAG_TYPE_INFO } from '../../types/editor';
 
+// Define TagPosition type
+interface TagPosition {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface PDFViewerProps {
   documentUrl: string;
   onPageLoad?: (pageNumber: number, canvas: HTMLCanvasElement, scaleFactor: number) => void;
   onCoordinateClick?: (coordinates: TagCoordinates) => void;
-  onTagClick?: (tag: DocumentTag, position: { x: number; y: number; width: number; height: number }) => void;
+  onTagClick?: (tag: DocumentTag, position: TagPosition) => void;
+  onTagResize?: (tagId: string, coordinates: TagCoordinates) => void;
+  onTagDelete?: (tagId: string) => void;
+  mode?: 'viewing' | 'tagging' | 'signing';
+  liveSessionState?: {
+    activeUserId?: number;
+    state?: string;
+  };
+  onSetActiveUser?: (userId: number) => void;
   tags?: DocumentTag[];
-  mode?: string;
   selectedUser?: SessionParticipant | null;
   onTagUpdate?: (tagId: string, coordinates: Partial<TagCoordinates>) => void;
-  onTagResize?: (tagId: string, coordinates: Partial<TagCoordinates>) => void;
-  onTagDelete?: (tagId: string) => void;
   className?: string;
 }
 
@@ -186,23 +199,25 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       `}
       style={{
         backgroundColor: mode === 'signing' && tag.isCompleted 
-          ? 'rgba(34, 197, 94, 0.1)' // Green background for completed
+          ? 'transparent' // No background for completed tags
           : mode === 'signing' && !tag.isCompleted
           ? 'rgba(59, 130, 246, 0.1)' // Blue background for incomplete/clickable
           : 'rgba(255, 255, 255, 0.95)', // White for tagging mode
         border: mode === 'signing' && tag.isCompleted
-          ? '2px solid #22c55e' // Green border for completed
+          ? 'none' // No border for completed tags
           : mode === 'signing' && !tag.isCompleted
           ? '2px dashed #3b82f6' // Dashed blue border for clickable
           : `2px solid ${tag.colorCode || '#3B82F6'}`, // Normal border for tagging
-        borderRadius: '6px',
+        borderRadius: mode === 'signing' && tag.isCompleted ? '0' : '6px',
         color: mode === 'signing' && tag.isCompleted 
-          ? '#15803d' // Dark green text for completed
+          ? '#000000' // Black text for completed content (plain text appearance)
           : tag.colorCode || '#3B82F6',
         zIndex: isSelected ? 1000 : 100,
         pointerEvents: 'auto',
         cursor: mode === 'signing' && !tag.isCompleted ? 'pointer' : 'default',
-        boxShadow: isSelected 
+        boxShadow: mode === 'signing' && tag.isCompleted
+          ? 'none' // No shadow for completed tags
+          : isSelected 
           ? `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${(tag.colorCode || '#3B82F6')}20` 
           : mode === 'signing' && !tag.isCompleted
           ? '0 2px 8px rgba(59, 130, 246, 0.3)' // Blue glow for clickable
@@ -225,21 +240,33 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         {mode === 'signing' ? (
           // Signing mode: Show interactive state
           tag.isCompleted ? (
-            // Completed tag - show content preview
-            <div className="text-center">
-              <div className="flex items-center gap-1 justify-center mb-1">
-                <span className="text-xs text-green-600">✓</span>
-                <span className="text-xs font-medium text-green-700">Completed</span>
-              </div>
+            // Completed tag - show actual content as plain text/image
+            <div className="w-full h-full flex items-center justify-center">
               {tag.contentData && (
-                <div className="text-xs text-green-600 truncate max-w-full">
-                  {tag.contentData.type === 'signature' ? 'Signature Applied' : 
-                   typeof tag.contentData.value === 'string' 
-                     ? tag.contentData.value.length > 15 
-                       ? `${tag.contentData.value.substring(0, 15)}...` 
-                       : tag.contentData.value
-                     : 'Content Added'}
-                </div>
+                tag.contentData.type === 'signature' ? (
+                  <img 
+                    src={tag.contentData.value} 
+                    alt="Signature" 
+                    className="max-h-full max-w-full object-contain"
+                    style={{ 
+                      filter: 'none',
+                      maxHeight: '100%',
+                      maxWidth: '100%'
+                    }}
+                  />
+                ) : (
+                  <div 
+                    className="text-black w-full h-full flex items-center justify-center p-1"
+                    style={{ 
+                      fontSize: Math.max(10, Math.min(16, tag.coordinates.height * 0.6)),
+                      lineHeight: '1.2',
+                      wordBreak: 'break-word',
+                      fontFamily: 'inherit'
+                    }}
+                  >
+                    {typeof tag.contentData.value === 'string' ? tag.contentData.value : JSON.stringify(tag.contentData.value)}
+                  </div>
+                )
               )}
             </div>
           ) : (
@@ -285,12 +312,14 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   onPageLoad,
   onCoordinateClick,
   onTagClick,
-  tags = [],
-  mode = 'tagging',
-  selectedUser,
-  onTagUpdate,
   onTagResize,
   onTagDelete,
+  mode = 'tagging',
+  liveSessionState,
+  onSetActiveUser,
+  tags = [],
+  selectedUser,
+  onTagUpdate,
   className = ''
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -368,16 +397,43 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         });
         
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          // Try to parse error response as JSON first
+          let errorMessage = `HTTP error! status: ${response.status}`;
+          try {
+            const errorData = await response.json();
+            if (errorData.error || errorData.message) {
+              errorMessage = errorData.message || errorData.error;
+              console.log('📄 Server error details:', errorData);
+            }
+          } catch (parseError) {
+            // If not JSON, use status text
+            errorMessage = `HTTP ${response.status}: ${response.statusText || 'Document request failed'}`;
+          }
+          throw new Error(errorMessage);
+        }
+        
+        // Check if response is JSON (error response) instead of PDF
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const errorData = await response.json();
+          const errorMessage = errorData.message || errorData.error || 'Document not found on server';
+          console.error('📄 Server returned error instead of PDF:', errorData);
+          throw new Error(errorMessage);
         }
         
         // Get the PDF data as ArrayBuffer
         pdfData = await response.arrayBuffer();
         console.log('✅ PDF data fetched successfully, size:', pdfData.byteLength);
         
+        // Validate PDF data size (basic check for corrupted/empty files)
+        if (pdfData.byteLength < 1000) {
+          console.warn('⚠️ PDF data seems too small:', pdfData.byteLength, 'bytes');
+          throw new Error('The document appears to be corrupted or empty. Please try uploading the document again.');
+        }
+        
       } catch (fetchError) {
         console.error('❌ Failed to fetch PDF:', fetchError);
-        throw new Error('Failed to download PDF from server');
+        throw fetchError; // Re-throw the original error with its message
       }
       
       // Load the PDF from the ArrayBuffer
@@ -663,10 +719,10 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       editorMode: editorMode
     });
     
-    // Only allow new tag placement in tagging mode
-    if (mode !== 'tagging' || !canEditTags || !onCoordinateClick) {
+    // Allow tag placement in both tagging and signing modes
+    if ((mode !== 'tagging' && mode !== 'signing') || !canEditTags || !onCoordinateClick) {
       console.log('❌ Canvas click blocked:', {
-        isTaggingMode: mode === 'tagging',
+        isTaggingOrSigningMode: mode === 'tagging' || mode === 'signing',
         canEditTags,
         hasOnCoordinateClick: !!onCoordinateClick
       });

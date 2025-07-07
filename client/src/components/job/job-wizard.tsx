@@ -33,6 +33,49 @@ import { apiRequest } from '@/lib/queryClient';
 import { ArrowLeft, ArrowRight, Plus, Trash2, Upload, FileText, CheckCircle, AlertCircle, User as UserIcon, Clock } from 'lucide-react';
 import { type TitleCompany, type ClosingType, type User } from '@shared/schema';
 import { NotaryAvailabilitySelector } from './notary-availability-selector';
+import { MainLayout } from '@/components/layout/main-layout';
+
+// Error Boundary component to catch crashes
+class JobWizardErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('JobWizard Error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <MainLayout>
+          <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+            <div className="flex items-center justify-center h-96">
+              <div className="text-center">
+                <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+                <h2 className="text-xl font-bold text-gray-900 mb-2">Something went wrong</h2>
+                <p className="text-gray-600 mb-4">The create job page encountered an error.</p>
+                <Button onClick={() => window.location.reload()}>
+                  Refresh Page
+                </Button>
+              </div>
+            </div>
+          </div>
+        </MainLayout>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 const jobSchema = z.object({
   titleCompany: z.string().min(1, 'Title company is required'),
@@ -88,7 +131,8 @@ const steps = [
   { id: 5, title: 'Review', description: 'Review and submit' },
 ];
 
-export function JobWizard() {
+// Internal JobWizard component
+function JobWizardInternal() {
   const [currentStep, setCurrentStep] = useState(1);
   const [signers, setSigners] = useState<SignerFormData[]>([]);
   const [signerErrors, setSignerErrors] = useState<Record<number, Record<string, string>>>({});
@@ -116,55 +160,45 @@ export function JobWizard() {
     error: null
   });
 
+  // CRITICAL FIX: Move all hooks to the top and never conditionally call them
   // Get current user data to check permissions
-  const { data: currentUser } = useQuery<User & { 
+  const { data: currentUser, isLoading: isUserLoading, error: userError } = useQuery<User & { 
     companyName?: string; 
     isAdmin?: boolean; 
     isNotary?: boolean; 
   }>({
     queryKey: ['/api/auth/me'],
+    retry: 3,
+    retryDelay: 1000,
   });
 
-  // Check if user has permission to create jobs
-  const canCreateJob = currentUser && (
-    (currentUser as any).isAdmin ||
-    (currentUser as any).role === 'admin' ||
-    (currentUser as any).role === 'title_company' ||
-    ((currentUser as any).role === 'notary' && (currentUser as any).notaryType === 'subscriber')
+  // Check if user is admin (multiple ways to be admin)
+  const isAdmin = currentUser && (
+    currentUser.role === 'admin' || 
+    currentUser.isAdmin === true ||
+    (currentUser as any).privileges?.includes('admin')
   );
 
-  // Redirect if user doesn't have permission
-  React.useEffect(() => {
-    if (currentUser && !canCreateJob) {
-      toast({
-        variant: "destructive",
-        title: "Access Denied",
-        description: "You don't have permission to create jobs. Only administrators, title companies, and subscriber notaries can create jobs.",
-      });
-      setLocation('/jobs');
-    }
-  }, [currentUser, canCreateJob, setLocation, toast]);
-
+  // Initialize form hook BEFORE any conditional logic
   const form = useForm<JobFormData>({
     resolver: zodResolver(jobSchema),
     defaultValues: {
       kbaRequired: false,
-      notaryOption: currentUser?.role === 'admin' ? 'admin_self' : 'auto',
+      notaryOption: 'auto', // Set default, will be updated in effect
       requiresNSA: false,
       requiresSpanishSpeaking: false,
-      // Pre-fill title company for title company users
-      titleCompany: currentUser?.role === 'title_company' && currentUser?.companyName 
-        ? currentUser.companyName 
-        : '',
+      titleCompany: '', // Will be set in effect
     },
   });
 
   const { data: titleCompanies = [] } = useQuery<TitleCompany[]>({
     queryKey: ['/api/companies'],
+    enabled: !!currentUser, // Only fetch when user is loaded
   });
 
   const { data: notaries = [] } = useQuery<any[]>({
     queryKey: ['/api/notaries/available'],
+    enabled: !!currentUser, // Only fetch when user is loaded
     queryFn: async () => {
       const response = await fetch('/api/notaries/available', {
         headers: {
@@ -180,6 +214,7 @@ export function JobWizard() {
 
   const { data: existingSigners = [] } = useQuery<any[]>({
     queryKey: ['/api/users/signers'],
+    enabled: !!currentUser, // Only fetch when user is loaded
     queryFn: async () => {
       const response = await fetch('/api/users/signers', {
         headers: {
@@ -195,10 +230,12 @@ export function JobWizard() {
 
   const { data: closingTypes = [] } = useQuery<ClosingType[]>({
     queryKey: ['/api/closing-types/active'],
+    enabled: !!currentUser, // Only fetch when user is loaded
   });
 
   const { data: participantRoles = [] } = useQuery<any[]>({
     queryKey: ['/api/participant-roles/active'],
+    enabled: !!currentUser, // Only fetch when user is loaded
     queryFn: async () => {
       const response = await fetch('/api/participant-roles/active', {
         headers: {
@@ -212,6 +249,7 @@ export function JobWizard() {
     }
   });
 
+  // MOVED: useMutation hook to top to prevent hooks order violation
   const createJobMutation = useMutation({
     mutationFn: async (data: FormData) => {
       const response = await fetch('/api/jobs', {
@@ -223,7 +261,8 @@ export function JobWizard() {
       });
       
       if (!response.ok) {
-        throw new Error('Failed to create job');
+        const errorData = await response.text();
+        throw new Error(errorData || 'Failed to create job');
       }
       
       return response.json();
@@ -237,6 +276,7 @@ export function JobWizard() {
       setLocation('/jobs');
     },
     onError: (error: any) => {
+      console.error('Create job mutation error:', error);
       toast({
         variant: "destructive",
         title: "Error",
@@ -245,13 +285,97 @@ export function JobWizard() {
     },
   });
 
-  // Check for preferred notary when title company changes
+  // CRITICAL: Move ALL form.watch and useEffect calls to the top
   const watchTitleCompany = form.watch('titleCompany');
+  const watchNotaryOption = form.watch('notaryOption');
+
+  // Check if user has permission to create jobs
+  const canCreateJob = currentUser && (
+    (currentUser as any).isAdmin ||
+    (currentUser as any).role === 'admin' ||
+    (currentUser as any).role === 'title_company' ||
+    ((currentUser as any).role === 'notary' && (currentUser as any).notaryType === 'subscriber')
+  );
+
+  // Update form default value when user data loads
   React.useEffect(() => {
-    if (watchTitleCompany && form.watch('notaryOption') === 'auto') {
+    if (currentUser && !isUserLoading) {
+      const expectedDefault = isAdmin ? 'admin_self' : 'auto';
+      const currentValue = form.getValues('notaryOption');
+      
+      if (currentValue !== expectedDefault) {
+        form.setValue('notaryOption', expectedDefault);
+      }
+    }
+  }, [currentUser, isAdmin, isUserLoading, form]);
+
+  // Update form field when currentUser changes for title company users
+  React.useEffect(() => {
+    if (currentUser?.role === 'title_company' && currentUser?.companyName) {
+      const currentValue = form.getValues('titleCompany');
+      if (currentValue !== currentUser.companyName) {
+        form.setValue('titleCompany', currentUser.companyName);
+        // Force validation to clear any existing errors
+        form.trigger('titleCompany');
+      }
+    }
+  }, [currentUser?.companyName, currentUser?.role, form]);
+
+  // Handle permission redirects with proper error handling
+  React.useEffect(() => {
+    if (currentUser && !isUserLoading && !canCreateJob) {
+      toast({
+        variant: "destructive",
+        title: "Access Denied",
+        description: "You don't have permission to create jobs. Only administrators, title companies, and subscriber notaries can create jobs.",
+      });
+      setLocation('/jobs');
+    }
+  }, [currentUser, canCreateJob, isUserLoading, setLocation, toast]);
+
+  // Check for preferred notary when title company changes
+  React.useEffect(() => {
+    if (watchTitleCompany && watchNotaryOption === 'auto') {
       checkPreferredNotary(watchTitleCompany);
     }
-  }, [watchTitleCompany]);
+  }, [watchTitleCompany, watchNotaryOption]);
+
+  // FIXED: Conditional rendering after all hooks
+  // Show loading state while user data is loading
+  if (isUserLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+            <p className="text-lg text-gray-600">Loading user data...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state if user data failed to load
+  if (userError || (!currentUser && !isUserLoading)) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+            <p className="text-lg text-red-600">Failed to load user data. Please refresh the page.</p>
+            <Button onClick={() => window.location.reload()} className="mt-4">
+              Refresh Page
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Return null if user doesn't have permission (redirect will handle navigation)
+  if (!canCreateJob) {
+    return null;
+  }
 
   const checkPreferredNotary = async (companyName: string) => {
     try {
@@ -957,7 +1081,6 @@ export function JobWizard() {
                                 <FormControl>
                                   <Input
                                     {...field}
-                                    value={currentUser?.companyName || ''}
                                     disabled
                                     className={`h-12 border-gray-200 bg-gray-50 cursor-not-allowed ${fieldState.error ? 'border-red-300' : ''}`}
                                   />
@@ -1618,10 +1741,20 @@ export function JobWizard() {
                                     }
                                   }}
                                   defaultValue={field.value}
-                                  className={`grid grid-cols-1 ${currentUser?.role === 'admin' ? 'md:grid-cols-3' : currentUser?.role === 'title_company' ? 'md:grid-cols-2' : 'md:grid-cols-2'} gap-6`}
+                                  className={`grid grid-cols-1 ${isAdmin ? 'md:grid-cols-3' : currentUser?.role === 'title_company' ? 'md:grid-cols-2' : 'md:grid-cols-2'} gap-6`}
                                 >
+
+
+                                  {/* Show loading state if user data is still loading */}
+                                  {isUserLoading && (
+                                    <div className="col-span-full flex items-center justify-center py-8">
+                                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                                      <span className="ml-3 text-gray-600">Loading assignment options...</span>
+                                    </div>
+                                  )}
+
                                   {/* Admin Self-Assignment Option */}
-                                  {currentUser?.role === 'admin' && (
+                                  {!isUserLoading && isAdmin && (
                                     <div className="relative">
                                       <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-purple-200 transition-colors cursor-pointer">
                                         <RadioGroupItem value="admin_self" id="admin_self" className="mt-1" />
@@ -1638,7 +1771,7 @@ export function JobWizard() {
                                   )}
 
                                   {/* Manual Notary Assignment - Only for admins */}
-                                  {currentUser?.role === 'admin' && (
+                                  {!isUserLoading && isAdmin && (
                                     <div className="relative">
                                       <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-blue-200 transition-colors cursor-pointer">
                                         <RadioGroupItem value="assign" id="assign" className="mt-1" />
@@ -1655,6 +1788,7 @@ export function JobWizard() {
                                   )}
 
                                   {/* Auto Assignment - Available to all */}
+                                  {!isUserLoading && (
                                   <div className="relative">
                                     <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-blue-200 transition-colors cursor-pointer">
                                       <RadioGroupItem value="auto" id="auto" className="mt-1" />
@@ -1665,12 +1799,13 @@ export function JobWizard() {
                                           <CheckCircle className="w-4 h-4 mr-1" />
                                           Optimal matching algorithm
                                         </div>
+                                                                              </div>
                                       </div>
                                     </div>
-                                  </div>
+                                  )}
 
                                   {/* Notary ID Code Assignment - Available to title companies and admins */}
-                                  {(currentUser?.role === 'admin' || currentUser?.role === 'title_company') && (
+                                  {!isUserLoading && (isAdmin || currentUser?.role === 'title_company') && (
                                     <div className="relative">
                                       <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-orange-200 transition-colors cursor-pointer">
                                         <RadioGroupItem value="id_code" id="id_code" className="mt-1" />
@@ -2289,5 +2424,13 @@ export function JobWizard() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export function JobWizard() {
+  return (
+    <JobWizardErrorBoundary>
+      <JobWizardInternal />
+    </JobWizardErrorBoundary>
   );
 }

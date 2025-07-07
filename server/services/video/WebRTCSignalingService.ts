@@ -31,12 +31,15 @@ export class WebRTCSignalingService {
     this.io = new SocketIOServer(server, {
       cors: {
         origin: process.env.NODE_ENV === 'production' 
-          ? process.env.CLIENT_URL 
-          : "http://localhost:5173",
+          ? process.env.CLIENT_URL || "https://your-domain.com"
+          : ["http://localhost:3000", "http://localhost:3002", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:3002"],
         methods: ["GET", "POST"],
         credentials: true
       },
-      path: '/video-signaling/socket.io'
+      path: '/video-signaling/socket.io',
+      transports: ['websocket', 'polling'],
+      pingTimeout: 60000,
+      pingInterval: 25000
     });
 
     this.setupNamespace();
@@ -51,6 +54,7 @@ export class WebRTCSignalingService {
         const token = socket.handshake.auth.token || socket.handshake.query.token;
         
         if (!token) {
+          console.error('WebRTC auth: No token provided');
           return next(new Error('Authentication token required'));
         }
 
@@ -59,6 +63,7 @@ export class WebRTCSignalingService {
         const decoded = jwt.verify(token, JWT_SECRET) as any;
         
         if (!decoded.id) {
+          console.error('WebRTC auth: Invalid token - no user ID');
           return next(new Error('Invalid token'));
         }
 
@@ -69,18 +74,28 @@ export class WebRTCSignalingService {
         socket.data.userName = socket.handshake.query.userName as string;
         socket.data.userRole = socket.handshake.query.userRole as string;
 
+        console.log(`🔑 WebRTC auth successful for user: ${decoded.id} (${socket.data.userName})`);
         next();
       } catch (error) {
         console.error('WebRTC authentication error:', error);
-        next(new Error('Authentication failed'));
+        if (error instanceof Error) {
+          next(new Error(`Authentication failed: ${error.message}`));
+        } else {
+          next(new Error('Authentication failed'));
+        }
       }
     });
 
     videoNamespace.on('connection', (socket) => {
-      console.log(`🎥 Video participant connected: ${socket.data.userName} (${socket.data.userId})`);
+      console.log(`🎥 Video participant connected: ${socket.data.userName} (${socket.data.userId}) to session ${socket.data.sessionId}`);
       
       this.handleParticipantJoin(socket);
       this.setupSocketEvents(socket);
+    });
+
+    // Handle namespace-level errors
+    videoNamespace.on('connect_error', (error) => {
+      console.error('🚨 WebRTC namespace connection error:', error);
     });
   }
 

@@ -152,13 +152,12 @@ A dual-mode PDF editor system for digital notarization with **Tagging Mode** (pl
 - [ ] Coordinate synchronization system
 - [ ] Multi-user state management
 
-### T2.5: Content Replacement & Real-Time Collaboration
-**Primary User**: Notary
+### T2.5: Content Interaction & Real-Time Collaboration
+**Primary User**: All participants
 **Tasks**:
-- [ ] Display "Replace All" button (notary only, always active)
-- [ ] Execute instant replacement of all tags with real content
-- [ ] Handle real-time content manipulation
-- [ ] Enable scaling, dragging, positioning of all content
+- [ ] Handle interactive tag completion by assigned users
+- [ ] Enable real-time content manipulation during completion
+- [ ] Enable scaling, dragging, positioning of content as it's added
 - [ ] Provide undo/redo functionality
 - [ ] Sync all changes across participants instantly
 
@@ -405,10 +404,10 @@ A dual-mode PDF editor system for digital notarization with **Tagging Mode** (pl
 2. **Tagging Phase**: Notary clicks "Start Tagging", places 3 tags: "📝 Signature - John", "✍️ Name - John", "📅 Date"
 3. **Save & Transition**: Tagged document saved, notary clicks "Start Session"
 4. **Session Start**: Video auto-starts, John joins via email link
-5. **Interface**: John sees video (left), document (middle), controls (right) - no placeholder tags, real content from profile
-6. **Content Review**: John's signature/name loaded from profile, can adjust if needed
-7. **Replace All**: Notary clicks "Replace All" - all content instantly placed on document
-8. **Final Review**: Notary reviews, approves, session ends, John gets copy in dashboard
+5. **Interface**: John sees video (left), document (middle), controls (right) - tags are now interactive
+6. **Content Completion**: John clicks each tag to complete - signature from profile, types name, selects date
+7. **Real-Time Updates**: All changes sync instantly across participants
+8. **Final Review**: Notary reviews completed content, approves, session ends, John gets copy in dashboard
 
 #### **Scenario 2: Complex Multi-Signer + Multi-Document Session**
 1. **Job Setup**: 3 PDFs uploaded, 8 participants (5 signers, 2 witnesses, 1 notary)
@@ -419,8 +418,8 @@ A dual-mode PDF editor system for digital notarization with **Tagging Mode** (pl
 6. **Content Loading**: All profiles loaded, Signer C uploads new signature during session
 7. **Document Switching**: Switch between 3 PDFs, all content maintained
 8. **Sync Users**: Notary uses "Sync Users" to bring everyone to same page for review
-9. **Real-Time Edits**: Multiple users resize/move content simultaneously with live updates
-10. **Replace All**: Notary replaces all content across all documents instantly
+9. **Interactive Completion**: Each user completes their assigned tags by clicking and filling content
+10. **Real-Time Edits**: Multiple users resize/move content simultaneously with live updates
 11. **Completion**: Session ends, signers get copies, witnesses don't receive documents
 
 #### **Scenario 3: Live Session Troubleshooting**
@@ -1312,9 +1311,9 @@ const EditorErrorFallback: React.FC<FallbackProps> = ({ error, resetErrorBoundar
 ### 🎯 Checkpoint 5: Content Management System
 **Status: ⏳ Pending**
 
-#### Content Replacement Engine
-- [ ] Build "Replace All" functionality (instant replacement)
-- [ ] Create content-to-tag mapping system
+#### Interactive Content System  
+- [ ] Build individual tag completion interface
+- [ ] Create content-to-tag integration system
 - [ ] Implement content scaling and positioning
 - [ ] Add drag & drop for content manipulation
 - [ ] Build undo/redo system
@@ -1381,7 +1380,7 @@ client/src/
 │       ├── VideoIntegration.tsx          # Video session management
 │       ├── DocumentNavigation.tsx        # Multi-page navigation
 │       ├── SessionControls.tsx           # Session management UI
-│       ├── ContentReplacer.tsx           # Content replacement engine
+│       ├── TagCompletionModal.tsx        # Individual tag completion interface
 │       └── NotaryLogManager.tsx          # Notary log interface
 ├── hooks/
 │   └── editor/
@@ -1420,7 +1419,7 @@ server/
 │       ├── SessionService.ts            # Session business logic
 │       ├── TagService.ts                # Tag management logic
 │       ├── PDFProcessingService.ts      # PDF manipulation
-│       ├── ContentReplacementService.ts # Content overlay logic
+│       ├── ContentCompletionService.ts  # Individual content completion logic
 │       ├── NotaryLogService.ts          # Notary log management
 │       ├── AuditTrailService.ts         # Audit logging
 │       └── WebSocketService.ts          # Real-time communication
@@ -1455,8 +1454,8 @@ supabase/
 │   ├── 004_notary_log_entries.sql       # Notary log tables
 │   └── 005_rls_policies.sql             # Row Level Security policies
 ├── functions/
-│   ├── replace_all_tags/
-│   │   └── index.ts                     # Content replacement function
+│   ├── complete_tag/
+│   │   └── index.ts                     # Individual tag completion function
 │   ├── session_management/
 │   │   └── index.ts                     # Session lifecycle functions  
 │   └── audit_logging/
@@ -1703,7 +1702,7 @@ When notary places "E - Seal" tag:
 2. **Tagging**: Notary places colored placeholder tags
 3. **Live Session**: Auto-load documents, auto-start video, content from profiles
 4. **Interface**: Video (left) + Document (middle) + Controls (right)
-5. **Replace All**: Single button instantly replaces all content (notary only)
+5. **Interactive Completion**: Users click on their assigned tags to complete content individually
 6. **Real-Time**: Everything resizable, draggable, undoable with live sync
 
 ---
@@ -1726,7 +1725,7 @@ When notary places "E - Seal" tag:
 - `PUT /api/editor/session/{sessionId}/tag/{tagId}` - Update tag properties
 - `DELETE /api/editor/session/{sessionId}/tag/{tagId}` - Delete tag
 - `GET /api/editor/session/{sessionId}/document/{documentId}/tags` - Get document tags
-- `POST /api/editor/session/{sessionId}/replace-all` - Replace all tags with content
+- `POST /api/editor/session/{sessionId}/tag/{tagId}/complete` - Complete individual tag with content
 
 #### **Content Management**
 - `POST /api/editor/session/{sessionId}/upload-content` - Upload signature/initial during session
@@ -1983,7 +1982,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE notary_log_entries;
 #### **Notary Permissions**
 - ✅ Start/stop sessions
 - ✅ Place all tag types
-- ✅ Replace all content
+- ✅ Complete any tag content
 - ✅ Sync users
 - ✅ Access all documents
 - ✅ Control video session
@@ -2121,31 +2120,27 @@ const enableRealtimeForEditor = async () => {
 
 **Supabase Edge Functions for Complex Operations**
 ```sql
--- File: supabase/functions/replace_all_tags/index.ts
-CREATE OR REPLACE FUNCTION replace_all_tags_with_content(
-  session_id_param UUID,
-  content_replacements JSONB
+-- File: supabase/functions/complete_tag/index.ts
+CREATE OR REPLACE FUNCTION complete_individual_tag(
+  tag_id_param UUID,
+  content_data JSONB,
+  completed_by_param UUID
 ) RETURNS JSONB AS $$
 DECLARE
-  tag_record RECORD;
-  updated_count INTEGER := 0;
+  updated_tag RECORD;
 BEGIN
-  -- Update all tags in session with provided content
-  FOR tag_record IN 
-    SELECT * FROM document_tags 
-    WHERE session_id = session_id_param AND is_completed = FALSE
-  LOOP
-    UPDATE document_tags 
-    SET 
-      content_data = content_replacements->(tag_record.id::text),
-      is_completed = TRUE,
-      updated_at = NOW()
-    WHERE id = tag_record.id;
-    
-    updated_count := updated_count + 1;
-  END LOOP;
+  -- Update individual tag with content
+  UPDATE document_tags 
+  SET 
+    content_data = content_data,
+    is_completed = TRUE,
+    completed_by = completed_by_param,
+    completed_at = NOW(),
+    updated_at = NOW()
+  WHERE id = tag_id_param
+  RETURNING * INTO updated_tag;
   
-  RETURN jsonb_build_object('updated_tags', updated_count);
+  RETURN to_jsonb(updated_tag);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ```

@@ -1,6 +1,7 @@
 import { Express } from 'express';
 import { verifyToken, hasNotaryPrivileges } from './auth';
 import { cacheUserData } from './middleware/cache-middleware';
+import { redisCache } from './services/redis-cache';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -211,6 +212,15 @@ export function registerNotaryProfileRoutes(app: Express) {
       };
 
       await storage.updateUser(req.user.id, updateData);
+
+      // Invalidate user-specific cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`user:${req.user.id}:*`);
+        console.log(`🧹 Invalidated cache for user ${req.user.id} after profile completion`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after profile completion:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
 
       res.json({
         message: 'Profile completed successfully',

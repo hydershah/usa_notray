@@ -29,39 +29,50 @@ export const supabase = createClient(
   SUPABASE_ANON_KEY
 );
 
-// PostgreSQL connection pool with optimized Supabase configuration
+// PostgreSQL connection pool with optimized production configuration
 export const pool = new Pool({ 
   connectionString: DATABASE_URL,
-  // Optimized connection pool settings for Supabase
-  max: 25, // Increased from 15 to handle more concurrent requests
-  min: 5,  // Increased from 2 to maintain warm connections
-  idleTimeoutMillis: 60000, // Increased from 30000 (1 minute) - keep connections alive longer
-  connectionTimeoutMillis: 30000, // Increased from 15000 (30 seconds) - allow more time for Supabase connections
-  acquireTimeoutMillis: 20000, // Increased from 10000 (20 seconds) - allow more time to acquire connections
+  // Production-optimized connection pool settings
+  max: process.env.NODE_ENV === 'production' ? 15 : 10, // Reduced max connections for production
+  min: process.env.NODE_ENV === 'production' ? 2 : 1,   // Conservative minimum for production
+  idleTimeoutMillis: 30000, // 30 seconds - shorter for production efficiency
+  connectionTimeoutMillis: 15000, // 15 seconds - reasonable timeout
+  acquireTimeoutMillis: 10000, // 10 seconds - reasonable acquire timeout
   // Enable connection reuse and health checks
-  allowExitOnIdle: false,
+  allowExitOnIdle: true, // Allow process to exit when idle in production
   keepAlive: true,
-  keepAliveInitialDelayMillis: 10000, // Increased from 5000 - better for network latency
-  // Increased timeouts for better Supabase compatibility
-  statement_timeout: 60000, // Increased from 30000 (1 minute) - allow complex queries
-  query_timeout: 60000, // Increased from 30000 (1 minute) - allow complex queries
+  keepAliveInitialDelayMillis: 5000, // 5 seconds - standard delay
+  // Reasonable timeouts for production
+  statement_timeout: 30000, // 30 seconds - balanced timeout
+  query_timeout: 30000, // 30 seconds - balanced timeout
   // Add SSL configuration for Supabase
   ssl: {
     rejectUnauthorized: false
   }
 });
 
-// Pool event handlers for monitoring and debugging
+// Reduced logging - only log important events, not normal connection activity
+let initialConnectionLogged = false;
+
 pool.on('connect', (client) => {
-  console.log(`Database connection established. Total connections: ${pool.totalCount}`);
+  if (!initialConnectionLogged) {
+    console.log(`✅ Database connected. Pool size: ${pool.totalCount}`);
+    initialConnectionLogged = true;
+  }
 });
 
-pool.on('acquire', (client) => {
-  console.log(`Connection acquired from pool. Active: ${pool.totalCount - pool.idleCount}`);
-});
+// Remove the verbose 'acquire' logging that was causing noise
+// pool.on('acquire', ...) - REMOVED to reduce log spam
 
 pool.on('error', (err, client) => {
-  console.error('Database pool error:', err);
+  console.error('❌ Database pool error:', err);
 });
+
+// Log pool stats occasionally for debugging (every 5 minutes)
+if (process.env.NODE_ENV !== 'production') {
+  setInterval(() => {
+    console.log(`📊 DB Pool Stats: Total: ${pool.totalCount}, Idle: ${pool.idleCount}, Waiting: ${pool.waitingCount}`);
+  }, 5 * 60 * 1000);
+}
 
 export const db = drizzle({ client: pool, schema });

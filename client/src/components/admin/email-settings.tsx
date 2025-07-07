@@ -11,6 +11,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 interface EmailSettings {
+  email_provider: string;
+  // Postmark settings
+  postmark_api_key: string;
+  postmark_from_email: string;
+  postmark_from_name: string;
+  postmark_track_opens: string;
+  postmark_track_links: string;
+  // SMTP settings (fallback)
   smtp_host: string;
   smtp_port: string;
   smtp_user: string;
@@ -25,6 +33,14 @@ export function EmailSettings() {
   const [showPassword, setShowPassword] = useState(false);
   const [testEmail, setTestEmail] = useState('');
   const [settings, setSettings] = useState<EmailSettings>({
+    email_provider: 'postmark',
+    // Postmark settings
+    postmark_api_key: '',
+    postmark_from_email: '',
+    postmark_from_name: 'Sharp Note',
+    postmark_track_opens: 'true',
+    postmark_track_links: 'HtmlAndText',
+    // SMTP settings (fallback)
     smtp_host: '',
     smtp_port: '',
     smtp_user: '',
@@ -96,7 +112,9 @@ export function EmailSettings() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ testEmail: testEmail || settings.smtp_user })
+        body: JSON.stringify({ 
+          testEmail: testEmail || (settings.email_provider === 'postmark' ? settings.postmark_from_email : settings.smtp_user)
+        })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Test failed');
@@ -140,57 +158,129 @@ export function EmailSettings() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Quick Setup Templates */}
+            {/* Email Provider Selection */}
             <div className="space-y-2">
-              <Label>Quick Setup</Label>
-              <Select
-                onValueChange={(value) => {
-                  switch (value) {
-                    case 'hostinger-ssl':
-                      setSettings({
-                        ...settings,
-                        smtp_host: 'smtp.hostinger.com',
-                        smtp_port: '465',
-                        smtp_secure: 'true',
-                        smtp_user: 'mail@digitalexpert.agency',
-                        from_email: 'mail@digitalexpert.agency',
-                        from_name: 'Sharp Note'
-                      });
-                      break;
-                    case 'hostinger-tls':
-                      setSettings({
-                        ...settings,
-                        smtp_host: 'mail.hostinger.com',
-                        smtp_port: '587',
-                        smtp_secure: 'false',
-                        smtp_user: 'mail@digitalexpert.agency',
-                        from_email: 'mail@digitalexpert.agency',
-                        from_name: 'Sharp Note'
-                      });
-                      break;
-                    case 'gmail':
-                      setSettings({
-                        ...settings,
-                        smtp_host: 'smtp.gmail.com',
-                        smtp_port: '587',
-                        smtp_secure: 'false'
-                      });
-                      break;
-                  }
-                }}
+              <Label>Email Provider</Label>
+              <RadioGroup
+                value={settings.email_provider}
+                onValueChange={(value) => setSettings({ ...settings, email_provider: value })}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a provider template..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="hostinger-ssl">Hostinger (SSL - Port 465)</SelectItem>
-                  <SelectItem value="hostinger-tls">Hostinger (TLS - Port 587)</SelectItem>
-                  <SelectItem value="gmail">Gmail</SelectItem>
-                  <SelectItem value="outlook">Outlook</SelectItem>
-                  <SelectItem value="custom">Custom SMTP</SelectItem>
-                </SelectContent>
-              </Select>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="postmark" id="postmark" />
+                  <Label htmlFor="postmark">Postmark (Recommended)</Label>
+                  <span className="text-sm text-green-600">✨ High deliverability, tracking, analytics</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="smtp" id="smtp" />
+                  <Label htmlFor="smtp">SMTP (Fallback)</Label>
+                  <span className="text-sm text-gray-500">Traditional SMTP configuration</span>
+                </div>
+              </RadioGroup>
             </div>
+
+            {/* Postmark Settings */}
+            {settings.email_provider === 'postmark' && (
+              <div className="space-y-4 p-4 bg-blue-50 border rounded-lg">
+                <h3 className="font-semibold text-blue-900">Postmark Configuration</h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Postmark API Key */}
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="postmark_api_key">Postmark API Key</Label>
+                    <Input
+                      id="postmark_api_key"
+                      type={showPassword ? 'text' : 'password'}
+                      value={settings.postmark_api_key}
+                      onChange={(e) => setSettings({ ...settings, postmark_api_key: e.target.value })}
+                      placeholder="Your Postmark API key"
+                      required
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
+                      {showPassword ? 'Hide' : 'Show'} API Key
+                    </Button>
+                  </div>
+
+                  {/* From Email */}
+                  <div className="space-y-2">
+                    <Label htmlFor="postmark_from_email">From Email</Label>
+                    <Input
+                      id="postmark_from_email"
+                      type="email"
+                      value={settings.postmark_from_email}
+                      onChange={(e) => setSettings({ ...settings, postmark_from_email: e.target.value })}
+                      placeholder="noreply@usanotaryservices.com"
+                      required
+                    />
+                  </div>
+
+                  {/* From Name */}
+                  <div className="space-y-2">
+                    <Label htmlFor="postmark_from_name">From Name</Label>
+                    <Input
+                      id="postmark_from_name"
+                      value={settings.postmark_from_name}
+                      onChange={(e) => setSettings({ ...settings, postmark_from_name: e.target.value })}
+                      placeholder="Sharp Note"
+                      required
+                    />
+                  </div>
+
+                  {/* Track Opens */}
+                  <div className="space-y-2">
+                    <Label>Track Email Opens</Label>
+                    <RadioGroup
+                      value={settings.postmark_track_opens}
+                      onValueChange={(value) => setSettings({ ...settings, postmark_track_opens: value })}
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="true" id="track_opens_yes" />
+                        <Label htmlFor="track_opens_yes">Enabled</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="false" id="track_opens_no" />
+                        <Label htmlFor="track_opens_no">Disabled</Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+
+                  {/* Track Links */}
+                  <div className="space-y-2">
+                    <Label>Track Links</Label>
+                    <Select
+                      value={settings.postmark_track_links}
+                      onValueChange={(value) => setSettings({ ...settings, postmark_track_links: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="None">None</SelectItem>
+                        <SelectItem value="HtmlAndText">HTML & Text</SelectItem>
+                        <SelectItem value="HtmlOnly">HTML Only</SelectItem>
+                        <SelectItem value="TextOnly">Text Only</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <Alert>
+                  <CheckCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    Postmark provides superior deliverability, real-time tracking, and detailed analytics for your email campaigns.
+                  </AlertDescription>
+                </Alert>
+              </div>
+            )}
+
+            {/* SMTP Settings */}
+            {settings.email_provider === 'smtp' && (
+              <div className="space-y-4 p-4 bg-gray-50 border rounded-lg">
+                <h3 className="font-semibold text-gray-900">SMTP Configuration</h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* SMTP Host */}
@@ -277,31 +367,35 @@ export function EmailSettings() {
               </div>
             </div>
 
-            {/* Security Type */}
-            <div className="space-y-2">
-              <Label>Security Type</Label>
-              <RadioGroup
-                value={settings.smtp_secure}
-                onValueChange={(value) => setSettings({ ...settings, smtp_secure: value })}
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="true" id="ssl" />
-                  <Label htmlFor="ssl">SSL (Port 465)</Label>
+                {/* Security Type */}
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Security Type</Label>
+                  <RadioGroup
+                    value={settings.smtp_secure}
+                    onValueChange={(value) => setSettings({ ...settings, smtp_secure: value })}
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="true" id="ssl" />
+                      <Label htmlFor="ssl">SSL (Port 465)</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="false" id="tls" />
+                      <Label htmlFor="tls">STARTTLS (Port 587)</Label>
+                    </div>
+                  </RadioGroup>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="false" id="tls" />
-                  <Label htmlFor="tls">STARTTLS (Port 587)</Label>
-                </div>
-              </RadioGroup>
-            </div>
+              </div>
+            )}
 
             {/* Current Configuration Alert */}
             {emailSettings && (
               <Alert>
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>
-                  Current SMTP: {emailSettings.smtp_host}:{emailSettings.smtp_port} 
-                  {emailSettings.smtp_secure === 'true' ? ' (SSL)' : ' (STARTTLS)'}
+                  {emailSettings.email_provider === 'postmark' 
+                    ? `Current Provider: Postmark (${emailSettings.postmark_from_email})`
+                    : `Current SMTP: ${emailSettings.smtp_host}:${emailSettings.smtp_port} ${emailSettings.smtp_secure === 'true' ? '(SSL)' : '(STARTTLS)'}`
+                  }
                 </AlertDescription>
               </Alert>
             )}
@@ -327,7 +421,7 @@ export function EmailSettings() {
                   type="button"
                   variant="outline"
                   onClick={() => testMutation.mutate()}
-                  disabled={testMutation.isPending || !settings.smtp_host}
+                  disabled={testMutation.isPending || (settings.email_provider === 'postmark' ? !settings.postmark_api_key : !settings.smtp_host)}
                 >
                   <TestTube className="h-4 w-4 mr-2" />
                   {testMutation.isPending ? 'Testing...' : 'Test'}
@@ -341,30 +435,37 @@ export function EmailSettings() {
       {/* Help Section */}
       <Card>
         <CardHeader>
-          <CardTitle>Email Provider Settings</CardTitle>
+          <CardTitle>Email Provider Information</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <h4 className="font-medium mb-2">Hostinger (Recommended)</h4>
+            <h4 className="font-medium mb-2 text-blue-700">🚀 Postmark (Recommended)</h4>
             <div className="text-sm text-gray-600 space-y-1">
-              <p>SSL: smtp.hostinger.com:465</p>
-              <p>TLS: mail.hostinger.com:587</p>
-              <p>Username: Your full email address</p>
+              <p>• 99%+ deliverability rate</p>
+              <p>• Real-time email tracking and analytics</p>
+              <p>• Professional sender reputation</p>
+              <p>• No SMTP configuration needed</p>
+              <p>• Instant delivery (usually &lt; 5 seconds)</p>
+              <p>• Built-in bounce and spam management</p>
             </div>
           </div>
 
           <div>
-            <h4 className="font-medium mb-2">Gmail</h4>
+            <h4 className="font-medium mb-2">📧 SMTP (Fallback)</h4>
             <div className="text-sm text-gray-600 space-y-1">
-              <p>Server: smtp.gmail.com:587</p>
-              <p>Requires App Password (not regular password)</p>
+              <p>• Traditional email sending method</p>
+              <p>• Requires SMTP server configuration</p>
+              <p>• Lower deliverability rates</p>
+              <p>• No built-in tracking or analytics</p>
+              <p>• May require additional setup for anti-spam</p>
             </div>
           </div>
 
           <Alert>
             <CheckCircle className="h-4 w-4" />
             <AlertDescription>
-              Email settings are used for sending signer invitations, password resets, and system notifications.
+              Email settings are used for sending signer invitations, password resets, and system notifications. 
+              Postmark provides superior delivery and tracking capabilities.
             </AlertDescription>
           </Alert>
         </CardContent>

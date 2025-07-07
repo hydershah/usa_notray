@@ -1,8 +1,8 @@
-import { db } from "../../db";
-import { editorSessions, users, sessionParticipantsStatus, liveSessionEvents, documentTags } from "../../../shared/schema";
-import { eq, and, or } from "drizzle-orm";
-import { withDatabaseProtection } from '../../middleware/circuit-breaker';
+import { eq, and } from 'drizzle-orm';
+import { db } from '../../db';
+import { editorSessions, sessionParticipantsStatus, liveSessionEvents, users } from '../../../shared/schema';
 import { redisCache } from '../redis-cache';
+import { withDatabaseProtection } from '../../middleware/circuit-breaker';
 
 export enum SigningSessionState {
   WAITING = 'waiting',          // Participants joining, not started
@@ -106,9 +106,18 @@ export class LiveSigningSessionService {
           session = insertedSession;
         }
         
-        // Verify user is the notary for this session
-        if (session.notaryId !== notaryUserId) {
-          throw new Error('Only the assigned notary can start the session');
+        // Verify user is the notary for this session or is an admin
+        const [currentUser] = await db
+          .select({ role: users.role, privileges: users.privileges })
+          .from(users)
+          .where(eq(users.id, notaryUserId))
+          .limit(1);
+        
+        const isAdmin = currentUser?.role === 'admin' || (currentUser?.privileges && currentUser.privileges.includes('admin'));
+        const isAssignedNotary = session.notaryId === notaryUserId;
+        
+        if (!isAssignedNotary && !isAdmin) {
+          throw new Error('Only the assigned notary or admin can start the session');
         }
         
         // Update session to live signing mode
@@ -155,12 +164,26 @@ export class LiveSigningSessionService {
   }
   
   /**
-   * Clear session cache when state changes
+   * Clear session cache when state changes - OPTIMIZED VERSION
    */
   private static async clearSessionCache(sessionId: string): Promise<void> {
     try {
-      const cacheKey = `session:${sessionId}:state`;
-      await redisCache.del(cacheKey);
+      const keys = [
+        `session:${sessionId}:state`,
+        `session:*:participants`, // Clear participants cache pattern
+        `job:${sessionId}:*` // Clear job-related caches
+      ];
+      
+      for (const key of keys) {
+        if (key.includes('*')) {
+          // Handle pattern-based deletion
+          await redisCache.delPattern(key);
+        } else {
+          await redisCache.del(key);
+        }
+      }
+      
+      console.log(`🧹 Cleared session cache for ${sessionId}`);
     } catch (error) {
       console.warn('Failed to clear session cache:', error);
       // Don't throw - cache failures shouldn't break the main flow
@@ -372,23 +395,41 @@ export class LiveSigningSessionService {
   }
   
   /**
-   * Get current session state and participants
+   * Get current session state and participants - OPTIMIZED VERSION
    */
   static async getSessionState(sessionId: string): Promise<LiveSigningSession> {
     const cacheKey = `session:${sessionId}:state`;
     
     try {
-      // Try to get from cache first
+      // Try to get from cache first with debug logging
+      const startTime = Date.now();
       const cached = await redisCache.get(cacheKey);
+      const cacheTime = Date.now() - startTime;
+      
       if (cached) {
-        return JSON.parse(cached);
+        console.log(`📦 Cache HIT: session state for ${sessionId} (${cacheTime.toFixed(2)}ms)`);
+        return cached;
       }
+      
+      console.log(`🔍 Cache MISS: session state for ${sessionId} (${cacheTime.toFixed(2)}ms)`);
 
       // Use circuit breaker protection for database operations
+      const dbStartTime = Date.now();
       const result = await withDatabaseProtection(async () => {
-        // First, try to find existing editor session by sessionId
+        // OPTIMIZED: Single query to get session data
         let [session] = await db
-          .select()
+          .select({
+            id: editorSessions.id,
+            sessionId: editorSessions.sessionId,
+            jobId: editorSessions.jobId,
+            signingState: editorSessions.signingState,
+            activeUserId: editorSessions.activeUserId,
+            startedAt: editorSessions.startedAt,
+            pausedAt: editorSessions.pausedAt,
+            resumedAt: editorSessions.resumedAt,
+            completedAt: editorSessions.completedAt,
+            isLiveSession: editorSessions.isLiveSession
+          })
           .from(editorSessions)
           .where(eq(editorSessions.sessionId, sessionId))
           .limit(1);
@@ -398,7 +439,18 @@ export class LiveSigningSessionService {
           const jobIdNum = parseInt(sessionId);
           if (!isNaN(jobIdNum)) {
             [session] = await db
-              .select()
+              .select({
+                id: editorSessions.id,
+                sessionId: editorSessions.sessionId,
+                jobId: editorSessions.jobId,
+                signingState: editorSessions.signingState,
+                activeUserId: editorSessions.activeUserId,
+                startedAt: editorSessions.startedAt,
+                pausedAt: editorSessions.pausedAt,
+                resumedAt: editorSessions.resumedAt,
+                completedAt: editorSessions.completedAt,
+                isLiveSession: editorSessions.isLiveSession
+              })
               .from(editorSessions)
               .where(eq(editorSessions.jobId, jobIdNum))
               .limit(1);
@@ -409,8 +461,12 @@ export class LiveSigningSessionService {
           throw new Error('Session not found');
         }
         
-        // Get participants with circuit breaker protection
+        // Get participants with optimized query
+        const participantsStartTime = Date.now();
         const participants = await this.getSessionParticipants(session.id);
+        const participantsTime = Date.now() - participantsStartTime;
+        
+        console.log(`✅ DATABASE:get_session_state succeeded in ${Date.now() - dbStartTime}ms (participants: ${participantsTime}ms)`);
         
         return {
           id: session.id,
@@ -426,8 +482,19 @@ export class LiveSigningSessionService {
         };
       }, 'get_session_state');
 
-      // Cache the result for 30 seconds
-      await redisCache.set(cacheKey, result, 30);
+      // Cache the result for 30 seconds with better error handling
+      try {
+        const setCacheStartTime = Date.now();
+        await redisCache.set(cacheKey, result, 30);
+        const setCacheTime = Date.now() - setCacheStartTime;
+        
+        if (setCacheTime > 20) {
+          console.log(`🐌 Slow Redis SET: ${cacheKey} (${setCacheTime.toFixed(2)}ms)`);
+        }
+      } catch (cacheError) {
+        console.warn('Failed to cache session state:', cacheError);
+        // Don't throw - continue without caching
+      }
       
       return result;
       
@@ -438,10 +505,19 @@ export class LiveSigningSessionService {
   }
   
   /**
-   * Get session participants with status
+   * Get session participants with status - OPTIMIZED VERSION
    */
   static async getSessionParticipants(sessionDbId: number): Promise<SessionParticipant[]> {
+    const cacheKey = `session:${sessionDbId}:participants`;
+    
     try {
+      // Try to get from cache first with shorter TTL to allow updates
+      const cached = await redisCache.get(cacheKey);
+      if (cached) {
+        console.log(`📦 Cache HIT: participants for session ${sessionDbId}`);
+        return cached;
+      }
+      
       console.log(`🔍 Getting participants for session ${sessionDbId}`);
       
       // First, get the session to validate it exists
@@ -456,134 +532,111 @@ export class LiveSigningSessionService {
         return [];
       }
 
-      // Initialize participants array
       let participants: SessionParticipant[] = [];
 
-      // Try to get participants from session_participants_status table first
+      // OPTIMIZED: Try to get participants from session_participants_status table with JOIN
       try {
         const statusParticipants = await db
-          .select()
+          .select({
+            userId: sessionParticipantsStatus.userId,
+            isActive: sessionParticipantsStatus.isActive,
+            canInteract: sessionParticipantsStatus.canInteract,
+            joinedAt: sessionParticipantsStatus.joinedAt,
+            leftAt: sessionParticipantsStatus.leftAt,
+            lastActivity: sessionParticipantsStatus.lastActivity,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            username: users.username,
+            role: users.role
+          })
           .from(sessionParticipantsStatus)
+          .innerJoin(users, eq(sessionParticipantsStatus.userId, users.id))
           .where(eq(sessionParticipantsStatus.sessionId, sessionDbId));
 
         console.log(`📊 Found ${statusParticipants.length} participants in status table`);
 
-        // If we have participants in status table, get their user details
+        // Convert to participants array with single query
         if (statusParticipants.length > 0) {
-          for (const statusParticipant of statusParticipants) {
-            try {
-              const [user] = await db
-                .select({
-                  id: users.id,
-                  firstName: users.firstName,
-                  lastName: users.lastName,
-                  username: users.username,
-                  userType: users.role // Use role field as userType
-                })
-                .from(users)
-                .where(eq(users.id, statusParticipant.userId))
-                .limit(1);
-
-              if (user) {
-                participants.push({
-                  userId: user.id,
-                  displayName: user.firstName || user.username || 'Unknown User',
-                  userType: (user.userType === 'notary' ? 'notary' : 'signer') as 'notary' | 'signer' | 'witness',
-                  isActive: statusParticipant.isActive || false,
-                  canInteract: statusParticipant.canInteract || false,
-                  joinedAt: statusParticipant.joinedAt || undefined,
-                  leftAt: statusParticipant.leftAt || undefined,
-                  lastActivity: statusParticipant.lastActivity || undefined
-                });
-              }
-            } catch (userError) {
-              console.warn(`Failed to get user details for participant ${statusParticipant.userId}:`, userError);
-            }
-          }
+          participants = statusParticipants.map(participant => ({
+            userId: participant.userId,
+            displayName: participant.firstName || participant.username || 'Unknown User',
+            userType: (participant.role === 'notary' ? 'notary' : 'signer') as 'notary' | 'signer' | 'witness',
+            isActive: participant.isActive || false,
+            canInteract: participant.canInteract || false,
+            joinedAt: participant.joinedAt || undefined,
+            leftAt: participant.leftAt || undefined,
+            lastActivity: participant.lastActivity || undefined
+          }));
         }
       } catch (statusError) {
         console.warn('Failed to query session participants status table:', statusError);
       }
 
-      // If no participants found in status table, fall back to job-based participants
+      // OPTIMIZED: If no participants found in status table, use job-based participants with JOINs
       if (participants.length === 0) {
         console.log(`🔄 No participants in status table, falling back to job-based participants for job ${session.jobId}`);
         
         try {
           const { jobs, signers } = await import("../../../shared/schema");
           
-          // Get job details
-          const [job] = await db
-            .select()
+          // OPTIMIZED: Get job with notary details in one query
+          const [jobWithNotary] = await db
+            .select({
+              jobId: jobs.id,
+              selectedNotary: jobs.selectedNotary,
+              notaryId: jobs.notaryId,
+              notaryFirstName: users.firstName,
+              notaryLastName: users.lastName,
+              notaryUsername: users.username
+            })
             .from(jobs)
+            .leftJoin(users, eq(jobs.notaryId, users.id))
             .where(eq(jobs.id, session.jobId))
             .limit(1);
           
-          if (job) {
+          if (jobWithNotary) {
             console.log(`🔍 Job data for participants:`, {
-              jobId: job.id,
-              selectedNotary: job.selectedNotary,
-              notaryId: job.notaryId,
-              hasSignerDetails: !!job.selectedNotary || !!job.notaryId
+              jobId: jobWithNotary.jobId,
+              selectedNotary: jobWithNotary.selectedNotary,
+              notaryId: jobWithNotary.notaryId,
+              hasNotaryData: !!jobWithNotary.notaryFirstName
             });
             
             // Add notary if available
-            const notaryId = job.notaryId || (job.selectedNotary ? parseInt(job.selectedNotary) : null);
-            if (notaryId) {
-              try {
-                const [notary] = await db
-                  .select({
-                    id: users.id,
-                    firstName: users.firstName,
-                    lastName: users.lastName,
-                    username: users.username
-                  })
-                  .from(users)
-                  .where(eq(users.id, notaryId))
-                  .limit(1);
-                
-                if (notary) {
-                  participants.push({
-                    userId: notary.id,
-                    displayName: notary.firstName || notary.username || 'Notary',
-                    userType: 'notary',
-                    isActive: session.activeUserId === notary.id,
-                    canInteract: true,
-                    joinedAt: undefined,
-                    leftAt: undefined,
-                    lastActivity: undefined
-                  });
-                  console.log(`✅ Added real notary: ${notary.firstName || notary.username}`);
-                }
-              } catch (notaryError) {
-                console.warn(`Failed to get notary details for ID ${notaryId}:`, notaryError);
-              }
+            if (jobWithNotary.notaryId && jobWithNotary.notaryFirstName) {
+              participants.push({
+                userId: jobWithNotary.notaryId,
+                displayName: jobWithNotary.notaryFirstName || jobWithNotary.notaryUsername || 'Notary',
+                userType: 'notary',
+                isActive: session.activeUserId === jobWithNotary.notaryId,
+                canInteract: true,
+                joinedAt: undefined,
+                leftAt: undefined,
+                lastActivity: undefined
+              });
+              console.log(`✅ Added notary: ${jobWithNotary.notaryFirstName || jobWithNotary.notaryUsername}`);
             }
             
-            // Add signers from signers table
-            try {
-              const jobSigners = await db
-                .select()
-                .from(signers)
-                .where(eq(signers.jobId, session.jobId));
+            // OPTIMIZED: Get all signers in one query
+            const jobSigners = await db
+              .select()
+              .from(signers)
+              .where(eq(signers.jobId, session.jobId));
               
-              console.log(`📝 Found ${jobSigners.length} signers for job ${session.jobId}`);
-              
-              for (const signer of jobSigners) {
-                participants.push({
-                  userId: signer.id, // Use signer ID, not user ID
-                  displayName: signer.signerName,
-                  userType: 'signer',
-                  isActive: false,
-                  canInteract: false,
-                  joinedAt: undefined,
-                  leftAt: undefined,
-                  lastActivity: undefined
-                });
-                console.log(`✅ Added real signer: ${signer.signerName}`);
-              }
-            } catch (signerError) {
-              console.warn('Could not fetch signers:', signerError);
+            console.log(`📝 Found ${jobSigners.length} signers for job ${session.jobId}`);
+            
+            for (const signer of jobSigners) {
+              participants.push({
+                userId: signer.id, // Use signer ID, not user ID
+                displayName: signer.signerName,
+                userType: 'signer',
+                isActive: false,
+                canInteract: false,
+                joinedAt: undefined,
+                leftAt: undefined,
+                lastActivity: undefined
+              });
+              console.log(`✅ Added signer: ${signer.signerName}`);
             }
           }
         } catch (jobError) {
@@ -592,6 +645,9 @@ export class LiveSigningSessionService {
       }
       
       console.log(`✅ Session participants: ${participants.length} total (${participants.filter(p => p.userType === 'notary').length} notaries, ${participants.filter(p => p.userType === 'signer').length} signers)`);
+      
+      // Cache the result for 15 seconds (shorter TTL for active sessions)
+      await redisCache.set(cacheKey, participants, 15);
       
       return participants;
       

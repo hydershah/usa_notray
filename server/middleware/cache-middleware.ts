@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { redisCache } from '../services/redis-cache';
+import { hasAdminPrivileges } from '../auth';
 
 interface CacheOptions {
   ttl?: number; // Time to live in seconds
@@ -86,7 +87,7 @@ export function cacheAdminData(ttl: number = 300) {
       return `admin:${req.originalUrl}:${JSON.stringify(req.query)}`;
     },
     condition: (req: Request) => {
-      return req.user?.role === 'admin';
+      return hasAdminPrivileges(req.user);
     }
   });
 }
@@ -122,7 +123,7 @@ export function cacheJobData(ttl: number = 180) {
  */
 export async function invalidateCache(patterns: string[]) {
   for (const pattern of patterns) {
-    await redisCache.delByPattern(pattern);
+    await redisCache.delPattern(pattern);
   }
 }
 

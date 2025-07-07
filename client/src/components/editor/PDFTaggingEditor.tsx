@@ -7,7 +7,6 @@ import HotkeyHandler from './HotkeyHandler';
 import VideoIntegration from './VideoIntegration';
 import { TagInputModal } from './TagInputModal';
 import { ReplaceAllButton } from './ReplaceAllButton';
-import { authenticatedFetch } from '@/lib/auth';
 import { useToast } from '@/hooks/use-toast';
 import type { 
   SessionDocument, 
@@ -94,7 +93,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
           jobId: '',
           notaryId: '',
           status: 'active',
-          sessionType: mode,
+          sessionType: mode === 'signing' ? 'notary' : mode as 'tagging' | 'notary',
           createdAt: new Date()
         });
 
@@ -112,12 +111,12 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
           setSelectedUser(currentParticipant);
         }
 
-        // Set mode configuration
+        // Set mode configuration - signing mode inherits ALL tagging capabilities
         setMode({
-          mode: mode,
-          canPlaceTags: mode === 'tagging',
+          mode: mode === 'signing' ? 'tagging' : mode as 'tagging' | 'notary', // Map signing mode to tagging mode in store
+          canPlaceTags: mode === 'tagging' || mode === 'signing', // ✅ Allow tag placement in signing mode
           canModifyContent: mode === 'notary' || mode === 'signing',
-          showPlaceholders: mode === 'tagging'
+          showPlaceholders: mode === 'tagging' || mode === 'signing' // ✅ Show placeholders in signing mode too
         });
 
         // Load existing tags
@@ -173,22 +172,9 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       if (mode !== 'signing') return;
       
       try {
-        const profiles: Record<string, any> = {};
-        
-        for (const participant of participants) {
-          try {
-            const response = await authenticatedFetch(`/api/users/${participant.userId}/profile`);
-            if (response.ok) {
-              const profile = await response.json();
-              profiles[participant.userId] = profile;
-            }
-          } catch (error) {
-            console.warn(`Failed to load profile for user ${participant.userId}:`, error);
-          }
-        }
-        
-        setUserProfiles(profiles);
-        console.log('✅ User profiles loaded for signing mode:', Object.keys(profiles));
+        // Note: User profiles are loaded on the backend when needed for content generation
+        // We don't need to pre-load them here to avoid permission issues
+        console.log('✅ User profiles will be loaded on-demand during content generation');
         
       } catch (error) {
         console.error('Failed to load user profiles:', error);
@@ -198,40 +184,81 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     loadUserProfiles();
   }, [mode, participants]);
 
-  // Handle tag click in signing mode
+  // Handle tag click in signing mode - FIXED VERSION
   const handleTagClick = useCallback((tag: DocumentTag, position: { x: number; y: number; width: number; height: number }) => {
     if (mode !== 'signing') return;
     
+    console.log('🏷️ Tag click in PDFTaggingEditor:', {
+      tagId: tag.id,
+      tagType: tag.tagType,
+      assignedUserId: tag.assignedUserId,
+      currentUserId,
+      isCompleted: tag.isCompleted
+    });
+    
     // Check if user can interact with this tag
     const currentParticipant = participants.find(p => p.userId === currentUserId);
-    const canEdit = currentParticipant && (
-      tag.assignedUserId === currentUserId ||
-      currentParticipant.userType === 'notary' ||
-      ['T', 'D'].includes(tag.tagType) // Universal tags
-    );
+    const isNotary = currentParticipant?.userType === 'notary';
+    const isAssignedUser = tag.assignedUserId === currentUserId;
+    const isUniversalTag = ['T', 'D'].includes(tag.tagType); // Text and Date tags
+    
+    const canEdit = currentParticipant && (isNotary || isAssignedUser || isUniversalTag);
+
+    console.log('🔐 Permission check result:', {
+      currentParticipant: currentParticipant?.displayName,
+      isNotary,
+      isAssignedUser,
+      isUniversalTag,
+      canEdit
+    });
 
     if (!canEdit) {
+      let errorMessage = "You cannot edit this tag.";
+      
+      if (!currentParticipant) {
+        errorMessage = "User session not found. Please refresh the page.";
+      } else if (!isNotary && !isAssignedUser && !isUniversalTag) {
+        errorMessage = `This ${tag.tagType} tag is assigned to another participant. Only the notary and assigned user can edit it.`;
+      }
+      
       toast({
         title: "Cannot Edit Tag",
-        description: "This tag is assigned to another user.",
+        description: errorMessage,
         variant: "destructive"
       });
       return;
     }
 
+    // Check if user is active in live session
+    if (liveSessionState && liveSessionState.state === 'active') {
+      const isActiveUser = liveSessionState.activeUserId === currentUserId || 
+                          liveSessionState.activeUserId?.toString() === currentUserId?.toString();
+      
+      if (!isActiveUser && !isNotary) {
+        toast({
+          title: "Cannot Edit Tag", 
+          description: "You are not the active user. Ask the notary to activate you.",
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+
+    console.log('✅ All permission checks passed, opening tag editor');
     setSelectedTagForInput(tag);
     setTagModalPosition(position);
-  }, [mode, participants, currentUserId, toast]);
+  }, [mode, participants, currentUserId, liveSessionState, toast]);
 
   // Handle tag content save
   const handleTagContentSave = useCallback(async (content: any) => {
     if (!selectedTagForInput) return;
 
     try {
-      const response = await authenticatedFetch(`/api/editor/session/${sessionId}/tag/${selectedTagForInput.id}/content`, {
+      const response = await fetch(`/api/editor/session/${sessionId}/tag/${selectedTagForInput.id}/content`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
         body: JSON.stringify({
           content,
@@ -502,11 +529,13 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
             onCoordinateClick={handleTagPlacement}
             onTagClick={mode === 'signing' ? handleTagClick : undefined}
             tags={tags.filter(tag => tag.documentId === currentDocument.id)}
-            mode={mode}
+            mode={mode === 'notary' ? 'tagging' : mode as 'tagging' | 'signing'}
             selectedUser={selectedUser}
             onTagUpdate={updateTagPosition}
             onTagResize={saveTagUpdate}
             onTagDelete={deleteTag}
+            liveSessionState={liveSessionState}
+            onSetActiveUser={onSetActiveUser}
           />
         </div>
 
@@ -540,14 +569,12 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         />
       )}
 
-      {/* Keyboard shortcuts handler */}
+      {/* Keyboard shortcuts handler - enabled for both tagging and signing modes */}
       <HotkeyHandler
         onUserSwitch={handleUserSwitch}
         onTagTypeSelect={handleTagTypeSelect}
-        enabled={mode === 'tagging'}
+        enabled={mode === 'tagging' || mode === 'signing'}
       />
     </div>
   );
 };
-
-export default PDFTaggingEditor; 

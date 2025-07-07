@@ -1,16 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { toast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { 
   Play, 
   Pause, 
   Square, 
-  Video, 
-  VideoOff, 
-  Mic, 
-  MicOff,
   Users,
   Shield,
   AlertCircle,
@@ -22,7 +18,7 @@ import {
   Keyboard
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/auth';
-import { WebRTCVideoConference } from './WebRTCVideoConference';
+import SimpleVideoConference from './SimpleVideoConference';
 import { PDFTaggingEditor } from './PDFTaggingEditor';
 import { LiveSigningControls } from './LiveSigningControls';
 import { ParticipantPanel } from './ParticipantPanel';
@@ -73,14 +69,15 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   onSessionComplete,
   onTagsChanged
 }) => {
+  // Toast hook
+  const { toast } = useToast();
+  
   // Live signing state
   const [liveSession, setLiveSession] = useState<LiveSessionState>({
     state: 'waiting',
     participants: []
   });
   const [sessionDuration, setSessionDuration] = useState(0);
-  const [isVideoActive, setIsVideoActive] = useState(true);
-  const [isAudioActive, setIsAudioActive] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const [showParticipants, setShowParticipants] = useState(true);
   const [currentDocumentIndex, setCurrentDocumentIndex] = useState(0);
@@ -88,9 +85,59 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   const [missingRequiredTags, setMissingRequiredTags] = useState<DocumentTag[]>([]);
 
   // Get current user role
-  const currentUser = participants.find(p => p.userId === currentUserId);
+  const currentUser = useMemo(() => participants.find(p => p.userId === currentUserId), [participants, currentUserId]);
   const isNotary = currentUser?.userType === 'notary';
   const canControlSession = isNotary || currentUser?.userType === 'admin';
+
+  // Get auth user data as fallback for admin users not in participants list
+  const authUserData = useMemo(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      try {
+        const userData = JSON.parse(storedUser);
+        return userData;
+      } catch (e) {
+        console.error('Error parsing stored user data:', e);
+        return null;
+      }
+    }
+    return null;
+  }, []);
+
+  // Memoize the user object to prevent re-renders
+  const videoUser = useMemo(() => {
+    // First try to get from participants list
+    if (currentUser) {
+      return {
+        id: currentUserId,
+        name: currentUser.displayName,
+        email: currentUser.email || '',
+        role: currentUser.userType
+      };
+    }
+    
+    // Fallback to auth user data (for admin users not in participants)
+    if (authUserData) {
+      const displayName = authUserData.firstName && authUserData.lastName 
+        ? `${authUserData.firstName} ${authUserData.lastName}`
+        : authUserData.username || authUserData.email || 'Unknown User';
+      
+      return {
+        id: currentUserId,
+        name: displayName,
+        email: authUserData.email || '',
+        role: authUserData.role === 'admin' ? 'admin' : 'signer'
+      };
+    }
+    
+    // Last resort fallback
+    return {
+      id: currentUserId,
+      name: 'Unknown User',
+      email: '',
+      role: 'signer'
+    };
+  }, [currentUserId, currentUser, authUserData]);
 
   // Session timer
   useEffect(() => {
@@ -422,68 +469,13 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
       <div className="flex-1 flex overflow-hidden">
         {/* Video Panel */}
         <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
-          {/* Video Controls */}
-          <div className="p-4 border-b border-gray-200">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-medium text-gray-800">Video Conference</h3>
-              <div className="flex gap-2">
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant={isAudioActive ? "default" : "destructive"}
-                        size="sm"
-                        onClick={() => setIsAudioActive(!isAudioActive)}
-                      >
-                        {isAudioActive ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {isAudioActive ? 'Mute' : 'Unmute'} Microphone
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant={isVideoActive ? "default" : "destructive"}
-                        size="sm"
-                        onClick={() => setIsVideoActive(!isVideoActive)}
-                      >
-                        {isVideoActive ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {isVideoActive ? 'Turn Off' : 'Turn On'} Camera
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-            </div>
-          </div>
-
           {/* Video Integration */}
-          <div className="flex-1">
-            <WebRTCVideoConference
-              sessionId={sessionId}
-              currentUser={{
-                id: currentUserId,
-                name: currentUser?.displayName || 'Unknown User',
-                email: currentUser?.email || '',
-                role: currentUser?.userType || 'signer'
-              }}
-              participants={participants}
-              onParticipantJoined={(participant) => {
-                console.log('Participant joined:', participant);
-              }}
-              onParticipantLeft={(participantId) => {
-                console.log('Participant left:', participantId);
-              }}
-              className="h-full"
-            />
-          </div>
+          <SimpleVideoConference
+            sessionId={sessionId}
+            currentUser={videoUser}
+            participants={participants}
+            className="h-full"
+          />
         </div>
 
         {/* Document Editor */}

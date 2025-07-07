@@ -91,6 +91,8 @@ export class TagService {
       }
       
       // Get assigned user info for display
+      console.log('🔍 Looking for assigned user with ID:', request.assignedUserId, 'parsed as:', parseInt(request.assignedUserId));
+      
       const [assignedUser] = await db
         .select()
         .from(users)
@@ -98,6 +100,9 @@ export class TagService {
         .limit(1);
       
       if (!assignedUser) {
+        console.error('❌ Assigned user not found in database. Available users:');
+        const allUsers = await db.select({ id: users.id, username: users.username, firstName: users.firstName }).from(users).limit(10);
+        console.error('Available users:', allUsers);
         throw new Error('Assigned user not found');
       }
       
@@ -299,7 +304,7 @@ export class TagService {
         await db
           .update(editorSessions)
           .set({ 
-            status: 'in_progress',
+            status: 'active',
             updatedAt: new Date()
           })
           .where(eq(editorSessions.id, currentTag.sessionId));
@@ -390,7 +395,7 @@ export class TagService {
         await db
           .update(editorSessions)
           .set({ 
-            status: 'in_progress',
+            status: 'active',
             updatedAt: new Date()
           })
           .where(eq(editorSessions.id, currentTag.sessionId));

@@ -3,6 +3,8 @@ import { cloudStorage, handleCloudFileUpload } from './lib/cloud-storage-service
 import { optimizedStorage } from './lib/optimized-storage-strategy';
 import { db } from './db';
 import { jobDocuments, notaryStamps } from '@shared/schema';
+import fs from 'fs';
+import path from 'path';
 
 export interface VultrUploadResult {
   success: boolean;
@@ -76,10 +78,58 @@ export class VultrUploadHandler {
 
     } catch (error) {
       console.error('Job document upload failed:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Upload failed'
-      };
+      
+      // FALLBACK: Save to local storage if Vultr fails
+      console.warn('🔄 Vultr upload failed, falling back to local storage...');
+      
+      try {
+        // Ensure uploads directory exists
+        const uploadsDir = path.join(process.cwd(), 'uploads');
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        
+        // Generate local file path
+        const timestamp = Date.now();
+        const sanitizedFilename = originalFilename.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const localFilename = `job-${jobId}-${timestamp}-${sanitizedFilename}`;
+        const localPath = path.join(uploadsDir, localFilename);
+        
+        // Write file to local storage
+        fs.writeFileSync(localPath, fileBuffer);
+        
+        // Create job document record with local path
+        await db.insert(jobDocuments).values({
+          jobId,
+          fileName: originalFilename,
+          originalName: originalFilename,
+          filePath: localPath, // Store local path as fallback
+          fileSize: fileBuffer.length,
+          mimeType: this.getContentType(originalFilename),
+          documentType: metadata.documentType || 'original',
+          status: 'uploaded_local', // Mark as local fallback
+          uploadedBy: userId,
+          isRequired: metadata.isRequired || false,
+          signaturePages: []
+        });
+        
+        console.log(`✅ Fallback: Saved document locally: ${localFilename}`);
+        
+        return {
+          success: true,
+          fileKey: localPath,
+          fileUrl: `/uploads/${localFilename}`, // Local URL
+          signedUrl: `/uploads/${localFilename}`,
+          size: fileBuffer.length
+        };
+        
+      } catch (fallbackError) {
+        console.error('Fallback upload also failed:', fallbackError);
+        return {
+          success: false,
+          error: `Both Vultr and local fallback failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+        };
+      }
     }
   }
 

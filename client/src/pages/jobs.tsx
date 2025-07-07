@@ -6,6 +6,7 @@ import { JobTable } from '@/components/job/job-table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useAuthenticatedQuery } from '@/hooks/use-auth';
 import { 
   Briefcase, 
   Calendar, 
@@ -30,10 +31,8 @@ export default function Jobs() {
     setLocation('/create-job');
   };
 
-  // Get jobs data for stats
-  const { data: jobs = [] } = useQuery<Job[]>({
-    queryKey: ['/api/jobs'],
-  });
+  // Get jobs data for stats (only when authenticated)
+  const { data: jobs = [] } = useAuthenticatedQuery<Job[]>(['/api/jobs']);
 
   // Calculate statistics
   const stats = {
@@ -53,10 +52,8 @@ export default function Jobs() {
     }).length
   };
 
-  // Get current user for permissions
-  const { data: currentUser } = useQuery({
-    queryKey: ['/api/auth/me'],
-  });
+  // Get current user for permissions (only when authenticated)
+  const { data: currentUser } = useAuthenticatedQuery(['/api/auth/me']);
 
   const canCreateJob = currentUser && (
     (currentUser as any).isAdmin ||

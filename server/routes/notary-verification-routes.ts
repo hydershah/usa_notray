@@ -2,13 +2,13 @@ import { Router, Request, Response } from 'express';
 import { db } from '../db.js';
 import { users, jobs, jobParticipants } from '../../shared/schema.js';
 import { eq, and, sql, or } from 'drizzle-orm';
-import { verifyToken } from '../auth.js';
+import { verifyToken, hasAdminPrivileges, hasNotaryPrivileges } from '../auth.js';
 
 const router = Router();
 
 // Middleware to ensure only notaries and admins can access these routes
 const requireNotaryOrAdmin = (req: any, res: Response, next: any) => {
-  if (req.user?.role !== 'notary' && req.user?.role !== 'admin') {
+  if (!hasNotaryPrivileges(req.user) && !hasAdminPrivileges(req.user)) {
     return res.status(403).json({ error: 'Notary or admin access required' });
   }
   next();
@@ -192,7 +192,7 @@ router.post('/bypass-verification/:userId/:jobId', verifyToken, requireNotaryOrA
       SELECT can_notary_bypass_verification(${notaryId}, ${userId}, ${jobId}) as can_bypass
     `);
 
-    if (!canBypass.rows[0]?.can_bypass && req.user.role !== 'admin') {
+    if (!canBypass.rows[0]?.can_bypass && !hasAdminPrivileges(req.user)) {
       return res.status(403).json({ error: 'You do not have permission to bypass verification for this participant' });
     }
 
@@ -324,7 +324,7 @@ router.post('/remove-bypass/:userId/:jobId', verifyToken, requireNotaryOrAdmin, 
     }
 
     // Only the notary who bypassed or an admin can remove the bypass
-    if (user[0].notaryVerificationBypassedBy !== notaryId && req.user.role !== 'admin') {
+    if (user[0].notaryVerificationBypassedBy !== notaryId && !hasAdminPrivileges(req.user)) {
       return res.status(403).json({ error: 'Only the notary who bypassed or an admin can remove the bypass' });
     }
 
@@ -385,7 +385,7 @@ router.get('/bypass-log/:jobId?', verifyToken, requireNotaryOrAdmin, async (req:
   try {
     const jobId = req.params.jobId ? parseInt(req.params.jobId) : null;
     const notaryId = (req as any).user.id;
-    const isAdmin = (req as any).user.role === 'admin';
+    const isAdmin = hasAdminPrivileges((req as any).user);
 
     let query = sql`
       SELECT 

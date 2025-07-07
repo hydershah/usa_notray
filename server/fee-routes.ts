@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { feeCalculationService } from "./fee-calculation-service";
 import { db } from "./db";
 import { eq, desc } from "drizzle-orm";
+import { hasAdminPrivileges } from "./auth";
 import { 
   users, 
   feeConfigurations,
@@ -34,7 +35,7 @@ export function registerFeeRoutes(app: Express) {
   // Get fee configurations (admin only)
   app.get('/api/fees/configurations', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -53,7 +54,7 @@ export function registerFeeRoutes(app: Express) {
   // Update fee configuration (admin only)
   app.put('/api/fees/configurations/:id', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -299,7 +300,7 @@ export function registerFeeRoutes(app: Express) {
 
       // Only allow contractors to see their own payments, or admins to see all
       let whereClause;
-      if (req.user.role === 'admin') {
+      if (hasAdminPrivileges(req.user)) {
         whereClause = undefined; // Admin can see all
       } else {
         whereClause = eq(contractorPayments.contractorId, req.user.id);
@@ -334,7 +335,7 @@ export function registerFeeRoutes(app: Express) {
       const { userId, amount, description = 'Manual fund addition' } = req.body;
 
       // Admin only for manual fund addition
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 

@@ -14,6 +14,7 @@ import { auditLoggingService } from "./services/audit-logging-service";
 import { notificationService } from "./notification-service";
 import { verifyToken, hasAdminPrivileges, hasNotaryPrivileges } from "./auth";
 import { cacheAdminData, cacheUserData, cacheCompanyData, cacheJobData } from "./middleware/cache-middleware";
+import { redisCache } from "./services/redis-cache";
 import { eq, and, gte, lte, desc, inArray, sql, or } from "drizzle-orm";
 import { randomNotaryService, NotaryQualifications, TimeSlotRequest } from "./random-notary-service";
 import bcrypt from "bcrypt";
@@ -92,6 +93,13 @@ import fetch from 'node-fetch';
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 
+// Helper function to add an hour to a time string
+function addHourToTime(time: string): string {
+  const [hours, minutes] = time.split(':').map(Number);
+  const newHours = (hours + 1) % 24;
+  return `${newHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+}
+
 // Professional multer configuration optimized for Vultr cloud storage
 const upload = multer({
   storage: multer.memoryStorage(), // Use memory storage for direct cloud uploads
@@ -161,7 +169,14 @@ import {
 export async function registerRoutes(app: Express): Promise<Server> {
   
   // Basic route handlers to prevent 404 errors
-  app.get('/', (req, res) => {
+  // Only serve API response if we're not serving static files
+  app.get('/', (req, res, next) => {
+    // In production with static files, let the static middleware handle this
+    if (process.env.NODE_ENV === 'production' && process.env.SERVE_STATIC_FILES !== 'false') {
+      return next(); // Let static file middleware handle this
+    }
+    
+    // Otherwise serve API information
     res.json({ 
       status: 'ok', 
       message: 'Notary API Server', 
@@ -225,10 +240,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       // Check privileges for frontend
-      const isAdmin = user.role === 'admin' || 
-                     (user.privileges && user.privileges.includes('admin'));
-      const isNotary = user.role === 'notary' || 
-                      (user.privileges && user.privileges.includes('notary'));
+      const isAdmin = hasAdminPrivileges(user);
+      const isNotary = hasNotaryPrivileges(user);
 
       res.json({
         token,
@@ -287,10 +300,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check privileges for frontend
-      const isAdmin = user.role === 'admin' || 
-                     (user.privileges && user.privileges.includes('admin'));
-      const isNotary = user.role === 'notary' || 
-                      (user.privileges && user.privileges.includes('notary'));
+      const isAdmin = hasAdminPrivileges(user);
+      const isNotary = hasNotaryPrivileges(user);
 
       // Get company information for title company users
       let companyInfo = null;
@@ -343,9 +354,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User management routes
   app.get('/api/users', verifyToken, cacheAdminData(300), async (req: any, res) => {
     try {
-      // Check for admin privileges (either role='admin' or privileges includes 'admin')
-      const hasAdminAccess = req.user.role === 'admin' || 
-                           (req.user.privileges && req.user.privileges.includes('admin'));
+      // Check for admin privileges using the utility function
+      const hasAdminAccess = hasAdminPrivileges(req.user);
       
       if (!hasAdminAccess) {
         return res.status(403).json({ message: 'Admin access required' });
@@ -750,6 +760,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'User not found' });
       }
 
+      // Invalidate user-specific cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`user:${userId}:*`);
+        console.log(`🧹 Invalidated cache for user ${userId} after profile update`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after profile update:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+
       res.json(updatedUser);
     } catch (error) {
       console.error('Update user profile error:', error);
@@ -1000,6 +1019,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
         console.log(`✅ Auto-assigned notary ${assignedNotary.firstName} ${assignedNotary.lastName} to job ${job.id}`);
+        
+        // Since the job is auto-approved, send signer invitations immediately
+        try {
+          const { notificationService } = await import('./notification-service');
+          await notificationService.sendSignerInvitations(job.id);
+          console.log(`📧 Signer invitations sent for auto-approved job ${job.id}`);
+        } catch (notificationError) {
+          console.error('Failed to send signer invitations for auto-approved job:', notificationError);
+        }
       }
 
       // Handle additional notary assignment logic for title companies
@@ -1073,14 +1101,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
 
-        // If no preferred notary or preferred notary not available, use random assignment
+        // If no preferred notary available, perform immediate auto assignment
         if (!assignedNotary) {
-          // Update job to mark it for random assignment (will be completed when time is selected)
-          await storage.updateJob(job.id, {
-            isRandomAssignment: true,
-            requiresNSA: jobData.requiresNSA === 'true' || false,
-            requiresSpanishSpeaking: jobData.requiresSpanishSpeaking === 'true' || false
-          });
+          console.log(`🎲 No preferred notary available for ${jobData.titleCompany}, attempting immediate random assignment...`);
+          
+          // Use the enhanced assignment service for immediate auto assignment
+          const { EnhancedAssignmentService } = await import('./enhanced-assignment-service');
+          const assignmentResult = await EnhancedAssignmentService.performAutoAssignment(job.id, jobData.titleCompany);
+          
+          if (assignmentResult.success && assignmentResult.notaryId) {
+            console.log(`✅ Successfully assigned random notary ${assignmentResult.notaryName} to job ${job.id}`);
+            
+            // Update job with the assigned notary
+            await storage.updateJob(job.id, {
+              notaryId: assignmentResult.notaryId,
+              selectedNotary: assignmentResult.notaryId.toString(),
+              isRandomAssignment: true,
+              requiresNSA: jobData.requiresNSA === 'true' || false,
+              requiresSpanishSpeaking: jobData.requiresSpanishSpeaking === 'true' || false,
+              notaryApprovalStatus: assignmentResult.requiresApproval ? 'assigned_pending_approval' : 'approved'
+            });
+            
+            assignedNotary = assignmentResult.notaryId;
+            
+            // Send job assignment notification to notary
+            try {
+              const notificationService = new (await import('./notification-service')).NotificationService();
+              await notificationService.sendJobAssignmentNotification(job.id, assignmentResult.notaryId);
+            } catch (notificationError) {
+              console.error('Failed to send job assignment notification:', notificationError);
+            }
+          } else {
+            console.log(`❌ Auto assignment failed for job ${job.id}: ${assignmentResult.error || 'No available notaries'}`);
+            // Fallback to marking for later assignment
+            await storage.updateJob(job.id, {
+              isRandomAssignment: true,
+              requiresNSA: jobData.requiresNSA === 'true' || false,
+              requiresSpanishSpeaking: jobData.requiresSpanishSpeaking === 'true' || false,
+              notaryApprovalStatus: 'pending_assignment'
+            });
+            console.log(`🎯 Marked job ${job.id} for manual assignment - no available notaries found`);
+          }
         }
       } else if (!assignedNotary && jobData.notaryOption === 'assign' && jobData.selectedNotary) {
         // Manual assignment for title companies
@@ -1278,12 +1339,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Return job with document count
+      // CRITICAL FIX: Get the updated job with assigned notary before returning
+      const finalJob = await storage.getJob(job.id);
       const documentCount = req.files ? req.files.length : 0;
+      
       res.status(201).json({
-        ...job,
+        ...finalJob, // Return the updated job with assigned notary
         documentCount,
-        message: `Job created successfully with ${documentCount} document${documentCount !== 1 ? 's' : ''}`
+        message: `Job created successfully with ${documentCount} document${documentCount !== 1 ? 's' : ''}${finalJob?.assignedNotary ? ` and assigned to ${finalJob.assignedNotary.name}` : ''}`
       });
     } catch (error) {
       console.error('Create job error:', error);
@@ -1310,6 +1373,172 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedJob);
     } catch (error) {
       console.error('Update job status error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Update job schedule and handle auto assignment
+  app.put('/api/jobs/:id/schedule', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      const { selectedDate, selectedTime } = req.body;
+
+      if (!selectedDate || !selectedTime) {
+        return res.status(400).json({ message: 'Both selectedDate and selectedTime are required' });
+      }
+
+      const job = await storage.getJob(jobId);
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      // Check if user has access to update this job
+      if (req.user.role !== 'admin' && req.user.role !== 'title_company' && job.userId !== req.user.id) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      console.log(`🕐 Scheduling job ${jobId} for ${selectedDate} at ${selectedTime}`);
+
+      // Check if this job needs auto assignment
+      if (job.isRandomAssignment && job.notaryOption === 'auto' && !job.notaryId) {
+        console.log(`🎲 Job ${jobId} marked for auto assignment, finding available notaries...`);
+
+        // Use the random notary service to find available notaries for this time slot
+        const randomNotaryService = new (await import('./random-notary-service')).RandomNotaryService();
+        
+        const qualifications = {
+          requiresNSA: job.requiresNSA || false,
+          requiresSpanishSpeaking: job.requiresSpanishSpeaking || false
+        };
+
+        const timeSlot = {
+          date: selectedDate,
+          startTime: selectedTime,
+          endTime: addHourToTime(selectedTime) // Assume 1-hour appointment
+        };
+
+        // Get rejected notaries from job data
+        const excludeIds = job.rejectedNotaries ? job.rejectedNotaries.map((id: string) => parseInt(id)) : [];
+
+        const selectedNotary = await randomNotaryService.selectRandomNotary(qualifications, timeSlot, excludeIds);
+
+        if (selectedNotary) {
+          console.log(`✅ Found available notary: ${selectedNotary.firstName} ${selectedNotary.lastName} for job ${jobId}`);
+          
+          // Use the random notary service to assign the notary (includes calendar booking)
+          const assignmentSuccess = await randomNotaryService.assignNotaryToJob(
+            jobId, 
+            selectedNotary.id, 
+            timeSlot, 
+            'random'
+          );
+
+          if (assignmentSuccess) {
+            // Update the approval status since notary needs to approve the assignment
+            await storage.updateJob(jobId, {
+              notaryApprovalStatus: 'assigned_pending_approval'
+            });
+
+            // Send notification to the assigned notary
+            try {
+              const notificationService = new (await import('./notification-service')).NotificationService();
+              await notificationService.sendJobAssignmentNotification(jobId, selectedNotary.id);
+            } catch (notificationError) {
+              console.error('Failed to send job assignment notification:', notificationError);
+            }
+
+            const updatedJob = await storage.getJob(jobId);
+            return res.json({
+              ...updatedJob,
+              message: `Job scheduled and assigned to ${selectedNotary.firstName} ${selectedNotary.lastName}`,
+              assignedNotary: {
+                id: selectedNotary.id,
+                name: `${selectedNotary.firstName} ${selectedNotary.lastName}`
+              }
+            });
+          } else {
+            console.error(`❌ Failed to assign notary ${selectedNotary.id} to job ${jobId}`);
+            return res.status(500).json({ message: 'Failed to assign notary to job' });
+          }
+        } else {
+          console.log(`❌ No available notaries found for job ${jobId} on ${selectedDate} at ${selectedTime}`);
+          
+          // Update the job with the selected time but no notary
+          const updatedJob = await storage.updateJob(jobId, {
+            selectedDate,
+            selectedTime,
+            notaryApprovalStatus: 'pending_assignment'
+          });
+
+          return res.json({
+            ...updatedJob,
+            message: 'Job scheduled but no notaries available at this time. Please try a different time or assign manually.',
+            requiresManualAssignment: true
+          });
+        }
+      } else {
+        // Regular schedule update for jobs that already have a notary or don't need auto assignment
+        const updatedJob = await storage.updateJob(jobId, {
+          selectedDate,
+          selectedTime
+        });
+
+        // If job already has a notary, update their calendar
+        if (job.notaryId) {
+          try {
+            const startDateTime = new Date(`${selectedDate} ${selectedTime}`);
+            const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour duration
+            
+            // Check if calendar event already exists
+            const existingEvent = await db
+              .select()
+              .from(calendarEvents)
+              .where(
+                and(
+                  eq(calendarEvents.jobId, jobId),
+                  eq(calendarEvents.notaryId, job.notaryId)
+                )
+              )
+              .limit(1);
+
+            if (existingEvent.length > 0) {
+              // Update existing calendar event
+              await db
+                .update(calendarEvents)
+                .set({
+                  startDateTime,
+                  endDateTime,
+                  title: `Notarization Job #${jobId}`,
+                  description: `Job for ${job.titleCompany} - ${job.closingType}\nProperty: ${job.propertyAddressOne}, ${job.propertyCity}, ${job.propertyState}`,
+                  location: `${job.propertyAddressOne}, ${job.propertyCity}, ${job.propertyState} ${job.propertyZipCode}`
+                })
+                .where(eq(calendarEvents.id, existingEvent[0].id));
+            } else {
+              // Create new calendar event
+              await db.insert(calendarEvents).values({
+                notaryId: job.notaryId,
+                title: `Notarization Job #${jobId}`,
+                description: `Job for ${job.titleCompany} - ${job.closingType}\nProperty: ${job.propertyAddressOne}, ${job.propertyCity}, ${job.propertyState}`,
+                startDateTime,
+                endDateTime,
+                location: `${job.propertyAddressOne}, ${job.propertyCity}, ${job.propertyState} ${job.propertyZipCode}`,
+                eventType: 'job',
+                jobId: jobId,
+                isAllDay: false
+              });
+            }
+          } catch (calendarError) {
+            console.warn('Failed to update calendar event:', calendarError);
+          }
+        }
+
+        res.json({
+          ...updatedJob,
+          message: 'Job schedule updated successfully'
+        });
+      }
+    } catch (error) {
+      console.error('Update job schedule error:', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   });
@@ -1499,7 +1728,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         expiredJobs: jobs.filter(job => job.jobStatus === 'expired').length,
       };
 
-      if (req.user.role === 'admin') {
+      if (hasAdminPrivileges(req.user)) {
         const notaries = await storage.getNotaryUsers();
         stats.activeNotaries = notaries.length;
       }
@@ -4122,12 +4351,15 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
   // Email Settings API Routes
   app.get('/api/settings/email', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
       const settingsData = await db.select().from(systemSettings).where(
         inArray(systemSettings.key, [
+          'email_provider',
+          'postmark_api_key', 'postmark_from_email', 'postmark_from_name',
+          'postmark_track_opens', 'postmark_track_links', 'postmark_message_stream',
           'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 
           'smtp_secure', 'from_email', 'from_name'
         ])
@@ -4135,8 +4367,8 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
 
       const settings: any = {};
       settingsData.forEach(setting => {
-        // Don't expose password in plain text
-        if (setting.key === 'smtp_pass') {
+        // Don't expose passwords/keys in plain text
+        if (setting.key === 'smtp_pass' || setting.key === 'postmark_api_key') {
           settings[setting.key] = setting.value ? '••••••••' : '';
         } else {
           settings[setting.key] = setting.value;
@@ -4152,13 +4384,25 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
 
   app.put('/api/settings/email', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
-      const { smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure, from_email, from_name } = req.body;
+      const { 
+        email_provider,
+        postmark_api_key, postmark_from_email, postmark_from_name,
+        postmark_track_opens, postmark_track_links, postmark_message_stream,
+        smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure, 
+        from_email, from_name 
+      } = req.body;
 
       const emailSettings = [
+        { key: 'email_provider', value: email_provider, description: 'Email provider preference' },
+        { key: 'postmark_from_email', value: postmark_from_email, description: 'Postmark from email address' },
+        { key: 'postmark_from_name', value: postmark_from_name, description: 'Postmark from display name' },
+        { key: 'postmark_track_opens', value: postmark_track_opens, description: 'Postmark track email opens' },
+        { key: 'postmark_track_links', value: postmark_track_links, description: 'Postmark track links' },
+        { key: 'postmark_message_stream', value: postmark_message_stream, description: 'Postmark message stream' },
         { key: 'smtp_host', value: smtp_host, description: 'SMTP server hostname' },
         { key: 'smtp_port', value: smtp_port, description: 'SMTP server port' },
         { key: 'smtp_user', value: smtp_user, description: 'SMTP username/email' },
@@ -4167,7 +4411,15 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
         { key: 'from_name', value: from_name, description: 'From display name' }
       ];
 
-      // Only update password if it's not the masked value
+      // Only update passwords/keys if they're not the masked values
+      if (postmark_api_key && postmark_api_key !== '••••••••') {
+        emailSettings.push({ 
+          key: 'postmark_api_key', 
+          value: postmark_api_key, 
+          description: 'Postmark API key' 
+        });
+      }
+      
       if (smtp_pass && smtp_pass !== '••••••••') {
         emailSettings.push({ 
           key: 'smtp_pass', 
@@ -4215,7 +4467,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
 
   app.post('/api/settings/email/test', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -4285,6 +4537,33 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
     } catch (error) {
       console.error('Resend invitation error:', error);
       res.status(500).json({ message: 'Failed to resend invitation' });
+    }
+  });
+
+  // Test endpoint to send all signer invitations for a job
+  app.post('/api/jobs/:id/send-invitations', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      // Import notification service
+      const { notificationService } = await import('./notification-service');
+      
+      // Send all signer invitations for this job
+      await notificationService.sendSignerInvitations(jobId);
+
+      res.json({ 
+        message: `Signer invitations sent successfully for job ${jobId}` 
+      });
+    } catch (error) {
+      console.error('Send invitations error:', error);
+      res.status(500).json({ 
+        message: 'Failed to send invitations',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
@@ -4921,14 +5200,31 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
     }
   });
 
-  // Get session state and participants
-  app.get('/api/session/:sessionId/state', verifyToken, cacheJobData(60), async (req: any, res) => {
+  // Get session state and participants - OPTIMIZED VERSION
+  app.get('/api/session/:sessionId/state', verifyToken, cacheJobData(30), async (req: any, res) => {
+    const startTime = Date.now();
+    
     try {
       const { sessionId } = req.params;
+
+      console.log(`📡 Session state request for: ${sessionId} by user ${req.user.id}`);
 
       const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
       
       const sessionState = await LiveSigningSessionService.getSessionState(sessionId);
+      
+      const duration = Date.now() - startTime;
+      
+      if (duration > 1000) {
+        console.log(`🐌 SLOW REQUEST: {
+  method: 'GET',
+  url: '/api/session/${sessionId}/state',
+  duration: '${duration}ms',
+  statusCode: 200,
+  requestId: 'req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}',
+  userId: ${req.user.id}
+}`);
+      }
       
       res.json({
         success: true,
@@ -4936,7 +5232,8 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
       });
       
     } catch (error) {
-      console.error('Get session state error:', error);
+      const duration = Date.now() - startTime;
+      console.error('Get session state error:', error, `(${duration}ms)`);
       res.status(500).json({ 
         message: error instanceof Error ? error.message : 'Failed to get session state',
         error: 'get_session_state_failed'
@@ -5076,7 +5373,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
         console.log(`⚠️ Job ${jobId} has no notary assigned. Attempting auto-assignment...`);
         
         // Auto-assign notary if current user can be the notary
-        if (req.user.role === 'admin' || 
+        if (hasAdminPrivileges(req.user) || 
             (req.user.role === 'notary' && req.user.notaryType === 'subscriber')) {
           
           await db
@@ -5236,6 +5533,51 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
     }
   });
 
+  // Get existing sessions for a job
+  app.get('/api/jobs/:jobId/sessions', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.jobId);
+      
+      if (!jobId || isNaN(jobId)) {
+        return res.status(400).json({ message: 'Invalid job ID' });
+      }
+      
+      // Query editor_sessions table for this job
+      const existingSessions = await db
+        .select()
+        .from(editorSessions)
+        .where(eq(editorSessions.jobId, jobId))
+        .orderBy(desc(editorSessions.createdAt));
+      
+      // Convert to the expected format with sessionId as id for frontend compatibility
+      const formattedSessions = existingSessions.map(session => ({
+        id: session.sessionId, // Use sessionId as the id field for frontend
+        dbId: session.id, // Keep database ID for reference
+        jobId: session.jobId,
+        sessionType: session.sessionType,
+        status: session.status,
+        notaryId: session.notaryId,
+        videoSessionId: session.videoSessionId,
+        createdAt: session.createdAt,
+        startedAt: session.startedAt,
+        completedAt: session.completedAt,
+        updatedAt: session.updatedAt
+      }));
+      
+      res.json({
+        sessions: formattedSessions,
+        count: formattedSessions.length
+      });
+      
+    } catch (error) {
+      console.error('Get job sessions error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to get sessions',
+        error: 'sessions_fetch_failed'
+      });
+    }
+  });
+
   // Cancel editor session
   app.delete('/api/editor/session/:sessionId', verifyToken, async (req: any, res) => {
     try {
@@ -5268,6 +5610,16 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
     try {
       const { sessionId } = req.params;
       const { documentId, tagType, coordinates, assignedUserId } = req.body;
+      
+      console.log('🏷️ Place tag request received:', {
+        sessionId,
+        documentId,
+        tagType,
+        coordinates,
+        assignedUserId: assignedUserId,
+        requestUserId: req.user.id,
+        finalAssignedUserId: assignedUserId || req.user.id
+      });
       
       if (!documentId || !tagType || !coordinates) {
         return res.status(400).json({ message: 'Missing required fields' });
@@ -5394,6 +5746,159 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
       res.status(500).json({ 
         message: error instanceof Error ? error.message : 'Failed to replace tags',
         error: 'replace_all_failed'
+      });
+    }
+  });
+
+  // Replace individual tag with content (for click-to-convert during signing)
+  app.put('/api/editor/session/:sessionId/tag/:tagId/content', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId, tagId } = req.params;
+      const { content, contentType = 'text' } = req.body;
+      
+      const { TagService } = await import('./services/editor/TagService');
+      
+      // Update tag with actual content and mark as completed
+      const updatedTag = await TagService.updateTag(tagId, {
+        content,
+        contentType,
+        contentData: JSON.stringify({ type: contentType, value: content }),
+        isCompleted: true,
+        completedBy: req.user.id,
+        completedAt: new Date()
+      });
+      
+      res.json({
+        success: true,
+        tag: updatedTag,
+        message: 'Tag content updated successfully'
+      });
+      
+    } catch (error) {
+      console.error('Update tag content error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to update tag content',
+        error: 'tag_content_update_failed'
+      });
+    }
+  });
+
+  // Get default content for a tag (auto-fill functionality)
+  app.get('/api/editor/session/:sessionId/tag/:tagId/default-content', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId, tagId } = req.params;
+      
+      const { TagService } = await import('./services/editor/TagService');
+      
+      // Get tag details and generate default content
+      const tags = await TagService.getSessionTags(sessionId);
+      const tag = tags.find(t => t.id === tagId);
+      
+      if (!tag) {
+        return res.status(404).json({ message: 'Tag not found' });
+      }
+      
+      // Get user profile for content generation
+      const userId = tag.assignedUserId || req.user.id;
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, parseInt(userId)))
+        .limit(1);
+      
+      if (!user) {
+        return res.status(404).json({ message: 'User profile not found' });
+      }
+      
+      let defaultContent = '';
+      let contentType = 'text';
+      
+      // Generate content based on tag type
+      switch (tag.tagType) {
+        case 'A': // Name
+          defaultContent = user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim();
+          break;
+        case 'S': // Signature
+          defaultContent = user.signatureImage || user.signatureData || user.signatureTyped || '';
+          contentType = 'signature';
+          break;
+        case 'I': // Initials
+          defaultContent = user.initialsImage || user.initialData || user.initialsTyped || 
+                          (user.firstName && user.lastName ? `${user.firstName.charAt(0)}${user.lastName.charAt(0)}` : '');
+          contentType = user.initialsImage || user.initialData ? 'signature' : 'text';
+          break;
+        case 'D': // Date
+          defaultContent = new Date().toLocaleDateString();
+          contentType = 'date';
+          break;
+        case 'N': // Commission Number
+          defaultContent = user.commissionNumber || '';
+          break;
+        case 'X': // Commission Expiration
+          defaultContent = user.commissionExpiration || '';
+          contentType = 'date';
+          break;
+        case 'O': // Disclosure
+          defaultContent = user.disclosure || '';
+          break;
+        case 'T': // Text
+          defaultContent = '';
+          break;
+        default:
+          defaultContent = '';
+      }
+      
+      res.json({
+        success: true,
+        content: defaultContent,
+        contentType,
+        hasContent: !!defaultContent,
+        tagType: tag.tagType
+      });
+      
+    } catch (error) {
+      console.error('Get default content error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to get default content',
+        error: 'default_content_failed'
+      });
+    }
+  });
+
+  // Update tag content (for live signing sessions)
+  app.put('/api/editor/session/:sessionId/tag/:tagId/content', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId, tagId } = req.params;
+      const { content, contentType, completedBy, completedAt } = req.body;
+      
+      if (!content) {
+        return res.status(400).json({ message: 'Content is required' });
+      }
+      
+      const { TagService } = await import('./services/editor/TagService');
+      
+      // Update tag with content
+      const tag = await TagService.updateTag(tagId, {
+        content: typeof content === 'string' ? content : JSON.stringify(content),
+        contentType: contentType || 'text',
+        contentData: typeof content === 'object' ? JSON.stringify(content) : content,
+        isCompleted: true,
+        completedBy: completedBy || req.user.id,
+        completedAt: completedAt ? new Date(completedAt) : new Date(),
+        updatedBy: req.user.id
+      });
+      
+      res.json({
+        success: true,
+        tag,
+        message: 'Tag content updated successfully'
+      });
+      
+    } catch (error) {
+      console.error('Update tag content error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to update tag content',
+        error: 'tag_content_update_failed'
       });
     }
   });
@@ -5692,7 +6197,40 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
             const fileExists = await cloudStorage.fileExists(filePath);
             if (!fileExists) {
               console.log('📄 File not found in Vultr:', filePath);
-              return res.status(404).json({ message: 'Document not found in cloud storage' });
+              
+              // Try local fallback before returning 404
+              console.log('📄 Checking for local fallback...');
+              const possibleLocalPaths = [
+                path.join('uploads', filePath),
+                path.join(__dirname, '..', 'uploads', filePath),
+                filePath,
+                // Additional fallback patterns for development files
+                path.join('uploads', 'development', path.basename(filePath)),
+                path.join('uploads', 'documents', path.basename(filePath))
+              ];
+              
+              for (const localPath of possibleLocalPaths) {
+                if (fs.existsSync(localPath)) {
+                  console.log('📄 Found local fallback:', localPath);
+                  res.setHeader('Content-Type', 'application/pdf');
+                  res.setHeader('Cache-Control', 'private, max-age=300');
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+                  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+                  res.setHeader('X-Served-From', 'local-fallback');
+                  return res.sendFile(path.resolve(localPath));
+                }
+              }
+              
+              // No file found anywhere, return proper error response
+              console.error('📄 Document not found in any storage location:', filePath);
+              res.setHeader('Content-Type', 'application/json');
+              return res.status(404).json({ 
+                error: 'Document not found',
+                message: 'The requested document could not be found in cloud or local storage.',
+                filePath: filePath,
+                timestamp: new Date().toISOString()
+              });
             }
             
             // Generate signed URL and redirect (100-200ms)
@@ -5721,7 +6259,10 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
             const possibleLocalPaths = [
               path.join('uploads', filePath),
               path.join(__dirname, '..', 'uploads', filePath),
-              filePath
+              filePath,
+              // Additional fallback patterns for development files
+              path.join('uploads', 'development', path.basename(filePath)),
+              path.join('uploads', 'documents', path.basename(filePath))
             ];
             
             for (const localPath of possibleLocalPaths) {
@@ -5737,10 +6278,15 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
               }
             }
             
-            // No fallback found, return error
-            return res.status(500).json({ 
-              message: 'Failed to access document in cloud storage',
-              error: 'vultr_access_failed'
+            // No fallback found, return proper error response
+            console.error('📄 Document not found in any storage location:', filePath);
+            res.setHeader('Content-Type', 'application/json');
+            return res.status(404).json({ 
+              error: 'Document not found',
+              message: 'The requested document could not be found in cloud or local storage.',
+              filePath: filePath,
+              vultrError: vultrError instanceof Error ? vultrError.message : 'Unknown Vultr error',
+              timestamp: new Date().toISOString()
             });
           }
         }
@@ -5750,7 +6296,13 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
         
         if (!fs.existsSync(fullPath)) {
           console.log('📄 Local file not found:', fullPath);
-          return res.status(404).json({ message: 'Document not found on disk' });
+          res.setHeader('Content-Type', 'application/json');
+          return res.status(404).json({ 
+            error: 'Document not found',
+            message: 'The requested local document could not be found.',
+            filePath: filePath,
+            timestamp: new Date().toISOString()
+          });
         }
         
         // Set proper headers for PDF viewing including CORS
@@ -5766,7 +6318,12 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
       
     } catch (error) {
       console.error('📄 Document serving error:', error);
-      res.status(500).json({ message: 'Failed to serve document' });
+      res.setHeader('Content-Type', 'application/json');
+      res.status(500).json({ 
+        error: 'Internal server error',
+        message: 'Failed to serve document due to server error.',
+        timestamp: new Date().toISOString()
+      });
     }
   });
 
@@ -5922,6 +6479,54 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
     } catch (error) {
       console.error('Error generating log export:', error);
       res.status(500).json({ error: 'Failed to generate log export' });
+    }
+  });
+
+  // WebRTC diagnostic endpoint
+  app.get('/api/webrtc/diagnostics', verifyToken, async (req: any, res) => {
+    try {
+      const diagnostics = {
+        server: {
+          nodeVersion: process.version,
+          platform: process.platform,
+          environment: process.env.NODE_ENV,
+          timestamp: new Date().toISOString()
+        },
+        webrtc: {
+          signalingServerRunning: true,
+          socketIOPath: '/video-signaling/socket.io',
+          corsOrigins: process.env.NODE_ENV === 'production' 
+            ? [process.env.CLIENT_URL || "https://your-domain.com"]
+            : ["http://localhost:3000", "http://localhost:3002", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:3002"],
+          iceServers: [
+            {
+              urls: [
+                'stun:stun.l.google.com:19302',
+                'stun:stun1.l.google.com:19302',
+                'stun:stun2.l.google.com:19302'
+              ]
+            }
+          ]
+        },
+        authentication: {
+          jwtSecret: process.env.JWT_SECRET ? 'configured' : 'missing',
+          userId: req.user.id,
+          userRole: req.user.role
+        }
+      };
+
+      console.log('WebRTC diagnostics requested by user:', req.user.id);
+      
+      res.json({
+        success: true,
+        diagnostics
+      });
+    } catch (error) {
+      console.error('WebRTC diagnostics error:', error);
+      res.status(500).json({ 
+        message: 'Failed to get WebRTC diagnostics',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 

@@ -6,7 +6,7 @@ import { TAG_TYPE_INFO, USER_COLORS } from '../../types/editor';
 interface TaggingToolbarProps {
   participants?: SessionParticipant[];
   sessionId?: string;
-  mode?: 'tagging' | 'notary';
+  mode?: 'tagging' | 'notary' | 'signing';
   onDocumentSwitch?: (document: any) => void;
   onSessionComplete?: () => void;
   className?: string;
@@ -275,12 +275,22 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
     <div className={`bg-white rounded-lg flex flex-col ${className}`}>
       {/* Fixed Header */}
       <div className="p-4 border-b">
-        <h2 className="text-lg font-semibold text-gray-900">Tag Placement</h2>
+        <h2 className="text-lg font-semibold text-gray-900">
+          {mode?.mode === 'signing' ? 'Document Tags & Content' : 'Tag Placement'}
+        </h2>
         <p className="text-sm text-gray-600">
-          Place tags on the document for signers
+          {mode?.mode === 'signing' 
+            ? 'Add more tags or complete existing tags with content'
+            : 'Place tags on the document for signers'
+          }
         </p>
         <div className="mt-2 text-sm text-gray-700">
           <span className="font-medium">{tags.length}</span> tags placed
+          {mode?.mode === 'signing' && (
+            <span className="ml-2 text-blue-600">
+              • {tags.filter(t => t.isCompleted).length} completed
+            </span>
+          )}
         </div>
       </div>
 

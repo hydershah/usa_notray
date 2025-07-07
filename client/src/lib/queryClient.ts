@@ -74,13 +74,29 @@ export const getQueryFn: <T>(options: {
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
     const token = localStorage.getItem('token');
+    
+    // For authenticated endpoints, don't make request if no token
+    const url = queryKey[0] as string;
+    const isAuthenticatedEndpoint = url.includes('/api/auth/me') || 
+                                   url.includes('/api/users') ||
+                                   url.includes('/api/admin') ||
+                                   url.includes('/api/jobs') ||
+                                   url.includes('/api/companies') ||
+                                   url.includes('/api/notary');
+    
+    if (isAuthenticatedEndpoint && !token) {
+      // Return null for authenticated endpoints when no token is available
+      // This prevents unnecessary 401 requests
+      return null;
+    }
+    
     const headers: Record<string, string> = {};
     
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const res = await fetch(queryKey[0] as string, {
+    const res = await fetch(url, {
       headers,
       credentials: "include",
     });

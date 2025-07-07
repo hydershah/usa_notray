@@ -60,6 +60,7 @@ import {
   Signer
 } from "@shared/schema";
 import { db, pool } from "./db";
+import { hasAdminPrivileges } from "./auth";
 import bcrypt from "bcrypt";
 
 export interface IStorage {
@@ -502,7 +503,43 @@ export class DatabaseStorage implements IStorage {
   // Job operations
   async getJob(id: number): Promise<Job | undefined> {
     const [job] = await db.select().from(jobs).where(eq(jobs.id, id));
-    return job || undefined;
+    if (!job) return undefined;
+
+    // If a notary is assigned, fetch their details
+    let assignedNotary = null;
+    const notaryId = job.notaryId || (job.selectedNotary ? parseInt(job.selectedNotary) : null);
+    
+    if (notaryId) {
+      const [notary] = await db
+        .select({
+          id: users.id,
+          username: users.username,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+          notaryIdCode: users.notaryIdCode,
+          isActive: users.isActive
+        })
+        .from(users)
+        .where(eq(users.id, notaryId));
+      
+      if (notary) {
+        assignedNotary = {
+          id: notary.id,
+          name: notary.firstName && notary.lastName 
+            ? `${notary.firstName} ${notary.lastName}` 
+            : notary.username,
+          notaryIdCode: notary.notaryIdCode,
+          email: notary.email,
+          isActive: notary.isActive
+        };
+      }
+    }
+
+    return {
+      ...job,
+      assignedNotary
+    };
   }
 
   async createJob(insertJob: InsertJob): Promise<Job> {
@@ -536,6 +573,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getRoleBasedJobs(userId: number, role: string): Promise<Job[]> {
+    // For this method, we still need to check the role string since it's passed as a parameter
     if (role === 'admin') {
       return await this.getJobs();
     } else if (role === 'notary') {
@@ -593,7 +631,7 @@ export class DatabaseStorage implements IStorage {
       const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId));
       const [user] = await db.select().from(users).where(eq(users.id, userId));
       
-      return job?.userId === userId || user?.role === 'admin' || job?.selectedNotary === user?.username;
+      return job?.userId === userId || (user && hasAdminPrivileges(user)) || job?.selectedNotary === user?.username;
     }
     
     // Check if participant has accepted the invitation

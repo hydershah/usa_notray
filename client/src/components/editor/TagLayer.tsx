@@ -1,7 +1,8 @@
-import React, { useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useCallback, useRef, useEffect, useState, useMemo } from 'react';
 import { Rnd } from 'react-rnd';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
-import type { DocumentTag, TagCoordinates } from '../../types/editor';
+import { DocumentTag, TagCoordinates, DocumentMode } from '../../types/editor';
+import { useToast } from '../../hooks/use-toast';
 import DraggableTag from './DraggableTag';
 
 const TAG_TYPE_INFO = {
@@ -35,6 +36,7 @@ interface TagRendererProps {
   onSelect: () => void;
   onUpdate: (updates: Partial<TagCoordinates>) => void;
   onDelete: () => void;
+  onTagClick?: (tag: DocumentTag) => void; // Add click handler for content conversion
 }
 
 interface TagLayerProps {
@@ -43,6 +45,12 @@ interface TagLayerProps {
   canvasElement: HTMLCanvasElement;
   containerRef: React.RefObject<HTMLDivElement>;
   scaleFactor: number; // Actual scale factor from PDF rendering
+  mode: DocumentMode;
+  onCoordinateClick?: (x: number, y: number, pageNumber: number) => void;
+  liveSessionState?: {
+    activeUserId?: number;
+    state?: string;
+  };
 }
 
 const TagRenderer: React.FC<TagRendererProps> = ({
@@ -52,7 +60,8 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   scaleFactor, // Now using the actual scale factor
   onSelect,
   onUpdate,
-  onDelete
+  onDelete,
+  onTagClick
 }) => {
   const { mode, selectedUser, currentUser, session } = useEditorStore();
   
@@ -247,35 +256,40 @@ const TagRenderer: React.FC<TagRendererProps> = ({
     } else if (mode.mode === 'signing') {
       // In live signing mode, show interactive input or completed content
       if (tag.isCompleted && tag.contentData) {
-        // Show completed content
+        // Show completed content as plain text/image without any styling
+        const contentData = typeof tag.contentData === 'string' ? 
+          JSON.parse(tag.contentData) : tag.contentData;
+        
         return (
-          <div className="w-full h-full flex items-center justify-center bg-green-50 border border-green-200 rounded">
-            <div className="text-center p-1">
-              <div className="flex items-center gap-1 justify-center mb-1">
-                <span className="text-xs text-green-600">✓</span>
-                <span className="text-xs font-medium text-green-700">Completed</span>
+          <div className="w-full h-full flex items-center justify-center">
+            {contentData.type === 'signature' ? (
+              <img 
+                src={contentData.value} 
+                alt="Signature" 
+                className="max-h-full max-w-full object-contain"
+                style={{ 
+                  filter: 'none',
+                  maxHeight: '100%',
+                  maxWidth: '100%'
+                }}
+              />
+            ) : (
+              <div 
+                className="text-black w-full h-full flex items-center justify-center p-1"
+                style={{ 
+                  fontSize: Math.max(10, Math.min(16, tag.coordinates.height * 0.6)),
+                  lineHeight: '1.2',
+                  wordBreak: 'break-word',
+                  fontFamily: 'inherit'
+                }}
+              >
+                {typeof contentData.value === 'string' ? contentData.value : JSON.stringify(contentData.value)}
               </div>
-              <div className="text-xs text-green-600 truncate max-w-full">
-                {tag.contentData.type === 'signature' ? (
-                  <img 
-                    src={tag.contentData.value} 
-                    alt="Signature" 
-                    className="max-h-6 max-w-full object-contain mx-auto"
-                    style={{ filter: 'hue-rotate(220deg) brightness(0.8)' }}
-                  />
-                ) : (
-                  typeof tag.contentData.value === 'string' 
-                    ? tag.contentData.value.length > 15 
-                      ? `${tag.contentData.value.substring(0, 15)}...` 
-                      : tag.contentData.value
-                    : 'Content'
-                )}
-              </div>
-            </div>
+            )}
           </div>
         );
       } else {
-        // Show clickable placeholder that will trigger interactive input
+        // Incomplete tag - show clickable placeholder for content conversion
         const tagInfo = TAG_TYPE_INFO[tag.tagType];
         const isCurrentUserTag = currentUser && (
           tag.assignedUserId === currentUser.userId || 
@@ -285,28 +299,17 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         
         return (
           <div 
-            className={`
-              w-full h-full flex items-center justify-center border-2 border-dashed rounded
-              ${isCurrentUserTag 
-                ? 'border-blue-400 bg-blue-50 hover:bg-blue-100 cursor-pointer' 
-                : 'border-gray-300 bg-gray-50 cursor-not-allowed opacity-60'
-              }
-              transition-colors duration-200
-            `}
-            onClick={(e) => {
-              if (isCurrentUserTag) {
-                e.stopPropagation();
-                // This will be handled by the parent to show interactive input
-                onSelect();
-              }
-            }}
+            className="w-full h-full flex items-center justify-center bg-blue-100 border-2 border-blue-300 rounded cursor-pointer hover:bg-blue-200 transition-colors"
+            onClick={() => onTagClick ? onTagClick(tag) : onSelect()}
           >
             <div className="text-center p-1">
-              <span className="text-lg mb-1 block">{tagInfo.icon}</span>
-              <span className="text-xs font-medium text-gray-700 block">
+              <div className="flex items-center gap-1 justify-center mb-1">
+                <span className="text-lg">{tagInfo.icon}</span>
+              </div>
+              <span className="text-xs font-medium text-blue-700 block">
                 Click to {['S', 'I'].includes(tag.tagType) ? 'apply' : 'enter'}
               </span>
-              <span className="text-xs text-gray-500">{tagInfo.label}</span>
+              <span className="text-xs text-blue-600">{tagInfo.label}</span>
             </div>
           </div>
         );
@@ -337,7 +340,11 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       enableResizing={canModifyTag && isSelected}
       onClick={(e) => {
         e.stopPropagation();
-        onSelect();
+        if (onTagClick && mode.mode === 'signing' && !tag.isCompleted) {
+          onTagClick(tag);
+        } else {
+          onSelect();
+        }
       }}
       onKeyDown={handleKeyDown}
       tabIndex={0}
@@ -348,14 +355,22 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         ${mode.showPlaceholders || !tag.isCompleted ? 'opacity-90' : 'opacity-100'}
       `}
       style={{
-        backgroundColor: 'rgba(255, 255, 255, 0.95)',
-        border: `2px solid ${tag.colorCode || userColor}`,
-        borderRadius: '6px',
+        backgroundColor: tag.isCompleted && mode.mode === 'signing' 
+          ? 'transparent' // No background for completed tags in signing mode
+          : 'rgba(255, 255, 255, 0.95)',
+        border: tag.isCompleted && mode.mode === 'signing' 
+          ? 'none' // No border for completed tags in signing mode
+          : `2px solid ${tag.colorCode || userColor}`,
+        borderRadius: tag.isCompleted && mode.mode === 'signing' ? '0' : '6px',
         zIndex: isSelected ? 1000 : 100,
-        boxShadow: isSelected 
+        boxShadow: tag.isCompleted && mode.mode === 'signing'
+          ? 'none' // No shadow for completed tags
+          : isSelected 
           ? `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${(tag.colorCode || userColor)}20` 
           : '0 2px 4px rgba(0,0,0,0.1)',
-        color: tag.colorCode || userColor
+        color: tag.isCompleted && mode.mode === 'signing' 
+          ? '#000000' // Black text for completed content in signing mode
+          : tag.colorCode || userColor
       }}
       resizeHandleStyles={{
         bottomRight: {
@@ -403,26 +418,78 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   );
 };
 
-export const TagLayer: React.FC<TagLayerProps> = ({
+export const TagLayer: React.FC<TagLayerProps> = ({ 
   documentId,
   pageNumber,
   canvasElement,
   containerRef,
-  scaleFactor // Use the actual scale factor passed from PDF rendering
+  scaleFactor,
+  mode,
+  onCoordinateClick,
+  liveSessionState
 }) => {
   const layerRef = useRef<HTMLDivElement>(null);
   
   const {
     tags,
     selectedTag,
-    mode,
-    viewer,
     updateTag,
     deleteTag,
     selectTag,
     currentUser,
-    session
+    session,
   } = useEditorStore();
+
+  const { toast } = useToast();
+
+  // Permission checking for tag interactions - FIXED VERSION
+  const canUserInteractWithTags = useCallback(() => {
+    if (!currentUser) {
+      console.log('❌ No current user');
+      return false;
+    }
+    
+    // Notary has full control - can always interact
+    if (currentUser.role === 'notary' || currentUser.userType === 'notary') {
+      console.log('✅ User is notary - full permissions');
+      return true;
+    }
+    
+    // In signing mode with live session, check active user status
+    if (mode.mode === 'signing' && liveSessionState) {
+      // Check if user is the active user (handle both string and number IDs)
+      const currentUserIdStr = currentUser.userId?.toString();
+      const activeUserIdStr = liveSessionState.activeUserId?.toString();
+      const isActiveUser = currentUserIdStr === activeUserIdStr;
+      
+      console.log('🔐 Permission check:', {
+        currentUserId: currentUser.userId,
+        currentUserIdStr,
+        activeUserId: liveSessionState.activeUserId,
+        activeUserIdStr,
+        isActiveUser,
+        userType: currentUser.userType || currentUser.role,
+        sessionState: liveSessionState.state
+      });
+      
+      if (!isActiveUser) {
+        console.log('❌ User is not the active user in live session');
+        return false;
+      }
+      
+      console.log('✅ User is active user - can interact');
+      return true;
+    }
+    
+    // In tagging mode, users with edit permissions can interact
+    if (mode.mode === 'tagging' && mode.canPlaceTags) {
+      console.log('✅ Tagging mode with place permissions');
+      return true;
+    }
+    
+    console.log('❌ No interaction permissions');
+    return false;
+  }, [currentUser, mode, liveSessionState]);
 
   const handleUpdateTag = (tagId: string, coordinates: any) => {
     updateTag(tagId, { coordinates });
@@ -506,7 +573,6 @@ export const TagLayer: React.FC<TagLayerProps> = ({
     if (!session) return;
     
     try {
-      // Delete from server first
       const response = await fetch(`/api/editor/session/${session.id}/tag/${tagId}`, {
         method: 'DELETE',
         headers: {
@@ -518,15 +584,163 @@ export const TagLayer: React.FC<TagLayerProps> = ({
         throw new Error(`Failed to delete tag: ${response.statusText}`);
       }
       
-      // Update local state
       deleteTag(tagId);
-      console.log('✅ Tag deleted successfully');
+      console.log('✅ Tag deleted from server');
       
     } catch (error) {
       console.error('❌ Failed to delete tag:', error);
       // TODO: Show error toast
     }
   }, [session, deleteTag]);
+
+  // Handle tag click for content conversion during signing - FIXED VERSION
+  const handleTagClick = useCallback(async (tag: DocumentTag) => {
+    console.log('🏷️ Tag clicked for content conversion:', {
+      tagId: tag.id,
+      tagType: tag.tagType,
+      isCompleted: tag.isCompleted,
+      mode: mode.mode,
+      currentUser: currentUser?.userId,
+      assignedUserId: tag.assignedUserId,
+      canInteractGeneral: canUserInteractWithTags()
+    });
+
+    // Check general permissions first
+    if (!canUserInteractWithTags()) {
+      console.log('❌ User cannot interact with tags - not active or not notary');
+      toast({
+        variant: "destructive",
+        title: "Cannot Edit Tag",
+        description: "You are not the active user. Ask the notary to activate you with keyboard shortcuts."
+      });
+      return;
+    }
+
+    if (mode.mode !== 'signing' || tag.isCompleted) {
+      // For non-signing modes or completed tags, just select if user has permissions
+      console.log('👆 Not signing mode or already completed, just selecting tag');
+      handleTagSelect(tag);
+      return;
+    }
+
+    // Check if user can interact with this specific tag
+    const isNotary = currentUser && (currentUser.role === 'notary' || currentUser.userType === 'notary');
+    const isAssignedUser = currentUser && tag.assignedUserId === currentUser.userId;
+    const isUniversalTag = ['T', 'D'].includes(tag.tagType); // Text and Date tags
+    
+    const canInteractWithTag = isNotary || isAssignedUser || isUniversalTag;
+
+    console.log('🔍 Specific tag permission check:', {
+      tagId: tag.id,
+      tagType: tag.tagType,
+      assignedUserId: tag.assignedUserId,
+      currentUserId: currentUser?.userId,
+      isNotary,
+      isAssignedUser,
+      isUniversalTag,
+      canInteractWithTag
+    });
+
+    if (!canInteractWithTag) {
+      console.log('❌ User cannot interact with this specific tag');
+      toast({
+        variant: "destructive",
+        title: "Cannot Edit Tag",
+        description: `This ${tag.tagType} tag is assigned to another participant. Only universal tags (Text/Date) can be edited by anyone.`
+      });
+      return;
+    }
+
+    console.log('✅ User can interact with tag, triggering content input...');
+    
+    // All checks passed - trigger tag content input
+    try {
+      // This would trigger the tag input modal or other interaction mechanism
+      handleTagSelect(tag);
+      
+      // If there's an onTagClick prop, call it for additional handling
+      if (onTagClick) {
+        onTagClick(tag);
+      }
+      
+    } catch (error) {
+      console.error('Failed to handle tag interaction:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to open tag editor. Please try again."
+      });
+    }
+  }, [canUserInteractWithTags, currentUser, mode.mode, handleTagSelect, onTagClick, toast]);
+
+  // Update tag with content
+  const updateTagContent = useCallback(async (tagId: string, content: string, contentType: string = 'text') => {
+    if (!session) return;
+
+    try {
+      const response = await fetch(
+        `/api/editor/session/${session.id}/tag/${tagId}/content`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            content,
+            contentType
+          })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to update tag content');
+      }
+
+      const { tag: updatedTag } = await response.json();
+      
+      // Update local state
+      updateTag(tagId, {
+        content,
+        contentData: JSON.stringify({ type: contentType, value: content }),
+        isCompleted: true,
+        completedBy: currentUser?.userId,
+        completedAt: new Date()
+      });
+
+      console.log('✅ Tag content updated successfully');
+
+    } catch (error) {
+      console.error('❌ Failed to update tag content:', error);
+      // TODO: Show error toast
+    }
+  }, [session, updateTag, currentUser]);
+
+  // Show content input modal (placeholder - implement as needed)
+  const showContentInputModal = useCallback((tag: DocumentTag) => {
+    // This would open a modal/dialog for manual content entry
+    // For now, use a simple prompt
+    const tagInfo = TAG_TYPE_INFO[tag.tagType];
+    let content = '';
+
+    switch (tag.tagType) {
+      case 'T':
+        content = prompt(`Enter text for ${tagInfo.label}:`) || '';
+        break;
+      case 'D':
+        content = prompt(`Enter date for ${tagInfo.label}:`, new Date().toLocaleDateString()) || '';
+        break;
+      case 'A':
+        content = prompt(`Enter name for ${tagInfo.label}:`) || '';
+        break;
+      default:
+        content = prompt(`Enter content for ${tagInfo.label}:`) || '';
+    }
+
+    if (content) {
+      updateTagContent(tag.id, content, 'text');
+    }
+  }, [updateTagContent]);
 
   // Handle layer clicks for deselection
   const handleLayerClick = useCallback((e: React.MouseEvent) => {
@@ -555,12 +769,16 @@ export const TagLayer: React.FC<TagLayerProps> = ({
   return (
     <div style={layerStyle} className="tag-layer">
       {pageTags.map(tag => (
-        <DraggableTag
+        <TagRenderer
           key={tag.id}
           tag={tag}
+          isSelected={selectedTag?.id === tag.id}
+          canEdit={mode.canPlaceTags}
           scaleFactor={scaleFactor}
-          containerRef={containerRef}
-          onUpdate={handleUpdateTag}
+          onSelect={() => handleTagSelect(tag)}
+          onUpdate={(updates) => handleTagUpdate(tag.id, updates)}
+          onDelete={() => handleTagDelete(tag.id)}
+          onTagClick={handleTagClick}
         />
       ))}
     </div>

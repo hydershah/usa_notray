@@ -1,17 +1,24 @@
-import nodemailer from 'nodemailer';
+import { Client as PostmarkClient } from 'postmark';
 import { db } from '../db';
 import { systemSettings } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 
-
 interface EmailSettings {
-  smtp_host: string;
-  smtp_port: string;
-  smtp_user: string;
-  smtp_pass: string;
-  smtp_secure: string;
-  from_email: string;
-  from_name: string;
+  // Keep SMTP as fallback, add Postmark settings
+  postmark_api_key?: string;
+  postmark_from_email?: string;
+  postmark_from_name?: string;
+  postmark_track_opens?: string;
+  postmark_track_links?: string;
+  postmark_message_stream?: string;
+  smtp_host?: string;
+  smtp_port?: string;
+  smtp_user?: string;
+  smtp_pass?: string;
+  smtp_secure?: string;
+  from_email?: string;
+  from_name?: string;
+  email_provider?: string; // 'postmark' or 'smtp'
 }
 
 interface EmailOptions {
@@ -21,19 +28,17 @@ interface EmailOptions {
   text?: string;
   replyTo?: string;
   headers?: Record<string, string>;
+  tag?: string;
 }
 
 class EmailService {
-  private transporter: nodemailer.Transporter | null = null;
+  private postmarkClient: PostmarkClient | null = null;
   private settings: EmailSettings | null = null;
 
   // Method to clear cache and force reload of settings
   public clearCache(): void {
     this.settings = null;
-    if (this.transporter) {
-      this.transporter.close();
-      this.transporter = null;
-    }
+    this.postmarkClient = null;
   }
 
   private async loadSettings(): Promise<EmailSettings> {
@@ -44,20 +49,32 @@ class EmailService {
       const settings: Partial<EmailSettings> = {};
       
       settingsData.forEach(setting => {
-        if (setting.key.startsWith('smtp_') || setting.key.startsWith('from_')) {
+        if (setting.key.startsWith('smtp_') || setting.key.startsWith('from_') || setting.key.startsWith('postmark_') || setting.key === 'email_provider') {
           settings[setting.key as keyof EmailSettings] = setting.value;
         }
       });
 
       // Fallback to environment variables if database settings don't exist
       this.settings = {
+        // Postmark settings (preferred)
+        postmark_api_key: settings.postmark_api_key || process.env.POSTMARK_API_KEY || '',
+        postmark_from_email: settings.postmark_from_email || process.env.POSTMARK_FROM_EMAIL || settings.from_email || process.env.FROM_EMAIL || 'mail@sharpnote.net',
+        postmark_from_name: settings.postmark_from_name || process.env.POSTMARK_FROM_NAME || settings.from_name || process.env.FROM_NAME || 'Sharp Note',
+        postmark_track_opens: settings.postmark_track_opens || process.env.POSTMARK_TRACK_OPENS || 'true',
+        postmark_track_links: settings.postmark_track_links || process.env.POSTMARK_TRACK_LINKS || 'HtmlAndText',
+        postmark_message_stream: settings.postmark_message_stream || process.env.POSTMARK_MESSAGE_STREAM || 'sharpnote',
+        
+        // SMTP fallback settings
         smtp_host: settings.smtp_host || process.env.SMTP_HOST || 'smtp.hostinger.com',
         smtp_port: settings.smtp_port || process.env.SMTP_PORT || '465',
         smtp_user: settings.smtp_user || process.env.SMTP_USER || '',
         smtp_pass: settings.smtp_pass || process.env.SMTP_PASS || '',
         smtp_secure: settings.smtp_secure || (process.env.SMTP_PORT === '465' ? 'true' : 'false'),
         from_email: settings.from_email || process.env.SMTP_USER || 'noreply@usanotaryservices.com',
-        from_name: settings.from_name || 'Sharp Note'
+        from_name: settings.from_name || 'Sharp Note',
+        
+        // Email provider preference
+        email_provider: settings.email_provider || process.env.EMAIL_PROVIDER || 'postmark'
       };
 
       return this.settings;
@@ -67,18 +84,76 @@ class EmailService {
     }
   }
 
-  private async createTransporter(): Promise<nodemailer.Transporter> {
-    if (this.transporter) return this.transporter;
+  private async createPostmarkClient(): Promise<PostmarkClient> {
+    if (this.postmarkClient) return this.postmarkClient;
 
     const settings = await this.loadSettings();
     
-    if (!settings.smtp_user || !settings.smtp_pass) {
-      throw new Error('Email credentials not configured');
+    if (!settings.postmark_api_key) {
+      throw new Error('Postmark API key not configured');
     }
 
-    this.transporter = nodemailer.createTransport({
+    this.postmarkClient = new PostmarkClient(settings.postmark_api_key);
+    return this.postmarkClient;
+  }
+
+  async sendEmail(options: EmailOptions): Promise<void> {
+    const settings = await this.loadSettings();
+    
+    // Try Postmark first if configured
+    if (settings.email_provider === 'postmark' && settings.postmark_api_key) {
+      try {
+        await this.sendViaPostmark(options);
+        return;
+      } catch (error) {
+        console.error('Postmark failed, falling back to SMTP:', error);
+        // Fall back to SMTP if Postmark fails
+      }
+    }
+    
+    // Fallback to SMTP (existing implementation)
+    await this.sendViaSMTP(options);
+  }
+
+  private async sendViaPostmark(options: EmailOptions): Promise<void> {
+    try {
+      const client = await this.createPostmarkClient();
+      const settings = await this.loadSettings();
+
+      const result = await client.sendEmail({
+        From: `${settings.postmark_from_name} <${settings.postmark_from_email}>`,
+        To: options.to,
+        Subject: options.subject,
+        HtmlBody: options.html,
+        TextBody: options.text,
+        ReplyTo: options.replyTo || settings.postmark_from_email,
+        Tag: options.tag || 'system-email',
+        TrackOpens: settings.postmark_track_opens === 'true',
+        TrackLinks: settings.postmark_track_links as any,
+        MessageStream: settings.postmark_message_stream || 'sharpnote',
+        Headers: options.headers ? Object.entries(options.headers).map(([Name, Value]) => ({ Name, Value })) : undefined
+      });
+
+      console.log(`✅ Postmark email sent successfully: ${result.MessageID}`);
+      
+    } catch (error) {
+      console.error('❌ Postmark email sending failed:', error);
+      throw new Error(`Failed to send email via Postmark: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async sendViaSMTP(options: EmailOptions): Promise<void> {
+    // Keep existing nodemailer implementation as fallback
+    const nodemailer = await import('nodemailer');
+    const settings = await this.loadSettings();
+    
+    if (!settings.smtp_user || !settings.smtp_pass) {
+      throw new Error('SMTP credentials not configured');
+    }
+
+    const transporter = nodemailer.default.createTransport({
       host: settings.smtp_host,
-      port: parseInt(settings.smtp_port),
+      port: parseInt(settings.smtp_port || '465'),
       secure: settings.smtp_secure === 'true',
       auth: {
         user: settings.smtp_user,
@@ -86,53 +161,21 @@ class EmailService {
       },
       tls: {
         rejectUnauthorized: process.env.NODE_ENV === 'production'
-      },
-      // Anti-spam headers
-      pool: true,
-      maxConnections: 5,
-      maxMessages: 100,
-      rateLimit: 14, // 14 emails per second max
+      }
     });
 
-    return this.transporter;
-  }
+    const mailOptions = {
+      from: `"${settings.from_name}" <${settings.from_email}>`,
+      to: options.to,
+      subject: options.subject,
+      html: options.html,
+      text: options.text,
+      replyTo: options.replyTo || settings.from_email,
+      headers: options.headers
+    };
 
-  async sendEmail(options: EmailOptions): Promise<void> {
-    try {
-      const transporter = await this.createTransporter();
-      const settings = await this.loadSettings();
-
-      // Professional anti-spam headers
-      const headers = {
-        'X-Mailer': 'Sharp Note v1.0',
-        'X-Priority': '3',
-        'X-MSMail-Priority': 'Normal',
-        'Importance': 'Normal',
-        'List-Unsubscribe': `<mailto:unsubscribe@usanotaryservices.com>`,
-        'Return-Path': settings.from_email,
-        ...options.headers
-      };
-
-      const mailOptions = {
-        from: `"${settings.from_name}" <${settings.from_email}>`,
-        to: options.to,
-        subject: options.subject,
-        html: options.html,
-        text: options.text,
-        replyTo: options.replyTo || settings.from_email,
-        headers: headers,
-        // Additional anti-spam measures
-        messageId: `<${Date.now()}-${Math.random().toString(36).substr(2, 9)}@usanotaryservices.com>`,
-        date: new Date(),
-      };
-
-      const info = await transporter.sendMail(mailOptions);
-      console.log(`Email sent successfully: ${info.messageId}`);
-      
-    } catch (error) {
-      console.error('Email sending failed:', error);
-      throw new Error(`Failed to send email: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ SMTP email sent successfully: ${info.messageId}`);
   }
 
   // Professional email templates

@@ -94,6 +94,9 @@ app.use((req, res, next) => {
 
   // Create HTTP server for Socket.IO
   const httpServer = createServer(app);
+  
+  // Fix EventEmitter memory leak by setting appropriate max listeners
+  httpServer.setMaxListeners(20);
 
   // Initialize WebRTC signaling service
   const webRTCService = new WebRTCSignalingService(httpServer);
@@ -105,7 +108,48 @@ app.use((req, res, next) => {
   if (app.get("env") === "development") {
     await setupVite(app, httpServer);
   } else {
-    serveStatic(app);
+    // In production, check if we should serve static files or run API-only
+    const shouldServeStatic = process.env.SERVE_STATIC_FILES !== 'false';
+    
+    if (shouldServeStatic) {
+      // Single-port production: serve static files and API
+      console.log('🎯 Production mode: Serving static files + API from port 3000');
+      serveStatic(app);
+    } else {
+      // Two-port production: API-only server
+      console.log('🎯 Production mode: API-only server on port 3000');
+      console.log('📡 Frontend should be served separately on port 3002');
+      
+      // Add CORS for production frontend
+      app.use((req, res, next) => {
+        const allowedOrigins = [
+          'http://localhost:3002',
+          'http://127.0.0.1:3002',
+          'http://0.0.0.0:3002',
+          process.env.CLIENT_URL
+        ].filter(Boolean);
+        
+        const origin = req.headers.origin;
+        if (origin && allowedOrigins.includes(origin)) {
+          res.setHeader('Access-Control-Allow-Origin', origin);
+        } else if (!origin) {
+          // Allow requests from same host (like from Vite preview proxy)
+          res.setHeader('Access-Control-Allow-Origin', '*');
+        }
+        
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-ID, x-requested-with');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Expose-Headers', 'X-Request-ID, X-Response-Time');
+        
+        if (req.method === 'OPTIONS') {
+          res.status(200).end();
+          return;
+        }
+        
+        next();
+      });
+    }
   }
 
   // 404 handler for unmatched routes (must be after Vite middleware)
@@ -121,7 +165,7 @@ app.use((req, res, next) => {
   
   // Add error handling and retry logic for port conflicts
   const startServer = (retryCount = 0) => {
-    const maxRetries = 3;
+    const maxRetries = 2;
     
     httpServer.listen({
       port,
@@ -137,13 +181,16 @@ app.use((req, res, next) => {
 
     httpServer.on('error', (error: any) => {
       if (error.code === 'EADDRINUSE' && retryCount < maxRetries) {
-        console.log(`Port ${port} is busy, retrying in 2 seconds... (attempt ${retryCount + 1}/${maxRetries})`);
+        console.log(`Port ${port} is busy, retrying in 3 seconds... (attempt ${retryCount + 1}/${maxRetries})`);
         setTimeout(() => {
           httpServer.close();
           startServer(retryCount + 1);
-        }, 2000);
+        }, 3000);
       } else {
         console.error('Server startup error:', error);
+        if (process.env.NODE_ENV === 'production') {
+          console.log('⚠️ Production server failed to start. Please check port availability and try again.');
+        }
         process.exit(1);
       }
     });
@@ -166,15 +213,34 @@ app.use((req, res, next) => {
     });
   });
 
-  // Handle uncaught exceptions
+  // Handle uncaught exceptions more gracefully in production
   process.on('uncaughtException', (error) => {
     console.error('🚨 UNCAUGHT EXCEPTION:', error);
-    process.exit(1);
+    // In production, try to gracefully shutdown instead of immediate exit
+    if (process.env.NODE_ENV === 'production') {
+      console.log('⚠️ Attempting graceful shutdown...');
+      httpServer.close(() => {
+        console.log('Server closed after uncaught exception');
+        process.exit(1);
+      });
+      // Force exit after 10 seconds if graceful shutdown fails
+      setTimeout(() => {
+        console.log('⚠️ Forced exit after graceful shutdown timeout');
+        process.exit(1);
+      }, 10000);
+    } else {
+      process.exit(1);
+    }
   });
 
   process.on('unhandledRejection', (reason, promise) => {
     console.error('🚨 UNHANDLED REJECTION at:', promise, 'reason:', reason);
-    process.exit(1);
+    // In production, don't exit on unhandled rejection, just log it
+    if (process.env.NODE_ENV === 'production') {
+      console.log('⚠️ Continuing execution despite unhandled rejection...');
+    } else {
+      process.exit(1);
+    }
   });
 
   startServer();

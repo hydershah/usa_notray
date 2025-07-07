@@ -87,25 +87,58 @@ const EditorPage: React.FC<EditorPageProps> = () => {
           throw new Error('You do not have permission to access this editor session');
         }
 
-        // Create or get editor session using authenticated fetch
-        // Map 'signing' mode to 'notary' sessionType since live signing is a notary session with different UI
-        const sessionType = mode === 'signing' ? 'notary' : mode;
-        const sessionResponse = await authenticatedFetch(`/api/editor/job/${jobId}/session`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            sessionType,
-            videoSessionId: (mode === 'notary' || mode === 'signing') ? `whereby_${jobId}_${Date.now()}` : undefined
-          })
-        });
-
-        if (!sessionResponse.ok) {
-          throw new Error(`Failed to create session: ${sessionResponse.status}`);
+        // For signing mode: First try to find existing tagged session, otherwise create new
+        let sessionResult;
+        
+        if (mode === 'signing') {
+          // Check for existing tagged session first
+          console.log('🔍 Signing mode: Looking for existing tagged session...');
+          
+          try {
+            // Look for existing sessions for this job
+            const existingSessionsResponse = await authenticatedFetch(`/api/jobs/${jobId}/sessions`);
+            
+            if (existingSessionsResponse.ok) {
+              const existingSessions = await existingSessionsResponse.json();
+              const taggedSession = existingSessions.sessions?.find((s: any) => 
+                s.sessionType === 'tagging' && s.status === 'completed'
+              );
+              
+              if (taggedSession) {
+                console.log('✅ Found existing tagged session:', taggedSession.id);
+                sessionResult = {
+                  success: true,
+                  session: taggedSession,
+                  message: 'Using existing tagged session for signing'
+                };
+              }
+            }
+          } catch (error) {
+            console.warn('Failed to check for existing sessions, creating new one:', error);
+          }
         }
+        
+        // If no existing session found (or not signing mode), create new session
+        if (!sessionResult) {
+          console.log(`🆕 Creating new ${mode} session...`);
+          const sessionType = mode === 'signing' ? 'notary' : mode;
+          const sessionResponse = await authenticatedFetch(`/api/editor/job/${jobId}/session`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              sessionType,
+              videoSessionId: (mode === 'notary' || mode === 'signing') ? `whereby_${jobId}_${Date.now()}` : undefined
+            })
+          });
 
-        const sessionResult = await sessionResponse.json();
+          if (!sessionResponse.ok) {
+            throw new Error(`Failed to create session: ${sessionResponse.status}`);
+          }
+
+          sessionResult = await sessionResponse.json();
+        }
         
         if (!sessionResult.success) {
           throw new Error(sessionResult.message || 'Failed to create session');

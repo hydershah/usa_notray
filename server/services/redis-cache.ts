@@ -20,8 +20,6 @@ export class RedisCache {
       family: 4,
       maxLoadingTimeout: 1000,
       enableReadyCheck: true,
-      maxRetriesPerRequest: 2,
-      retryDelayOnFailover: 50,
       reconnectOnError: (err) => {
         console.log('Redis reconnection error:', err.message);
         const targetError = 'READONLY';
@@ -145,18 +143,33 @@ export class RedisCache {
   /**
    * Delete multiple keys by pattern
    */
-  async delByPattern(pattern: string): Promise<number> {
+  async delPattern(pattern: string): Promise<number> {
     if (!this.isConnected) return 0;
 
     try {
-      const keys = await this.redis.keys(pattern);
-      if (keys.length === 0) return 0;
+      const startTime = performance.now();
       
-      const result = await this.redis.del(...keys);
-      console.log(`🧹 Cleared ${result} keys matching pattern: ${pattern}`);
-      return result;
+      // Use SCAN to find keys matching pattern
+      const keys = [];
+      let cursor = '0';
+      
+      do {
+        const reply = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        cursor = reply[0];
+        keys.push(...reply[1]);
+      } while (cursor !== '0');
+
+      if (keys.length > 0) {
+        const result = await this.redis.del(...keys);
+        const duration = performance.now() - startTime;
+        
+        console.log(`🧹 Deleted ${result} keys matching pattern: ${pattern} (${duration.toFixed(2)}ms)`);
+        return result;
+      }
+      
+      return 0;
     } catch (error) {
-      console.error('Redis DEL pattern error:', error);
+      console.error('Redis DEL PATTERN error:', error);
       return 0;
     }
   }
@@ -237,7 +250,7 @@ export class RedisCache {
     ];
 
     for (const pattern of patterns) {
-      await this.delByPattern(pattern);
+      await this.delPattern(pattern);
     }
   }
 

@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { NotaryStampManager } from '@/components/user/notary-stamp-manager';
 import { SignatureManager } from '@/components/user/signature-manager';
-import { toast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { 
   User, 
   Mail, 
@@ -37,6 +37,7 @@ import { Textarea } from '@/components/ui/textarea';
 import TwoFactorAuth from '@/components/TwoFactorAuth';
 
 export default function Profile() {
+  const { toast } = useToast();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({

@@ -1,12 +1,33 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { authApi, type User } from '@/lib/auth';
 import { queryClient } from '@/lib/queryClient';
+import { useQuery, type UseQueryOptions, type QueryKey } from '@tanstack/react-query';
+
+/**
+ * Hook for making authenticated queries that only run when user is authenticated
+ */
+export function useAuthenticatedQuery<T>(
+  queryKey: QueryKey,
+  options?: Omit<UseQueryOptions<T>, 'queryKey' | 'queryFn'>
+) {
+  const { isAuthenticated } = useAuth();
+  
+  return useQuery<T>({
+    queryKey,
+    enabled: isAuthenticated && (options?.enabled !== false),
+    ...options,
+  });
+}
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  
+  // Use ref to track current user state to avoid dependency loops
+  const userRef = useRef<User | null>(null);
+  userRef.current = user;
 
   useEffect(() => {
     const storedUser = authApi.getStoredUser();
@@ -27,20 +48,18 @@ export function useAuth() {
     const checkAuthState = () => {
       const storedUser = authApi.getStoredUser();
       const authenticated = authApi.isAuthenticated();
+      const currentUser = userRef.current;
       
-      if (storedUser && authenticated && !user) {
+      if (storedUser && authenticated && !currentUser) {
         console.log('Auth state sync - updating user from localStorage');
         setUser(storedUser);
         setIsAuthenticated(true);
-      } else if ((!storedUser || !authenticated) && user) {
+      } else if ((!storedUser || !authenticated) && currentUser) {
         console.log('Auth state sync - clearing user state');
         setUser(null);
         setIsAuthenticated(false);
       }
     };
-
-    // Check immediately
-    checkAuthState();
     
     // Check when page becomes visible (handles tab switching)
     const handleVisibilityChange = () => {
@@ -51,26 +70,27 @@ export function useAuth() {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     
-    // Periodic check as fallback (every 5 seconds)
-    const interval = setInterval(checkAuthState, 5000);
+    // Periodic check as fallback (every 30 seconds instead of 5 to reduce frequency)
+    const interval = setInterval(checkAuthState, 30000);
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(interval);
     };
-  }, [user]);
+  }, []); // Remove user dependency to prevent loops
 
   // Listen for localStorage changes (including from other tabs/logout)
   useEffect(() => {
     const handleStorageChange = () => {
       const storedUser = authApi.getStoredUser();
       const authenticated = authApi.isAuthenticated();
+      const currentUser = userRef.current;
       
       if (!storedUser || !authenticated) {
         console.log('Storage change detected - user logged out');
         setUser(null);
         setIsAuthenticated(false);
-      } else if (!user && storedUser) {
+      } else if (!currentUser && storedUser) {
         // Handle case where localStorage has user but state doesn't
         console.log('Storage change detected - user logged in');
         setUser(storedUser);
@@ -80,7 +100,7 @@ export function useAuth() {
 
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, [user]);
+  }, []); // Remove user dependency to prevent loops
 
   const login = async (email: string, password: string) => {
     try {

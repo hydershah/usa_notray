@@ -1050,14 +1050,14 @@ export default function UserManagement() {
                               )}
                             </div>
                             <Tooltip>
-                              <TooltipTrigger>
+                              <TooltipTrigger asChild>
                                 <Button variant="ghost" size="sm" onClick={() => handleEditRole(user)}>
                                   <Edit className="h-3 w-3" />
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>
                                 <div className="text-sm">
-                                  <div className="font-medium">Permissions:</div>
+                                  <div className="font-medium">Role Permissions:</div>
                                   <ul className="list-disc list-inside">
                                     {getRolePermissions(user.role, user.notaryType).map((perm, i) => (
                                       <li key={i}>{perm}</li>
@@ -1068,6 +1068,9 @@ export default function UserManagement() {
                                       Type: {user.notaryType === 'contractor' ? 'Contractor (Admin assigns jobs)' : 'Subscriber (Can create jobs)'}
                                     </div>
                                   )}
+                                  <div className="mt-2 text-xs text-gray-500">
+                                    Click to edit role
+                                  </div>
                                 </div>
                               </TooltipContent>
                             </Tooltip>
@@ -1086,44 +1089,50 @@ export default function UserManagement() {
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <Tooltip>
-                              <TooltipTrigger>
-                                <Badge variant={user.mfaEnabled ? "default" : "secondary"} className="text-xs">
-                                  {user.mfaEnabled ? (
-                                    <Shield className="w-3 h-3 mr-1" />
-                                  ) : (
-                                    <ShieldAlert className="w-3 h-3 mr-1" />
-                                  )}
-                                  2FA
-                                </Badge>
+                              <TooltipTrigger asChild>
+                                <div>
+                                  <Badge variant={user.mfaEnabled ? "default" : "secondary"} className="text-xs cursor-pointer">
+                                    {user.mfaEnabled ? (
+                                      <Shield className="w-3 h-3 mr-1" />
+                                    ) : (
+                                      <ShieldAlert className="w-3 h-3 mr-1" />
+                                    )}
+                                    2FA
+                                  </Badge>
+                                </div>
                               </TooltipTrigger>
                               <TooltipContent>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleToggle2FA(user)}
-                                  disabled={toggle2FAMutation.isPending}
-                                >
-                                  {user.mfaEnabled ? 'Disable' : 'Enable'} 2FA
-                                </Button>
+                                <div className="text-sm">
+                                  <div className="font-medium">Two-Factor Authentication</div>
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    Status: {user.mfaEnabled ? 'Enabled' : 'Disabled'}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    Click the options menu to toggle
+                                  </div>
+                                </div>
                               </TooltipContent>
                             </Tooltip>
                             {(user.role === 'title_company' || user.role === 'admin') && (
                               <Tooltip>
-                                <TooltipTrigger>
-                                  <Badge variant="outline" className="text-xs">
-                                    <Key className="w-3 h-3 mr-1" />
-                                    API
-                                  </Badge>
+                                <TooltipTrigger asChild>
+                                  <div>
+                                    <Badge variant="outline" className="text-xs cursor-pointer">
+                                      <Key className="w-3 h-3 mr-1" />
+                                      API
+                                    </Badge>
+                                  </div>
                                 </TooltipTrigger>
                                 <TooltipContent>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleGenerateAPIKey(user)}
-                                    disabled={generateAPIKeyMutation.isPending}
-                                  >
-                                    Generate API Key
-                                  </Button>
+                                  <div className="text-sm">
+                                    <div className="font-medium">API Access</div>
+                                    <div className="text-xs text-gray-500 mt-1">
+                                      API key generation available
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      Use options menu to generate
+                                    </div>
+                                  </div>
                                 </TooltipContent>
                               </Tooltip>
                             )}

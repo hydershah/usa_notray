@@ -101,9 +101,9 @@ export function TitleCompanyDashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">Total Orders</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                  <div className="text-3xl font-bold text-gray-900 mt-2">
                     {statsLoading ? <Skeleton className="h-8 w-16" /> : stats?.totalJobs || 0}
-                  </p>
+                  </div>
                 </div>
                 <Briefcase className="h-8 w-8 text-blue-600" />
               </div>
@@ -115,9 +115,9 @@ export function TitleCompanyDashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">Pending Orders</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                  <div className="text-3xl font-bold text-gray-900 mt-2">
                     {statsLoading ? <Skeleton className="h-8 w-16" /> : stats?.pendingJobs || 0}
-                  </p>
+                  </div>
                 </div>
                 <Clock className="h-8 w-8 text-orange-600" />
               </div>
@@ -129,9 +129,9 @@ export function TitleCompanyDashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">Completed</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                  <div className="text-3xl font-bold text-gray-900 mt-2">
                     {statsLoading ? <Skeleton className="h-8 w-16" /> : stats?.completedJobs || 0}
-                  </p>
+                  </div>
                 </div>
                 <CheckCircle className="h-8 w-8 text-green-600" />
               </div>
@@ -143,9 +143,9 @@ export function TitleCompanyDashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">Active Notaries</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                  <div className="text-3xl font-bold text-gray-900 mt-2">
                     {statsLoading ? <Skeleton className="h-8 w-16" /> : stats?.activeNotaries || 0}
-                  </p>
+                  </div>
                 </div>
                 <UserCheck className="h-8 w-8 text-purple-600" />
               </div>

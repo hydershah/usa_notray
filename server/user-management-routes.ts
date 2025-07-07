@@ -16,6 +16,7 @@ import {
   validateEmail,
   validatePhoneNumber 
 } from './middleware/sanitization';
+import { redisCache } from './services/redis-cache';
 
 export function registerUserManagementRoutes(app: Express) {
   
@@ -361,6 +362,15 @@ export function registerUserManagementRoutes(app: Express) {
       // Also activate the user
       await storage.updateUser(userId, { isActive: true });
 
+      // Invalidate user-specific cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`user:${userId}:*`);
+        console.log(`🧹 Invalidated cache for user ${userId} after approval`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after user approval:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+
       res.json({ 
         message: 'User approved successfully',
         userId: user.id,
@@ -632,6 +642,15 @@ export function registerUserManagementRoutes(app: Express) {
       
       if (!updatedUser) {
         return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Invalidate user-specific cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`user:${userId}:*`);
+        console.log(`🧹 Invalidated cache for user ${userId} after profile update`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after profile update:', cacheError);
+        // Don't fail the request if cache invalidation fails
       }
 
       res.json({ 

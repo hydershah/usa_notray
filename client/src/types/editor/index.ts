@@ -3,10 +3,9 @@
 export interface EditorSession {
   id: string;
   jobId: string;
-  sessionType: 'tagging' | 'notary';
-  status: 'created' | 'active' | 'in_progress' | 'completed' | 'cancelled';
   notaryId: string;
-  videoSessionId?: string;
+  sessionType: 'tagging' | 'notary' | 'signing';
+  status: 'preparing' | 'active' | 'completed' | 'cancelled';
   createdAt: Date;
   startedAt?: Date;
   completedAt?: Date;

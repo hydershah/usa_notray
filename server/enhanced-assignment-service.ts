@@ -258,7 +258,7 @@ export class EnhancedAssignmentService {
   /**
    * Perform intelligent auto-assignment
    */
-  private static async performAutoAssignment(
+  static async performAutoAssignment(
     jobId: number, 
     titleCompanyName?: string
   ): Promise<NotaryAssignmentResult> {
@@ -315,7 +315,7 @@ export class EnhancedAssignmentService {
         notaryId: preferred.notaryId,
         notaryName: `${preferred.notaryFirstName} ${preferred.notaryLastName}`,
         assignmentType: 'preferred',
-        requiresApproval: true // Preferred notaries still need approval
+        requiresApproval: false // AUTO ASSIGNMENT FIX: Preferred notaries are also automatically approved for auto assignments
       };
     }
 
@@ -360,7 +360,7 @@ export class EnhancedAssignmentService {
       notaryId: selectedNotary.id,
       notaryName: `${selectedNotary.firstName} ${selectedNotary.lastName}`,
       assignmentType: 'random',
-      requiresApproval: true // Random assignments need approval
+      requiresApproval: false // AUTO ASSIGNMENT FIX: Auto-assigned jobs are automatically approved
     };
   }
 

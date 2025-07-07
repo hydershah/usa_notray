@@ -3,6 +3,10 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createHash } from 'crypto';
 import { Readable } from 'stream';
 
+// Ensure environment variables are loaded
+import dotenv from 'dotenv';
+dotenv.config();
+
 interface UploadOptions {
   contentType?: string;
   metadata?: Record<string, string>;
@@ -18,29 +22,45 @@ interface UploadResult {
 }
 
 export class CloudStorageService {
-  private s3Client: S3Client;
+  private s3Client: S3Client | null = null;
   private bucketName: string;
   private region: string;
+  private isEnabled: boolean = false;
 
   constructor() {
     this.region = process.env.VULTR_REGION || 'ewr1'; // Vultr region codes
-    this.bucketName = process.env.VULTR_BUCKET_NAME || 'usa-notary-documents';
+    this.bucketName = process.env.VULTR_BUCKET_NAME || 'usanotary'; // Fixed to match actual bucket
     
-    // Initialize S3-compatible client for Vultr Object Storage
-    this.s3Client = new S3Client({
-      region: this.region,
-      endpoint: process.env.VULTR_ENDPOINT || `https://${this.region}.vultrobjects.com`,
-      credentials: {
-        accessKeyId: process.env.VULTR_ACCESS_KEY!,
-        secretAccessKey: process.env.VULTR_SECRET_KEY!,
-      },
-      maxAttempts: 3, // Retry failed requests
-      forcePathStyle: false, // Vultr uses virtual hosted style
-    });
-
-    // Validate required environment variables
-    if (!process.env.VULTR_ACCESS_KEY || !process.env.VULTR_SECRET_KEY) {
-      throw new Error('Vultr Object Storage credentials must be set in environment variables');
+    // Check if Vultr credentials are available
+    const hasCredentials = !!(process.env.VULTR_ACCESS_KEY && process.env.VULTR_SECRET_KEY);
+    
+    if (hasCredentials) {
+      try {
+        console.log(`🔑 Vultr credentials found - initializing cloud storage...`);
+        
+        // Initialize S3-compatible client for Vultr Object Storage
+        this.s3Client = new S3Client({
+          region: this.region,
+          endpoint: process.env.VULTR_ENDPOINT || `https://${this.region}.vultrobjects.com`,
+          credentials: {
+            accessKeyId: process.env.VULTR_ACCESS_KEY!,
+            secretAccessKey: process.env.VULTR_SECRET_KEY!,
+          },
+          maxAttempts: 3, // Retry failed requests
+          forcePathStyle: false, // Vultr uses virtual hosted style
+        });
+        
+        this.isEnabled = true;
+        console.log(`🪣 CloudStorageService initialized with bucket: ${this.bucketName} in region: ${this.region}`);
+      } catch (error) {
+        console.error('❌ Failed to initialize Vultr client:', error);
+        this.isEnabled = false;
+      }
+    } else {
+      console.warn('⚠️  Vultr Object Storage credentials not found - running without cloud storage');
+      console.warn('📝 To enable cloud storage, set VULTR_ACCESS_KEY and VULTR_SECRET_KEY environment variables');
+      console.warn(`🔍 Current env check: ACCESS_KEY=${!!process.env.VULTR_ACCESS_KEY}, SECRET_KEY=${!!process.env.VULTR_SECRET_KEY}`);
+      this.isEnabled = false;
     }
   }
 
@@ -52,6 +72,17 @@ export class CloudStorageService {
     key: string,
     options: UploadOptions = {}
   ): Promise<UploadResult> {
+    if (!this.isEnabled || !this.s3Client) {
+      console.warn('⚠️  Cloud storage not available - file upload skipped');
+      // Return a mock result for development
+      return {
+        key: key,
+        url: `/dev-storage/${key}`,
+        etag: 'dev-mock-etag',
+        size: buffer.length,
+      };
+    }
+
     try {
       // Generate content hash for integrity verification
       const contentHash = createHash('md5').update(buffer).digest('hex');
@@ -167,13 +198,25 @@ export class CloudStorageService {
    * Generate a signed URL for file access
    */
   async getSignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
+    console.log(`🔗 getSignedUrl called for: ${key}`);
+    console.log(`🔍 Service state: isEnabled=${this.isEnabled}, hasS3Client=${!!this.s3Client}`);
+    
+    if (!this.isEnabled || !this.s3Client) {
+      console.warn('⚠️  Cloud storage not available - returning dev URL');
+      console.warn(`📊 Details: isEnabled=${this.isEnabled}, s3Client=${!!this.s3Client}`);
+      return `/dev-storage/${key}?expires=${Date.now() + (expiresIn * 1000)}`;
+    }
+
     try {
+      console.log(`🔗 Generating real Vultr signed URL for: ${key}`);
       const command = new GetObjectCommand({
         Bucket: this.bucketName,
         Key: key,
       });
 
-      return await getSignedUrl(this.s3Client, command, { expiresIn });
+      const signedUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
+      console.log(`✅ Generated Vultr signed URL: ${signedUrl.substring(0, 100)}...`);
+      return signedUrl;
     } catch (error) {
       console.error('Failed to generate signed URL:', error);
       throw new Error(`Failed to generate signed URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -230,6 +273,11 @@ export class CloudStorageService {
    * Check if a file exists
    */
   async fileExists(key: string): Promise<boolean> {
+    if (!this.isEnabled || !this.s3Client) {
+      console.warn('⚠️  Cloud storage not available - assuming file exists for dev');
+      return true; // Assume files exist in development
+    }
+
     try {
       await this.getFileMetadata(key);
       return true;

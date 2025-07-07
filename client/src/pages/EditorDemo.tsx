@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import PDFTaggingEditor from '../components/editor/PDFTaggingEditor';
+import { PDFTaggingEditor } from '../components/editor/PDFTaggingEditor';
 import type { SessionDocument, SessionParticipant, DocumentTag } from '../types/editor';
 
 const EditorDemo: React.FC = () => {

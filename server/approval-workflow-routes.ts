@@ -123,7 +123,7 @@ export function registerApprovalWorkflowRoutes(app: Express) {
 
       // Send notifications after approval
       try {
-        await notificationService.sendJobAssignmentNotification(jobId, req.user.id);
+        await notificationService.sendApprovalGrantedNotification(jobId, req.user.id);
       } catch (notificationError) {
         console.error('Failed to send approval notification:', notificationError);
       }
