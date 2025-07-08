@@ -1,0 +1,29 @@
+name: Node.js CI/CD with PM2 (Self-Hosted)
+
+on:
+  push:
+    branches: [ "fix/email-configuration-resend" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted  # 💡 Uses your own server (runner)
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm ci --omit=dev
+
+      - name: 🏗️ Build the app
+        run: npm run build
+
+      - name: 🚀 Reload with PM2
+        run: |
+          pm2 startOrReload ecosystem.config.js --env production
