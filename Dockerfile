@@ -30,21 +30,26 @@ RUN npm ci --silent
 # Copy source code
 COPY . .
 
-# Build the application with proper PATH
+# Build the application
 RUN npm run build
+
+# Clean up dev dependencies to reduce image size
+RUN npm ci --production --silent && npm cache clean --force
+
+# Create non-root user for security (simplified approach)
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S notary -u 1001 -G nodejs && \
+    chown -R notary:nodejs /app
+
+# Simple health check that just checks if port is responding
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+
+# Switch to non-root user
+USER notary
 
 # Expose port
 EXPOSE 3000
-
-# Create non-root user for security
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S notary -u 1001
-RUN chown -R notary:nodejs /app
-USER notary
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD node -e "const http = require('http'); const options = { host: 'localhost', port: 3000, path: '/health', timeout: 2000 }; const req = http.request(options, (res) => { process.exit(res.statusCode === 200 ? 0 : 1); }); req.on('error', () => process.exit(1)); req.end();"
 
 # Start the application
 CMD ["node", "dist/index.js"] 
