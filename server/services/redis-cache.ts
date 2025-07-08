@@ -11,7 +11,6 @@ export class RedisCache {
     this.redis = new Redis({
       host: 'localhost',
       port: 6379,
-      retryDelayOnFailover: 100,
       maxRetriesPerRequest: 3,
       lazyConnect: true,
       connectTimeout: 10000,
@@ -20,7 +19,6 @@ export class RedisCache {
       family: 4,
       maxLoadingTimeout: 1000,
       enableReadyCheck: true,
-      maxRetriesPerRequest: 2,
       retryDelayOnFailover: 50,
       reconnectOnError: (err) => {
         console.log('Redis reconnection error:', err.message);

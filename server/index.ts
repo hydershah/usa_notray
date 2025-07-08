@@ -4,7 +4,7 @@ dotenv.config();
 import express, { type Request, Response, NextFunction } from "express";
 import { createServer } from 'http';
 import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
+import { setupVite, log, serveStatic } from "./vite";
 import { performanceMonitor } from './middleware/performance-monitor';
 import { healthCheck } from './health-check';
 import { redisCache } from './services/redis-cache';
@@ -21,6 +21,10 @@ import {
 } from './middleware/validation';
 import { gracefulDegradation } from './middleware/circuit-breaker';
 import { WebRTCSignalingService } from './services/video/WebRTCSignalingService.js';
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from 'fs';
+
 
 const app = express();
 
@@ -29,6 +33,27 @@ app.use(requestIdMiddleware);
 app.use(performanceTracker);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+export function serveStatic(app: express.Express) {
+  const staticPath = path.resolve(__dirname, "../dist/public");
+  console.log("staticPath", staticPath);
+
+  const indexFile = path.join(staticPath, "index.html");
+  if (!fs.existsSync(indexFile)) {
+    console.error("❌ index.html not found at:", indexFile);
+  } else {
+    console.log("✅ index.html found");
+  }
+
+  app.use(express.static(staticPath));
+  app.get("/*", (_, res) => {
+    res.sendFile(indexFile);
+  });
+}
+
+
 
 // Security middleware
 app.use(preventSqlInjection);
@@ -44,6 +69,10 @@ app.use(performanceMonitor.middleware());
 app.get('/health', asyncHandler(async (req: Request, res: Response) => {
   await healthCheck(req, res);
 }));
+
+
+
+
 
 // Initialize Redis cache on startup
 console.log('🔄 Initializing Redis cache...');
@@ -102,11 +131,12 @@ app.use((req, res, next) => {
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
-    await setupVite(app, httpServer);
-  } else {
-    serveStatic(app);
-  }
+if (app.get("env") === "development") {
+  await setupVite(app, httpServer);
+} else {
+  serveStatic(app);
+}
+
 
   // 404 handler for unmatched routes (must be after Vite middleware)
   app.use(notFoundHandler);

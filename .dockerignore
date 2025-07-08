@@ -1,0 +1,13 @@
+node_modules
+dist
+uploads
+certs
+*.log
+*.bak
+*.tmp
+*.tsbuildinfo
+*.docx
+*.pdf
+~*
+.DS_Store
+Thumbs.db

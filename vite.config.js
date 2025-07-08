@@ -1,15 +1,20 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 export default defineConfig({
   plugins: [react({
     jsxRuntime: 'automatic'
   })],
-  publicDir: './client/public',
   build: {
-    outDir: './client/dist',
+    outDir: 'dist/public', // ✅ matches your Express static path
+    emptyOutDir: true
   },
+  publicDir: 'client/public',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './client/src'),
@@ -33,4 +38,4 @@ export default defineConfig({
   define: {
     global: 'globalThis',
   },
-}) 
+})

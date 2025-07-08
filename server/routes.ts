@@ -161,7 +161,7 @@ import {
 export async function registerRoutes(app: Express): Promise<Server> {
   
   // Basic route handlers to prevent 404 errors
-  app.get('/', (req, res) => {
+  app.get('/status', (req, res) => {
     res.json({ 
       status: 'ok', 
       message: 'Notary API Server', 
