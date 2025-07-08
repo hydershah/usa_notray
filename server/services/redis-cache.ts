@@ -8,12 +8,22 @@ export class RedisCache {
   private maxRetries: number = 3;
 
   constructor() {
-    // Check for all possible Redis environment variables
-    const redisUrl = process.env.REDIS_URL || 
-                    process.env.REDIS_PUBLIC_URL || 
-                    process.env.REDIS_PRIVATE_URL ||
-                    process.env.REDISCLOUD_URL ||
-                    'redis://localhost:6379';
+    // For Railway, prioritize PUBLIC_URL over internal URL to avoid DNS issues
+    let redisUrl;
+    if (process.env.RAILWAY_ENVIRONMENT) {
+      // Use public URL first for Railway to avoid internal DNS issues
+      redisUrl = process.env.REDIS_PUBLIC_URL || 
+                 process.env.REDIS_URL || 
+                 process.env.REDIS_PRIVATE_URL ||
+                 'redis://localhost:6379';
+    } else {
+      // For other environments, use standard priority
+      redisUrl = process.env.REDIS_URL || 
+                 process.env.REDIS_PUBLIC_URL || 
+                 process.env.REDIS_PRIVATE_URL ||
+                 process.env.REDISCLOUD_URL ||
+                 'redis://localhost:6379';
+    }
     
     // Debug logging to see what Redis URL is being used
     console.log('🔍 Redis Connection Debug:', {
@@ -71,6 +81,7 @@ export class RedisCache {
       // Check if it's a Railway internal DNS issue
       if (err.message.includes('redis.railway.internal') || err.message.includes('ENOTFOUND')) {
         console.warn('⚠️ Railway Redis service discovery issue detected. App will continue without Redis caching.');
+        this.connectionAttempts = this.maxRetries; // Stop further attempts
         return; // Don't retry for DNS issues
       }
       
