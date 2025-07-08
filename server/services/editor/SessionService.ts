@@ -261,11 +261,27 @@ export class SessionService {
         
         console.log(`📝 Found ${jobSigners.length} signers for job ${jobId}`);
         
-        jobSigners.forEach((signer, index) => {
+        for (const [index, signer] of jobSigners.entries()) {
+          // Find the actual user ID by email
+          let actualUserId = null;
+          const [signerUser] = await db
+            .select()
+            .from(users)
+            .where(eq(users.email, signer.signerEmail))
+            .limit(1);
+          
+          if (signerUser) {
+            actualUserId = signerUser.id.toString();
+            console.log(`🔗 Mapped signer "${signer.signerName}" (${signer.signerEmail}) to user ID ${actualUserId}`);
+          } else {
+            console.warn(`⚠️ No user found for signer email: ${signer.signerEmail}`);
+            actualUserId = signer.id.toString(); // Fallback to signer ID
+          }
+          
           participants.push({
             id: `participant_signer_${signer.id}`,
             sessionId: `session_${jobId}`,
-            userId: signer.id.toString(),
+            userId: actualUserId,
             userType: 'signer',
             status: 'invited',
             currentPage: 1,
@@ -275,8 +291,8 @@ export class SessionService {
             email: signer.signerEmail,
             colorCode: this.getSignerColor(index + 1)
           });
-          console.log(`✅ Added real signer: ${signer.signerName}`);
-        });
+          console.log(`✅ Added real signer: ${signer.signerName} with user ID ${actualUserId}`);
+        }
       } catch (error) {
         console.error('Failed to fetch signers from database:', error);
       }
@@ -361,10 +377,12 @@ export class SessionService {
   private static generateDocumentUrl(filePath: string): string {
     console.log('🔗 Generating document URL for:', filePath);
     
-    // Generate signed URL for Vultr storage or local file
-    if (filePath.startsWith('vultr://')) {
-      const vultrPath = filePath.replace('vultr://', '');
-      const url = `/api/documents/vultr/${encodeURIComponent(vultrPath)}`;
+    // Check if this is a Vultr file (doesn't start with / or contain file system path separators)
+    const isVultrFile = !filePath.startsWith('/') && !filePath.includes('\\') && !filePath.includes('uploads/');
+    
+    if (isVultrFile) {
+      // Generate URL for Vultr storage
+      const url = `/api/documents/${encodeURIComponent(filePath)}`;
       console.log('📁 Vultr document URL:', url);
       return url;
     } else {

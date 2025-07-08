@@ -626,8 +626,23 @@ export class LiveSigningSessionService {
             console.log(`📝 Found ${jobSigners.length} signers for job ${session.jobId}`);
             
             for (const signer of jobSigners) {
+              // Find the actual user ID by email
+              let actualUserId = signer.id; // Default fallback
+              const [signerUser] = await db
+                .select()
+                .from(users)
+                .where(eq(users.email, signer.signerEmail))
+                .limit(1);
+              
+              if (signerUser) {
+                actualUserId = signerUser.id;
+                console.log(`🔗 Mapped signer "${signer.signerName}" (${signer.signerEmail}) to user ID ${actualUserId}`);
+              } else {
+                console.warn(`⚠️ No user found for signer email: ${signer.signerEmail}, using signer ID ${signer.id}`);
+              }
+              
               participants.push({
-                userId: signer.id, // Use signer ID, not user ID
+                userId: actualUserId, // Use actual user ID, not signer record ID
                 displayName: signer.signerName,
                 userType: 'signer',
                 isActive: false,
@@ -636,7 +651,7 @@ export class LiveSigningSessionService {
                 leftAt: undefined,
                 lastActivity: undefined
               });
-              console.log(`✅ Added signer: ${signer.signerName}`);
+              console.log(`✅ Added signer: ${signer.signerName} with user ID ${actualUserId}`);
             }
           }
         } catch (jobError) {
@@ -720,6 +735,68 @@ export class LiveSigningSessionService {
     } catch (error) {
       console.error('Failed to check user interaction permission:', error);
       return false;
+    }
+  }
+
+  /**
+   * Complete a live signing session
+   */
+  static async completeSession(sessionId: string, userId: number): Promise<void> {
+    try {
+      // Get session
+      let [session] = await db
+        .select()
+        .from(editorSessions)
+        .where(eq(editorSessions.sessionId, sessionId))
+        .limit(1);
+      
+      if (!session) {
+        const jobIdNum = parseInt(sessionId);
+        if (!isNaN(jobIdNum)) {
+          [session] = await db
+            .select()
+            .from(editorSessions)
+            .where(eq(editorSessions.jobId, jobIdNum))
+            .limit(1);
+        }
+      }
+      
+      if (!session) {
+        throw new Error('Session not found');
+      }
+      
+      // Update session state to completed
+      await db
+        .update(editorSessions)
+        .set({
+          signingState: SigningSessionState.COMPLETED,
+          completedAt: new Date(),
+          status: 'completed',
+          updatedAt: new Date()
+        })
+        .where(eq(editorSessions.id, session.id));
+      
+      // Log completion event
+      await db.insert(liveSessionEvents).values({
+        sessionId: session.id,
+        userId: userId,
+        eventType: 'session_completed',
+        eventData: {
+          completedBy: userId,
+          completedAt: new Date().toISOString()
+        },
+        timestamp: new Date()
+      });
+      
+      // Clear any cached data
+      const cacheKey = `session_state:${sessionId}`;
+      await redisCache.delete(cacheKey);
+      
+      console.log(`✅ Live signing session completed: ${sessionId} by user ${userId}`);
+      
+    } catch (error) {
+      console.error('Failed to complete session:', error);
+      throw error;
     }
   }
 } 

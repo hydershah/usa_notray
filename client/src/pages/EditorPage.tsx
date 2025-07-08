@@ -43,7 +43,8 @@ const EditorPage: React.FC<EditorPageProps> = () => {
   const searchParams = new URLSearchParams(window.location.search);
   const mode = searchParams.get('mode') as 'tagging' | 'notary' | 'signing' || 'tagging';
   const sessionId = searchParams.get('session'); // For live signing sessions
-  
+
+  // State
   const [sessionData, setSessionData] = useState<SessionData | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -82,45 +83,94 @@ const EditorPage: React.FC<EditorPageProps> = () => {
         }
 
         // Check user permissions
-        if (user.role !== 'admin' && user.role !== 'notary' && 
-            job.selectedNotary !== user.id.toString()) {
-          throw new Error('You do not have permission to access this editor session');
+        // Allow admin, notary, assigned notary, or any user with valid session access
+        const hasBasicAccess = user.role === 'admin' || 
+                              user.role === 'notary' || 
+                              job.selectedNotary === user.id.toString();
+        
+        if (!hasBasicAccess) {
+          // If user doesn't have basic access, verify they have session access (includes signers)
+          try {
+            const sessionAccessResponse = await authenticatedFetch(`/api/jobs/${jobId}/session-access`);
+            if (!sessionAccessResponse.ok) {
+              throw new Error('You do not have permission to access this editor session');
+            }
+            const sessionAccessData = await sessionAccessResponse.json();
+            if (!sessionAccessData.hasAccess) {
+              throw new Error('You do not have permission to access this editor session');
+            }
+            console.log('✅ Session access verified for user via API check');
+          } catch (accessError) {
+            throw new Error('You do not have permission to access this editor session');
+          }
         }
 
-        // For signing mode: First try to find existing tagged session, otherwise create new
+        // For signing mode: Use the job ID to find or create session
         let sessionResult;
         
         if (mode === 'signing') {
-          // Check for existing tagged session first
-          console.log('🔍 Signing mode: Looking for existing tagged session...');
+          console.log('🔍 Signing mode: Looking for existing session for job:', jobId);
           
+          // First check if there's a session ID in the URL
+          if (sessionId && sessionId !== jobId) {
+            console.log('🔍 Checking specific session ID:', sessionId);
+            try {
+              const sessionResponse = await authenticatedFetch(`/api/editor/session/${sessionId}`);
+              if (sessionResponse.ok) {
+                const sessionData = await sessionResponse.json();
+                console.log('✅ Found existing session:', sessionId);
+                setSessionData(sessionData);
+                setIsInitializing(false);
+                return;
+              }
+            } catch (error) {
+              console.warn('Session ID not found, falling back to job-based session');
+            }
+          }
+          
+          // Look for existing sessions for this job
           try {
-            // Look for existing sessions for this job
             const existingSessionsResponse = await authenticatedFetch(`/api/jobs/${jobId}/sessions`);
             
             if (existingSessionsResponse.ok) {
               const existingSessions = await existingSessionsResponse.json();
-              const taggedSession = existingSessions.sessions?.find((s: any) => 
-                s.sessionType === 'tagging' && s.status === 'completed'
+              
+              // Look for active live signing session first
+              const liveSession = existingSessions.sessions?.find((s: any) => 
+                s.sessionType === 'notary' && s.status === 'active' && s.isLiveSession
               );
               
-              if (taggedSession) {
-                console.log('✅ Found existing tagged session:', taggedSession.id);
+              if (liveSession) {
+                console.log('✅ Found existing live session:', liveSession.id);
                 sessionResult = {
                   success: true,
-                  session: taggedSession,
-                  message: 'Using existing tagged session for signing'
+                  session: liveSession,
+                  message: 'Using existing live session'
                 };
+              } else {
+                // Look for completed tagging session to use as base
+                const taggedSession = existingSessions.sessions?.find((s: any) => 
+                  s.sessionType === 'tagging' && s.status === 'completed'
+                );
+                
+                if (taggedSession) {
+                  console.log('✅ Found existing tagged session:', taggedSession.id);
+                  sessionResult = {
+                    success: true,
+                    session: taggedSession,
+                    message: 'Using existing tagged session for signing'
+                  };
+                }
               }
             }
           } catch (error) {
-            console.warn('Failed to check for existing sessions, creating new one:', error);
+            console.warn('Failed to check for existing sessions:', error);
           }
         }
         
-        // If no existing session found (or not signing mode), create new session
+        // If no existing session found, create new session
         if (!sessionResult) {
-          console.log(`🆕 Creating new ${mode} session...`);
+          console.log(`🆕 Creating new ${mode} session for job ${jobId}...`);
           const sessionType = mode === 'signing' ? 'notary' : mode;
           const sessionResponse = await authenticatedFetch(`/api/editor/job/${jobId}/session`, {
             method: 'POST',
@@ -134,17 +184,18 @@ const EditorPage: React.FC<EditorPageProps> = () => {
           });
 
           if (!sessionResponse.ok) {
-            throw new Error(`Failed to create session: ${sessionResponse.status}`);
+            const errorData = await sessionResponse.json();
+            throw new Error(errorData.message || `Failed to create session: ${sessionResponse.status}`);
           }
 
           sessionResult = await sessionResponse.json();
         }
         
         if (!sessionResult.success) {
-          throw new Error(sessionResult.message || 'Failed to create session');
+          throw new Error(sessionResult.message || 'Failed to initialize session');
         }
 
-        // Get session data with documents and participants using authenticated fetch
+        // Get session data with documents and participants
         const dataResponse = await authenticatedFetch(`/api/editor/session/${sessionResult.session.id}`);
         
         if (!dataResponse.ok) {
@@ -165,11 +216,6 @@ const EditorPage: React.FC<EditorPageProps> = () => {
         });
 
         console.log(`✅ ${mode} session initialized:`, data.session.id);
-        console.log('📊 Session data details:', {
-          sessionId: data.session.id,
-          documentsCount: documentsWithUrls.length,
-          participantsCount: data.participants.length
-        });
         
       } catch (error) {
         console.error('Failed to initialize editor session:', error);
@@ -201,21 +247,28 @@ const EditorPage: React.FC<EditorPageProps> = () => {
     if (!sessionData) return;
 
     try {
-      // Update session status to completed using authenticated fetch
-      const response = await authenticatedFetch(`/api/editor/session/${sessionData.session.id}/status`, {
-        method: 'PUT',
+      console.log('🔄 Completing session:', sessionData.session.id);
+      
+      // Use the correct completion endpoint based on mode
+      const completionEndpoint = mode === 'signing' 
+        ? `/api/session/${sessionData.session.id}/complete`
+        : `/api/editor/session/${sessionData.session.id}/complete`;
+      
+      const response = await authenticatedFetch(completionEndpoint, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          status: 'completed',
-          completedAt: new Date().toISOString()
-        })
+        body: JSON.stringify({ force: false })
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to complete session: ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(errorData.message || `Failed to complete session: ${response.status}`);
       }
+
+      const result = await response.json();
+      console.log('✅ Session completed successfully:', result);
 
       toast({
         title: "Session Completed",
@@ -237,7 +290,6 @@ const EditorPage: React.FC<EditorPageProps> = () => {
 
   // Handle tags change (for progress tracking)
   const handleTagsChanged = useCallback((tags: DocumentTag[]) => {
-    // Optional: Could send tags to backend for real-time persistence
     console.log(`Tags updated: ${tags.length} total, ${tags.filter(t => t.isCompleted).length} completed`);
   }, []);
 

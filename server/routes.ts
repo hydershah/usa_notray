@@ -10,6 +10,7 @@ import { registerFeeRoutes } from "./fee-routes";
 import { registerAdminVerificationRoutes } from "./routes/admin-verification-routes";
 import adminLogsRoutes from "./routes/admin-logs-routes";
 import notaryVerificationRoutes from "./routes/notary-verification-routes";
+import screenRecordingRoutes from "./routes/screen-recording-api";
 import { auditLoggingService } from "./services/audit-logging-service";
 import { notificationService } from "./notification-service";
 import { verifyToken, hasAdminPrivileges, hasNotaryPrivileges } from "./auth";
@@ -280,6 +281,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         password: hashedPassword
       });
 
+      // Invalidate users cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`admin:*`); // Clear admin caches
+        await redisCache.delPattern(`user:*`); // Clear all user caches
+        await redisCache.delPattern(`api:*users*`); // Clear users API cache
+        console.log(`🧹 Invalidated user caches after registration of user ${user.id}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after user registration:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+
       res.status(201).json({
         id: user.id,
         username: user.username,
@@ -453,6 +465,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'User not found' });
       }
 
+      // Invalidate users cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`admin:*`); // Clear admin caches
+        await redisCache.delPattern(`user:*`); // Clear all user caches
+        await redisCache.delPattern(`api:*users*`); // Clear users API cache
+        console.log(`🧹 Invalidated user caches after updating user ${userId}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after user update:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+
       res.json({
         id: user.id,
         username: user.username,
@@ -477,6 +500,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!deleted) {
         return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Invalidate users cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`admin:*`); // Clear admin caches
+        await redisCache.delPattern(`user:*`); // Clear all user caches
+        await redisCache.delPattern(`api:*users*`); // Clear users API cache
+        console.log(`🧹 Invalidated user caches after deleting user ${userId}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after user deletion:', cacheError);
+        // Don't fail the request if cache invalidation fails
       }
 
       res.json({ message: 'User deleted successfully' });
@@ -820,12 +854,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/companies', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
       const companyData = insertCompanySchema.parse(req.body);
       const company = await storage.createCompany(companyData);
+      
+      // Invalidate companies cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`admin:*`); // Clear admin caches
+        await redisCache.delPattern(`api:*companies*`); // Clear companies API cache
+        console.log(`🧹 Invalidated company caches after creating company ${company.id}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after company creation:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+      
       res.status(201).json(company);
     } catch (error) {
       console.error('Create company error:', error);
@@ -835,7 +880,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put('/api/companies/:id', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -847,6 +892,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'Company not found' });
       }
 
+      // Invalidate companies cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`admin:*`); // Clear admin caches
+        await redisCache.delPattern(`api:*companies*`); // Clear companies API cache
+        console.log(`🧹 Invalidated company caches after updating company ${companyId}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after company update:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+
       res.json(company);
     } catch (error) {
       console.error('Update company error:', error);
@@ -856,7 +911,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete('/api/companies/:id', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -865,6 +920,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!deleted) {
         return res.status(404).json({ message: 'Company not found' });
+      }
+
+      // Invalidate companies cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`admin:*`); // Clear admin caches
+        await redisCache.delPattern(`api:*companies*`); // Clear companies API cache
+        console.log(`🧹 Invalidated company caches after deleting company ${companyId}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after company deletion:', cacheError);
+        // Don't fail the request if cache invalidation fails
       }
 
       res.json({ message: 'Company deleted successfully' });
@@ -885,6 +950,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get jobs where user is invited as signer/witness
+  app.get('/api/jobs/invited', verifyToken, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      
+      // Get jobs where this user is a signer
+      const invitedJobs = await db
+        .select({
+          // Job fields
+          id: jobs.id,
+          titleCompany: jobs.titleCompany,
+          closingType: jobs.closingType,
+          propertyAddressOne: jobs.propertyAddressOne,
+          propertyCity: jobs.propertyCity,
+          propertyState: jobs.propertyState,
+          selectedDate: jobs.selectedDate,
+          selectedTime: jobs.selectedTime,
+          jobStatus: jobs.jobStatus,
+          notaryApprovalStatus: jobs.notaryApprovalStatus,
+          createdAt: jobs.createdAt,
+          // Signer specific fields
+          signerRole: signers.signerRole,
+          signingStatus: signers.signingStatus,
+          invitationToken: signers.invitationToken,
+          invitationSentAt: signers.invitationSentAt
+        })
+        .from(signers)
+        .innerJoin(jobs, eq(signers.jobId, jobs.id))
+        .where(eq(signers.userId, userId))
+        .orderBy(desc(jobs.createdAt));
+
+      res.json(invitedJobs);
+    } catch (error) {
+      console.error('Get invited jobs error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
   app.get('/api/jobs/:id', verifyToken, cacheJobData(180), async (req: any, res) => {
     try {
       const jobId = parseInt(req.params.id);
@@ -895,8 +998,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if user has access to this job
-      if (req.user.role !== 'admin' && job.userId !== req.user.id && job.selectedNotary !== req.user.id.toString()) {
-        return res.status(403).json({ message: 'Access denied' });
+      // Admin, job creator, assigned notary, OR anyone with session access (includes signers)
+      const hasBasicAccess = req.user.role === 'admin' || 
+                           job.userId === req.user.id || 
+                           job.selectedNotary === req.user.id.toString();
+      
+      if (!hasBasicAccess) {
+        // Check if user has session access (includes signers)
+        const hasSessionAccess = await storage.verifySessionAccess(jobId, req.user.id);
+        if (!hasSessionAccess) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
       }
 
       const signers = await storage.getSignersByJobId(jobId);
@@ -958,6 +1070,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         jobData.notaryId = parsedNotaryId;
         jobData.selectedNotary = parsedNotaryId.toString(); // Ensure string representation
         console.log(`✅ ID code assignment: notaryId=${jobData.notaryId}, selectedNotary=${jobData.selectedNotary}`);
+      } else if (jobData.notaryOption === 'assign' && jobData.selectedNotary) {
+        // For manual assignments, ensure both notaryId and selectedNotary are set consistently
+        const parsedNotaryId = parseInt(jobData.selectedNotary);
+        if (isNaN(parsedNotaryId)) {
+          console.error(`❌ Invalid notary ID for manual assignment: ${jobData.selectedNotary}`);
+          return res.status(400).json({ message: 'Invalid notary ID for manual assignment' });
+        }
+        jobData.notaryId = parsedNotaryId;
+        jobData.selectedNotary = parsedNotaryId.toString(); // Ensure string representation
+        console.log(`✅ Manual assignment: notaryId=${jobData.notaryId}, selectedNotary=${jobData.selectedNotary}`);
       } else if (jobData.notaryId && !jobData.selectedNotary) {
         jobData.selectedNotary = jobData.notaryId.toString();
         console.log(`✅ Set selectedNotary from notaryId: ${jobData.selectedNotary}`);
@@ -968,8 +1090,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // For initial job creation, ensure no constraint violations
-      // If we don't have a proper notary assignment yet, clear both fields
-      if (!jobData.notaryId && jobData.selectedNotary && jobData.notaryOption !== 'id_code') {
+      // Only clear notary data for unhandled cases (auto assignment will be handled later)
+      if (!jobData.notaryId && jobData.selectedNotary && 
+          jobData.notaryOption !== 'id_code' && jobData.notaryOption !== 'assign') {
         console.log(`🔧 Clearing inconsistent notary data: selectedNotary=${jobData.selectedNotary}, notaryOption=${jobData.notaryOption}`);
         delete jobData.selectedNotary;
         delete jobData.notaryId;
@@ -1343,6 +1466,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const finalJob = await storage.getJob(job.id);
       const documentCount = req.files ? req.files.length : 0;
       
+      // Invalidate job caches using centralized cache manager
+      console.log(`🔧 About to invalidate caches - finalJob:`, {
+        id: finalJob?.id,
+        notaryId: finalJob?.notaryId,
+        selectedNotary: finalJob?.selectedNotary,
+        creatorId: req.user.id
+      });
+      
+      // Use the new centralized cache manager
+      const { cacheInvalidation } = await import('./services/cache-manager');
+      await cacheInvalidation.onJobCreated(job.id, finalJob?.notaryId, req.user.id);
+      
       res.status(201).json({
         ...finalJob, // Return the updated job with assigned notary
         documentCount,
@@ -1660,6 +1795,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedJob);
     } catch (error) {
       console.error('Update job file error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // General job update endpoint for recording data and other updates
+  app.put('/api/jobs/:id', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      const { recordingData, ...otherUpdates } = req.body;
+
+      const job = await storage.getJob(jobId);
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      // Check if user has access to update this job
+      if (req.user.role !== 'admin' && job.userId !== req.user.id && job.selectedNotary !== req.user.id.toString()) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const updateData: any = { ...otherUpdates };
+      
+      // Handle recording data if provided
+      if (recordingData) {
+        updateData.recordingFileKey = recordingData.fileKey;
+        updateData.recordingFileUrl = recordingData.fileUrl;
+        updateData.recordingFileName = recordingData.fileName;
+        updateData.recordingDuration = recordingData.duration;
+        updateData.recordingStartedAt = recordingData.recordedAt ? new Date(recordingData.recordedAt) : null;
+        updateData.recordingUploadedAt = recordingData.uploadedAt ? new Date(recordingData.uploadedAt) : new Date();
+        updateData.recordingParticipantCount = recordingData.participants;
+        updateData.recordingSessionId = recordingData.sessionId;
+        updateData.recordingLiveSessionId = recordingData.liveSessionId;
+        updateData.recordingMetadata = recordingData;
+        
+        console.log(`✅ Recording data updated for job ${jobId}:`, {
+          fileKey: recordingData.fileKey,
+          duration: recordingData.duration,
+          participants: recordingData.participants
+        });
+      }
+
+      const updatedJob = await storage.updateJob(jobId, updateData);
+      res.json(updatedJob);
+    } catch (error) {
+      console.error('Update job error:', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   });
@@ -2821,6 +3002,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get document versions (signed documents) for a job
+  app.get('/api/jobs/:id/document-versions', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      const job = await storage.getJob(jobId);
+      
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      // Check if user has access to this job
+      if (req.user.role !== 'admin' && job.userId !== req.user.id && job.selectedNotary !== req.user.id.toString()) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Get document versions from database
+      const versions = await db
+        .select()
+        .from(documentVersions)
+        .where(eq(documentVersions.originalDocumentId, jobId))
+        .orderBy(desc(documentVersions.createdAt));
+
+      // Add download URLs to each version
+      const versionsWithUrls = versions.map(version => ({
+        ...version,
+        downloadUrl: `/api/documents/signed/${encodeURIComponent(version.fileName)}`
+      }));
+
+      res.json(versionsWithUrls);
+    } catch (error) {
+      console.error('Get document versions error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
   app.post('/api/jobs/:id/documents', verifyToken, upload.array('documents', 10), async (req: any, res) => {
     try {
       const jobId = parseInt(req.params.id);
@@ -2891,6 +3107,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Clear job-related cache after successful document upload
+      try {
+        const { redisCache } = await import('./services/redis-cache');
+        await redisCache.delPattern(`job:${jobId}:*`);
+        console.log(`🧹 Cleared job cache after document upload: job:${jobId}:*`);
+      } catch (cacheError) {
+        console.warn('Failed to clear job cache after document upload:', cacheError);
+        // Don't throw - cache failures shouldn't break the main flow
+      }
+
       res.status(201).json({
         message: `Added ${addedDocuments.length} document${addedDocuments.length !== 1 ? 's' : ''} to job`,
         documents: addedDocuments,
@@ -2952,6 +3178,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!deleted) {
         return res.status(404).json({ message: 'Document not found' });
+      }
+
+      // Clear job-related cache after successful document deletion
+      try {
+        const { redisCache } = await import('./services/redis-cache');
+        await redisCache.delPattern(`job:${jobId}:*`);
+        console.log(`🧹 Cleared job cache after document deletion: job:${jobId}:*`);
+      } catch (cacheError) {
+        console.warn('Failed to clear job cache after document deletion:', cacheError);
+        // Don't throw - cache failures shouldn't break the main flow
       }
 
       res.json({ message: 'Document deleted successfully' });
@@ -4578,6 +4814,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
   // Register admin logs routes
   app.use('/api/admin', adminLogsRoutes);
   app.use('/api/notary', notaryVerificationRoutes);
+  app.use('/api', screenRecordingRoutes);
   
   // ==========================================
   // ADMIN VERIFICATION ROUTES (Missing endpoints for dashboard)
@@ -5343,6 +5580,194 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
     }
   });
 
+  // Complete live signing session
+  app.post('/api/session/:sessionId/complete', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      const { force = false } = req.body;
+      console.log(`📝 Completing session: ${sessionId} by user ${req.user.id}`);
+
+      // Get session using editor session service
+      const { SessionService } = await import('./services/editor/SessionService');
+      const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
+      
+      let session;
+      let actualSessionId = sessionId;
+      
+      try {
+        // First try to get session directly
+        session = await SessionService.getSession(sessionId);
+        
+        if (session) {
+          actualSessionId = session.id;
+          console.log(`✅ Found session by sessionId: ${actualSessionId}`);
+        }
+      } catch (error) {
+        console.log(`🔍 Session not found by sessionId, checking if it's a jobId...`);
+      }
+      
+      // If session not found by sessionId, try to find by jobId (backward compatibility)
+      if (!session) {
+        const jobId = parseInt(sessionId);
+        
+        if (!isNaN(jobId)) {
+          // Look for the most recent active session for this job
+          const sessions = await db
+            .select()
+            .from(editorSessions)
+            .where(eq(editorSessions.jobId, jobId))
+            .orderBy(desc(editorSessions.createdAt))
+            .limit(1);
+          
+          if (sessions.length > 0) {
+            const sessionData = sessions[0];
+            session = {
+              id: sessionData.sessionId,
+              jobId: sessionData.jobId,
+              sessionType: sessionData.sessionType,
+              status: sessionData.status,
+              notaryId: sessionData.notaryId,
+              videoSessionId: sessionData.videoSessionId,
+              createdAt: sessionData.createdAt,
+              startedAt: sessionData.startedAt,
+              completedAt: sessionData.completedAt
+            };
+            actualSessionId = sessionData.sessionId;
+            console.log(`✅ Found session by jobId: ${actualSessionId}`);
+          }
+        }
+      }
+      
+      if (!session) {
+        return res.status(404).json({ 
+          message: 'Session not found',
+          error: 'session_not_found'
+        });
+      }
+
+      // Check if session is already completed
+      if (session.status === 'completed') {
+        return res.status(200).json({
+          success: true,
+          message: 'Session was already completed',
+          sessionId: actualSessionId,
+          alreadyCompleted: true
+        });
+      }
+
+      // Verify user permissions
+      const isAdmin = req.user.role === 'admin' || (req.user.privileges && req.user.privileges.includes('admin'));
+      const isAssignedNotary = session.notaryId === req.user.id;
+      
+      if (!isAssignedNotary && !isAdmin) {
+        return res.status(403).json({ 
+          message: 'Only the assigned notary or admin can complete the session',
+          error: 'insufficient_permissions'
+        });
+      }
+
+      // For live signing sessions, handle completion
+      if (session.sessionType === 'notary' || session.sessionType === 'signing') {
+        try {
+          // Get all tags for validation
+          const { TagService } = await import('./services/editor/TagService');
+          const tags = await TagService.getSessionTags(actualSessionId);
+          
+          // Check if all required tags are completed (unless forced)
+          const incompleteTags = tags.filter(tag => !tag.isCompleted && tag.isRequired !== false);
+          if (incompleteTags.length > 0 && !force) {
+            return res.status(400).json({
+              success: false,
+              message: `Cannot complete session: ${incompleteTags.length} required tags are not completed`,
+              error: 'incomplete_required_tags',
+              canForce: true,
+              incompleteTags: incompleteTags.map(t => ({
+                id: t.id,
+                type: t.tagType,
+                assignedUser: t.assignedUserId
+              }))
+            });
+          }
+
+                     // Generate final PDF if there are completed tags
+           if (tags.length > 0 && tags.some(t => t.isCompleted)) {
+             try {
+               const { PDFProcessorService } = await import('./services/pdf-processor.service');
+               const pdfProcessor = PDFProcessorService.getInstance();
+               
+               // Process the document and apply real content
+               const processedDoc = await pdfProcessor.processCompletedDocument(actualSessionId);
+               
+               if (processedDoc && processedDoc.buffer) {
+                 // Save to uploads directory
+                 const fs = await import('fs/promises');
+                 const path = await import('path');
+                 const uploadsDir = path.resolve('uploads/signed');
+                 
+                 // Ensure directory exists
+                 try {
+                   await fs.mkdir(uploadsDir, { recursive: true });
+                 } catch (mkdirError) {
+                   console.log('Uploads directory already exists or created');
+                 }
+                 
+                 const signedFileName = `job_${session.jobId}_signed_${Date.now()}.pdf`;
+                 const signedFilePath = path.join(uploadsDir, signedFileName);
+                 
+                 // Write the signed PDF
+                 await fs.writeFile(signedFilePath, processedDoc.buffer);
+                 
+                 console.log(`✅ Generated signed PDF: ${signedFileName} (${processedDoc.fileSize} bytes)`);
+                 
+                 // Update job status to indicate signed documents are available
+                 await db
+                   .update(jobs)
+                   .set({
+                     status: 'completed',
+                     completedAt: new Date()
+                   })
+                   .where(eq(jobs.id, session.jobId));
+               }
+               
+             } catch (pdfError) {
+               console.error('❌ Failed to generate final signed PDF:', pdfError);
+               // Don't fail the completion, just log the error
+               console.warn('Session marked as completed but PDF generation failed');
+             }
+           }
+          
+          // Complete the live signing session
+          await LiveSigningSessionService.completeSession(actualSessionId, req.user.id);
+          
+        } catch (error) {
+          console.error('Error during live signing completion:', error);
+          // Don't fail completely, still mark session as completed
+        }
+      }
+      
+      // Mark session as completed
+      await SessionService.updateSessionStatus(actualSessionId, 'completed', {
+        completedAt: new Date()
+      });
+      
+      console.log(`✅ Session completed: ${actualSessionId} by user ${req.user.id}`);
+      
+      res.json({
+        success: true,
+        message: 'Session completed successfully',
+        sessionId: actualSessionId,
+        completedAt: new Date()
+      });
+      
+    } catch (error) {
+      console.error('Complete session error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to complete session',
+        error: 'complete_session_failed'
+      });
+    }
+  });
+
   // ==========================================
   // EDITOR ROUTES - PDF Tagging & Signing Sessions
   // ==========================================
@@ -6022,10 +6447,26 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
           note: 'You can start tagging again to continue editing these tags'
         };
         
-      } else if (session.sessionType === 'notary' && tags.length > 0) {
-        // Notary completion: Generate final PDF with real content
+      } else if (tags.length > 0 && tags.some(tag => tag.isCompleted)) {
+        // Live signing completion: Generate final PDF with real content
         try {
           console.log(`✍️ Generating final PDF for live signing session: ${sessionId}`);
+          console.log(`📊 Tags status: ${tags.filter(t => t.isCompleted).length}/${tags.length} completed`);
+          
+          // Check if all required tags are completed
+          const incompleteTags = tags.filter(tag => !tag.isCompleted && tag.isRequired !== false);
+          if (incompleteTags.length > 0 && !force) {
+            return res.status(400).json({
+              message: `Cannot complete session: ${incompleteTags.length} required tags are not completed`,
+              error: 'incomplete_required_tags',
+              canForce: true,
+              incompleteTags: incompleteTags.map(t => ({
+                id: t.id,
+                type: t.tagType,
+                assignedUser: t.assignedUserId
+              }))
+            });
+          }
           
           const { PDFProcessorService } = await import('./services/pdf-processor.service');
           const pdfProcessor = PDFProcessorService.getInstance();
@@ -6045,7 +6486,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
             console.log('Uploads directory already exists or created');
           }
           
-          const signedFileName = `session_${sessionId}_signed.pdf`;
+          const signedFileName = `job_${session.jobId}_signed_${Date.now()}.pdf`;
           const signedFilePath = path.join(uploadsDir, signedFileName);
           
           // Write the signed PDF
@@ -6062,6 +6503,16 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
             status: 'completed',
             digitalCertificateApplied: false
           }).returning();
+          
+          // Update job status to indicate signed documents are available
+          await db
+            .update(jobs)
+            .set({
+              status: 'completed',
+              completedAt: new Date(),
+              signedDocumentId: documentVersion.id
+            })
+            .where(eq(jobs.id, session.jobId));
           
           documentInfo = {
             documentVersionId: documentVersion.id,
