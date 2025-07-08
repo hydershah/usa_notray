@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -15,7 +15,9 @@ import {
   Activity,
   FileText,
   Zap,
-  Keyboard
+  Keyboard,
+  Video,
+  StopCircle
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/auth';
 import SimpleVideoConference from './SimpleVideoConference';
@@ -30,6 +32,7 @@ import type {
   EditorSession 
 } from '@/types/editor';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { VideoIntegration } from './VideoIntegration';
 
 interface LiveSigningInterfaceProps {
   sessionId: string;
@@ -78,97 +81,49 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     participants: []
   });
   const [sessionDuration, setSessionDuration] = useState(0);
-  const [isRecording, setIsRecording] = useState(false);
   const [showParticipants, setShowParticipants] = useState(true);
   const [currentDocumentIndex, setCurrentDocumentIndex] = useState(0);
   const [completedTags, setCompletedTags] = useState<DocumentTag[]>([]);
   const [missingRequiredTags, setMissingRequiredTags] = useState<DocumentTag[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Get current user role
+  // Get current user role - ENHANCED FOR UI RESTRICTIONS
   const currentUser = useMemo(() => participants.find(p => p.userId === currentUserId), [participants, currentUserId]);
   const isNotary = currentUser?.userType === 'notary';
-  const canControlSession = isNotary || currentUser?.userType === 'admin';
-
-  // Get auth user data as fallback for admin users not in participants list
-  const authUserData = useMemo(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try {
-        const userData = JSON.parse(storedUser);
-        return userData;
-      } catch (e) {
-        console.error('Error parsing stored user data:', e);
-        return null;
-      }
-    }
-    return null;
-  }, []);
-
-  // Memoize the user object to prevent re-renders
-  const videoUser = useMemo(() => {
-    // First try to get from participants list
-    if (currentUser) {
-      return {
-        id: currentUserId,
-        name: currentUser.displayName,
-        email: currentUser.email || '',
-        role: currentUser.userType
-      };
-    }
-    
-    // Fallback to auth user data (for admin users not in participants)
-    if (authUserData) {
-      const displayName = authUserData.firstName && authUserData.lastName 
-        ? `${authUserData.firstName} ${authUserData.lastName}`
-        : authUserData.username || authUserData.email || 'Unknown User';
-      
-      return {
-        id: currentUserId,
-        name: displayName,
-        email: authUserData.email || '',
-        role: authUserData.role === 'admin' ? 'admin' : 'signer'
-      };
-    }
-    
-    // Last resort fallback
-    return {
-      id: currentUserId,
-      name: 'Unknown User',
-      email: '',
-      role: 'signer'
-    };
-  }, [currentUserId, currentUser, authUserData]);
+  const isSigner = currentUser?.userType === 'signer';
+  const isWitness = currentUser?.userType === 'witness';
+  const canControlSession = isNotary;
 
   // Session timer
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    
     if (liveSession.state === 'active' && liveSession.startedAt) {
       interval = setInterval(() => {
         const now = new Date();
-        const startTime = new Date(liveSession.startedAt!);
-        const duration = Math.floor((now.getTime() - startTime.getTime()) / 1000);
+        const start = new Date(liveSession.startedAt!);
+        const duration = Math.floor((now.getTime() - start.getTime()) / 1000);
         setSessionDuration(duration);
       }, 1000);
     }
-    
     return () => {
       if (interval) clearInterval(interval);
     };
   }, [liveSession.state, liveSession.startedAt]);
 
-  // Load live session state
+  // Load live session state with optimized polling
   useEffect(() => {
-    if (liveSessionId) {
+    if (liveSessionId || sessionId) {
       loadLiveSessionState();
-      const pollInterval = setInterval(loadLiveSessionState, 3000); // Poll every 3 seconds
+      // Reduce polling frequency to every 10 seconds to improve performance
+      const pollInterval = setInterval(loadLiveSessionState, 10000);
       return () => clearInterval(pollInterval);
     }
-  }, [liveSessionId]);
+  }, [liveSessionId, sessionId]);
 
   const loadLiveSessionState = async () => {
     try {
-      const response = await authenticatedFetch(`/api/session/${liveSessionId || sessionId}/state`);
+      const targetSessionId = liveSessionId || sessionId;
+      const response = await authenticatedFetch(`/api/session/${targetSessionId}/state`);
 
       if (response.ok) {
         const data = await response.json();
@@ -184,22 +139,21 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         };
         
         setLiveSession(validSessionState);
-        
-        // Auto-start recording if session becomes active
-        if (validSessionState.state === 'active' && !isRecording) {
-          handleStartRecording();
-        }
       }
     } catch (error) {
       console.error('Failed to load live session state:', error);
-      // Keep the current state on error, don't reset to undefined
+      // Keep the current state on error, don't reset
     }
   };
 
   // Session control functions
   const handleStartSession = async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+    
     try {
-      const response = await authenticatedFetch(`/api/session/${liveSessionId || sessionId}/start-signing`, {
+      const targetSessionId = liveSessionId || sessionId;
+      const response = await authenticatedFetch(`/api/session/${targetSessionId}/start-signing`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -213,7 +167,8 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         });
         await loadLiveSessionState();
       } else {
-        throw new Error('Failed to start session');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to start session');
       }
     } catch (error) {
       console.error('Failed to start session:', error);
@@ -222,12 +177,18 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         title: "Error",
         description: "Failed to start live signing session"
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handlePauseSession = async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+    
     try {
-      const response = await authenticatedFetch(`/api/session/${liveSessionId || sessionId}/pause`, {
+      const targetSessionId = liveSessionId || sessionId;
+      const response = await authenticatedFetch(`/api/session/${targetSessionId}/pause`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -240,6 +201,9 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
           description: "Session has been paused. You can resume anytime."
         });
         await loadLiveSessionState();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to pause session');
       }
     } catch (error) {
       console.error('Failed to pause session:', error);
@@ -248,12 +212,18 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         title: "Error",
         description: "Failed to pause session"
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleResumeSession = async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+    
     try {
-      const response = await authenticatedFetch(`/api/session/${liveSessionId || sessionId}/resume`, {
+      const targetSessionId = liveSessionId || sessionId;
+      const response = await authenticatedFetch(`/api/session/${targetSessionId}/resume`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -263,9 +233,12 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
       if (response.ok) {
         toast({
           title: "Session Resumed",
-          description: "Live signing session has been resumed"
+          description: "Session has been resumed"
         });
         await loadLiveSessionState();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to resume session');
       }
     } catch (error) {
       console.error('Failed to resume session:', error);
@@ -274,68 +247,18 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         title: "Error",
         description: "Failed to resume session"
       });
-    }
-  };
-
-  const handleSetActiveUser = async (userId: number) => {
-    try {
-      const response = await authenticatedFetch(`/api/session/${liveSessionId || sessionId}/set-active-user`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ userId })
-      });
-
-      if (response.ok) {
-        const activeUser = participants.find(p => p.userId === userId.toString());
-        toast({
-          title: "Active User Changed",
-          description: `${activeUser?.displayName || 'User'} can now interact with documents`
-        });
-        await loadLiveSessionState();
-      }
-    } catch (error) {
-      console.error('Failed to set active user:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to change active user"
-      });
-    }
-  };
-
-  const handleStartRecording = async () => {
-    try {
-      setIsRecording(true);
-      toast({
-        title: "Recording Started",
-        description: "Session recording is now active"
-      });
-    } catch (error) {
-      console.error('Failed to start recording:', error);
-      setIsRecording(false);
-      toast({
-        variant: "destructive",
-        title: "Recording Error",
-        description: "Failed to start session recording"
-      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleCompleteSession = async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+    
     try {
-      // Check if all required tags are completed
-      if (missingRequiredTags.length > 0) {
-        toast({
-          variant: "destructive",
-          title: "Incomplete Documents",
-          description: `${missingRequiredTags.length} required tags must be completed before ending the session.`
-        });
-        return;
-      }
-
-      const response = await authenticatedFetch(`/api/session/${liveSessionId || sessionId}/complete`, {
+      const targetSessionId = liveSessionId || sessionId;
+      const response = await authenticatedFetch(`/api/session/${targetSessionId}/complete`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -345,9 +268,16 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
       if (response.ok) {
         toast({
           title: "Session Completed",
-          description: "Live signing session completed successfully!"
+          description: "Live signing session has been completed successfully"
         });
-        onSessionComplete();
+        
+        // Call the parent completion handler
+        if (onSessionComplete) {
+          onSessionComplete();
+        }
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to complete session');
       }
     } catch (error) {
       console.error('Failed to complete session:', error);
@@ -356,6 +286,40 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         title: "Error",
         description: "Failed to complete session"
       });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSetActiveUser = async (userId: string) => {
+    if (isLoading) return;
+    setIsLoading(true);
+    
+    try {
+      const targetSessionId = liveSessionId || sessionId;
+      const response = await authenticatedFetch(`/api/session/${targetSessionId}/set-active-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ userId: parseInt(userId) })
+      });
+
+      if (response.ok) {
+        await loadLiveSessionState();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to set active user');
+      }
+    } catch (error) {
+      console.error('Failed to set active user:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to set active user"
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -382,167 +346,136 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   };
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
-      {/* Header with session controls */}
-      <div className="bg-white border-b border-gray-200 p-4">
+    <div className="h-screen bg-gray-50 flex flex-col" data-testid="live-signing-interface">
+      {/* Session Header - ENHANCED WITH ROLE INDICATOR */}
+      <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0">
         <div className="flex items-center justify-between">
-          {/* Session Info */}
+          {/* Session Info with Role Indicator */}
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <div className="h-3 w-3 bg-red-500 rounded-full animate-pulse"></div>
               <h1 className="text-lg font-semibold text-gray-800">Live Signing Session</h1>
+              
+              {/* ✅ ROLE INDICATOR FOR SIGNERS */}
+              {isSigner && (
+                <Badge className="bg-blue-100 text-blue-800 border-blue-300">
+                  👤 Signer Role
+                </Badge>
+              )}
+              {isNotary && (
+                <Badge className="bg-red-100 text-red-800 border-red-300">
+                  🔐 Notary Control
+                </Badge>
+              )}
             </div>
             
             <Badge className={`border ${getSessionStateColor(liveSession.state || 'waiting')}`}>
-              {(liveSession.state || 'waiting').toUpperCase()}
+              {liveSession.state || 'waiting'}
             </Badge>
             
             {liveSession.state === 'active' && (
-              <div className="flex items-center gap-1 text-sm text-gray-600">
-                <Clock className="h-4 w-4" />
-                {formatDuration(sessionDuration)}
-              </div>
-            )}
-            
-            {isRecording && (
-              <div className="flex items-center gap-1 text-sm text-red-600">
-                <div className="h-2 w-2 bg-red-500 rounded-full animate-pulse"></div>
-                Recording
-              </div>
+              <span className="text-sm text-gray-600">
+                Duration: {formatDuration(sessionDuration)}
+              </span>
             )}
           </div>
 
-          {/* Session Controls */}
+          {/* Session Controls - RESTRICTED FOR SIGNERS */}
           <div className="flex items-center gap-2">
+            {/* ❌ SIGNERS CANNOT SEE SESSION CONTROLS */}
             {canControlSession && (
-              <>
-                {liveSession.state === 'waiting' && (
-                  <Button onClick={handleStartSession} className="bg-green-600 hover:bg-green-700">
-                    <Play className="h-4 w-4 mr-2" />
-                    Start Session
-                  </Button>
-                )}
-                
-                {liveSession.state === 'active' && (
-                  <Button onClick={handlePauseSession} variant="outline">
-                    <Pause className="h-4 w-4 mr-2" />
-                    Pause
-                  </Button>
-                )}
-                
-                {liveSession.state === 'paused' && (
-                  <Button onClick={handleResumeSession} className="bg-blue-600 hover:bg-blue-700">
-                    <Play className="h-4 w-4 mr-2" />
-                    Resume
-                  </Button>
-                )}
-                
-                {(liveSession.state === 'active' || liveSession.state === 'paused') && (
-                  <Button onClick={handleCompleteSession} className="bg-purple-600 hover:bg-purple-700">
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    Complete Session
-                  </Button>
-                )}
-              </>
+              <LiveSigningControls
+                sessionState={liveSession.state || 'waiting'}
+                canControlSession={canControlSession}
+                onStartSession={handleStartSession}
+                onPauseSession={handlePauseSession}
+                onResumeSession={handleResumeSession}
+                onCompleteSession={handleCompleteSession}
+                isLoading={isLoading}
+              />
             )}
             
+            {/* ✅ SIGNER STATUS INDICATOR */}
+            {isSigner && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-1">
+                  {liveSession.activeUserId === currentUserId ? (
+                    <>
+                      <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+                      <span className="text-sm text-green-700 font-medium">Active</span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="h-2 w-2 bg-yellow-500 rounded-full"></div>
+                      <span className="text-sm text-yellow-700 font-medium">Waiting</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {/* Participants toggle - available to all */}
             <Button
               variant="outline"
+              size="sm"
               onClick={() => setShowParticipants(!showParticipants)}
-              className="border-gray-300"
             >
               <Users className="h-4 w-4 mr-2" />
-              Participants ({participants.length})
+              {showParticipants ? 'Hide' : 'Show'} Participants
             </Button>
           </div>
         </div>
         
-        {/* Job Information */}
-        <div className="mt-2 text-sm text-gray-600">
-          <span className="font-medium">{jobData?.title || 'Untitled Job'}</span>
-          {jobData?.titleCompany && <span> • {jobData.titleCompany}</span>}
-          <span> • {documents.length} document{documents.length !== 1 ? 's' : ''}</span>
-        </div>
+        {/* ✅ SIGNER INSTRUCTIONS BAR */}
+        {isSigner && (
+          <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 text-blue-600">
+                <Shield className="h-5 w-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold text-blue-800">Signer Instructions</h3>
+                <p className="text-sm text-blue-700 mt-1">
+                  {liveSession.activeUserId === currentUserId ? (
+                    <>
+                      <strong>You are now active!</strong> Click on tags assigned to you to fill them out. 
+                      The notary will guide you through the process.
+                    </>
+                  ) : (
+                    <>
+                      Please wait for the notary to activate you. You can view the document but cannot make changes yet.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Main Content Area */}
+      {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Video Panel */}
-        <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
-          {/* Video Integration */}
-          <SimpleVideoConference
+        {/* Video Integration Panel */}
+        <div className="w-80 bg-white border-r border-gray-200 flex-shrink-0">
+          <VideoIntegration
             sessionId={sessionId}
-            currentUser={videoUser}
             participants={participants}
-            className="h-full"
           />
         </div>
 
         {/* Document Editor */}
-        <div className="flex-1 flex flex-col">
-          {/* Document Navigation */}
-          {documents.length > 1 && (
-            <div className="bg-white border-b border-gray-200 p-3">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-gray-600">Documents:</span>
-                <div className="flex gap-2">
-                  {documents.map((doc, index) => (
-                    <Button
-                      key={doc.id}
-                      variant={currentDocumentIndex === index ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setCurrentDocumentIndex(index)}
-                      className="text-xs"
-                    >
-                      <FileText className="h-3 w-3 mr-1" />
-                      {doc.fileName}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Active User Indicator */}
-          {liveSession.state === 'active' && (
-            <div className="bg-blue-50 border-b border-blue-200 p-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Zap className="h-4 w-4 text-blue-600" />
-                  <span className="text-sm font-medium text-blue-800">
-                    Active User: {participants.find(p => p.userId === liveSession.activeUserId?.toString())?.displayName || 'None'}
-                  </span>
-                </div>
-                
-                {isNotary && (
-                  <div className="flex items-center gap-2 text-xs text-blue-600">
-                    <Keyboard className="h-3 w-3" />
-                    Press <kbd className="bg-white px-1 rounded border">`</kbd> for notary, 
-                    <kbd className="bg-white px-1 rounded border">1-8</kbd> for signers
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* PDF Editor */}
-          <div className="flex-1">
-            <PDFTaggingEditor
-              sessionId={sessionId}
-              mode="signing"
-              documents={documents}
-              participants={participants}
-              currentUserId={currentUserId}
-              onSessionComplete={onSessionComplete}
-              onTagsChanged={(tags) => {
-                onTagsChanged(tags);
-                setCompletedTags(tags.filter(t => t.isCompleted));
-                setMissingRequiredTags(tags.filter(t => !t.isCompleted && t.isRequired));
-              }}
-              liveSessionState={liveSession}
-              onSetActiveUser={handleSetActiveUser}
-            />
-          </div>
+        <div className="flex-1 bg-gray-50 overflow-hidden">
+          <PDFTaggingEditor
+            sessionId={sessionId}
+            mode="signing"
+            documents={documents}
+            participants={participants}
+            currentUserId={currentUserId}
+            onSessionComplete={onSessionComplete}
+            onTagsChanged={onTagsChanged}
+            liveSessionState={liveSession}
+            onSetActiveUser={(userId: number) => handleSetActiveUser(userId.toString())}
+          />
         </div>
 
         {/* Participants Panel */}
@@ -552,7 +485,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
               participants={participants}
               liveSession={liveSession}
               currentUserId={currentUserId}
-              onSetActiveUser={handleSetActiveUser}
+              onSetActiveUser={(userId: number) => handleSetActiveUser(userId.toString())}
               canControlSession={canControlSession}
             />
           </div>

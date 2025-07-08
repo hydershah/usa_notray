@@ -116,6 +116,19 @@ export function registerCompanyRoutes(app: Express) {
         lastModifiedBy: result.manager.id
       });
 
+      // Invalidate cache to ensure fresh data on next request
+      try {
+        const { redisCache } = await import('./services/redis-cache');
+        await redisCache.delPattern(`admin:*`); // Clear admin caches
+        await redisCache.delPattern(`user:*`); // Clear all user caches
+        await redisCache.delPattern(`api:*users*`); // Clear users API cache
+        await redisCache.delPattern(`api:*companies*`); // Clear companies API cache
+        console.log(`🧹 Invalidated caches after company registration ${result.company.id}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after company registration:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+
       res.status(201).json({
         message: 'Company registration submitted successfully. Your application is pending admin approval.',
         company: {
@@ -358,7 +371,7 @@ export function registerCompanyRoutes(app: Express) {
    */
   app.get('/api/companies', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin') {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 

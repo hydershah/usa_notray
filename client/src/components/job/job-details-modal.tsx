@@ -467,13 +467,32 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
   const loadCompletedDocuments = async () => {
     try {
       setLoadingCompleted(true);
-      // Load from localStorage for demo purposes
-      const completedDocsString = localStorage.getItem(`completed_documents_${job.id}`);
-      if (completedDocsString) {
-        const completedDocs = JSON.parse(completedDocsString);
-        setCompletedDocuments(completedDocs);
+      
+      // Load document versions (signed documents) from API
+      const response = await fetch(`/api/jobs/${job.id}/document-versions`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (response.ok) {
+        const versions = await response.json();
+        setCompletedDocuments(versions);
       } else {
-        setCompletedDocuments([]);
+        // Fallback: Check if job has signedDocumentId
+        if (job.signedDocumentId && job.jobStatus === 'completed') {
+          // Create a single completed document entry
+          setCompletedDocuments([{
+            id: job.signedDocumentId,
+            fileName: `job_${job.id}_signed.pdf`,
+            documentName: 'Signed Document',
+            completedAt: job.completedAt || new Date().toISOString(),
+            status: 'completed',
+            digitalCertificateApplied: false
+          }]);
+        } else {
+          setCompletedDocuments([]);
+        }
       }
     } catch (error) {
       console.error('Error loading completed documents:', error);
@@ -1031,110 +1050,135 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {completedDocuments.map((completedDoc, index) => (
-                      <div key={index} className="border border-green-200 bg-green-50 rounded-lg p-4">
+                    {completedDocuments.map((completedDoc) => (
+                      <div key={completedDoc.id} className="border border-green-200 bg-green-50 rounded-lg p-4">
                         <div className="flex items-start justify-between mb-3">
-                          <div>
-                            <h4 className="font-medium text-green-900">{completedDoc.documentName}</h4>
-                            <p className="text-sm text-green-700">
-                              Completed: {new Date(completedDoc.completedAt).toLocaleString()}
-                            </p>
-                            {completedDoc.sessionData?.duration && (
-                              <p className="text-xs text-green-600">
-                                Session duration: {Math.floor(completedDoc.sessionData.duration / 60)}:{(completedDoc.sessionData.duration % 60).toString().padStart(2, '0')}
+                          <div className="flex items-center gap-3">
+                            <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
+                              <FileCheck className="h-6 w-6 text-green-600" />
+                            </div>
+                            <div>
+                              <h4 className="font-medium text-green-900">
+                                {completedDoc.fileName || completedDoc.documentName || 'Signed Document'}
+                              </h4>
+                              <p className="text-sm text-green-700">
+                                Completed: {new Date(completedDoc.completedAt || completedDoc.createdAt).toLocaleString()}
                               </p>
-                            )}
+                              {completedDoc.fileSize && (
+                                <p className="text-xs text-green-600 mt-1">
+                                  Size: {formatFileSize(completedDoc.fileSize)}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                          <Badge className="bg-green-100 text-green-800">
-                            Signed & Completed
-                          </Badge>
-                        </div>
-
-                        {/* Participants Summary */}
-                        <div className="mb-3">
-                          <h5 className="text-sm font-medium text-green-900 mb-2">Participants:</h5>
-                          <div className="flex flex-wrap gap-2">
-                            {completedDoc.participants.map((participant: any, pIndex: number) => (
-                              <div key={pIndex} className="flex items-center gap-1 text-xs">
-                                <User className="w-3 h-3" />
-                                <span className="font-medium">{participant.name}</span>
-                                <span className="text-green-600">({participant.role})</span>
-                                {participant.hasAgreed && (
-                                  <span className="text-green-700">✓ Signed</span>
-                                )}
-                              </div>
-                            ))}
+                          <div className="flex flex-col gap-2 items-end">
+                            <Badge className="bg-green-100 text-green-800 border-green-200">
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Signed & Completed
+                            </Badge>
+                            {completedDoc.digitalCertificateApplied && (
+                              <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs">
+                                <Shield className="h-3 w-3 mr-1" />
+                                Digital Certificate
+                              </Badge>
+                            )}
                           </div>
                         </div>
 
-                        {/* Signatures Summary */}
-                        <div className="mb-3">
-                          <h5 className="text-sm font-medium text-green-900 mb-2">
-                            Signatures: {completedDoc.signatures.length}
-                          </h5>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                            {completedDoc.signatures.slice(0, 4).map((signature: any, sIndex: number) => (
-                              <div key={sIndex} className="text-xs bg-white rounded p-2">
-                                <div className="flex items-center justify-between">
-                                  <span className="font-medium">
-                                    {signature.type === 'signature' ? '✍️ Signature' : 
-                                     signature.type === 'initial' ? '✓ Initial' : 
-                                     signature.type === 'stamp' ? '🔘 Stamp' : '📝 Text'}
-                                  </span>
-                                  <span className="text-green-600">{signature.participantName}</span>
-                                </div>
-                                {signature.signedAt && (
-                                  <div className="text-gray-500 mt-1">
-                                    {new Date(signature.signedAt).toLocaleString()}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                            {completedDoc.signatures.length > 4 && (
-                              <div className="text-xs text-green-600 font-medium">
-                                +{completedDoc.signatures.length - 4} more signatures
-                              </div>
-                            )}
+                        {/* Document Info */}
+                        <div className="grid grid-cols-2 gap-4 mb-3 text-sm">
+                          <div>
+                            <span className="text-green-700 font-medium">Version:</span>
+                            <span className="ml-2 text-green-900">v{completedDoc.versionNumber || 1}</span>
+                          </div>
+                          <div>
+                            <span className="text-green-700 font-medium">Status:</span>
+                            <span className="ml-2 text-green-900">{completedDoc.status || 'Completed'}</span>
                           </div>
                         </div>
 
                         {/* Actions */}
-                        <div className="flex gap-2 pt-2 border-t border-green-200">
+                        <div className="flex gap-2 pt-3 border-t border-green-200">
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => {
-                              // Download completed document (would generate PDF in real app)
-                              const dataStr = JSON.stringify(completedDoc, null, 2);
-                              const blob = new Blob([dataStr], { type: 'application/json' });
-                              const url = URL.createObjectURL(blob);
-                              const link = document.createElement('a');
-                              link.href = url;
-                              link.download = `${completedDoc.documentName}_completed.json`;
-                              document.body.appendChild(link);
-                              link.click();
-                              document.body.removeChild(link);
-                              URL.revokeObjectURL(url);
+                            onClick={async () => {
+                              try {
+                                // Download the signed PDF
+                                const downloadUrl = completedDoc.downloadUrl || `/api/documents/signed/${encodeURIComponent(completedDoc.fileName)}`;
+                                const response = await fetch(downloadUrl, {
+                                  headers: {
+                                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                                  }
+                                });
+
+                                if (!response.ok) {
+                                  throw new Error('Failed to download document');
+                                }
+
+                                const blob = await response.blob();
+                                const url = URL.createObjectURL(blob);
+                                const link = document.createElement('a');
+                                link.href = url;
+                                link.download = completedDoc.fileName || `job_${job.id}_signed.pdf`;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                                URL.revokeObjectURL(url);
+
+                                toast({
+                                  title: "Download Started",
+                                  description: "Your signed document is being downloaded.",
+                                });
+                              } catch (error) {
+                                console.error('Download failed:', error);
+                                toast({
+                                  variant: "destructive",
+                                  title: "Download Failed",
+                                  description: "Unable to download the signed document.",
+                                });
+                              }
                             }}
+                            className="text-green-700 border-green-300 hover:bg-green-100"
                           >
                             <Download className="w-4 h-4 mr-1" />
-                            Download
+                            Download PDF
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => {
-                              // View details (expand/modal in real app)
-                              console.log('Completed document details:', completedDoc);
-                              toast({
-                                title: "Document Details",
-                                description: "Check browser console for complete document data",
-                              });
+                              // Preview signed PDF in new tab
+                              const previewUrl = completedDoc.downloadUrl || `/api/documents/signed/${encodeURIComponent(completedDoc.fileName)}`;
+                              window.open(previewUrl, '_blank');
                             }}
+                            className="text-green-700 border-green-300 hover:bg-green-100"
                           >
                             <Eye className="w-4 h-4 mr-1" />
-                            View Details
+                            Preview
                           </Button>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    const shareUrl = `${window.location.origin}/api/documents/signed/${encodeURIComponent(completedDoc.fileName)}`;
+                                    navigator.clipboard.writeText(shareUrl);
+                                    toast({
+                                      title: "Link Copied",
+                                      description: "Document link copied to clipboard.",
+                                    });
+                                  }}
+                                  className="text-green-700 border-green-300 hover:bg-green-100"
+                                >
+                                  <Copy className="w-4 h-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Copy document link</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         </div>
                       </div>
                     ))}

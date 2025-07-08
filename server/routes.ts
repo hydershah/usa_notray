@@ -6043,11 +6043,38 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
         coordinates,
         assignedUserId: assignedUserId,
         requestUserId: req.user.id,
+        requestUserRole: req.user.role,
         finalAssignedUserId: assignedUserId || req.user.id
       });
       
       if (!documentId || !tagType || !coordinates) {
         return res.status(400).json({ message: 'Missing required fields' });
+      }
+      
+      // ✅ SERVER-SIDE AUTHORIZATION: Check if user can place tags
+      // Get session info to determine if this is a signing session
+      const { SessionService } = await import('./services/editor/SessionService');
+      const session = await SessionService.getSession(sessionId);
+      
+      if (!session) {
+        return res.status(404).json({ message: 'Session not found' });
+      }
+      
+      // In signing sessions (notary mode), only notaries and admins can place new tags
+      if (session.sessionType === 'notary' || session.sessionType === 'signing') {
+        const userRole = req.user.role;
+        const isNotary = userRole === 'notary';
+        const isAdmin = userRole === 'admin';
+        
+        if (!isNotary && !isAdmin) {
+          console.log(`❌ Authorization failed: ${userRole} (${req.user.id}) cannot place tags in signing session`);
+          return res.status(403).json({ 
+            message: 'Only notaries and admins can place new tags during signing sessions',
+            error: 'insufficient_permissions'
+          });
+        }
+        
+        console.log(`✅ Authorization passed: ${userRole} (${req.user.id}) can place tags in signing session`);
       }
       
       const { TagService } = await import('./services/editor/TagService');
@@ -6132,6 +6159,31 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
   app.delete('/api/editor/session/:sessionId/tag/:tagId', verifyToken, async (req: any, res) => {
     try {
       const { sessionId, tagId } = req.params;
+      
+      // ✅ SERVER-SIDE AUTHORIZATION: Check if user can delete tags
+      const { SessionService } = await import('./services/editor/SessionService');
+      const session = await SessionService.getSession(sessionId);
+      
+      if (!session) {
+        return res.status(404).json({ message: 'Session not found' });
+      }
+      
+      // In signing sessions, only notaries and admins can delete tags
+      if (session.sessionType === 'notary' || session.sessionType === 'signing') {
+        const userRole = req.user.role;
+        const isNotary = userRole === 'notary';
+        const isAdmin = userRole === 'admin';
+        
+        if (!isNotary && !isAdmin) {
+          console.log(`❌ Authorization failed: ${userRole} (${req.user.id}) cannot delete tags in signing session`);
+          return res.status(403).json({ 
+            message: 'Only notaries and admins can delete tags during signing sessions',
+            error: 'insufficient_permissions'
+          });
+        }
+        
+        console.log(`✅ Authorization passed: ${userRole} (${req.user.id}) can delete tags in signing session`);
+      }
       
       const { TagService } = await import('./services/editor/TagService');
       

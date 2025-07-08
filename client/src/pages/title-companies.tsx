@@ -100,6 +100,10 @@ export default function TitleCompanies() {
 
   const { data: companies = [], isLoading } = useQuery<Company[]>({
     queryKey: ['/api/companies'],
+    staleTime: 0, // Always refetch
+    gcTime: 0, // Don't cache
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
 
   // Enhanced filtering and sorting
@@ -174,7 +178,11 @@ export default function TitleCompanies() {
       return response.json();
     },
     onSuccess: () => {
+      // Force a complete cache refresh
       queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+      queryClient.refetchQueries({ queryKey: ['/api/companies'] });
+      // Also clear the browser cache by adding a timestamp
+      queryClient.removeQueries({ queryKey: ['/api/companies'] });
       toast({
         title: "Success",
         description: "Title company created successfully.",

@@ -580,7 +580,8 @@ export class DatabaseStorage implements IStorage {
       return await db.select().from(jobs).where(
         or(
           eq(jobs.userId, userId),
-          eq(jobs.selectedNotary, userId.toString())
+          eq(jobs.selectedNotary, userId.toString()),
+          eq(jobs.notaryId, userId) // Also check the modern notaryId field
         )
       ).orderBy(desc(jobs.createdAt));
     } else {
@@ -621,15 +622,30 @@ export class DatabaseStorage implements IStorage {
   }
 
   async verifySessionAccess(jobId: number, userId: number): Promise<boolean> {
+    // First check job_participants table
     const [participant] = await db
       .select()
       .from(jobParticipants)
       .where(and(eq(jobParticipants.jobId, jobId), eq(jobParticipants.userId, userId)));
     
     if (!participant) {
+      // Get user details for further checks
+      const [user] = await db.select().from(users).where(eq(users.id, userId));
+      if (!user) return false;
+      
+      // Check if user is linked through signers table (important for invitation flow)
+      const [signer] = await db
+        .select()
+        .from(signers)
+        .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, user.email)));
+      
+      if (signer) {
+        console.log(`✅ Session access granted via signers table for user ${userId} (${user.email}) on job ${jobId}`);
+        return true; // User is a signer for this job
+      }
+      
       // Check if user is the job creator or a notary assigned to the job
       const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId));
-      const [user] = await db.select().from(users).where(eq(users.id, userId));
       
       return job?.userId === userId || (user && hasAdminPrivileges(user)) || job?.selectedNotary === user?.username;
     }

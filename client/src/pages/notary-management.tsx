@@ -61,13 +61,39 @@ export default function NotaryManagement() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: users = [], isLoading } = useQuery({
-    queryKey: ['/api/users'],
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  
+  const { data: users = [], isLoading, refetch } = useQuery({
+    queryKey: ['/api/users', refreshTrigger],
+    queryFn: async () => {
+      // Force fresh data with cache-busting headers
+      const response = await fetch('/api/users?' + new URLSearchParams({
+        _t: Date.now().toString() // Cache busting parameter
+      }), {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch users');
+      }
+      return response.json();
+    },
+    staleTime: 0, // Always refetch
+    gcTime: 0, // Don't cache
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
 
   // Filter only notaries
   const notaries = useMemo(() => {
-    return users.filter((user: any) => user.role === 'notary');
+    console.log('🔍 All users received:', users);
+    const filteredNotaries = users.filter((user: any) => user.role === 'notary');
+    console.log('👨‍⚖️ Filtered notaries:', filteredNotaries);
+    return filteredNotaries;
   }, [users]);
 
   // Filtered notaries
@@ -99,7 +125,12 @@ export default function NotaryManagement() {
       return response.json();
     },
     onSuccess: () => {
+      // Force a complete cache refresh
+      setRefreshTrigger(prev => prev + 1);
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.refetchQueries({ queryKey: ['/api/users'] });
+      queryClient.removeQueries({ queryKey: ['/api/users'] });
+      refetch();
       toast({
         title: "Success",
         description: "Notary created successfully.",
@@ -122,7 +153,10 @@ export default function NotaryManagement() {
       return response.json();
     },
     onSuccess: () => {
+      // Force a complete cache refresh
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.refetchQueries({ queryKey: ['/api/users'] });
+      queryClient.removeQueries({ queryKey: ['/api/users'] });
       toast({
         title: "Success",
         description: "Notary updated successfully.",
@@ -145,7 +179,10 @@ export default function NotaryManagement() {
       return response.json();
     },
     onSuccess: () => {
+      // Force a complete cache refresh
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.refetchQueries({ queryKey: ['/api/users'] });
+      queryClient.removeQueries({ queryKey: ['/api/users'] });
       toast({
         title: "Success",
         description: "Notary deleted successfully.",
@@ -168,7 +205,10 @@ export default function NotaryManagement() {
       return response.json();
     },
     onSuccess: () => {
+      // Force a complete cache refresh
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.refetchQueries({ queryKey: ['/api/users'] });
+      queryClient.removeQueries({ queryKey: ['/api/users'] });
       toast({
         title: "Success",
         description: "Notary status updated successfully.",
@@ -260,10 +300,19 @@ export default function NotaryManagement() {
               Manage notaries in your system. Subscribers can create jobs, contractors get assigned jobs only.
             </p>
           </div>
-          <Button onClick={handleCreateNotary}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Notary
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => {
+              setRefreshTrigger(prev => prev + 1);
+              refetch();
+            }}>
+              <Search className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+            <Button onClick={handleCreateNotary}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Notary
+            </Button>
+          </div>
         </div>
 
         <Card>

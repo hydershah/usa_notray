@@ -2,6 +2,8 @@ import React, { useCallback, useState } from 'react';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
 import type { TagType, SessionParticipant } from '../../types/editor';
 import { TAG_TYPE_INFO, USER_COLORS } from '../../types/editor';
+import { Badge } from '../ui/badge';
+import { AlertCircle } from 'lucide-react';
 
 interface TaggingToolbarProps {
   participants?: SessionParticipant[];
@@ -169,7 +171,13 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
   const [isCompleting, setIsCompleting] = useState(false);
   const [completionError, setCompletionError] = useState<string | null>(null);
 
-  // Define available tag types based on user role
+  // ✅ ENHANCED USER ROLE DETECTION FOR UI RESTRICTIONS
+  const isSigner = currentUser?.userType === 'signer';
+  const isNotary = currentUser?.userType === 'notary';
+  const isAdmin = currentUser?.role === 'admin';
+  const canPlaceTags = mode.mode === 'tagging' || (mode.mode === 'signing' && (isNotary || isAdmin));
+
+  // Define available tag types based on user role - SIGNER RESTRICTIONS
   const getAvailableTagTypes = useCallback((user: SessionParticipant | null): TagType[] => {
     if (!user) return [];
     
@@ -177,6 +185,21 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
     const signerTags: TagType[] = ['A', 'S', 'I']; // Name, Signature, Initials
     const notaryTags: TagType[] = ['N', 'X', 'O', 'E', 'W']; // Commission, Expiration, Disclosure, Seal, Whiteout
     
+    // ❌ SIGNERS CANNOT PLACE NEW TAGS - only notary/admin can
+    if (mode.mode === 'signing') {
+      switch (user.userType) {
+        case 'notary':
+          return [...universalTags, ...signerTags, ...notaryTags];
+        case 'signer':
+          return []; // ❌ SIGNERS CANNOT PLACE NEW TAGS IN SIGNING MODE
+        case 'witness':
+          return []; // Witnesses cannot place tags
+        default:
+          return [];
+      }
+    }
+    
+    // In tagging mode, allow normal permissions
     switch (user.userType) {
       case 'notary':
         return [...universalTags, ...signerTags, ...notaryTags];
@@ -187,7 +210,7 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
       default:
         return [];
     }
-  }, []);
+  }, [mode.mode]);
 
   const availableTagTypes = getAvailableTagTypes(selectedUser);
 
@@ -273,14 +296,31 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
 
   return (
     <div className={`bg-white rounded-lg flex flex-col ${className}`}>
-      {/* Fixed Header */}
+      {/* Fixed Header - ENHANCED WITH ROLE INDICATOR */}
       <div className="p-4 border-b">
-        <h2 className="text-lg font-semibold text-gray-900">
-          {mode?.mode === 'signing' ? 'Document Tags & Content' : 'Tag Placement'}
-        </h2>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-lg font-semibold text-gray-900">
+            {mode?.mode === 'signing' ? 'Document Tags & Content' : 'Tag Placement'}
+          </h2>
+          
+          {/* ✅ ROLE INDICATOR */}
+          {isSigner && (
+            <Badge className="bg-blue-100 text-blue-800 border-blue-300 text-xs">
+              👤 Signer
+            </Badge>
+          )}
+          {isNotary && (
+            <Badge className="bg-red-100 text-red-800 border-red-300 text-xs">
+              🔐 Notary
+            </Badge>
+          )}
+        </div>
+        
         <p className="text-sm text-gray-600">
           {mode?.mode === 'signing' 
-            ? 'Add more tags or complete existing tags with content'
+            ? isSigner 
+              ? 'View tags and complete those assigned to you'
+              : 'Add more tags or complete existing tags with content'
             : 'Place tags on the document for signers'
           }
         </p>
@@ -305,16 +345,38 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
         }}
       >
 
-      {/* User Selection */}
-      <UserSelector
-        participants={participants}
-        selectedUser={selectedUser}
-        currentUser={currentUser}
-        onUserSelect={handleUserSelect}
-      />
+      {/* ❌ SIGNERS CANNOT SEE USER SELECTION - HIDE FOR SIGNERS */}
+      {!isSigner && (
+        <UserSelector
+          participants={participants}
+          selectedUser={selectedUser}
+          currentUser={currentUser}
+          onUserSelect={handleUserSelect}
+        />
+      )}
 
-      {/* Tag Type Selection */}
-      {selectedUser && availableTagTypes.length > 0 && (
+      {/* ✅ SIGNER RESTRICTION MESSAGE */}
+      {isSigner && mode?.mode === 'signing' && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0">
+              <AlertCircle className="h-5 w-5 text-yellow-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-yellow-800 mb-1">
+                Restricted Access - Signer Role
+              </h3>
+              <p className="text-sm text-yellow-700">
+                You cannot place new tags or modify the document structure. 
+                The notary will assign tags to you that you can fill out.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tag Type Selection - HIDDEN FOR SIGNERS */}
+      {selectedUser && availableTagTypes.length > 0 && !isSigner && (
         <div className="space-y-2">
           <h3 className="text-sm font-semibold text-gray-700">
             Available Tag Types
@@ -379,8 +441,8 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
         </div>
       )}
 
-      {/* Current Selection Display */}
-      {selectedUser && selectedTagType && (
+      {/* Current Selection Display - HIDDEN FOR SIGNERS */}
+      {selectedUser && selectedTagType && !isSigner && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
           <div className="text-sm font-medium text-blue-800">
             Ready to Place
@@ -394,16 +456,42 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
       {/* Placed Tags Summary */}
       {tags.length > 0 && (
         <div className="space-y-2">
-          <h3 className="text-sm font-semibold text-gray-700">Placed Tags ({tags.length})</h3>
+          <h3 className="text-sm font-semibold text-gray-700">
+            {isSigner ? 'Document Tags' : `Placed Tags (${tags.length})`}
+          </h3>
           <div className="space-y-1 max-h-40 overflow-y-auto">
             {tags.map(tag => {
               const userInfo = participants.find(p => p.userId === tag.assignedUserId);
               const tagInfo = TAG_TYPE_INFO[tag.tagType];
+              const isAssignedToCurrentUser = tag.assignedUserId === currentUser?.userId;
               
               return (
-                <div key={tag.id} className="flex items-center gap-2 p-2 bg-white rounded border text-xs">
+                <div 
+                  key={tag.id} 
+                  className={`flex items-center gap-2 p-2 rounded border text-xs transition-colors ${
+                    isSigner && isAssignedToCurrentUser 
+                      ? 'bg-blue-50 border-blue-200' 
+                      : isSigner && !isAssignedToCurrentUser
+                      ? 'bg-gray-50 border-gray-200 opacity-60'
+                      : 'bg-white border-gray-200'
+                  }`}
+                >
                   <span className="text-sm">{tagInfo.icon}</span>
                   <span className="font-medium">{tagInfo.label}</span>
+                  
+                  {/* ✅ SIGNER-SPECIFIC TAG STATUS */}
+                  {isSigner && isAssignedToCurrentUser && (
+                    <Badge variant="secondary" className="text-xs">
+                      Yours
+                    </Badge>
+                  )}
+                  
+                  {tag.isCompleted && (
+                    <Badge variant="default" className="bg-green-100 text-green-800 text-xs">
+                      ✓ Done
+                    </Badge>
+                  )}
+                  
                   <div className="flex items-center gap-1 ml-auto">
                     <div 
                       className="w-2 h-2 rounded-full border border-gray-300" 
@@ -420,16 +508,62 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
         </div>
       )}
 
-      {/* Instructions */}
-      <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1">
-        <div className="font-medium">Quick Tips:</div>
-        <div>• Use keyboard shortcuts for faster tagging</div>
-        <div>• Click and drag to resize tags</div>
-        <div>• Press Delete to remove selected tags</div>
+      {/* Instructions - Enhanced for Different User Types */}
+      <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-2">
+        {currentUser?.userType === 'signer' && mode?.mode === 'signing' ? (
+          // ✅ ENHANCED SIGNER-SPECIFIC INSTRUCTIONS
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 bg-blue-500 rounded-full"></div>
+              <div className="font-medium text-blue-700 text-sm">Signer Instructions</div>
+            </div>
+            
+            <div className="bg-green-50 border border-green-200 rounded p-3 space-y-2">
+              <div className="font-medium text-green-800 text-sm">✅ What you CAN do:</div>
+              <div className="text-green-700 space-y-1 text-xs">
+                <div>• View the entire document</div>
+                <div>• Click on tags assigned to you (marked "Yours")</div>
+                <div>• Fill out text and date fields when active</div>
+                <div>• Apply your signature when requested</div>
+              </div>
+            </div>
+            
+            <div className="bg-red-50 border border-red-200 rounded p-3 space-y-2">
+              <div className="font-medium text-red-800 text-sm">❌ What you CANNOT do:</div>
+              <div className="text-red-700 space-y-1 text-xs">
+                <div>• Place new tags on the document</div>
+                <div>• Edit tags assigned to others</div>
+                <div>• Control the session (start/stop/pause)</div>
+                <div>• Change document structure</div>
+              </div>
+            </div>
+            
+            <div className="bg-blue-50 border border-blue-200 rounded p-2">
+              <div className="text-blue-700 text-xs italic text-center">
+                🎯 The notary will guide you through each step of the signing process
+              </div>
+            </div>
+          </div>
+        ) : (
+          // ✅ NOTARY/ADMIN INSTRUCTIONS
+          <div className="space-y-1">
+            <div className="font-medium flex items-center gap-2">
+              <div className="h-2 w-2 bg-red-500 rounded-full"></div>
+              <span>Notary Controls</span>
+            </div>
+            <div className="space-y-1">
+              <div>• Use keyboard shortcuts for faster tagging</div>
+              <div>• Click and drag to resize tags</div>
+              <div>• Press Delete to remove selected tags</div>
+              <div>• Activate signers with hotkeys (1-9) during live sessions</div>
+              <div>• Guide signers through the document completion</div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Completion Button */}
-      {mode?.mode === 'tagging' && (
+      {/* Completion Button - HIDDEN FOR SIGNERS */}
+      {mode?.mode === 'tagging' && !isSigner && (
         <div className="pt-4 border-t">
           <button
             onClick={handleComplete}

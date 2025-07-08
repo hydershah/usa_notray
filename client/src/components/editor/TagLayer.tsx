@@ -289,27 +289,73 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           </div>
         );
       } else {
-        // Incomplete tag - show clickable placeholder for content conversion
+        // Incomplete tag - show clickable placeholder with proper signer restrictions
         const tagInfo = TAG_TYPE_INFO[tag.tagType];
-        const isCurrentUserTag = currentUser && (
-          tag.assignedUserId === currentUser.userId || 
-          currentUser.role === 'notary' || 
-          ['T', 'D'].includes(tag.tagType) // Universal tags
-        );
+        const isNotary = currentUser && (currentUser.role === 'notary' || currentUser.userType === 'notary');
+        const isSigner = currentUser && (currentUser.role === 'signer' || currentUser.userType === 'signer');
+        const isAssignedToCurrentUser = currentUser && tag.assignedUserId === currentUser.userId;
+        const isUniversalTag = ['T', 'D'].includes(tag.tagType);
+        
+        // Determine tag interaction state for signers
+        let tagState: 'active' | 'inactive' | 'forbidden';
+        let backgroundColor = 'bg-blue-100';
+        let borderColor = 'border-blue-300';
+        let textColor = 'text-blue-700';
+        let hoverEffect = 'hover:bg-blue-200';
+        let cursor = 'cursor-pointer';
+        let clickable = true;
+        
+        if (isSigner) {
+          if (!isAssignedToCurrentUser && !isUniversalTag) {
+            // Tag assigned to someone else
+            tagState = 'forbidden';
+            backgroundColor = 'bg-gray-100';
+            borderColor = 'border-gray-300';
+            textColor = 'text-gray-500';
+            hoverEffect = '';
+            cursor = 'cursor-not-allowed';
+            clickable = false;
+          } else {
+            // Tag assigned to signer, but check if they're active
+            const isActiveUser = canUserInteractWithTags();
+            tagState = isActiveUser ? 'active' : 'inactive';
+            
+            if (!isActiveUser) {
+              backgroundColor = 'bg-yellow-100';
+              borderColor = 'border-yellow-300';
+              textColor = 'text-yellow-700';
+              hoverEffect = 'hover:bg-yellow-200';
+            }
+          }
+        } else if (isNotary) {
+          // Notary can always interact
+          tagState = 'active';
+        }
         
         return (
           <div 
-            className="w-full h-full flex items-center justify-center bg-blue-100 border-2 border-blue-300 rounded cursor-pointer hover:bg-blue-200 transition-colors"
-            onClick={() => onTagClick ? onTagClick(tag) : onSelect()}
+            className={`w-full h-full flex items-center justify-center ${backgroundColor} border-2 ${borderColor} rounded ${cursor} ${hoverEffect} transition-colors`}
+            onClick={() => clickable && onTagClick ? onTagClick(tag) : onSelect()}
           >
             <div className="text-center p-1">
               <div className="flex items-center gap-1 justify-center mb-1">
                 <span className="text-lg">{tagInfo.icon}</span>
+                {isSigner && tagState === 'inactive' && (
+                  <span className="text-xs">🔒</span>
+                )}
+                {isSigner && tagState === 'forbidden' && (
+                  <span className="text-xs">❌</span>
+                )}
               </div>
-              <span className="text-xs font-medium text-blue-700 block">
-                Click to {['S', 'I'].includes(tag.tagType) ? 'apply' : 'enter'}
+              <span className={`text-xs font-medium ${textColor} block`}>
+                {isSigner && tagState === 'inactive' 
+                  ? 'Wait for activation'
+                  : isSigner && tagState === 'forbidden'
+                  ? 'Not your tag'
+                  : `Click to ${['S', 'I'].includes(tag.tagType) ? 'apply' : 'enter'}`
+                }
               </span>
-              <span className="text-xs text-blue-600">{tagInfo.label}</span>
+              <span className={`text-xs ${textColor}`}>{tagInfo.label}</span>
             </div>
           </div>
         );
@@ -593,7 +639,7 @@ export const TagLayer: React.FC<TagLayerProps> = ({
     }
   }, [session, deleteTag]);
 
-  // Handle tag click for content conversion during signing - FIXED VERSION
+  // Handle tag click for content conversion during signing - SIGNER RESTRICTIONS
   const handleTagClick = useCallback(async (tag: DocumentTag) => {
     console.log('🏷️ Tag clicked for content conversion:', {
       tagId: tag.id,
@@ -605,60 +651,55 @@ export const TagLayer: React.FC<TagLayerProps> = ({
       canInteractGeneral: canUserInteractWithTags()
     });
 
-    // Check general permissions first
-    if (!canUserInteractWithTags()) {
-      console.log('❌ User cannot interact with tags - not active or not notary');
-      toast({
-        variant: "destructive",
-        title: "Cannot Edit Tag",
-        description: "You are not the active user. Ask the notary to activate you with keyboard shortcuts."
-      });
-      return;
+    const isNotary = currentUser && (currentUser.role === 'notary' || currentUser.userType === 'notary');
+    const isSigner = currentUser && (currentUser.role === 'signer' || currentUser.userType === 'signer');
+
+    // ❌ SIGNERS CAN ONLY CLICK TAGS PLACED BY ADMIN/NOTARY
+    if (isSigner && mode.mode === 'signing') {
+      // Check if signer is assigned to this tag
+      const isAssignedUser = tag.assignedUserId === currentUser.userId;
+      const isUniversalTag = ['T', 'D'].includes(tag.tagType);
+      
+      if (!isAssignedUser && !isUniversalTag) {
+        toast({
+          variant: "destructive",
+          title: "Cannot Edit Tag",
+          description: `This ${tag.tagType} tag is assigned to another participant.`
+        });
+        return;
+      }
+
+      // ✅ SIGNER CAN ONLY INTERACT IF THEY ARE THE ACTIVE USER
+      if (!canUserInteractWithTags()) {
+        toast({
+          variant: "destructive",
+          title: "Tag Not Active",
+          description: "Ask the notary to activate you before filling out tags."
+        });
+        return;
+      }
+
+      // ✅ CHECK IF TAG IS ACTIVE FOR SIGNERS (controlled by notary)
+      // TODO: Add tag.isActiveForSigners field when notary activates tags
+      console.log('✅ Signer can interact with assigned/universal tag');
+    }
+
+    // ✅ NOTARY HAS FULL CONTROL
+    if (isNotary) {
+      console.log('✅ Notary can interact with any tag');
     }
 
     if (mode.mode !== 'signing' || tag.isCompleted) {
-      // For non-signing modes or completed tags, just select if user has permissions
       console.log('👆 Not signing mode or already completed, just selecting tag');
       handleTagSelect(tag);
       return;
     }
 
-    // Check if user can interact with this specific tag
-    const isNotary = currentUser && (currentUser.role === 'notary' || currentUser.userType === 'notary');
-    const isAssignedUser = currentUser && tag.assignedUserId === currentUser.userId;
-    const isUniversalTag = ['T', 'D'].includes(tag.tagType); // Text and Date tags
-    
-    const canInteractWithTag = isNotary || isAssignedUser || isUniversalTag;
-
-    console.log('🔍 Specific tag permission check:', {
-      tagId: tag.id,
-      tagType: tag.tagType,
-      assignedUserId: tag.assignedUserId,
-      currentUserId: currentUser?.userId,
-      isNotary,
-      isAssignedUser,
-      isUniversalTag,
-      canInteractWithTag
-    });
-
-    if (!canInteractWithTag) {
-      console.log('❌ User cannot interact with this specific tag');
-      toast({
-        variant: "destructive",
-        title: "Cannot Edit Tag",
-        description: `This ${tag.tagType} tag is assigned to another participant. Only universal tags (Text/Date) can be edited by anyone.`
-      });
-      return;
-    }
-
     console.log('✅ User can interact with tag, triggering content input...');
     
-    // All checks passed - trigger tag content input
     try {
-      // This would trigger the tag input modal or other interaction mechanism
       handleTagSelect(tag);
       
-      // If there's an onTagClick prop, call it for additional handling
       if (onTagClick) {
         onTagClick(tag);
       }

@@ -265,6 +265,17 @@ export function registerUserManagementRoutes(app: Express) {
       // Create user
       const newUser = await storage.createUser(userData);
 
+      // Invalidate users cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`admin:*`); // Clear admin caches
+        await redisCache.delPattern(`user:*`); // Clear all user caches
+        await redisCache.delPattern(`api:*users*`); // Clear users API cache
+        console.log(`🧹 Invalidated user caches after registration of user ${newUser.id}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after user registration:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+
       // Log the registration
       console.log(`New user registered: ${newUser.email} as ${userType}`);
 

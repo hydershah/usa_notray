@@ -345,12 +345,12 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const [scaleFactors, setScaleFactors] = useState<Map<number, number>>(new Map());
   const isMountedRef = useRef<boolean>(true);
 
-  // Determine if user can edit tags
+  // Determine if user can edit tags - FIXED: Properly respect canPlaceTags in all modes
   const canEditTags = useMemo(() => {
-    // In tagging mode, check if user can place tags
-    // In signing mode, allow interaction with existing tags
-    const result = (mode === 'tagging' && editorMode.canPlaceTags) || mode === 'signing';
-    console.log('🏷️ Can edit tags calculation:', { 
+    // In both tagging and signing modes, check if user can place tags
+    // This ensures signers cannot place new tags in signing mode
+    const result = editorMode.canPlaceTags && (mode === 'tagging' || mode === 'signing');
+    console.log('🏷️ Can edit tags calculation (FIXED):', { 
       mode, 
       canPlaceTags: editorMode.canPlaceTags, 
       editorMode: editorMode,
@@ -710,7 +710,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     return () => clearTimeout(timeout);
   }, [documentUrl, pdfDoc, loading, error, canEditTags, tags.length, scaleFactors.size, renderedPages.size]);
 
-  // Handle canvas clicks for tag placement
+  // Handle canvas clicks for tag placement - SIGNER RESTRICTIONS
   const handleCanvasClick = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
     console.log('🖱️ Canvas clicked:', {
       mode,
@@ -719,12 +719,12 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       editorMode: editorMode
     });
     
-    // Allow tag placement in both tagging and signing modes
-    if ((mode !== 'tagging' && mode !== 'signing') || !canEditTags || !onCoordinateClick) {
-      console.log('❌ Canvas click blocked:', {
-        isTaggingOrSigningMode: mode === 'tagging' || mode === 'signing',
+    // ❌ SIGNERS CANNOT PLACE NEW TAGS - Only notary/admin can click canvas to place tags
+    if (!canEditTags || !onCoordinateClick) {
+      console.log('❌ Canvas click blocked - signers cannot place new tags:', {
         canEditTags,
-        hasOnCoordinateClick: !!onCoordinateClick
+        hasOnCoordinateClick: !!onCoordinateClick,
+        mode
       });
       return;
     }

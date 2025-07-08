@@ -235,7 +235,7 @@ function Router() {
 
       {/* PDF Editor Routes */}
       <Route path="/editor/:jobId">
-        <ProtectedRoute allowedRoles={['admin', 'notary']}>
+        <ProtectedRoute allowedRoles={['admin', 'notary', 'signer', 'witness']}>
           <ErrorBoundary fallback={<LoadingFallback />}>
             <React.Suspense fallback={<LoadingFallback />}>
               <EditorPage />

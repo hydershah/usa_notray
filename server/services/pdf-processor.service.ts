@@ -20,7 +20,10 @@ export interface TagPosition {
   height: number;
   pageNumber: number;
   content?: string;
+  contentData?: string;
+  contentType?: string;
   tagType: string;
+  isCompleted?: boolean;
 }
 
 export class PDFProcessorService {
@@ -121,7 +124,20 @@ export class PDFProcessorService {
       const pdfY = pageHeight - tag.y - tag.height;
       
       const tagInfo = TAG_TYPES[tag.tagType as keyof typeof TAG_TYPES];
-      const content = tag.content || `[${tagInfo?.name || tag.tagType}]`;
+      
+      // Parse contentData if available
+      let contentData: any = null;
+      if (tag.contentData) {
+        try {
+          contentData = typeof tag.contentData === 'string' ? JSON.parse(tag.contentData) : tag.contentData;
+        } catch (e) {
+          console.log('Could not parse contentData, using raw value');
+          contentData = { type: 'text', value: tag.contentData };
+        }
+      }
+      
+      // Determine actual content to apply
+      const content = contentData?.value || tag.content || `[${tagInfo?.name || tag.tagType}]`;
       
       // Determine styling based on tag type
       const isNotaryTag = ['N', 'X', 'O', 'E'].includes(tag.tagType);
@@ -132,7 +148,7 @@ export class PDFProcessorService {
       // Handle special tag types
       switch (tag.tagType) {
         case 'E': // Notary seal
-          await this.drawNotarySeal(page, tag.x, pdfY, tag.width, tag.height);
+          await this.drawNotarySeal(page, tag.x, pdfY, tag.width, tag.height, tag.content);
           break;
           
         case 'W': // Whiteout
@@ -141,7 +157,13 @@ export class PDFProcessorService {
           
         case 'S': // Signature
         case 'I': // Initials
-          this.drawSignaturePlaceholder(page, tag.x, pdfY, tag.width, tag.height, currentFont, fontSize);
+          if (contentData?.type === 'signature' || (content && content.startsWith('data:image'))) {
+            // Draw actual signature image
+            await this.drawSignatureImage(page, tag.x, pdfY, tag.width, tag.height, content);
+          } else {
+            // Draw text signature/initials
+            this.drawTextField(page, tag.x, pdfY, tag.width, tag.height, content, currentFont, fontSize, textColor);
+          }
           break;
           
         default: // Text fields
@@ -149,7 +171,7 @@ export class PDFProcessorService {
           break;
       }
       
-      console.log(`✅ Applied tag ${tag.tagType} at (${tag.x}, ${tag.y})`);
+      console.log(`✅ Applied tag ${tag.tagType} at (${tag.x}, ${tag.y}) with content: ${tag.isCompleted ? 'COMPLETED' : 'placeholder'}`);
       
     } catch (error) {
       console.error(`❌ Failed to apply tag ${tag.tagType}:`, error);
@@ -242,6 +264,70 @@ export class PDFProcessorService {
   }
 
   /**
+   * Draw signature image on PDF
+   */
+  private async drawSignatureImage(
+    page: PDFPage,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    imageData: string
+  ): Promise<void> {
+    try {
+      // Extract base64 data if it's a data URL
+      let base64Data = imageData;
+      if (imageData.includes('base64,')) {
+        base64Data = imageData.split('base64,')[1];
+      }
+      
+      const imageBytes = Buffer.from(base64Data, 'base64');
+      
+      // Try to embed as PNG first, then JPG
+      let image;
+      try {
+        image = await page.doc.embedPng(imageBytes);
+      } catch (pngError) {
+        try {
+          image = await page.doc.embedJpg(imageBytes);
+        } catch (jpgError) {
+          console.error('Failed to embed image as PNG or JPG:', { pngError, jpgError });
+          // Fallback to text
+          this.drawTextField(page, x, y, width, height, '[Signature]', 
+            await page.doc.embedFont(StandardFonts.Helvetica), 12, rgb(0, 0, 0));
+          return;
+        }
+      }
+      
+      // Calculate aspect ratio to fit within bounds
+      const imgDims = image.scale(1);
+      const scaleX = width / imgDims.width;
+      const scaleY = height / imgDims.height;
+      const scale = Math.min(scaleX, scaleY) * 0.9; // 90% to add some padding
+      
+      const scaledWidth = imgDims.width * scale;
+      const scaledHeight = imgDims.height * scale;
+      
+      // Center the image within the bounds
+      const centerX = x + (width - scaledWidth) / 2;
+      const centerY = y + (height - scaledHeight) / 2;
+      
+      page.drawImage(image, {
+        x: centerX,
+        y: centerY,
+        width: scaledWidth,
+        height: scaledHeight,
+      });
+      
+    } catch (error) {
+      console.error('Failed to draw signature image:', error);
+      // Fallback to text
+      this.drawTextField(page, x, y, width, height, '[Signature]', 
+        await page.doc.embedFont(StandardFonts.Helvetica), 12, rgb(0, 0, 0));
+    }
+  }
+
+  /**
    * Draw notary seal placeholder
    */
   private async drawNotarySeal(
@@ -249,7 +335,8 @@ export class PDFProcessorService {
     x: number,
     y: number,
     width: number,
-    height: number
+    height: number,
+    sealContent?: string
   ): Promise<void> {
     // Draw circular seal outline
     const centerX = x + width / 2;
@@ -331,10 +418,23 @@ export class PDFProcessorService {
    */
   private async getSessionTags(sessionId: string): Promise<TagPosition[]> {
     try {
+      const { editorSessions } = await import('../../shared/schema');
+      
+      // First get the session to get the actual session ID
+      const [session] = await db
+        .select()
+        .from(editorSessions)
+        .where(eq(editorSessions.sessionId, sessionId))
+        .limit(1);
+        
+      if (!session) {
+        throw new Error('Session not found');
+      }
+      
       const tags = await db
         .select()
         .from(documentTags)
-        .where(eq(documentTags.sessionId, parseInt(sessionId)));
+        .where(eq(documentTags.sessionId, session.id));
 
       return tags.map(tag => ({
         x: tag.xPosition,
@@ -343,7 +443,10 @@ export class PDFProcessorService {
         height: tag.height,
         pageNumber: tag.pageNumber,
         content: tag.content || undefined,
-        tagType: tag.tagType
+        contentData: tag.contentData || undefined,
+        contentType: tag.contentType || undefined,
+        tagType: tag.tagType,
+        isCompleted: tag.isCompleted || false
       }));
       
     } catch (error) {

@@ -15,6 +15,9 @@ import type {
   DocumentTag,
   TagType
 } from '../../types/editor';
+import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
+import { HelpCircle } from 'lucide-react';
 
 interface PDFTaggingEditorProps {
   sessionId: string;
@@ -59,6 +62,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     selectedTagType,
     tags,
     viewer,
+    currentUser,
     setSession,
     setDocuments,
     setCurrentDocument,
@@ -111,12 +115,15 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
           setSelectedUser(currentParticipant);
         }
 
-        // Set mode configuration - signing mode inherits ALL tagging capabilities
+        // Set mode configuration - PROPER SIGNER RESTRICTIONS
+        const isNotary = currentParticipant?.userType === 'notary' || currentParticipant?.role === 'notary';
+        const isAdmin = currentParticipant?.role === 'admin';
+        
         setMode({
-          mode: mode === 'signing' ? 'tagging' : mode as 'tagging' | 'notary', // Map signing mode to tagging mode in store
-          canPlaceTags: mode === 'tagging' || mode === 'signing', // ✅ Allow tag placement in signing mode
+          mode: mode === 'signing' ? 'tagging' : mode as 'tagging' | 'notary',
+          canPlaceTags: mode === 'tagging' || (mode === 'signing' && (isNotary || isAdmin)), // ❌ SIGNERS CANNOT PLACE NEW TAGS
           canModifyContent: mode === 'notary' || mode === 'signing',
-          showPlaceholders: mode === 'tagging' || mode === 'signing' // ✅ Show placeholders in signing mode too
+          showPlaceholders: mode === 'tagging' || mode === 'signing'
         });
 
         // Load existing tags
@@ -437,32 +444,72 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      {/* Header */}
+      {/* Header - ENHANCED WITH ROLE RESTRICTIONS */}
       <div className="bg-white border-b px-6 py-4 shadow-md">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">
-              {mode === 'tagging' ? 'Document Tagging' : 
-               mode === 'signing' ? 'Live Signing Session' : 'Live Signing Session'}
-            </h1>
-            <p className="text-sm text-gray-600 mt-1">
-              Session: {sessionId.substring(0, 8)}... • {tags.length} tags placed
-              {mode === 'signing' && (
-                <span className="ml-2 text-blue-600 font-medium">
-                  • {tags.filter(t => t.isCompleted).length} completed
-                </span>
+          <div className="flex items-center gap-4">
+            <div>
+              <div className="flex items-center gap-3 mb-1">
+                <h1 className="text-xl font-semibold text-gray-900">
+                  {mode === 'tagging' ? 'Document Tagging' : 
+                   mode === 'signing' ? 'Live Signing Session' : 'Live Signing Session'}
+                </h1>
+                
+                {/* ✅ ROLE INDICATOR */}
+                {currentUser?.userType === 'signer' && (
+                  <Badge className="bg-blue-100 text-blue-800 border-blue-300">
+                    👤 Signer
+                  </Badge>
+                )}
+                {(currentUser?.userType === 'notary' || currentUser?.role === 'notary') && (
+                  <Badge className="bg-red-100 text-red-800 border-red-300">
+                    🔐 Notary
+                  </Badge>
+                )}
+                {currentUser?.role === 'admin' && (
+                  <Badge className="bg-purple-100 text-purple-800 border-purple-300">
+                    ⚙️ Admin
+                  </Badge>
+                )}
+              </div>
+              
+              <p className="text-sm text-gray-600">
+                Session: {sessionId.substring(0, 8)}... • {tags.length} tags placed
+                {mode === 'signing' && (
+                  <span className="ml-2 text-blue-600 font-medium">
+                    • {tags.filter(t => t.isCompleted).length} completed
+                  </span>
+                )}
+                {tags.length > 0 && mode === 'tagging' && (
+                  <span className="ml-2 text-green-600 font-medium">
+                    (Continue editing previous work)
+                  </span>
+                )}
+              </p>
+              
+              {/* ✅ SIGNER STATUS INDICATOR */}
+              {currentUser?.userType === 'signer' && mode === 'signing' && (
+                <div className="mt-2 flex items-center gap-2">
+                  {liveSessionState && liveSessionState.activeUserId === currentUserId ? (
+                    <div className="flex items-center gap-2 px-3 py-1 bg-green-50 border border-green-200 rounded-full">
+                      <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+                      <span className="text-sm text-green-700 font-medium">Active - You can fill tags</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 px-3 py-1 bg-yellow-50 border border-yellow-200 rounded-full">
+                      <div className="h-2 w-2 bg-yellow-500 rounded-full"></div>
+                      <span className="text-sm text-yellow-700 font-medium">Waiting for notary activation</span>
+                    </div>
+                  )}
+                </div>
               )}
-              {tags.length > 0 && mode === 'tagging' && (
-                <span className="ml-2 text-green-600 font-medium">
-                  (Continue editing previous work)
-                </span>
-              )}
-            </p>
+            </div>
           </div>
           
-          {/* Action buttons and status */}
+          {/* Action buttons and status - RESTRICTED FOR SIGNERS */}
           <div className="flex items-center space-x-4">
-            {mode === 'signing' && (
+            {/* ❌ SIGNERS CANNOT SEE REPLACE ALL BUTTON */}
+            {mode === 'signing' && (currentUser?.userType === 'notary' || currentUser?.role === 'admin') && (
               <ReplaceAllButton
                 sessionId={sessionId}
                 tags={tags}
@@ -473,7 +520,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
               />
             )}
             
-            {mode === 'tagging' && (
+            {/* ❌ SIGNERS CANNOT SEE TAGGING CONTROLS */}
+            {mode === 'tagging' && (currentUser?.userType !== 'signer') && (
               <div className="flex items-center space-x-3">
                 {isProcessing && (
                   <div className="flex items-center text-blue-600">
@@ -486,22 +534,37 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
                   📊 {participants.length} participants
                 </div>
                 
-                {/* Complete Tagging Button */}
+                {/* Complete Tagging Button - HIDDEN FOR SIGNERS */}
                 <button
-                  onClick={handleSessionComplete}
+                  onClick={() => console.log('Complete tagging')}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
                   disabled={tags.length === 0}
-                  className={`
-                    px-6 py-2.5 rounded-lg font-semibold text-sm transition-all flex items-center space-x-2 border
-                    ${tags.length === 0 
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200' 
-                      : 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800 shadow-lg hover:shadow-xl border-green-600 hover:border-green-700 transform hover:scale-105'
-                    }
-                  `}
-                  title={tags.length === 0 ? 'Place at least one tag before completing' : 'Complete the tagging session. You can continue editing by clicking Start Tagging again.'}
                 >
-                  <span>✅</span>
-                  <span>Complete Tagging</span>
+                  Complete Tagging
                 </button>
+              </div>
+            )}
+            
+            {/* ✅ SIGNER HELP BUTTON */}
+            {currentUser?.userType === 'signer' && mode === 'signing' && (
+              <div className="flex items-center space-x-3">
+                <div className="text-sm text-gray-600 bg-blue-50 border border-blue-200 px-3 py-2 rounded-lg">
+                  📋 {tags.filter(t => t.assignedUserId === currentUserId).length} tags assigned to you
+                </div>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    toast({
+                      title: "Signer Help",
+                      description: "Wait for the notary to activate you, then click on blue tags assigned to you to fill them out.",
+                    });
+                  }}
+                >
+                  <HelpCircle className="h-4 w-4 mr-2" />
+                  Help
+                </Button>
               </div>
             )}
           </div>

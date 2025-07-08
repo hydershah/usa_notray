@@ -281,6 +281,17 @@ export const jobs = pgTable("jobs", {
   selectedTime: text("selected_time"),
   uploadedFile: text("uploaded_file"),
   notarizedFile: text("notarized_file"),
+  // Screen recording fields for live signing sessions
+  recordingFileKey: text("recording_file_key"), // Vultr storage key for session recording
+  recordingFileUrl: text("recording_file_url"), // Vultr URL for session recording
+  recordingFileName: text("recording_file_name"), // Original filename of recording
+  recordingDuration: integer("recording_duration"), // Recording duration in seconds
+  recordingStartedAt: timestamp("recording_started_at"), // When recording started
+  recordingUploadedAt: timestamp("recording_uploaded_at"), // When recording was uploaded to Vultr
+  recordingParticipantCount: integer("recording_participant_count"), // Number of participants during recording
+  recordingSessionId: text("recording_session_id"), // Editor session ID during recording
+  recordingLiveSessionId: text("recording_live_session_id"), // Live session ID during recording
+  recordingMetadata: jsonb("recording_metadata"), // Additional recording metadata (participants, session details, etc.)
   jobStatus: text("job_status").notNull().default("open"), // 'open', 'pending', 'completed', 'cancelled', 'expired'
   userId: integer("user_id").references(() => users.id),
   sessionToken: text("session_token"),
