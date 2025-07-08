@@ -4,11 +4,11 @@ on:
   push:
     branches: [ "fix/email-configuration-resend" ]
   pull_request:
-    branches: [fix/email-configuration-resend]
+    branches: [ "fix/email-configuration-resend" ]
 
 jobs:
   build-and-deploy:
-    runs-on: self-hosted  # 💡 Uses your own server (runner)
+    runs-on: self-hosted
 
     steps:
       - name: 📥 Checkout repository
@@ -18,14 +18,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: "npm"
 
       - name: 📦 Install dependencies
-        run: npm ci --omit=dev
+        run: npm ci
 
       - name: 🏗️ Build the app
         run: npm run build
 
-      - name: 🚀 Reload with PM2
-        run: |
-          pm2 startOrReload ecosystem.config.js --env production
+      - name: 🚀 Deploy with PM2 (Local via npx)
+        run: npx pm2 startOrReload ecosystem.config.js --env production
