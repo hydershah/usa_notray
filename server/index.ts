@@ -164,10 +164,8 @@ app.use((req, res, next) => {
   // Global error handler (must be last)
   app.use(errorHandler);
 
-  // ALWAYS serve the app on port 3000
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = 3000;
+  // Use Railway's PORT environment variable or fallback to 3000 for local development
+  const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
   
   // Add error handling and retry logic for port conflicts
   const startServer = (retryCount = 0) => {
