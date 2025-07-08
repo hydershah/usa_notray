@@ -3,6 +3,8 @@ name: Node.js CI/CD with PM2 (Self-Hosted)
 on:
   push:
     branches: [ "fix/email-configuration-resend" ]
+  pull_request:
+    branches: [fix/email-configuration-resend]
 
 jobs:
   build-and-deploy:
