@@ -6,9 +6,7 @@ import Redis from 'ioredis';
 async function testRedisCache() {
   console.log('🧪 Testing Redis cache functionality...\n');
   
-  const redis = new Redis({
-    host: 'localhost',
-    port: 6379,
+  const redis = new Redis(process.env.REDIS_URL || process.env.REDIS_PUBLIC_URL || 'redis://localhost:6379', {
     lazyConnect: true
   });
 

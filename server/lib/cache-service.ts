@@ -29,12 +29,9 @@ export class CacheService {
   constructor() {
     this.keyPrefix = process.env.CACHE_KEY_PREFIX || 'usa_notary:';
     
-    // Initialize Redis client
-    this.redis = new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-      password: process.env.REDIS_PASSWORD,
-      db: parseInt(process.env.REDIS_DB || '0'),
+    // Initialize Redis client with connection URL
+    const redisUrl = process.env.REDIS_URL || process.env.REDIS_PUBLIC_URL || 'redis://localhost:6379';
+    this.redis = new Redis(redisUrl, {
       maxRetriesPerRequest: 3,
       retryDelayOnFailover: 100,
       enableReadyCheck: true,

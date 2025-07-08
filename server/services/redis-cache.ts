@@ -8,9 +8,10 @@ export class RedisCache {
   private maxRetries: number = 3;
 
   constructor() {
-    this.redis = new Redis({
-      host: 'localhost',
-      port: 6379,
+    // Use Railway Redis connection string or fallback to localhost
+    const redisUrl = process.env.REDIS_URL || process.env.REDIS_PUBLIC_URL || 'redis://localhost:6379';
+    
+    this.redis = new Redis(redisUrl, {
       retryDelayOnFailover: 100,
       maxRetriesPerRequest: 3,
       lazyConnect: true,
