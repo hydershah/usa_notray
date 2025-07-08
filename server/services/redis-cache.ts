@@ -8,10 +8,25 @@ export class RedisCache {
   private maxRetries: number = 3;
 
   constructor() {
-    // Use Railway Redis connection string or fallback to localhost
-    const redisUrl = process.env.REDIS_URL || process.env.REDIS_PUBLIC_URL || 'redis://localhost:6379';
+    // Check for all possible Redis environment variables
+    const redisUrl = process.env.REDIS_URL || 
+                    process.env.REDIS_PUBLIC_URL || 
+                    process.env.REDIS_PRIVATE_URL ||
+                    process.env.REDISCLOUD_URL ||
+                    'redis://localhost:6379';
     
-    this.redis = new Redis(redisUrl, {
+    // Debug logging to see what Redis URL is being used
+    console.log('🔍 Redis Connection Debug:', {
+      REDIS_URL: process.env.REDIS_URL ? '[REDACTED]' : 'undefined',
+      REDIS_PUBLIC_URL: process.env.REDIS_PUBLIC_URL ? '[REDACTED]' : 'undefined',
+      REDIS_PRIVATE_URL: process.env.REDIS_PRIVATE_URL ? '[REDACTED]' : 'undefined',
+      REDISCLOUD_URL: process.env.REDISCLOUD_URL ? '[REDACTED]' : 'undefined',
+      RAILWAY_ENVIRONMENT: process.env.RAILWAY_ENVIRONMENT || 'undefined',
+      usingUrl: redisUrl.substring(0, 20) + '...' // Only show first 20 chars for security
+    });
+    
+    // Railway-specific Redis connection options
+    const redisOptions = {
       retryDelayOnFailover: 100,
       maxRetriesPerRequest: 3,
       lazyConnect: true,
@@ -27,7 +42,17 @@ export class RedisCache {
         return err.message.includes(targetError) || err.message.includes('ECONNRESET') || err.message.includes('ENOTFOUND');
       },
       showFriendlyErrorStack: true
-    });
+    };
+    
+    // Add Railway-specific connection options if we're on Railway
+    if (process.env.RAILWAY_ENVIRONMENT) {
+      console.log('🚂 Detected Railway environment, adding specific connection options');
+      redisOptions.enableReadyCheck = false;
+      redisOptions.maxRetriesPerRequest = 5;
+      redisOptions.connectTimeout = 20000;
+    }
+    
+    this.redis = new Redis(redisUrl, redisOptions);
 
     this.redis.on('connect', () => {
       this.isConnected = true;
@@ -43,6 +68,12 @@ export class RedisCache {
       console.error('❌ Redis connection error:', err.message);
       this.isConnected = false;
       
+      // Check if it's a Railway internal DNS issue
+      if (err.message.includes('redis.railway.internal') || err.message.includes('ENOTFOUND')) {
+        console.warn('⚠️ Railway Redis service discovery issue detected. App will continue without Redis caching.');
+        return; // Don't retry for DNS issues
+      }
+      
       if (this.connectionAttempts < this.maxRetries) {
         this.connectionAttempts++;
         setTimeout(() => {
@@ -51,6 +82,8 @@ export class RedisCache {
             console.error(`❌ Redis reconnection attempt ${this.connectionAttempts} failed:`, reconnectErr.message);
           });
         }, 1000 * this.connectionAttempts);
+      } else {
+        console.warn('⚠️ Redis max retries exceeded. App will continue without Redis caching.');
       }
     });
 
@@ -66,6 +99,15 @@ export class RedisCache {
     this.redis.connect().catch(err => {
       console.error('❌ Failed to establish initial Redis connection:', err.message);
       this.isConnected = false;
+      
+      // Check if it's a Railway service discovery issue
+      if (err.message.includes('redis.railway.internal') || err.message.includes('ENOTFOUND')) {
+        console.warn('⚠️ Railway Redis service not available. This might be because:');
+        console.warn('   1. Redis service is not connected to this Railway app');
+        console.warn('   2. Redis service is still initializing');
+        console.warn('   3. Internal DNS resolution is failing');
+        console.warn('   App will continue without Redis caching.');
+      }
     });
   }
 
