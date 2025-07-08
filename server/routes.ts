@@ -194,12 +194,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.status(204).send(); // No content
   });
 
-  app.get('/health', (req, res) => {
-    res.json({ 
-      status: 'healthy', 
-      timestamp: new Date().toISOString() 
-    });
-  });
+
 
   // Add audit logging middleware to all routes
   app.use(auditLoggingService.auditMiddleware());

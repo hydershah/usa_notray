@@ -40,16 +40,10 @@ app.use(gracefulDegradation());
 // Add performance monitoring middleware
 app.use(performanceMonitor.middleware());
 
-// Add simple health check endpoint for Railway
+// Add ultra-simple health check endpoint for Railway
 app.get('/health', (req: Request, res: Response) => {
-  // Simple, fast health check for Railway deployment
-  res.status(200).json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    version: '1.0.0'
-  });
+  // Ultra-simple health check - just return OK
+  res.status(200).send('OK');
 });
 
 // Add detailed health check endpoint  
