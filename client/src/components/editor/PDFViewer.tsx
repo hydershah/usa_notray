@@ -399,21 +399,37 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         if (!response.ok) {
           // Try to parse error response as JSON first
           let errorMessage = `HTTP error! status: ${response.status}`;
-          try {
-            const errorData = await response.json();
-            if (errorData.error || errorData.message) {
-              errorMessage = errorData.message || errorData.error;
-              console.log('📄 Server error details:', errorData);
+          
+          // Handle specific HTTP status codes
+          if (response.status === 502) {
+            errorMessage = 'Server error (502): The document service is temporarily unavailable. Please try again in a few moments.';
+            console.error('📄 502 Bad Gateway - backend server may be down or misconfigured');
+          } else if (response.status === 404) {
+            errorMessage = 'Document not found (404): The requested PDF file does not exist on the server.';
+          } else if (response.status === 403) {
+            errorMessage = 'Access denied (403): You do not have permission to view this document.';
+          } else if (response.status === 401) {
+            errorMessage = 'Authentication required (401): Please log in again to access this document.';
+          } else {
+            try {
+              const errorData = await response.json();
+              if (errorData.error || errorData.message) {
+                errorMessage = errorData.message || errorData.error;
+                console.log('📄 Server error details:', errorData);
+              }
+            } catch (parseError) {
+              // If not JSON, use status text
+              errorMessage = `HTTP ${response.status}: ${response.statusText || 'Document request failed'}`;
             }
-          } catch (parseError) {
-            // If not JSON, use status text
-            errorMessage = `HTTP ${response.status}: ${response.statusText || 'Document request failed'}`;
           }
           throw new Error(errorMessage);
         }
         
         // Check if response is JSON (error response) instead of PDF
         const contentType = response.headers.get('content-type');
+        console.log('📄 Response content-type:', contentType);
+        console.log('📄 Response headers:', Object.fromEntries(response.headers.entries()));
+        
         if (contentType && contentType.includes('application/json')) {
           const errorData = await response.json();
           const errorMessage = errorData.message || errorData.error || 'Document not found on server';
@@ -421,9 +437,28 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
           throw new Error(errorMessage);
         }
         
+        // Check if response is HTML (likely an error page)
+        if (contentType && contentType.includes('text/html')) {
+          const htmlText = await response.text();
+          console.error('📄 Server returned HTML instead of PDF. First 500 chars:', htmlText.substring(0, 500));
+          throw new Error('Server returned an HTML page instead of PDF. This usually means authentication failed or the document URL is incorrect.');
+        }
+        
         // Get the PDF data as ArrayBuffer
         pdfData = await response.arrayBuffer();
         console.log('✅ PDF data fetched successfully, size:', pdfData.byteLength);
+        
+        // Check if the data starts with PDF header
+        const uint8Array = new Uint8Array(pdfData);
+        const header = String.fromCharCode(...Array.from(uint8Array.slice(0, 5)));
+        console.log('📄 PDF header check:', header);
+        
+        if (header !== '%PDF-') {
+          // Log first 100 bytes as text to see what we got
+          const textPreview = String.fromCharCode(...Array.from(uint8Array.slice(0, Math.min(100, uint8Array.length))));
+          console.error('📄 Invalid PDF header. First 100 bytes as text:', textPreview);
+          throw new Error('The document does not appear to be a valid PDF file. The server may have returned an error page.');
+        }
         
         // Validate PDF data size (basic check for corrupted/empty files)
         if (pdfData.byteLength < 1000) {
