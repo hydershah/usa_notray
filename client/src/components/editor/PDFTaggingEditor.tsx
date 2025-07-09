@@ -530,18 +530,69 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
                   </div>
                 )}
                 
+                {/* Complete Tagging Button - MOVED TO LEFT OF PARTICIPANTS */}
+                <button
+                  onClick={async () => {
+                    if (!sessionId) return;
+                    
+                    try {
+                      const response = await fetch(`/api/editor/session/${sessionId}/complete`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        },
+                        body: JSON.stringify({ force: false })
+                      });
+                      
+                      const result = await response.json();
+                      
+                      if (!response.ok) {
+                        if (result.canForce) {
+                          const forceComplete = window.confirm(result.message + '\n\nDo you want to complete anyway?');
+                          if (forceComplete) {
+                            const forceResponse = await fetch(`/api/editor/session/${sessionId}/complete`, {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                              },
+                              body: JSON.stringify({ force: true })
+                            });
+                            
+                            if (forceResponse.ok) {
+                              console.log('✅ Session force completed successfully');
+                              handleSessionComplete();
+                            }
+                          }
+                        } else {
+                          alert(result.message || 'Failed to complete session');
+                        }
+                      } else {
+                        console.log('✅ Session completed successfully');
+                        handleSessionComplete();
+                      }
+                    } catch (error) {
+                      console.error('❌ Failed to complete session:', error);
+                      alert('Failed to complete session');
+                    }
+                  }}
+                  className={`
+                    px-3 py-2 rounded-lg font-medium transition-colors text-sm mr-3
+                    ${tags.length === 0
+                      ? 'bg-orange-500 text-white hover:bg-orange-600'
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                    }
+                  `}
+                >
+                  {tags.length === 0 ? 'Complete Without Tags' : 'Complete Tagging'}
+                </button>
+                
                 <div className="text-sm text-gray-600 bg-gray-100 px-3 py-2 rounded-lg">
                   📊 {participants.length} participants
                 </div>
                 
-                {/* Complete Tagging Button - HIDDEN FOR SIGNERS */}
-                <button
-                  onClick={() => console.log('Complete tagging')}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
-                  disabled={tags.length === 0}
-                >
-                  Complete Tagging
-                </button>
+                {/* Complete Tagging Button is now in TaggingToolbar.tsx - this was just a dummy */}
               </div>
             )}
             

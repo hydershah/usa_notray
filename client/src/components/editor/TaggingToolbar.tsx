@@ -334,6 +334,8 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
         </div>
       </div>
 
+
+
       {/* Scrollable Content */}
       <div 
         className="flex-1 overflow-y-auto p-4 space-y-4" 
@@ -562,32 +564,7 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
         )}
       </div>
 
-      {/* Completion Button - HIDDEN FOR SIGNERS */}
-      {mode?.mode === 'tagging' && !isSigner && (
-        <div className="pt-4 border-t">
-          <button
-            onClick={handleComplete}
-            disabled={isCompleting || tags.length === 0}
-            className={`
-              w-full py-2 px-4 rounded-lg font-medium transition-colors
-              ${tags.length === 0
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : isCompleting
-                ? 'bg-gray-400 text-white cursor-wait'
-                : 'bg-green-600 text-white hover:bg-green-700'
-              }
-            `}
-          >
-            {isCompleting ? 'Completing...' : 'Complete Tagging Session'}
-          </button>
-          
-          {completionError && (
-            <div className="mt-2 text-sm text-red-600">
-              {completionError}
-            </div>
-          )}
-        </div>
-      )}
+
       </div>
     </div>
   );

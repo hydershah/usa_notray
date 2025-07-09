@@ -659,12 +659,31 @@ export class LiveSigningSessionService {
         }
       }
       
-      console.log(`✅ Session participants: ${participants.length} total (${participants.filter(p => p.userType === 'notary').length} notaries, ${participants.filter(p => p.userType === 'signer').length} signers)`);
+      // Deduplicate participants by userId - if someone is both notary and signer, prioritize notary role
+      const uniqueParticipants = new Map<number, SessionParticipant>();
+      
+      for (const participant of participants) {
+        const existingParticipant = uniqueParticipants.get(participant.userId);
+        
+        if (!existingParticipant) {
+          uniqueParticipants.set(participant.userId, participant);
+        } else {
+          // If user exists, prioritize notary role over signer
+          if (participant.userType === 'notary' && existingParticipant.userType === 'signer') {
+            uniqueParticipants.set(participant.userId, participant);
+            console.log(`🔄 User ${participant.userId} is both notary and signer - prioritizing notary role`);
+          }
+        }
+      }
+      
+      const deduplicatedParticipants = Array.from(uniqueParticipants.values());
+      
+      console.log(`✅ Session participants: ${deduplicatedParticipants.length} total (${deduplicatedParticipants.filter(p => p.userType === 'notary').length} notaries, ${deduplicatedParticipants.filter(p => p.userType === 'signer').length} signers)`);
       
       // Cache the result for 15 seconds (shorter TTL for active sessions)
-      await redisCache.set(cacheKey, participants, 15);
+      await redisCache.set(cacheKey, deduplicatedParticipants, 15);
       
-      return participants;
+      return deduplicatedParticipants;
       
     } catch (error) {
       console.error('Failed to get session participants:', error);
@@ -790,7 +809,7 @@ export class LiveSigningSessionService {
       
       // Clear any cached data
       const cacheKey = `session_state:${sessionId}`;
-      await redisCache.delete(cacheKey);
+      await redisCache.del(cacheKey);
       
       console.log(`✅ Live signing session completed: ${sessionId} by user ${userId}`);
       

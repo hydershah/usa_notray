@@ -263,6 +263,42 @@ export const titleCompanies = pgTable("title_companies", {
   migratedToCompaniesTable: boolean("migrated_to_companies_table").default(false),
 });
 
+// Title Company Notary Assignments - Many-to-Many relationship
+export const titleCompanyNotaryAssignments = pgTable("title_company_notary_assignments", {
+  id: serial("id").primaryKey(),
+  titleCompanyId: integer("title_company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  notaryId: integer("notary_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  isDefault: boolean("is_default").default(false).notNull(),
+  assignedBy: integer("assigned_by").references(() => users.id),
+  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
+  notes: text("notes"),
+  status: text("status").default("active").notNull(), // 'active', 'inactive'
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  updatedBy: integer("updated_by").references(() => users.id),
+}, (table) => ({
+  // Ensure no duplicate assignments
+  titleCompanyNotaryUnique: unique().on(table.titleCompanyId, table.notaryId),
+}));
+
+// Legacy Title Company Notary Assignments - For backward compatibility
+export const legacyTitleCompanyNotaryAssignments = pgTable("legacy_title_company_notary_assignments", {
+  id: serial("id").primaryKey(),
+  titleCompanyId: integer("title_company_id").notNull().references(() => titleCompanies.id, { onDelete: "cascade" }),
+  notaryId: integer("notary_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  isDefault: boolean("is_default").default(false).notNull(),
+  assignedBy: integer("assigned_by").references(() => users.id),
+  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
+  notes: text("notes"),
+  status: text("status").default("active").notNull(), // 'active', 'inactive'
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  updatedBy: integer("updated_by").references(() => users.id),
+}, (table) => ({
+  // Ensure no duplicate assignments
+  legacyTitleCompanyNotaryUnique: unique().on(table.titleCompanyId, table.notaryId),
+}));
+
 // Jobs table
 export const jobs = pgTable("jobs", {
   id: serial("id").primaryKey(),
@@ -509,6 +545,9 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   preferredByTitleCompanies: many(titleCompanies, {
     relationName: "PreferredNotary"
   }),
+  // Title company notary assignments
+  titleCompanyAssignments: many(titleCompanyNotaryAssignments),
+  legacyTitleCompanyAssignments: many(legacyTitleCompanyNotaryAssignments),
   // Approval relationships
   approvedUsers: many(users, {
     relationName: "ApprovedBy"
@@ -547,13 +586,57 @@ export const companiesRelations = relations(companies, ({ one, many }) => ({
     relationName: "CompanyModifier"
   }),
   users: many(users),
+  notaryAssignments: many(titleCompanyNotaryAssignments),
 }));
 
-export const titleCompaniesRelations = relations(titleCompanies, ({ one }) => ({
+export const titleCompaniesRelations = relations(titleCompanies, ({ one, many }) => ({
   preferredNotary: one(users, {
     fields: [titleCompanies.preferredNotaryId],
     references: [users.id],
     relationName: "PreferredNotary"
+  }),
+  notaryAssignments: many(legacyTitleCompanyNotaryAssignments),
+}));
+
+export const titleCompanyNotaryAssignmentsRelations = relations(titleCompanyNotaryAssignments, ({ one }) => ({
+  titleCompany: one(companies, {
+    fields: [titleCompanyNotaryAssignments.titleCompanyId],
+    references: [companies.id],
+  }),
+  notary: one(users, {
+    fields: [titleCompanyNotaryAssignments.notaryId],
+    references: [users.id],
+  }),
+  assignedByUser: one(users, {
+    fields: [titleCompanyNotaryAssignments.assignedBy],
+    references: [users.id],
+    relationName: "AssignedBy"
+  }),
+  updatedByUser: one(users, {
+    fields: [titleCompanyNotaryAssignments.updatedBy],
+    references: [users.id],
+    relationName: "UpdatedBy"
+  }),
+}));
+
+export const legacyTitleCompanyNotaryAssignmentsRelations = relations(legacyTitleCompanyNotaryAssignments, ({ one }) => ({
+  titleCompany: one(titleCompanies, {
+    fields: [legacyTitleCompanyNotaryAssignments.titleCompanyId],
+    references: [titleCompanies.id],
+  }),
+  notary: one(users, {
+    fields: [legacyTitleCompanyNotaryAssignments.notaryId],
+    references: [users.id],
+  }),
+  assignedByUser: one(users, {
+    fields: [legacyTitleCompanyNotaryAssignments.assignedBy],
+    references: [users.id],
+    relationName: "AssignedBy"
+  }),
+  updatedByUser: one(users, {
+    fields: [legacyTitleCompanyNotaryAssignments.updatedBy],
+    references: [users.id],
+    relationName: "UpdatedBy"
   }),
 }));
 
@@ -1215,6 +1298,10 @@ export type InsertCompany = z.infer<typeof insertCompanySchema>;
 export type Company = typeof companies.$inferSelect;
 export type InsertTitleCompany = z.infer<typeof insertTitleCompanySchema>;
 export type TitleCompany = typeof titleCompanies.$inferSelect;
+export type InsertTitleCompanyNotaryAssignment = typeof titleCompanyNotaryAssignments.$inferInsert;
+export type TitleCompanyNotaryAssignment = typeof titleCompanyNotaryAssignments.$inferSelect;
+export type InsertLegacyTitleCompanyNotaryAssignment = typeof legacyTitleCompanyNotaryAssignments.$inferInsert;
+export type LegacyTitleCompanyNotaryAssignment = typeof legacyTitleCompanyNotaryAssignments.$inferSelect;
 export type InsertJob = z.infer<typeof insertJobSchema>;
 export type Job = typeof jobs.$inferSelect;
 export type InsertSigner = z.infer<typeof insertSignerSchema>;

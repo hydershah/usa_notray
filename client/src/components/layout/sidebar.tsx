@@ -144,6 +144,14 @@ const menuItems: MenuItem[] = [
         description: 'Title company management'
       },
       {
+        id: 'title-company-assignments',
+        label: 'Company Assignments',
+        icon: Star,
+        path: '/title-company-assignments',
+        roles: ['admin'],
+        description: 'Manage preferred notaries'
+      },
+      {
         id: 'system-logs',
         label: 'System Logs',
         icon: Activity,

@@ -208,8 +208,8 @@ export class TagService {
       
       // Handle temporary tag IDs (these should not be updated in DB)
       if (tagId.startsWith('temp_')) {
-        console.log('Skipping update for temporary tag:', tagId);
-        throw new Error('Cannot update temporary tag - tag not yet saved to database');
+        console.warn('Attempted to update temporary tag:', tagId);
+        throw new Error('Cannot update temporary tag - please wait for tag to be saved first');
       }
       
       // Validate that tag ID can be parsed as integer

@@ -19,7 +19,7 @@ import NotaryManagement from "@/pages/notary-management";
 const EditorDemo = React.lazy(() => import("@/pages/EditorDemo"));
 
 // PDF Editor Integration
-const EditorPage = React.lazy(() => import("@/pages/EditorPage"));
+const EditorPage = React.lazy(() => import("./pages/EditorPage"));
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component<
@@ -273,6 +273,16 @@ function Router() {
       <Route path="/title-companies">
         <ProtectedRoute allowedRoles={['admin']}>
           <TitleCompanies />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/title-company-assignments">
+        <ProtectedRoute allowedRoles={['admin']}>
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/title-company-assignments")))}
+            </React.Suspense>
+          </ErrorBoundary>
         </ProtectedRoute>
       </Route>
 

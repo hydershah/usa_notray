@@ -88,7 +88,13 @@ export default defineConfig({
   optimizeDeps: {
     include: ['socket.io-client', 'pdfjs-dist'],
     exclude: ['pdfjs-dist/build/pdf.worker.min.mjs', 'pdfjs-dist/build/pdf.worker.mjs'],
-    force: true // Force optimization to ensure consistency
+    force: true, // Force optimization to ensure consistency
+    esbuildOptions: {
+      loader: {
+        '.tsx': 'tsx',
+        '.ts': 'ts'
+      }
+    }
   },
   define: {
     global: 'globalThis',

@@ -1576,11 +1576,11 @@ export function AdminDashboard() {
                   },
                   { 
                     icon: Star, 
-                    title: 'Qualifications', 
-                    description: 'Manage notary qualifications and certifications',
+                    title: 'Company Assignments', 
+                    description: 'Manage title company preferred notaries',
                     color: 'from-blue-500 to-blue-600',
                     bgColor: 'hover:bg-blue-50',
-                    path: '/notary-management'
+                    path: '/title-company-assignments'
                   },
                   { 
                     icon: Sparkles, 

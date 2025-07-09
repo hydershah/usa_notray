@@ -7,6 +7,7 @@ import { registerUserManagementRoutes } from "./user-management-routes";
 import { registerNotaryProfileRoutes } from "./notary-profile-routes";
 import { registerApprovalWorkflowRoutes } from "./approval-workflow-routes";
 import { registerFeeRoutes } from "./fee-routes";
+import { registerTitleCompanyNotaryRoutes } from "./title-company-notary-routes";
 import { registerAdminVerificationRoutes } from "./routes/admin-verification-routes";
 import adminLogsRoutes from "./routes/admin-logs-routes";
 import notaryVerificationRoutes from "./routes/notary-verification-routes";
@@ -60,6 +61,7 @@ import {
   notaryAssignmentLog,
   titleCompanies,
   companies,
+  titleCompanyNotaryAssignments,
   insertJobParticipantSchema,
   insertJobDocumentSchema,
   insertPaymentScheduleSchema,
@@ -389,7 +391,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(notaries.map(user => ({
         id: user.id,
         username: user.username,
-        email: user.email
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        notaryIdCode: user.notaryIdCode,
+        isActive: user.isActive,
+        notaryType: user.notaryType
       })));
     } catch (error) {
       console.error('Get notaries error:', error);
@@ -1157,22 +1164,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .where(eq(companies.companyName, jobData.titleCompany))
           .limit(1);
 
-        if (titleCompany.length > 0 && titleCompany[0].preferredNotaryId) {
-          // Use preferred notary if available and active
-          const preferredNotary = await db
-            .select()
-            .from(users)
+        if (titleCompany.length > 0) {
+          // Check new assignment system first for preferred notary
+          let preferredNotary: any = null;
+
+          const [assignedNotaryRecord] = await db
+            .select({
+              notary: users
+            })
+            .from(titleCompanyNotaryAssignments)
+            .innerJoin(users, eq(titleCompanyNotaryAssignments.notaryId, users.id))
             .where(
               and(
-                eq(users.id, titleCompany[0].preferredNotaryId),
-                eq(users.isActive, true),
-                eq(users.role, 'notary')
+                eq(titleCompanyNotaryAssignments.titleCompanyId, titleCompany[0].id),
+                eq(titleCompanyNotaryAssignments.isDefault, true),
+                eq(titleCompanyNotaryAssignments.status, 'active'),
+                eq(users.role, 'notary'),
+                eq(users.notaryType, 'contractor'),
+                eq(users.isActive, true)
               )
             )
             .limit(1);
 
-          if (preferredNotary.length > 0) {
-            assignedNotary = preferredNotary[0];
+          if (assignedNotaryRecord) {
+            preferredNotary = assignedNotaryRecord.notary;
+            console.log(`✅ Found preferred notary via new assignment system: ${preferredNotary.firstName} ${preferredNotary.lastName}`);
+          }
+
+          // Fallback to legacy preferred notary system
+          if (!preferredNotary && titleCompany[0].preferredNotaryId) {
+            const legacyPreferredNotary = await db
+              .select()
+              .from(users)
+              .where(
+                and(
+                  eq(users.id, titleCompany[0].preferredNotaryId),
+                  eq(users.isActive, true),
+                  eq(users.role, 'notary'),
+                  eq(users.notaryType, 'contractor')
+                )
+              )
+              .limit(1);
+
+            if (legacyPreferredNotary.length > 0) {
+              preferredNotary = legacyPreferredNotary[0];
+              console.log(`✅ Found preferred notary via legacy system: ${preferredNotary.firstName} ${preferredNotary.lastName}`);
+            }
+          }
+
+          if (preferredNotary) {
+            assignedNotary = preferredNotary;
             await storage.updateJob(job.id, {
               notaryId: assignedNotary.id,
               selectedNotary: assignedNotary.id.toString(),
@@ -1187,6 +1228,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               assignmentType: 'preferred',
               assignmentStatus: 'assigned'
             });
+
+            console.log(`✅ Assigned preferred notary ${assignedNotary.firstName} ${assignedNotary.lastName} to job ${job.id} for ${jobData.titleCompany}`);
 
             // Send job assignment notification to notary (requires approval)
             try {
@@ -4792,6 +4835,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
   // Register enhanced user management and company routes
   registerUserManagementRoutes(app);
   registerCompanyRoutes(app);
+  registerTitleCompanyNotaryRoutes(app);
   registerApprovalWorkflowRoutes(app);
   registerNotaryProfileRoutes(app);
   registerFeeRoutes(app);
@@ -6622,106 +6666,29 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
       const isVultrFile = !filePath.startsWith('/') && !filePath.includes('\\') && !filePath.includes('uploads/');
       
       if (isVultrFile) {
-        // OPTIMIZED: Use cached signed URLs and direct redirects
+        // Try direct Vultr access first (more reliable)
         try {
-          const { optimizedStorage } = await import('./lib/optimized-storage-strategy');
+          const { cloudStorage } = await import('./lib/cloud-storage-service');
           
-          // Get optimized file URL with caching (5-20ms response time)
-          const fileAccess = await optimizedStorage.getOptimizedFileUrl(filePath, 24); // 24 hour cache
-          
-          console.log('📄 Redirecting to cached Vultr URL for:', filePath);
-          
-          // Set proper headers for PDF viewing including CORS
-          res.setHeader('Content-Type', 'application/pdf');
-          res.setHeader('Cache-Control', 'private, max-age=300');
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-          res.setHeader('X-Served-From', 'vultr-cached');
-          res.setHeader('X-Cache-Status', fileAccess.cached ? 'HIT' : 'MISS');
-          
-          // Direct redirect to Vultr (no server bandwidth usage)
-          res.redirect(302, fileAccess.cdnUrl || fileAccess.signedUrl);
-          return;
-          
-        } catch (optimizedError) {
-          console.error('📄 Optimized storage failed, falling back to direct Vultr:', optimizedError);
-          
-          // Fallback to direct Vultr access (still much faster than proxying)
-          try {
-            const { cloudStorage } = await import('./lib/cloud-storage-service');
+          // Quick file existence check
+          const fileExists = await cloudStorage.fileExists(filePath);
+          if (!fileExists) {
+            console.log('📄 File not found in Vultr:', filePath);
             
-            // Quick file existence check (no timeout needed for redirect)
-            const fileExists = await cloudStorage.fileExists(filePath);
-            if (!fileExists) {
-              console.log('📄 File not found in Vultr:', filePath);
-              
-              // Try local fallback before returning 404
-              console.log('📄 Checking for local fallback...');
-              const possibleLocalPaths = [
+            // Try local fallback before returning 404
+            console.log('📄 Checking for local fallback...');
+            
+            const path = await import('path');
+            const fs = await import('fs');
+            
+                          const possibleLocalPaths = [
                 path.join('uploads', filePath),
-                path.join(__dirname, '..', 'uploads', filePath),
+                path.join(process.cwd(), 'uploads', filePath),
                 filePath,
                 // Additional fallback patterns for development files
                 path.join('uploads', 'development', path.basename(filePath)),
                 path.join('uploads', 'documents', path.basename(filePath))
               ];
-              
-              for (const localPath of possibleLocalPaths) {
-                if (fs.existsSync(localPath)) {
-                  console.log('📄 Found local fallback:', localPath);
-                  res.setHeader('Content-Type', 'application/pdf');
-                  res.setHeader('Cache-Control', 'private, max-age=300');
-                  res.setHeader('Access-Control-Allow-Origin', '*');
-                  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-                  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-                  res.setHeader('X-Served-From', 'local-fallback');
-                  return res.sendFile(path.resolve(localPath));
-                }
-              }
-              
-              // No file found anywhere, return proper error response
-              console.error('📄 Document not found in any storage location:', filePath);
-              res.setHeader('Content-Type', 'application/json');
-              return res.status(404).json({ 
-                error: 'Document not found',
-                message: 'The requested document could not be found in cloud or local storage.',
-                filePath: filePath,
-                timestamp: new Date().toISOString()
-              });
-            }
-            
-            // Generate signed URL and redirect (100-200ms)
-            const signedUrl = await cloudStorage.getSignedUrl(filePath, 3600); // 1 hour
-            
-            console.log('📄 Redirecting to Vultr URL for:', filePath);
-            
-            // Set proper headers for PDF viewing including CORS
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Cache-Control', 'private, max-age=300');
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-            res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-            res.setHeader('X-Served-From', 'vultr-direct');
-            
-            // Direct redirect to Vultr (no server bandwidth usage)
-            res.redirect(302, signedUrl);
-            return;
-            
-          } catch (vultrError) {
-            console.error('📄 Vultr direct access failed:', vultrError);
-            
-            // Final fallback: check for local file
-            console.log('📄 Checking for local fallback...');
-            
-            const possibleLocalPaths = [
-              path.join('uploads', filePath),
-              path.join(__dirname, '..', 'uploads', filePath),
-              filePath,
-              // Additional fallback patterns for development files
-              path.join('uploads', 'development', path.basename(filePath)),
-              path.join('uploads', 'documents', path.basename(filePath))
-            ];
             
             for (const localPath of possibleLocalPaths) {
               if (fs.existsSync(localPath)) {
@@ -6736,7 +6703,44 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
               }
             }
             
-            // No fallback found, return proper error response
+            // No file found anywhere, return proper error response
+            console.error('📄 Document not found in any storage location:', filePath);
+            res.setHeader('Content-Type', 'application/json');
+            return res.status(404).json({ 
+              error: 'Document not found',
+              message: 'The requested document could not be found in cloud or local storage.',
+              filePath: filePath,
+              timestamp: new Date().toISOString()
+            });
+          }
+          
+          // Generate signed URL and proxy content
+          const signedUrl = await cloudStorage.getSignedUrl(filePath, 3600); // 1 hour
+          
+          console.log('📄 Proxying Vultr URL for:', filePath);
+          
+          // Set proper headers for PDF viewing including CORS
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Cache-Control', 'private, max-age=300');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+          res.setHeader('X-Served-From', 'vultr-direct');
+          
+          // Proxy the PDF content instead of redirecting to avoid CORS issues
+          const pdfResponse = await fetch(signedUrl);
+          if (!pdfResponse.ok) {
+            throw new Error(`Failed to fetch PDF from Vultr: ${pdfResponse.status}`);
+          }
+          
+          const pdfBuffer = await pdfResponse.arrayBuffer();
+          res.send(Buffer.from(pdfBuffer));
+          return;
+          
+        } catch (vultrError) {
+          console.error('📄 Vultr direct access failed:', vultrError);
+            
+            // Return error response
             console.error('📄 Document not found in any storage location:', filePath);
             res.setHeader('Content-Type', 'application/json');
             return res.status(404).json({ 
@@ -6746,10 +6750,12 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
               vultrError: vultrError instanceof Error ? vultrError.message : 'Unknown Vultr error',
               timestamp: new Date().toISOString()
             });
-          }
         }
       } else {
         // Handle local files
+        const path = await import('path');
+        const fs = await import('fs');
+        
         const fullPath = path.resolve(filePath);
         
         if (!fs.existsSync(fullPath)) {
