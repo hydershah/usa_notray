@@ -1,34 +1,11 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
-import { viteStaticCopy } from 'vite-plugin-static-copy'
-import fs from 'fs'
 
 export default defineConfig({
   plugins: [
     react({
       jsxRuntime: 'automatic'
-    }),
-    // Only copy PDF.js worker files if they don't already exist in public
-    viteStaticCopy({
-      targets: [
-        {
-          src: 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
-          dest: '',
-          rename: 'pdf.worker.min.js',
-          transform: (contents) => contents // This ensures the file is read properly
-        },
-        {
-          src: 'node_modules/pdfjs-dist/build/pdf.worker.mjs', 
-          dest: '',
-          rename: 'pdf.worker.js',
-          transform: (contents) => contents
-        }
-      ].filter(target => {
-        // Check if target already exists in public to avoid unnecessary copies
-        const destPath = path.join(__dirname, 'client/public', target.rename || path.basename(target.src));
-        return !fs.existsSync(destPath);
-      })
     })
   ],
   publicDir: './client/public',
