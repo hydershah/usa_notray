@@ -2,26 +2,33 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
+import fs from 'fs'
 
 export default defineConfig({
   plugins: [
     react({
       jsxRuntime: 'automatic'
     }),
-    // Copy PDF.js worker files to public directory for production
+    // Only copy PDF.js worker files if they don't already exist in public
     viteStaticCopy({
       targets: [
         {
           src: 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
           dest: '',
-          rename: 'pdf.worker.min.js' // Rename to .js for compatibility
+          rename: 'pdf.worker.min.js',
+          transform: (contents) => contents // This ensures the file is read properly
         },
         {
-          src: 'node_modules/pdfjs-dist/build/pdf.worker.mjs',
+          src: 'node_modules/pdfjs-dist/build/pdf.worker.mjs', 
           dest: '',
-          rename: 'pdf.worker.js' // Rename to .js for compatibility
+          rename: 'pdf.worker.js',
+          transform: (contents) => contents
         }
-      ]
+      ].filter(target => {
+        // Check if target already exists in public to avoid unnecessary copies
+        const destPath = path.join(__dirname, 'client/public', target.rename || path.basename(target.src));
+        return !fs.existsSync(destPath);
+      })
     })
   ],
   publicDir: './client/public',
@@ -45,6 +52,11 @@ export default defineConfig({
   },
   server: {
     port: 3002,
+    strictPort: true,
+    hmr: {
+      port: 3002,
+      host: 'localhost'
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:3000',
@@ -98,7 +110,8 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['socket.io-client', 'pdfjs-dist'],
-    exclude: ['pdfjs-dist/build/pdf.worker.min.mjs', 'pdfjs-dist/build/pdf.worker.mjs']
+    exclude: ['pdfjs-dist/build/pdf.worker.min.mjs', 'pdfjs-dist/build/pdf.worker.mjs'],
+    force: true // Force optimization to ensure consistency
   },
   define: {
     global: 'globalThis',
