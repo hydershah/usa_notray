@@ -171,6 +171,7 @@
     "zustand": "^4.4.1"
   },
   "devDependencies": {
+    "@flydotio/dockerfile": "^0.7.10",
     "@replit/vite-plugin-cartographer": "^0.2.7",
     "@replit/vite-plugin-runtime-error-modal": "^0.0.3",
     "@tailwindcss/typography": "^0.5.15",
