@@ -6213,38 +6213,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
     }
   });
 
-  // Replace individual tag with content (for click-to-convert during signing)
-  app.put('/api/editor/session/:sessionId/tag/:tagId/content', verifyToken, async (req: any, res) => {
-    try {
-      const { sessionId, tagId } = req.params;
-      const { content, contentType = 'text' } = req.body;
-      
-      const { TagService } = await import('./services/editor/TagService');
-      
-      // Update tag with actual content and mark as completed
-      const updatedTag = await TagService.updateTag(tagId, {
-        content,
-        contentType,
-        contentData: JSON.stringify({ type: contentType, value: content }),
-        isCompleted: true,
-        completedBy: req.user.id,
-        completedAt: new Date()
-      });
-      
-      res.json({
-        success: true,
-        tag: updatedTag,
-        message: 'Tag content updated successfully'
-      });
-      
-    } catch (error) {
-      console.error('Update tag content error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to update tag content',
-        error: 'tag_content_update_failed'
-      });
-    }
-  });
+  // Removed duplicate endpoint - keeping the more comprehensive one below
 
   // Get default content for a tag (auto-fill functionality)
   app.get('/api/editor/session/:sessionId/tag/:tagId/default-content', verifyToken, async (req: any, res) => {
@@ -6334,7 +6303,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
       const { sessionId, tagId } = req.params;
       const { content, contentType, completedBy, completedAt } = req.body;
       
-      if (!content) {
+      if (content === undefined || content === null) {
         return res.status(400).json({ message: 'Content is required' });
       }
       
