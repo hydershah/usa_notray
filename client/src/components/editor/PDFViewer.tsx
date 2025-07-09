@@ -859,7 +859,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   // Zoom controls
   const handleZoomIn = () => setZoomLevel(Math.min(viewer.zoomLevel * 1.25, 3.0));
   const handleZoomOut = () => setZoomLevel(Math.max(viewer.zoomLevel / 1.25, 0.25));
-  const handleZoomReset = () => setZoomLevel(1.0);
+  const handleZoomReset = () => setZoomLevel(0.75);
 
   if (loading) {
     return (

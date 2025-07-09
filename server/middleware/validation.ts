@@ -38,22 +38,44 @@ export function validateRequest<T>(schema: {
 }
 
 /**
- * SQL Injection Prevention
+ * SQL Injection Prevention - Enhanced to allow legitimate address characters
  */
 export function preventSqlInjection(req: Request, res: Response, next: NextFunction) {
   const sqlPatterns = [
-    /(\%27)|(\')|(\-\-)|(\%23)|(#)/i,
-    /((\%3D)|(=))[^\n]*((\%27)|(\')|(\-\-)|(\%3B)|(;))/i,
-    /\w*((\%27)|(\'))((\%6F)|o|(\%4F))((\%72)|r|(\%52))/i,
-    /((\%27)|(\'))union/i,
-    /exec(\s|\+)+(s|x)p\w+/i
+    // More specific patterns that are less likely to catch legitimate data
+    /(\%27)|(\')|(\\x27)|(\\x2527)/i, // Single quotes (but allow in names/addresses)
+    /((\%3D)|(=))[^\n]*((\%27)|(\')|(\-\-)|(\%3B)|(;))/i, // Equals followed by SQL
+    /\w*((\%27)|(\'))((\%6F)|o|(\%4F))((\%72)|r|(\%52))/i, // 'or patterns
+    /((\%27)|(\'))union/i, // UNION attacks
+    /exec(\s|\+)+(s|x)p\w+/i, // Stored procedure execution
+    /(drop|delete|truncate|alter)\s+(table|database|schema)/i, // DDL commands
+    /(insert|update)\s+.*(select|union)/i, // INSERT/UPDATE with subqueries
+    /--\s*[^\r\n]*(select|union|drop|delete|insert|update)/i, // Comments with SQL
+    /\/\*.*\*\/.*\b(select|union|drop|delete|insert|update)\b/i, // Multi-line comments with SQL
+    /;\s*(select|union|drop|delete|insert|update|exec)/i, // Semicolon followed by SQL
   ];
 
-  const checkForSqlInjection = (obj: any): boolean => {
+  // Whitelist patterns for legitimate data that might contain dangerous characters
+  const legitPatterns = [
+    /^[0-9]+\s+[a-zA-Z\s]+#[0-9]+$/i, // Address with suite/apt number (e.g., "123 Main St #456")
+    /^[a-zA-Z\s'.-]+$/i, // Names with apostrophes (e.g., "O'Connor")
+    /^[a-zA-Z0-9\s'.,#-]+$/i, // Address fields with common punctuation
+  ];
+
+  const checkForSqlInjection = (obj: any, fieldName: string = ''): boolean => {
     if (typeof obj === 'string') {
+      // Skip validation for certain address/name fields if they match legitimate patterns
+      const addressFields = ['address1', 'address2', 'billingAddress1', 'billingAddress2', 'name', 'fullName', 'firstName', 'lastName', 'primaryUserName', 'contactName'];
+      if (addressFields.some(field => fieldName.toLowerCase().includes(field.toLowerCase()))) {
+        // Check if the string matches any legitimate pattern
+        if (legitPatterns.some(pattern => pattern.test(obj))) {
+          return false; // Skip SQL injection check for legitimate address/name data
+        }
+      }
+      
       return sqlPatterns.some(pattern => pattern.test(obj));
     } else if (typeof obj === 'object' && obj !== null) {
-      return Object.values(obj).some(value => checkForSqlInjection(value));
+      return Object.entries(obj).some(([key, value]) => checkForSqlInjection(value, key));
     }
     return false;
   };
@@ -62,6 +84,7 @@ export function preventSqlInjection(req: Request, res: Response, next: NextFunct
     console.error('🚨 SQL INJECTION ATTEMPT:', {
       ip: req.ip,
       url: req.originalUrl,
+      body: process.env.NODE_ENV === 'development' ? req.body : '[REDACTED]',
       timestamp: new Date().toISOString()
     });
     
