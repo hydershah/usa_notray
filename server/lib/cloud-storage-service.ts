@@ -7,6 +7,22 @@ import { Readable } from 'stream';
 import dotenv from 'dotenv';
 dotenv.config();
 
+// Check for required Vultr credentials
+const REQUIRED_ENV_VARS = [
+  'VULTR_ACCESS_KEY',
+  'VULTR_SECRET_KEY',
+  'VULTR_REGION',
+  'VULTR_BUCKET_NAME',
+  'VULTR_ENDPOINT'
+];
+
+const missingVars = REQUIRED_ENV_VARS.filter(varName => !process.env[varName]);
+if (missingVars.length > 0) {
+  console.warn('⚠️  WARNING: Missing Vultr environment variables:', missingVars.join(', '));
+  console.warn('⚠️  Document storage features will not work properly without these variables.');
+  console.warn('⚠️  Please set these environment variables in production.');
+}
+
 interface UploadOptions {
   contentType?: string;
   metadata?: Record<string, string>;

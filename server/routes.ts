@@ -2297,7 +2297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Real WebRTC video session routes
+  // Whereby video session routes
   app.post('/api/jobs/:jobId/video-session', verifyToken, async (req: any, res) => {
     try {
       const jobId = parseInt(req.params.jobId);
@@ -2307,56 +2307,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'Job not found' });
       }
 
-      console.log('Creating WebRTC video session for job:', jobId);
+      console.log('Creating Whereby video session for job:', jobId);
+      
+      // Import Whereby service
+      const { wherebyService } = await import('./lib/whereby-service');
       
       // Calculate end time (2 hours from now for notary sessions)
       const endDate = new Date();
       endDate.setHours(endDate.getHours() + 2);
 
-      // Create real WebRTC session data
-      const sessionId = `webrtc-session-${jobId}-${Date.now()}`;
-      const sessionData = {
-        jobId,
-        sessionId,
-        meetingId: sessionId,
-        roomName: `notary-session-${jobId}`,
+      // Create Whereby meeting
+      const meetingOptions = {
+        roomNamePrefix: `notary-session-${jobId}`,
+        roomMode: 'normal' as const,
         endDate: endDate.toISOString(),
-        createdBy: req.user.id,
-        createdAt: new Date().toISOString(),
-        isActive: true,
-        participants: req.body.participants || [],
-        technology: 'webrtc',
-        signalingPath: '/video-signaling',
-        iceServers: [
-          {
-            urls: [
-              'stun:stun.l.google.com:19302',
-              'stun:stun1.l.google.com:19302',
-              'stun:stun2.l.google.com:19302'
-            ]
-          }
-        ]
+        fields: ['hostRoomUrl']
       };
 
-      console.log('WebRTC video session created:', {
-        sessionId: sessionData.sessionId,
-        roomName: sessionData.roomName,
-        endDate: sessionData.endDate
+      const meeting = await wherebyService.createMeeting(meetingOptions);
+      
+      console.log('Whereby video session created:', {
+        meetingId: meeting.meetingId,
+        roomUrl: meeting.roomUrl,
+        endDate: meeting.endDate
       });
       
       res.json({
         success: true,
-        sessionId: sessionData.sessionId,
-        roomName: sessionData.roomName,
-        meetingId: sessionData.meetingId,
-        sessionToken: sessionData.sessionId,
-        sessionData: sessionData,
-        technology: 'webrtc'
+        sessionId: meeting.meetingId,
+        roomUrl: meeting.roomUrl,
+        hostRoomUrl: meeting.hostRoomUrl,
+        roomName: meeting.roomName,
+        meetingId: meeting.meetingId,
+        sessionToken: meeting.meetingId,
+        endDate: meeting.endDate,
+        technology: 'whereby',
+        jobId
       });
     } catch (error) {
-      console.error('Create WebRTC video session error:', error);
+      console.error('Create Whereby video session error:', error);
       res.status(500).json({ 
-        message: 'Failed to create WebRTC video session',
+        message: 'Failed to create Whereby video session',
         error: error instanceof Error ? error.message : 'Unknown error'
       });
     }

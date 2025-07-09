@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/auth';
 import SimpleVideoConference from './SimpleVideoConference';
+import { WebRTCVideoConference } from './WebRTCVideoConference';
 import { PDFTaggingEditor } from './PDFTaggingEditor';
 import { LiveSigningControls } from './LiveSigningControls';
 import { ParticipantPanel } from './ParticipantPanel';
@@ -32,7 +33,6 @@ import type {
   EditorSession 
 } from '@/types/editor';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { VideoIntegration } from './VideoIntegration';
 
 interface LiveSigningInterfaceProps {
   sessionId: string;
@@ -399,7 +399,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
             {isSigner && (
               <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
                 <div className="flex items-center gap-1">
-                  {liveSession.activeUserId === currentUserId ? (
+                  {liveSession.activeUserId === parseInt(currentUserId) ? (
                     <>
                       <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
                       <span className="text-sm text-green-700 font-medium">Active</span>
@@ -436,7 +436,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
               <div className="flex-1">
                 <h3 className="text-sm font-semibold text-blue-800">Signer Instructions</h3>
                 <p className="text-sm text-blue-700 mt-1">
-                  {liveSession.activeUserId === currentUserId ? (
+                  {liveSession.activeUserId === parseInt(currentUserId) ? (
                     <>
                       <strong>You are now active!</strong> Click on tags assigned to you to fill them out. 
                       The notary will guide you through the process.
@@ -457,9 +457,15 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
       <div className="flex-1 flex overflow-hidden">
         {/* Video Integration Panel */}
         <div className="w-80 bg-white border-r border-gray-200 flex-shrink-0">
-          <VideoIntegration
+          <SimpleVideoConference
             sessionId={sessionId}
+            currentUser={{
+              id: currentUserId,
+              name: currentUser?.displayName || 'Unknown User',
+              role: currentUser?.userType || 'signer'
+            }}
             participants={participants}
+            className="h-full"
           />
         </div>
 
