@@ -17,62 +17,74 @@ export const initializePDFWorker = () => {
       return;
     }
 
-    // Try different worker paths in order of preference
-    const workerPaths = [
-      '/pdf.worker.min.js',
-      '/assets/pdf.worker.min.js',
-      '/pdf.worker.min.mjs',
-      '/assets/pdf.worker.min.mjs',
-      // Fallback to CDN if local files don't work
-      `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`
-    ];
+    // For production deployment, use CDN worker first for reliability
+    const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+    
+    if (isProduction) {
+      // Production: Use CDN worker for reliability
+      const cdnWorkerUrl = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+      pdfjsLib.GlobalWorkerOptions.workerSrc = cdnWorkerUrl;
+      console.log(`📄 Production: PDF.js worker configured with CDN: ${cdnWorkerUrl}`);
+    } else {
+      // Development: Try local files first, then fallback to CDN
+      const localWorkerPaths = [
+        '/pdf.worker.min.js',
+        '/pdf.worker.js',
+        '/pdf.worker.min.mjs',
+        '/pdf.worker.mjs',
+        '/client/public/pdf.worker.min.js',
+        '/assets/pdf.worker.min.js'
+      ];
 
-    let workerSet = false;
-
-    for (const workerPath of workerPaths) {
-      try {
-        // Test if the worker file exists (for local paths)
-        if (workerPath.startsWith('/')) {
-          // For local paths, just set it directly
+      let workerSet = false;
+      for (const workerPath of localWorkerPaths) {
+        try {
           pdfjsLib.GlobalWorkerOptions.workerSrc = workerPath;
           workerSet = true;
-          console.log(`📄 PDF.js worker configured with: ${workerPath}`);
+          console.log(`📄 Development: PDF.js worker configured with: ${workerPath}`);
           break;
-        } else {
-          // For CDN, set and continue
-          pdfjsLib.GlobalWorkerOptions.workerSrc = workerPath;
-          workerSet = true;
-          console.log(`📄 PDF.js worker configured with CDN: ${workerPath}`);
-          break;
+        } catch (error) {
+          console.warn(`📄 Failed to set worker path ${workerPath}:`, error);
+          continue;
         }
-      } catch (error) {
-        console.warn(`📄 Failed to set worker path ${workerPath}:`, error);
-        continue;
       }
-    }
 
-    if (!workerSet) {
-      throw new Error('No valid PDF.js worker path found');
+      // Fallback to CDN for development if local files fail
+      if (!workerSet) {
+        const cdnWorkerUrl = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = cdnWorkerUrl;
+        console.log(`📄 Development fallback: PDF.js worker configured with CDN: ${cdnWorkerUrl}`);
+      }
     }
 
     // Additional PDF.js configuration for better compatibility
     pdfjsLib.GlobalWorkerOptions.workerPort = null;
     
+    // Set additional options for production stability
+    if (isProduction) {
+      // Disable some features that might cause issues in production
+      pdfjsLib.GlobalWorkerOptions.isEvalSupported = false;
+    }
+    
     isWorkerInitialized = true;
-    console.log('✅ PDF.js worker initialized successfully');
+    console.log('✅ PDF.js worker initialized successfully for', isProduction ? 'production' : 'development');
 
   } catch (error) {
     console.error('❌ Failed to initialize PDF.js worker:', error);
     
-    // Fallback: try to use inline worker if available
+    // Enhanced fallback: try to use inline worker
     try {
-      // This is a fallback that disables the worker for compatibility
-      pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-      console.warn('📄 Using fallback PDF.js configuration without worker');
+      // Use a more reliable CDN fallback
+      const fallbackWorkerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.mjs';
+      pdfjsLib.GlobalWorkerOptions.workerSrc = fallbackWorkerUrl;
+      console.warn('📄 Using enhanced fallback PDF.js worker from cdnjs');
       isWorkerInitialized = true;
     } catch (fallbackError) {
-      console.error('❌ PDF.js fallback configuration also failed:', fallbackError);
-      throw new Error('PDF.js worker initialization failed completely');
+      console.error('❌ PDF.js enhanced fallback also failed:', fallbackError);
+      // Last resort: disable worker (will be slower but should work)
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+      console.warn('📄 PDF.js worker disabled - using main thread (slower performance)');
+      isWorkerInitialized = true;
     }
   }
 };
@@ -86,7 +98,7 @@ export const resetPDFWorker = () => {
 
 // Check if worker is properly initialized
 export const isPDFWorkerReady = (): boolean => {
-  return isWorkerInitialized && !!pdfjsLib.GlobalWorkerOptions.workerSrc;
+  return isWorkerInitialized;
 };
 
 // Get current worker configuration
@@ -94,7 +106,8 @@ export const getPDFWorkerInfo = () => {
   return {
     isInitialized: isWorkerInitialized,
     workerSrc: pdfjsLib.GlobalWorkerOptions.workerSrc,
-    version: pdfjsLib.version
+    version: pdfjsLib.version,
+    isProduction: typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
   };
 };
 

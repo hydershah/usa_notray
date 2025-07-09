@@ -1,14 +1,40 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 export default defineConfig({
-  plugins: [react({
-    jsxRuntime: 'automatic'
-  })],
+  plugins: [
+    react({
+      jsxRuntime: 'automatic'
+    }),
+    // Copy PDF.js worker files to public directory for production
+    viteStaticCopy({
+      targets: [
+        {
+          src: 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
+          dest: '',
+          rename: 'pdf.worker.min.js' // Rename to .js for compatibility
+        },
+        {
+          src: 'node_modules/pdfjs-dist/build/pdf.worker.mjs',
+          dest: '',
+          rename: 'pdf.worker.js' // Rename to .js for compatibility
+        }
+      ]
+    })
+  ],
   publicDir: './client/public',
   build: {
     outDir: './client/dist',
+    rollupOptions: {
+      output: {
+        // Ensure PDF.js worker is treated as a separate chunk
+        manualChunks: {
+          'pdf-worker': ['pdfjs-dist']
+        }
+      }
+    }
   },
   resolve: {
     alias: {
@@ -71,7 +97,8 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ['socket.io-client'],
+    include: ['socket.io-client', 'pdfjs-dist'],
+    exclude: ['pdfjs-dist/build/pdf.worker.min.mjs', 'pdfjs-dist/build/pdf.worker.mjs']
   },
   define: {
     global: 'globalThis',
