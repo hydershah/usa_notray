@@ -6,23 +6,44 @@ export class RedisCache {
   private isConnected: boolean = false;
   private connectionAttempts: number = 0;
   private maxRetries: number = 3;
+  private disabled: boolean = false; // New flag to completely disable Redis
 
   constructor() {
-    // For Railway, prioritize PUBLIC_URL over internal URL to avoid DNS issues
+    // Check if Redis should be disabled entirely
+    if (process.env.DISABLE_REDIS === 'true') {
+      console.log('⚠️ Redis explicitly disabled via DISABLE_REDIS environment variable');
+      this.disabled = true;
+      return;
+    }
+
+    // Detect deployment environment
+    const isFlyIo = !!(process.env.FLY_APP_NAME || process.env.FLY_ALLOC_ID);
+    const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
+    
     let redisUrl;
-    if (process.env.RAILWAY_ENVIRONMENT) {
-      // Use public URL first for Railway to avoid internal DNS issues
+    
+    if (isFlyIo) {
+      // Fly.io Redis configuration
+      redisUrl = process.env.REDIS_URL || 
+                 process.env.UPSTASH_REDIS_REST_URL || 
+                 process.env.REDIS_PRIVATE_URL ||
+                 'redis://localhost:6379';
+      console.log('🚁 Detected Fly.io environment for Redis configuration');
+    } else if (isRailway) {
+      // Railway Redis configuration (existing logic)
       redisUrl = process.env.REDIS_PUBLIC_URL || 
                  process.env.REDIS_URL || 
                  process.env.REDIS_PRIVATE_URL ||
                  'redis://localhost:6379';
+      console.log('🚂 Detected Railway environment for Redis configuration');
     } else {
-      // For other environments, use standard priority
+      // Other environments (local, AWS, etc.)
       redisUrl = process.env.REDIS_URL || 
                  process.env.REDIS_PUBLIC_URL || 
                  process.env.REDIS_PRIVATE_URL ||
                  process.env.REDISCLOUD_URL ||
                  'redis://localhost:6379';
+      console.log('🌐 Using standard Redis configuration');
     }
     
     // Debug logging to see what Redis URL is being used
@@ -31,32 +52,56 @@ export class RedisCache {
       REDIS_PUBLIC_URL: process.env.REDIS_PUBLIC_URL ? '[REDACTED]' : 'undefined',
       REDIS_PRIVATE_URL: process.env.REDIS_PRIVATE_URL ? '[REDACTED]' : 'undefined',
       REDISCLOUD_URL: process.env.REDISCLOUD_URL ? '[REDACTED]' : 'undefined',
+      UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL ? '[REDACTED]' : 'undefined',
+      FLY_APP_NAME: process.env.FLY_APP_NAME || 'undefined',
       RAILWAY_ENVIRONMENT: process.env.RAILWAY_ENVIRONMENT || 'undefined',
+      environment: isFlyIo ? 'fly.io' : isRailway ? 'railway' : 'other',
       usingUrl: redisUrl.substring(0, 20) + '...' // Only show first 20 chars for security
     });
     
-    // Railway-specific Redis connection options
+    // Redis connection options with environment-specific settings
     const redisOptions = {
       retryDelayOnFailover: 100,
-      maxRetriesPerRequest: 3,
+      maxRetriesPerRequest: isFlyIo ? 1 : 3, // Fewer retries for Fly.io
       lazyConnect: true,
-      connectTimeout: 10000,
+      connectTimeout: isFlyIo ? 5000 : 10000, // Shorter timeout for Fly.io
       commandTimeout: 5000,
       keepAlive: 30000,
       family: 4,
       maxLoadingTimeout: 1000,
-      enableReadyCheck: true,
+      enableReadyCheck: !isFlyIo, // Disable ready check for Fly.io
       reconnectOnError: (err) => {
         console.log('Redis reconnection error:', err.message);
-        const targetError = 'READONLY';
-        return err.message.includes(targetError) || err.message.includes('ECONNRESET') || err.message.includes('ENOTFOUND');
+        
+        // Don't retry for DNS resolution failures
+        if (err.message.includes('ENOTFOUND') || err.message.includes('getaddrinfo')) {
+          console.warn('⚠️ Redis hostname resolution failed - disabling Redis for this session');
+          this.disabled = true;
+          return false; // Don't reconnect
+        }
+        
+        const shouldReconnect = err.message.includes('READONLY') || 
+                               err.message.includes('ECONNRESET') ||
+                               err.message.includes('ETIMEDOUT');
+        
+        if (!shouldReconnect) {
+          this.disabled = true;
+        }
+        
+        return shouldReconnect;
       },
       showFriendlyErrorStack: true
     };
     
-    // Add Railway-specific connection options if we're on Railway
-    if (process.env.RAILWAY_ENVIRONMENT) {
-      console.log('🚂 Detected Railway environment, adding specific connection options');
+    // Add Fly.io specific options
+    if (isFlyIo) {
+      redisOptions.enableReadyCheck = false;
+      redisOptions.maxRetriesPerRequest = 1;
+      redisOptions.connectTimeout = 5000;
+    }
+    
+    // Add Railway-specific connection options
+    if (isRailway) {
       redisOptions.enableReadyCheck = false;
       redisOptions.maxRetriesPerRequest = 5;
       redisOptions.connectTimeout = 20000;
@@ -66,11 +111,13 @@ export class RedisCache {
 
     this.redis.on('connect', () => {
       this.isConnected = true;
+      this.disabled = false;
       console.log('✅ Redis connected successfully');
     });
 
     this.redis.on('ready', () => {
       this.isConnected = true;
+      this.disabled = false;
       console.log('✅ Redis ready for operations');
     });
 
@@ -78,23 +125,44 @@ export class RedisCache {
       console.error('❌ Redis connection error:', err.message);
       this.isConnected = false;
       
-      // Check if it's a Railway internal DNS issue
-      if (err.message.includes('redis.railway.internal') || err.message.includes('ENOTFOUND')) {
-        console.warn('⚠️ Railway Redis service discovery issue detected. App will continue without Redis caching.');
+      // Check for permanent failures that should disable Redis
+      const permanentFailures = [
+        'ENOTFOUND',          // DNS resolution failure
+        'getaddrinfo',        // DNS lookup failure
+        'ECONNREFUSED',       // Connection refused (service not running)
+        'EHOSTUNREACH'        // Host unreachable
+      ];
+      
+      const isPermanentFailure = permanentFailures.some(failure => 
+        err.message.includes(failure)
+      );
+      
+      if (isPermanentFailure) {
+        console.warn('⚠️ Permanent Redis failure detected. Disabling Redis for this session.');
+        console.warn('   This usually means Redis service is not configured or not running.');
+        console.warn('   App will continue without Redis caching.');
+        this.disabled = true;
         this.connectionAttempts = this.maxRetries; // Stop further attempts
-        return; // Don't retry for DNS issues
+        return; // Don't retry for permanent failures
       }
       
-      if (this.connectionAttempts < this.maxRetries) {
+      // For temporary failures, implement limited retry
+      if (this.connectionAttempts < this.maxRetries && !this.disabled) {
         this.connectionAttempts++;
+        const retryDelay = Math.min(1000 * this.connectionAttempts, 10000); // Max 10 second delay
+        
+        console.log(`🔄 Redis reconnection attempt ${this.connectionAttempts}/${this.maxRetries} in ${retryDelay}ms`);
+        
         setTimeout(() => {
-          console.log(`🔄 Redis reconnection attempt ${this.connectionAttempts}/${this.maxRetries}`);
-          this.redis.connect().catch(reconnectErr => {
-            console.error(`❌ Redis reconnection attempt ${this.connectionAttempts} failed:`, reconnectErr.message);
-          });
-        }, 1000 * this.connectionAttempts);
+          if (!this.disabled) {
+            this.redis.connect().catch(reconnectErr => {
+              console.error(`❌ Redis reconnection attempt ${this.connectionAttempts} failed:`, reconnectErr.message);
+            });
+          }
+        }, retryDelay);
       } else {
-        console.warn('⚠️ Redis max retries exceeded. App will continue without Redis caching.');
+        console.warn('⚠️ Redis max retries exceeded or disabled. App will continue without Redis caching.');
+        this.disabled = true;
       }
     });
 
@@ -104,29 +172,40 @@ export class RedisCache {
     });
 
     this.redis.on('reconnecting', () => {
-      console.log('�� Redis reconnecting...');
+      if (!this.disabled) {
+        console.log('🔄 Redis reconnecting...');
+      }
     });
 
+    // Initial connection attempt with better error handling
     this.redis.connect().catch(err => {
       console.error('❌ Failed to establish initial Redis connection:', err.message);
       this.isConnected = false;
       
-      // Check if it's a Railway service discovery issue
-      if (err.message.includes('redis.railway.internal') || err.message.includes('ENOTFOUND')) {
-        console.warn('⚠️ Railway Redis service not available. This might be because:');
-        console.warn('   1. Redis service is not connected to this Railway app');
-        console.warn('   2. Redis service is still initializing');
-        console.warn('   3. Internal DNS resolution is failing');
+      // Check for service discovery issues
+      if (err.message.includes('ENOTFOUND') || err.message.includes('getaddrinfo')) {
+        console.warn('⚠️ Redis service not available. This might be because:');
+        console.warn('   1. Redis service is not configured in your deployment platform');
+        console.warn('   2. Redis hostname/URL is incorrect');
+        console.warn('   3. Redis service is not running or not accessible');
         console.warn('   App will continue without Redis caching.');
+        this.disabled = true;
       }
     });
+  }
+
+  /**
+   * Check if Redis is disabled or unavailable
+   */
+  private isDisabled(): boolean {
+    return this.disabled || (!this.isConnected && this.connectionAttempts >= this.maxRetries);
   }
 
   /**
    * Get cached value with automatic JSON parsing
    */
   async get<T>(key: string): Promise<T | null> {
-    if (!this.isConnected) return null;
+    if (this.isDisabled()) return null;
 
     try {
       const startTime = performance.now();
@@ -154,7 +233,7 @@ export class RedisCache {
    * Set cached value with automatic JSON stringification
    */
   async set(key: string, value: any, ttlSeconds?: number): Promise<boolean> {
-    if (!this.isConnected) return false;
+    if (this.isDisabled()) return false;
 
     try {
       const startTime = performance.now();
@@ -180,10 +259,10 @@ export class RedisCache {
   }
 
   /**
-   * Delete cached value
+   * Delete a key
    */
   async del(key: string): Promise<boolean> {
-    if (!this.isConnected) return false;
+    if (this.isDisabled()) return false;
 
     try {
       const result = await this.redis.del(key);
@@ -195,36 +274,49 @@ export class RedisCache {
   }
 
   /**
-   * Delete multiple keys by pattern
+   * Delete keys matching a pattern
    */
   async delPattern(pattern: string): Promise<number> {
-    if (!this.isConnected) return 0;
+    if (this.isDisabled()) return 0;
 
     try {
-      const startTime = performance.now();
+      const keys = await this.redis.keys(pattern);
+      if (keys.length === 0) return 0;
       
-      // Use SCAN to find keys matching pattern
-      const keys = [];
-      let cursor = '0';
-      
-      do {
-        const reply = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
-        cursor = reply[0];
-        keys.push(...reply[1]);
-      } while (cursor !== '0');
-
-      if (keys.length > 0) {
-        const result = await this.redis.del(...keys);
-        const duration = performance.now() - startTime;
-        
-        console.log(`🧹 Deleted ${result} keys matching pattern: ${pattern} (${duration.toFixed(2)}ms)`);
-        return result;
-      }
-      
-      return 0;
+      const result = await this.redis.del(...keys);
+      return result;
     } catch (error) {
-      console.error('Redis DEL PATTERN error:', error);
+      console.error('Redis DEL pattern error:', error);
       return 0;
+    }
+  }
+
+  /**
+   * Check if a key exists
+   */
+  async exists(key: string): Promise<boolean> {
+    if (this.isDisabled()) return false;
+
+    try {
+      const result = await this.redis.exists(key);
+      return result === 1;
+    } catch (error) {
+      console.error('Redis EXISTS error:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get TTL of a key
+   */
+  async ttl(key: string): Promise<number> {
+    if (this.isDisabled()) return -1;
+
+    try {
+      return await this.redis.ttl(key);
+    } catch (error) {
+      console.error('Redis TTL error:', error);
+      return -1;
     }
   }
 
@@ -249,100 +341,124 @@ export class RedisCache {
     const result = await queryFn();
     const queryTime = performance.now() - startTime;
 
-    // Cache the result
-    await this.set(key, result, ttlSeconds);
+    // Cache the result (don't await to avoid blocking)
+    if (!this.isDisabled()) {
+      this.set(key, result, ttlSeconds).catch(err => {
+        console.error(`Failed to cache query result for ${key}:`, err);
+      });
+    }
     
-    console.log(`💾 Cached query: ${key} (${queryTime.toFixed(2)}ms)`);
+    console.log(`💾 Query executed: ${key} (${queryTime.toFixed(2)}ms)`);
     return result;
   }
 
   /**
-   * Cache user session data
-   */
-  async cacheUserSession(userId: string, sessionData: any, ttlSeconds: number = 3600): Promise<void> {
-    await this.set(`user:${userId}:session`, sessionData, ttlSeconds);
-  }
-
-  /**
-   * Get user session from cache
-   */
-  async getUserSession(userId: string): Promise<any | null> {
-    return await this.get(`user:${userId}:session`);
-  }
-
-  /**
-   * Clear user session cache
-   */
-  async clearUserSession(userId: string): Promise<void> {
-    await this.del(`user:${userId}:session`);
-  }
-
-  /**
-   * Cache API response
-   */
-  async cacheApiResponse(endpoint: string, params: any, response: any, ttlSeconds: number = 300): Promise<void> {
-    const key = `api:${endpoint}:${JSON.stringify(params)}`;
-    await this.set(key, response, ttlSeconds);
-  }
-
-  /**
-   * Get cached API response
-   */
-  async getCachedApiResponse(endpoint: string, params: any): Promise<any | null> {
-    const key = `api:${endpoint}:${JSON.stringify(params)}`;
-    return await this.get(key);
-  }
-
-  /**
-   * Invalidate cache for a specific entity
-   */
-  async invalidateEntity(entityType: string, entityId: string): Promise<void> {
-    const patterns = [
-      `${entityType}:${entityId}:*`,
-      `api:*${entityType}*${entityId}*`,
-      `query:${entityType}:*`
-    ];
-
-    for (const pattern of patterns) {
-      await this.delPattern(pattern);
-    }
-  }
-
-  /**
-   * Get cache statistics
-   */
-  async getStats(): Promise<any> {
-    if (!this.isConnected) {
-      return { connected: false, error: 'Redis not connected' };
-    }
-
-    try {
-      const info = await this.redis.info('memory');
-      const keyCount = await this.redis.dbsize();
-      
-      return {
-        connected: true,
-        keyCount,
-        memory: info,
-        connectionAttempts: this.connectionAttempts
-      };
-    } catch (error) {
-      return { connected: false, error: error.message };
-    }
-  }
-
-  /**
-   * Health check
+   * Health check for Redis connection
    */
   async healthCheck(): Promise<{ healthy: boolean; latency?: number; error?: string }> {
+    if (this.isDisabled()) {
+      return { 
+        healthy: false, 
+        error: 'Redis is disabled due to connection failures' 
+      };
+    }
+
+    if (!this.isConnected) {
+      return { 
+        healthy: false, 
+        error: 'Redis not connected' 
+      };
+    }
+
     try {
       const startTime = performance.now();
       await this.redis.ping();
       const latency = performance.now() - startTime;
       
-      return { healthy: true, latency };
+      return { 
+        healthy: true, 
+        latency 
+      };
     } catch (error) {
-      return { healthy: false, error: error.message };
+      return { 
+        healthy: false, 
+        error: error.message 
+      };
+    }
+  }
+
+  /**
+   * Get Redis info and statistics
+   */
+  async getInfo(): Promise<any> {
+    if (this.isDisabled()) {
+      return {
+        connected: false,
+        disabled: true,
+        reason: 'Redis disabled due to connection failures'
+      };
+    }
+
+    try {
+      const info = await this.redis.info();
+      const dbSize = await this.redis.dbsize();
+      
+      return {
+        connected: this.isConnected,
+        disabled: this.disabled,
+        connectionAttempts: this.connectionAttempts,
+        dbSize,
+        info: this.parseRedisInfo(info)
+      };
+    } catch (error) {
+      return {
+        connected: false,
+        disabled: this.disabled,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Parse Redis INFO command output
+   */
+  private parseRedisInfo(info: string): any {
+    const result: any = {};
+    const sections = info.split('\r\n\r\n');
+    
+    for (const section of sections) {
+      const lines = section.split('\r\n');
+      const sectionName = lines[0].replace('# ', '').toLowerCase();
+      
+      if (sectionName && lines.length > 1) {
+        result[sectionName] = {};
+        
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i];
+          if (line && line.includes(':')) {
+            const [key, value] = line.split(':');
+            result[sectionName][key] = value;
+          }
+        }
+      }
+    }
+    
+    return result;
+  }
+
+  /**
+   * Flush all Redis data (use with caution)
+   */
+  async flushAll(): Promise<boolean> {
+    if (this.isDisabled()) return false;
+
+    try {
+      await this.redis.flushall();
+      console.log('🧹 Redis: All data flushed');
+      return true;
+    } catch (error) {
+      console.error('Redis FLUSHALL error:', error);
+      return false;
     }
   }
 
@@ -350,8 +466,14 @@ export class RedisCache {
    * Close Redis connection
    */
   async close(): Promise<void> {
-    await this.redis.quit();
-    this.isConnected = false;
+    if (this.redis && !this.disabled) {
+      try {
+        await this.redis.quit();
+        console.log('🔌 Redis connection closed gracefully');
+      } catch (error) {
+        console.error('Error closing Redis connection:', error);
+      }
+    }
   }
 }
 

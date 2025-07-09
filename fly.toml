@@ -11,6 +11,7 @@ primary_region = 'ord'
 [env]
   NODE_ENV = 'production'
   PORT = '3000'
+  DISABLE_REDIS = 'true'  # Temporarily disable Redis until properly configured
 
 [http_service]
   internal_port = 3000
