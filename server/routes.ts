@@ -76,6 +76,7 @@ import {
   editorSessions,
   sessionParticipants,
   documentVersions,
+  jobNotifications,
 } from "@shared/schema";
 
 // Import enhanced upload handlers
@@ -1394,14 +1395,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         console.log(`✅ Auto-assigned notary ${assignedNotary.firstName} ${assignedNotary.lastName} to job ${job.id}`);
         
-        // Since the job is auto-approved, send signer invitations immediately
-        try {
-          const { notificationService } = await import('./notification-service');
-          await notificationService.sendSignerInvitations(job.id);
-          console.log(`📧 Signer invitations sent for auto-approved job ${job.id}`);
-        } catch (notificationError) {
-          console.error('Failed to send signer invitations for auto-approved job:', notificationError);
-        }
+        // Note: Signer invitations will be sent after signers are created (moved below)
       }
 
       // Handle additional notary assignment logic for title companies
@@ -1762,6 +1756,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // NOTE: Signer notifications will be sent after notary approval
           // Account setup emails are deferred until notary approves the job
           console.log(`Signer account created for ${signerData.signerEmail} - notifications will be sent after notary approval`);
+        }
+      }
+
+      // SEND SIGNER INVITATIONS FOR AUTO-APPROVED JOBS (after signers are created)
+      const updatedJob = await storage.getJob(job.id);
+      if (updatedJob && updatedJob.notaryApprovalStatus === 'approved' && req.body.signers) {
+        try {
+          console.log(`📧 Sending invitations for auto-approved job ${job.id}`);
+          
+          // Get the signers we just created
+          const jobSigners = await db
+            .select()
+            .from(signers)
+            .where(eq(signers.jobId, job.id));
+          
+          console.log(`   Found ${jobSigners.length} signers to invite`);
+          
+          // Send invitation to each signer directly (like resend does)
+          for (const signer of jobSigners) {
+            try {
+              // Generate invitation token if not exists
+              let invitationToken = signer.invitationToken;
+              if (!invitationToken) {
+                invitationToken = crypto.randomUUID();
+                await db.update(signers)
+                  .set({ 
+                    invitationToken,
+                    invitationSentAt: new Date()
+                  })
+                  .where(eq(signers.id, signer.id));
+              } else {
+                await db.update(signers)
+                  .set({ invitationSentAt: new Date() })
+                  .where(eq(signers.id, signer.id));
+              }
+
+              // Send email directly using emailService (like resend does)
+              await emailService.sendSignerInvitation({
+                signerName: signer.signerName,
+                signerEmail: signer.signerEmail,
+                signerRole: signer.signerRole,
+                invitationToken,
+                titleCompany: updatedJob.titleCompany,
+                closingType: updatedJob.closingType,
+                propertyAddress: updatedJob.propertyAddressOne ? 
+                  `${updatedJob.propertyAddressOne}, ${updatedJob.propertyCity}, ${updatedJob.propertyState} ${updatedJob.propertyZipCode}` : 
+                  undefined,
+                scheduledDate: updatedJob.selectedDate || undefined,
+                scheduledTime: updatedJob.selectedTime || undefined
+              });
+
+              // Log notification (but don't fail if this fails)
+              try {
+                await db.insert(jobNotifications).values({
+                  jobId: job.id,
+                  recipientId: signer.userId || 0,
+                  recipientEmail: signer.signerEmail,
+                  notificationType: 'signer_invite',
+                  status: 'sent',
+                  subject: `🏛️ Secure Document Signing Required - ${updatedJob.titleCompany}`,
+                  message: `Invitation sent to ${signer.signerName} for ${updatedJob.titleCompany} document signing`,
+                  metadata: { jobId: job.id, signerId: signer.id, invitationToken },
+                  sentAt: new Date()
+                });
+              } catch (logError) {
+                console.warn('Failed to log notification:', logError);
+              }
+
+              console.log(`✅ Invitation sent to ${signer.signerName} (${signer.signerEmail})`);
+            } catch (signerError) {
+              console.error(`❌ Failed to send invitation to ${signer.signerEmail}:`, signerError);
+            }
+          }
+
+          // Mark job as having notifications sent
+          await db.update(jobs)
+            .set({
+              signerNotificationsSent: true,
+              signerNotificationsSentAt: new Date()
+            })
+            .where(eq(jobs.id, job.id));
+
+        } catch (notificationError) {
+          console.error('Failed to send signer invitations for auto-approved job:', notificationError);
         }
       }
 

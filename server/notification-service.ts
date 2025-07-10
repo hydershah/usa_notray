@@ -101,8 +101,11 @@ export class NotificationService {
         .limit(1);
 
       if (!job) {
+        console.error(`❌ Job ${jobId} not found in database`);
         throw new Error('Job not found');
       }
+
+      console.log(`🔍 DEBUG: Job ${jobId} found - title company: ${job.titleCompany}`);
 
       // Get all signers for this job
       const jobSigners = await db
@@ -111,26 +114,28 @@ export class NotificationService {
         .where(eq(signers.jobId, jobId));
 
       console.log(`📋 Found ${jobSigners.length} signers for job ${jobId}`);
+      if (jobSigners.length === 0) {
+        console.log(`⚠️ WARNING: No signers found for job ${jobId} - nothing to send`);
+        return;
+      }
+
+      let successCount = 0;
+      let failureCount = 0;
 
       // Send invitation to each signer
       for (const signer of jobSigners) {
+        let emailSent = false;
+        let invitationToken = signer.invitationToken;
+        
         try {
           // Generate invitation token if not exists
-          let invitationToken = signer.invitationToken;
           if (!invitationToken) {
             invitationToken = crypto.randomUUID();
             await db
               .update(signers)
               .set({ 
-                invitationToken,
-                invitationSentAt: new Date()
+                invitationToken
               })
-              .where(eq(signers.id, signer.id));
-          } else {
-            // Update invitation sent timestamp
-            await db
-              .update(signers)
-              .set({ invitationSentAt: new Date() })
               .where(eq(signers.id, signer.id));
           }
 
@@ -149,58 +154,57 @@ export class NotificationService {
             scheduledTime: job.selectedTime
           });
 
-          // Create notification record (only if signer has valid userId)
-          if (signer.userId && signer.userId > 0) {
-            await db.insert(jobNotifications).values({
-              jobId,
-              recipientId: signer.userId,
-              recipientEmail: signer.signerEmail,
-              notificationType: 'signer_invite',
-              status: 'sent',
-              subject: `🏛️ Secure Document Signing Required - ${job.titleCompany}`,
-              message: `Invitation sent to ${signer.signerName} for ${job.titleCompany} document signing`,
-              metadata: { jobId, signerId: signer.id, invitationToken },
-              sentAt: new Date()
-            });
-          } else {
-            // Log notification for signers without user accounts
-            console.log(`   ℹ️ Notification not logged for ${signer.signerEmail} (no user account)`);
-          }
+          // Email sent successfully - update signer record
+          await db
+            .update(signers)
+            .set({ invitationSentAt: new Date() })
+            .where(eq(signers.id, signer.id));
+
+          emailSent = true;
+          successCount++;
 
           console.log(`✅ Invitation sent to ${signer.signerName} (${signer.signerEmail})`);
           
         } catch (signerError) {
           console.error(`❌ Failed to send invitation to ${signer.signerEmail}:`, signerError);
-          
-          // Record failed notification (only if signer has valid userId)
-          if (signer.userId && signer.userId > 0) {
-            await db.insert(jobNotifications).values({
-              jobId,
-              recipientId: signer.userId,
-              recipientEmail: signer.signerEmail,
-              notificationType: 'signer_invite',
-              status: 'failed',
-              subject: `🏛️ Secure Document Signing Required - ${job.titleCompany}`,
-              message: `Failed to send invitation to ${signer.signerName}`,
-              metadata: { jobId, signerId: signer.id, error: signerError instanceof Error ? signerError.message : 'Unknown error' },
-              errorMessage: signerError instanceof Error ? signerError.message : 'Unknown error'
-            });
-          } else {
-            console.log(`   ⚠️ Failed notification not logged for ${signer.signerEmail} (no user account)`);
-          }
+          failureCount++;
+        }
+
+        // ALWAYS create notification record regardless of userId - this was the bug!
+        try {
+          await db.insert(jobNotifications).values({
+            jobId,
+            recipientId: signer.userId || 0, // Use 0 if no userId
+            recipientEmail: signer.signerEmail,
+            notificationType: 'signer_invite',
+            status: emailSent ? 'sent' : 'failed',
+            subject: `🏛️ Secure Document Signing Required - ${job.titleCompany}`,
+            message: emailSent 
+              ? `Invitation sent to ${signer.signerName} for ${job.titleCompany} document signing`
+              : `Failed to send invitation to ${signer.signerName}`,
+            metadata: { jobId, signerId: signer.id, invitationToken },
+            sentAt: emailSent ? new Date() : null,
+            errorMessage: emailSent ? null : 'Email sending failed'
+          });
+        } catch (logError) {
+          console.error(`❌ Failed to log notification for ${signer.signerEmail}:`, logError);
         }
       }
 
-      // Mark job as having signer notifications sent
-      await db
-        .update(jobs)
-        .set({
-          signerNotificationsSent: true,
-          signerNotificationsSentAt: new Date()
-        })
-        .where(eq(jobs.id, jobId));
-
-      console.log(`✅ All signer invitations processed for job ${jobId}`);
+      // Only mark job as having notifications sent if ALL emails succeeded
+      if (successCount === jobSigners.length) {
+        await db
+          .update(jobs)
+          .set({
+            signerNotificationsSent: true,
+            signerNotificationsSentAt: new Date()
+          })
+          .where(eq(jobs.id, jobId));
+        
+        console.log(`✅ All ${successCount} signer invitations sent successfully for job ${jobId}`);
+      } else {
+        console.log(`⚠️ Partial success for job ${jobId}: ${successCount} sent, ${failureCount} failed`);
+      }
       
     } catch (error) {
       console.error('Failed to send signer invitations:', error);
