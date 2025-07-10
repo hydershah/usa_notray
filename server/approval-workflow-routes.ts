@@ -121,11 +121,15 @@ export function registerApprovalWorkflowRoutes(app: Express) {
           )
         );
 
-      // Send notifications after approval
+      // Send approval granted notification AND automatically trigger signer invitations
       try {
+        const { notificationService } = await import('./notification-service');
         await notificationService.sendApprovalGrantedNotification(jobId, req.user.id);
+        
+        console.log(`✅ Job ${jobId} approved by notary ${req.user.id} - signer invitations sent automatically`);
       } catch (notificationError) {
-        console.error('Failed to send approval notification:', notificationError);
+        console.error('Failed to send approval notification and signer invitations:', notificationError);
+        // Don't fail the approval, just log the error
       }
 
       res.json({

@@ -38,9 +38,19 @@ export function validateRequest<T>(schema: {
 }
 
 /**
- * SQL Injection Prevention - Enhanced to allow legitimate address characters
+ * SQL Injection Prevention - Enhanced to allow legitimate address characters and auth credentials
  */
 export function preventSqlInjection(req: Request, res: Response, next: NextFunction) {
+  // For authentication endpoints, skip SQL injection protection entirely
+  const authEndpoints = ['/api/auth/login', '/api/auth/register', '/api/auth/set-password', '/api/auth/validate-password-reset-token'];
+  const isAuthEndpoint = authEndpoints.some(endpoint => req.path.includes(endpoint));
+
+  if (isAuthEndpoint) {
+    // Skip SQL injection protection for auth endpoints
+    return next();
+  }
+
+  // Regular validation for non-auth endpoints
   const sqlPatterns = [
     // More specific patterns that are less likely to catch legitimate data
     /(\%27)|(\')|(\\x27)|(\\x2527)/i, // Single quotes (but allow in names/addresses)

@@ -234,14 +234,17 @@ export default function JobDetailsPage() {
                 </div>
               </div>
               
-              {job.scheduledAt && (
+              {(job.scheduledAt || job.selectedDate || job.selectedTime) && (
                 <div>
                   <label className="text-sm font-medium text-gray-500">Scheduled</label>
                   <div className="flex items-center mt-1">
                     <Calendar className="h-4 w-4 mr-2 text-blue-600" />
                     <span className="text-sm">
-                      {new Date(job.scheduledAt).toLocaleDateString()} at{' '}
-                      {new Date(job.scheduledAt).toLocaleTimeString()}
+                      {job.scheduledAt ? (
+                        `${new Date(job.scheduledAt).toLocaleDateString()} at ${new Date(job.scheduledAt).toLocaleTimeString()}`
+                      ) : (
+                        `${job.selectedDate ? new Date(job.selectedDate).toLocaleDateString() : 'Not scheduled'} at ${job.selectedTime || 'Not scheduled'}`
+                      )}
                     </span>
                   </div>
                 </div>

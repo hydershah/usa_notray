@@ -614,14 +614,14 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                       <Calendar className="h-4 w-4 text-gray-400" />
                       <span className="text-sm text-gray-600">Date:</span>
                       <span className="text-sm font-medium">
-                        {job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString() : 'Not scheduled'}
+                        {job.selectedDate || 'Not scheduled'}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Clock className="h-4 w-4 text-gray-400" />
                       <span className="text-sm text-gray-600">Time:</span>
                       <span className="text-sm font-medium">
-                        {job.scheduledTime || 'Not scheduled'}
+                        {job.selectedTime || 'Not scheduled'}
                       </span>
                     </div>
                   </div>
@@ -732,10 +732,13 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                       <MapPin className="h-4 w-4 text-gray-400" />
                       <span className="text-sm font-medium text-gray-700">Property Address</span>
                     </div>
-                    {job.propertyAddress ? (
+                    {job.propertyAddressOne && job.propertyCity && job.propertyState && job.propertyZipCode ? (
                       <div className="pl-6 p-3 bg-gray-50 rounded-lg">
-                        <p className="text-sm">{job.propertyAddress.houseNo} {job.propertyAddress.street}</p>
-                        <p className="text-sm">{job.propertyAddress.city}, {job.propertyAddress.state} {job.propertyAddress.zipCode}</p>
+                        <p className="text-sm">{job.propertyAddressOne}</p>
+                        {job.propertyAddressTwo && (
+                          <p className="text-sm">{job.propertyAddressTwo}</p>
+                        )}
+                        <p className="text-sm">{job.propertyCity}, {job.propertyState} {job.propertyZipCode}</p>
                       </div>
                     ) : (
                       <p className="text-sm text-gray-500 italic pl-6">No property address provided</p>

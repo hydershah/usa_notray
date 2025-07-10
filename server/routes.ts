@@ -202,7 +202,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(auditLoggingService.auditMiddleware());
 
   // Authentication routes
-  app.post('/api/auth/login', authLimiter, sanitizeHtml, preventSqlInjection, checkAccountLockout, async (req, res) => {
+  app.post('/api/auth/login', authLimiter, checkAccountLockout, async (req, res) => {
     try {
       const { email, password } = req.body;
       
@@ -1470,6 +1470,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }).returning();
             userId = newUser.id;
           } else {
+            // Check if existing user is a notary - notaries cannot be signers
+            if (existingUser.role === 'notary') {
+              console.error(`❌ Cannot add notary ${existingUser.email} as a signer - conflict of interest`);
+              return res.status(400).json({ 
+                message: `Cannot add ${signerData.signerEmail} as a signer. This user is registered as a notary and cannot participate as a signer.` 
+              });
+            }
+            
+            // Check if existing user is already a signer
+            if (existingUser.role !== 'signer' && existingUser.role !== 'witness') {
+              console.error(`❌ Cannot add ${existingUser.role} ${existingUser.email} as a signer`);
+              return res.status(400).json({ 
+                message: `Cannot add ${signerData.signerEmail} as a signer. This user has a different role (${existingUser.role}) in the system.` 
+              });
+            }
+            
             userId = existingUser.id;
           }
 
@@ -4474,6 +4490,131 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
     }
   });
 
+  // Check session access for users (especially signers) - simplified version
+  app.get('/api/jobs/:id/session-access', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      const userId = req.user.id;
+      
+      if (!jobId || isNaN(jobId)) {
+        return res.status(400).json({ 
+          hasAccess: false, 
+          message: 'Invalid job ID',
+          errorType: 'invalid_request'
+        });
+      }
+
+      // Get job details
+      const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId));
+      if (!job) {
+        return res.status(404).json({ 
+          hasAccess: false, 
+          message: 'Job not found',
+          errorType: 'job_not_found'
+        });
+      }
+
+      // Get user details
+      const [user] = await db.select().from(users).where(eq(users.id, userId));
+      if (!user) {
+        return res.status(404).json({ 
+          hasAccess: false, 
+          message: 'User not found',
+          errorType: 'user_not_found'
+        });
+      }
+
+      // Check access based on user role
+      let hasAccess = false;
+      let accessReason = '';
+      let requirements = [];
+
+      // Admin access - always allowed
+      if (user.role === 'admin' || user.isAdmin) {
+        hasAccess = true;
+        accessReason = 'admin';
+      }
+      // Job creator access
+      else if (job.userId === userId) {
+        hasAccess = true;
+        accessReason = 'job_creator';
+      }
+      // Assigned notary access
+      else if (job.notaryId === userId || job.selectedNotary === userId.toString()) {
+        hasAccess = true;
+        accessReason = 'assigned_notary';
+      }
+      // Signer access - check via signers table
+      else if (user.role === 'signer' || user.role === 'witness') {
+        const [signer] = await db
+          .select()
+          .from(signers)
+          .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, user.email)))
+          .limit(1);
+
+        if (signer) {
+          // Check if account setup is complete
+          if (!user.accountSetupComplete) {
+            return res.json({
+              hasAccess: false,
+              message: 'Please complete your account setup first',
+              errorType: 'account_setup_required',
+              requirements: ['Account setup must be completed']
+            });
+          }
+
+          // Check if ID verification is complete (for signers)
+          if (!user.isVerified && !user.isVerificationBypassed && !user.notaryVerificationBypassed) {
+            return res.json({
+              hasAccess: false,
+              message: 'ID verification required before joining sessions',
+              errorType: 'verification_required',
+              requirements: ['Complete ID verification in your dashboard']
+            });
+          }
+
+          hasAccess = true;
+          accessReason = 'invited_signer';
+        }
+      }
+
+      if (hasAccess) {
+        res.json({
+          hasAccess: true,
+          accessReason,
+          user: {
+            id: user.id,
+            email: user.email,
+            role: user.role,
+            isVerified: user.isVerified,
+            accountSetupComplete: user.accountSetupComplete
+          },
+          job: {
+            id: job.id,
+            titleCompany: job.titleCompany,
+            jobStatus: job.jobStatus,
+            notaryApprovalStatus: job.notaryApprovalStatus
+          }
+        });
+      } else {
+        res.json({
+          hasAccess: false,
+          message: 'You do not have permission to access this job session',
+          errorType: 'access_denied',
+          requirements
+        });
+      }
+
+    } catch (error) {
+      console.error('Session access check error:', error);
+      res.status(500).json({ 
+        hasAccess: false, 
+        message: 'Failed to check session access',
+        errorType: 'server_error'
+      });
+    }
+  });
+
   // Get assignment history for a job
   app.get('/api/random-notary/assignment-history/:jobId', verifyToken, async (req: any, res) => {
     try {
@@ -4805,6 +4946,163 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
     }
   });
 
+  // Validate signer invitation token - PUBLIC endpoint (no auth required)
+  app.get('/api/signers/validate-invitation/:token', async (req, res) => {
+    try {
+      const { token } = req.params;
+      
+      if (!token) {
+        return res.status(400).json({ message: 'Invalid invitation token' });
+      }
+
+      // Find signer by invitation token
+      const result = await db
+        .select({
+          signer: signers,
+          job: jobs,
+          user: users
+        })
+        .from(signers)
+        .innerJoin(jobs, eq(signers.jobId, jobs.id))
+        .leftJoin(users, eq(signers.userId, users.id))
+        .where(eq(signers.invitationToken, token))
+        .limit(1);
+
+      if (!result || result.length === 0) {
+        return res.status(404).json({ message: 'Invalid or expired invitation token' });
+      }
+
+      const [data] = result;
+      
+      // Check if the job is still active
+      if (data.job.jobStatus === 'completed' || data.job.jobStatus === 'cancelled') {
+        return res.status(410).json({ 
+          message: 'This signing session has already been completed or cancelled' 
+        });
+      }
+
+      // Check if user account exists for this email
+      const [existingUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, data.signer.signerEmail))
+        .limit(1);
+
+      // Return signer and job information
+      res.json({
+        valid: true,
+        hasAccount: !!existingUser,
+        accountSetupComplete: existingUser?.accountSetupComplete || false,
+        signer: {
+          id: data.signer.id,
+          signerName: data.signer.signerName,
+          signerEmail: data.signer.signerEmail,
+          signerRole: data.signer.signerRole,
+          userId: data.signer.userId,
+          signingStatus: data.signer.signingStatus
+        },
+        job: {
+          id: data.job.id,
+          titleCompany: data.job.titleCompany,
+          closingType: data.job.closingType,
+          propertyAddressOne: data.job.propertyAddressOne,
+          propertyCity: data.job.propertyCity,
+          propertyState: data.job.propertyState,
+          propertyZipCode: data.job.propertyZipCode,
+          selectedDate: data.job.selectedDate,
+          selectedTime: data.job.selectedTime,
+          jobStatus: data.job.jobStatus
+        },
+        user: existingUser ? {
+          id: existingUser.id,
+          email: existingUser.email,
+          firstName: existingUser.firstName,
+          lastName: existingUser.lastName,
+          role: existingUser.role,
+          isVerified: existingUser.isVerified,
+          accountSetupComplete: existingUser.accountSetupComplete
+        } : null
+      });
+    } catch (error) {
+      console.error('Validate invitation error:', error);
+      res.status(500).json({ message: 'Failed to validate invitation' });
+    }
+  });
+
+  // Get or create password reset token for signer - PUBLIC endpoint (no auth required)
+  app.post('/api/signers/get-password-reset-token', async (req, res) => {
+    try {
+      const { invitationToken } = req.body;
+      
+      if (!invitationToken) {
+        return res.status(400).json({ message: 'Invitation token is required' });
+      }
+
+      // Find signer by invitation token
+      const [signer] = await db
+        .select()
+        .from(signers)
+        .where(eq(signers.invitationToken, invitationToken))
+        .limit(1);
+
+      if (!signer) {
+        return res.status(404).json({ message: 'Invalid invitation token' });
+      }
+
+      // Find user by email
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, signer.signerEmail))
+        .limit(1);
+
+      if (!user) {
+        return res.status(404).json({ message: 'User account not found' });
+      }
+
+      // Check if user already has an active password reset token
+      const [existingToken] = await db
+        .select()
+        .from(passwordResetTokens)
+        .where(
+          and(
+            eq(passwordResetTokens.userId, user.id),
+            eq(passwordResetTokens.used, false),
+            gte(passwordResetTokens.expiresAt, new Date())
+          )
+        )
+        .limit(1);
+
+      if (existingToken) {
+        // Return existing token
+        res.json({ 
+          passwordResetToken: existingToken.token,
+          invitationToken: invitationToken 
+        });
+      } else {
+        // Create new password reset token
+        const passwordResetToken = crypto.randomUUID();
+        const tokenExpiry = new Date();
+        tokenExpiry.setHours(tokenExpiry.getHours() + 24);
+
+        await db.insert(passwordResetTokens).values({
+          userId: user.id,
+          token: passwordResetToken,
+          expiresAt: tokenExpiry,
+          used: false
+        });
+
+        res.json({ 
+          passwordResetToken: passwordResetToken,
+          invitationToken: invitationToken 
+        });
+      }
+    } catch (error) {
+      console.error('Get password reset token error:', error);
+      res.status(500).json({ message: 'Failed to get password reset token' });
+    }
+  });
+
   // Test endpoint to send all signer invitations for a job
   app.post('/api/jobs/:id/send-invitations', verifyToken, async (req: any, res) => {
     try {
@@ -4975,7 +5273,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
   });
 
   // Password reset and setup routes
-  app.post('/api/auth/validate-password-reset-token', passwordResetLimiter, sanitizeHtml, async (req, res) => {
+  app.post('/api/auth/validate-password-reset-token', passwordResetLimiter, async (req, res) => {
     try {
       const { token } = req.body;
       
@@ -5065,7 +5363,45 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
         .set({ used: true })
         .where(eq(passwordResetTokens.id, resetToken.id));
 
-      res.json({ message: 'Password set successfully' });
+      // Get the updated user data
+      const updatedUser = await storage.getUserById(resetToken.userId);
+      if (!updatedUser) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Generate JWT token for auto-login
+      const authToken = jwt.sign(
+        { 
+          id: updatedUser.id, 
+          email: updatedUser.email, 
+          role: updatedUser.role,
+          privileges: updatedUser.privileges || []
+        },
+        JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+
+      // Check privileges for frontend
+      const isAdmin = hasAdminPrivileges(updatedUser);
+      const isNotary = hasNotaryPrivileges(updatedUser);
+
+      res.json({ 
+        message: 'Password set successfully',
+        autoLogin: true,
+        token: authToken,
+        user: {
+          id: updatedUser.id,
+          username: updatedUser.username,
+          email: updatedUser.email,
+          role: updatedUser.role,
+          privileges: updatedUser.privileges,
+          firstName: updatedUser.firstName,
+          lastName: updatedUser.lastName,
+          // Include privilege flags for easy frontend checking
+          isAdmin,
+          isNotary
+        }
+      });
     } catch (error) {
       console.error('Password setup error:', error);
       res.status(500).json({ message: 'Internal server error' });

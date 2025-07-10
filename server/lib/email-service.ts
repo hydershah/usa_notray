@@ -302,7 +302,7 @@ class EmailService {
     scheduledDate?: string;
     scheduledTime?: string;
   }): Promise<void> {
-    const invitationLink = `${process.env.CLIENT_URL || 'http://localhost:5173'}/sign/${data.invitationToken}`;
+    const invitationLink = `${process.env.CLIENT_URL || 'http://localhost:3002'}/sign/${data.invitationToken}`;
     
     const content = `
         <h2 style="color: #1f2937; margin-bottom: 16px;">You're Invited to a Document Signing Session</h2>
@@ -379,7 +379,7 @@ class EmailService {
     inviteToken: string;
     invitedBy: string;
   }): Promise<void> {
-    const invitationLink = `${process.env.CLIENT_URL || 'http://localhost:5173'}/register?token=${data.inviteToken}`;
+    const invitationLink = `${process.env.CLIENT_URL || 'http://localhost:3002'}/register?token=${data.inviteToken}`;
     
     const content = `
         <h2 style="color: #1e40af; margin-bottom: 20px;">Platform Access Invitation</h2>
@@ -433,7 +433,7 @@ class EmailService {
     scheduledDate?: string;
     scheduledTime?: string;
   }): Promise<void> {
-    const accountSetupLink = `${process.env.CLIENT_URL || 'http://localhost:5173'}/set-password?token=${data.passwordResetToken}`;
+    const accountSetupLink = `${process.env.CLIENT_URL || 'http://localhost:3002'}/set-password?token=${data.passwordResetToken}`;
     
     const content = `
         <h2 style="color: #1e40af; margin-bottom: 20px;">Account Setup Required - Document Signing</h2>
@@ -508,7 +508,7 @@ class EmailService {
     userName: string;
     resetToken: string;
   }): Promise<void> {
-    const resetLink = `${process.env.CLIENT_URL || 'http://localhost:5173'}/reset-password?token=${data.resetToken}`;
+    const resetLink = `${process.env.CLIENT_URL || 'http://localhost:3002'}/reset-password?token=${data.resetToken}`;
     
     const content = `
         <h2 style="color: #1e40af; margin-bottom: 20px;">Password Reset Request</h2>

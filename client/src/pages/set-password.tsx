@@ -11,6 +11,8 @@ function SetPasswordPage() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [token, setToken] = useState<string>('');
+  const [userType, setUserType] = useState<string>('');
+  const [signerToken, setSignerToken] = useState<string>('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -23,6 +25,8 @@ function SetPasswordPage() {
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const resetToken = urlParams.get('token');
+    const type = urlParams.get('type');
+    const signerInvitationToken = urlParams.get('signerToken');
     
     if (!resetToken) {
       toast({
@@ -35,6 +39,13 @@ function SetPasswordPage() {
     }
     
     setToken(resetToken);
+    setUserType(type || '');
+    
+    // For signers, store the invitation token for redirect
+    if (type === 'signer' && signerInvitationToken) {
+      setSignerToken(signerInvitationToken);
+    }
+    
     validateToken(resetToken);
   }, []);
 
@@ -128,21 +139,53 @@ function SetPasswordPage() {
       if (response.ok) {
         const data = await response.json();
         
+        // Check if auto-login is enabled and token is provided
+        if (data.autoLogin && data.token) {
+          // Store the authentication token
+          localStorage.setItem('token', data.token);
+          
+          // Store user information
+          if (data.user) {
+            localStorage.setItem('user', JSON.stringify(data.user));
+          }
+        }
+        
         toast({
           title: "Password Set Successfully",
-          description: "Your account is now ready. Please log in to access your dashboard.",
+          description: userType === 'signer' 
+            ? "Your account is now ready. Redirecting..." 
+            : "Your account is now ready. Redirecting to your dashboard...",
         });
 
-        // Store user info temporarily for auto-login
-        localStorage.setItem('tempUserInfo', JSON.stringify({
-          email: userInfo?.email,
-          name: userInfo?.name
-        }));
-
-        // Redirect to login with success message
+        // Redirect based on user type and auto-login status
         setTimeout(() => {
-          setLocation('/login?setup=success');
-        }, 2000);
+          if (data.autoLogin && data.token) {
+            // Auto-login successful - redirect to appropriate dashboard
+            if (userType === 'signer' && signerToken) {
+              // Redirect back to sign page with invitation token
+              setLocation(`/sign/${signerToken}`);
+            } else if (data.user?.role === 'signer' || data.user?.role === 'witness') {
+              // Redirect signers/witnesses to dashboard
+              setLocation('/dashboard');
+            } else if (data.user?.role === 'notary') {
+              // Redirect notaries to dashboard
+              setLocation('/dashboard');
+            } else if (data.user?.isAdmin) {
+              // Redirect admins to admin dashboard
+              setLocation('/admin/dashboard');
+            } else {
+              // Default redirect
+              setLocation('/dashboard');
+            }
+          } else {
+            // No auto-login - redirect to login page
+            if (userType === 'signer' && signerToken) {
+              // Store signer token for after login
+              localStorage.setItem('pendingSignerToken', signerToken);
+            }
+            setLocation('/login?setup=success');
+          }
+        }, 1500);
       } else {
         const errorData = await response.json();
         toast({
@@ -204,7 +247,7 @@ function SetPasswordPage() {
           <CardHeader>
             <CardTitle className="flex items-center text-blue-600">
               <CheckCircle className="h-5 w-5 mr-2" />
-              Complete Account Setup
+              {userType === 'signer' ? 'Set Up Your Signing Account' : 'Complete Account Setup'}
             </CardTitle>
           </CardHeader>
           <CardContent>

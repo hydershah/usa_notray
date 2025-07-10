@@ -41,7 +41,7 @@ async function resendInvitation() {
     console.log(`   Job ID: ${signer.jobId}`);
     console.log(`   Invitation Token: ${signer.invitationToken}`);
     
-    const invitationLink = `${process.env.CLIENT_URL || 'http://localhost:5173'}/sign/${signer.invitationToken}`;
+    const invitationLink = `${process.env.CLIENT_URL || 'http://localhost:3002'}/sign/${signer.invitationToken}`;
     
     // Send the email
     const emailResult = await transporter.sendMail({

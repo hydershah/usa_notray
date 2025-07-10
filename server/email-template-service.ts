@@ -115,7 +115,7 @@ class EmailTemplateService {
       current_year: new Date().getFullYear(),
       current_date: new Date().toLocaleDateString(),
       expiration_time: '24 hours',
-      client_url: process.env.CLIENT_URL || 'http://localhost:5173'
+      client_url: process.env.CLIENT_URL || 'http://localhost:3002'
     };
   }
 

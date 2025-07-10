@@ -21,6 +21,9 @@ const EditorDemo = React.lazy(() => import("@/pages/EditorDemo"));
 // PDF Editor Integration
 const EditorPage = React.lazy(() => import("./pages/EditorPage"));
 
+// Signer invitation page
+const SignPage = React.lazy(() => import("@/pages/sign-page"));
+
 // Error Boundary Component
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode; fallback?: React.ReactNode },
@@ -145,6 +148,15 @@ function Router() {
       {/* Public routes */}
       <Route path="/login">
         {(isAuthenticated && !isLoggingOut) ? <Redirect to="/dashboard" /> : <Login />}
+      </Route>
+
+      {/* Sign page route - public for signer invitations */}
+      <Route path="/sign/:token">
+        <ErrorBoundary fallback={<LoadingFallback />}>
+          <React.Suspense fallback={<LoadingFallback />}>
+            <SignPage />
+          </React.Suspense>
+        </ErrorBoundary>
       </Route>
 
       {/* Password setup route - public */}
