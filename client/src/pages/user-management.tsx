@@ -56,6 +56,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { UserForm } from '@/components/user/user-form';
 import { AdminCertificateManager } from '@/components/admin/AdminCertificateManager';
+import { NotaryDetailView } from '@/components/admin/NotaryDetailView';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { getRoleColor, formatRole, formatDate, formatDateTime } from '@/lib/utils';
@@ -1193,7 +1194,6 @@ export default function UserManagement() {
                       {/* Certificate Management - Only for Notaries */}
                       {user.role === 'notary' && (
                         <>
-                          <DropdownMenuSeparator />
                           <DropdownMenuItem onClick={() => handleGenerateCertificate(user)}>
                             <Key className="h-4 w-4 mr-2" />
                             Generate Certificate
@@ -1491,19 +1491,31 @@ export default function UserManagement() {
 
       {/* User Details Dialog */}
       <Dialog open={isUserDetailsOpen} onOpenChange={setIsUserDetailsOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className={`${userForDetails?.role === 'notary' ? 'sm:max-w-7xl' : 'sm:max-w-2xl'} max-h-[90vh] overflow-y-auto`}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="h-5 w-5" />
-              User Details - {userForDetails?.username}
+              {userForDetails?.role === 'notary' ? 'Comprehensive Notary Profile' : 'User Details'} - {userForDetails?.username}
             </DialogTitle>
             <DialogDescription>
-              Complete user profile and system information
+              {userForDetails?.role === 'notary' 
+                ? 'Complete notary profile information, commission details, and system information'
+                : 'Complete user profile and system information'
+              }
             </DialogDescription>
           </DialogHeader>
           {userForDetails && (
-            <div className="space-y-6 py-4">
-              {/* Basic Information */}
+            <>
+              {/* For Notary Users - Show Comprehensive Notary Profile */}
+              {userForDetails.role === 'notary' ? (
+                <NotaryDetailView 
+                  notaryId={userForDetails.id}
+                  onClose={() => setIsUserDetailsOpen(false)}
+                />
+              ) : (
+                /* For Non-Notary Users - Show Basic User Details */
+                <div className="space-y-6 py-4">
+                  {/* Basic Information */}
               <div>
                 <h3 className="font-medium text-sm text-gray-900 mb-3">Basic Information</h3>
                 <div className="grid grid-cols-2 gap-4 text-sm">
@@ -1672,20 +1684,22 @@ export default function UserManagement() {
                   </div>
                 </div>
               </div>
-            </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => setIsUserDetailsOpen(false)}>
+                      Close
+                    </Button>
+                    <Button onClick={() => {
+                      setIsUserDetailsOpen(false);
+                      handleEditUser(userForDetails);
+                    }}>
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit User
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setIsUserDetailsOpen(false)}>
-              Close
-            </Button>
-            <Button onClick={() => {
-              setIsUserDetailsOpen(false);
-              handleEditUser(userForDetails);
-            }}>
-              <Edit className="w-4 h-4 mr-2" />
-              Edit User
-            </Button>
-          </div>
         </DialogContent>
       </Dialog>
 
@@ -1836,6 +1850,7 @@ export default function UserManagement() {
           />
         </DialogContent>
       </Dialog>
+
     </MainLayout>
   );
 }

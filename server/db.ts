@@ -37,7 +37,6 @@ export const pool = new Pool({
   min: process.env.NODE_ENV === 'production' ? 2 : 1,   // Conservative minimum for production
   idleTimeoutMillis: 30000, // 30 seconds - shorter for production efficiency
   connectionTimeoutMillis: 15000, // 15 seconds - reasonable timeout
-  acquireTimeoutMillis: 10000, // 10 seconds - reasonable acquire timeout
   // Enable connection reuse and health checks
   allowExitOnIdle: true, // Allow process to exit when idle in production
   keepAlive: true,

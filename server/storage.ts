@@ -313,10 +313,10 @@ export class DatabaseStorage implements IStorage {
         await tx.delete(signers).where(eq(signers.userId, id));
         
         // 9. Handle job notifications
-        await tx.delete(jobNotifications).where(eq(jobNotifications.userId, id));
+        await tx.delete(jobNotifications).where(eq(jobNotifications.recipientId, id));
         
         // 10. Handle notary-specific data
-        await tx.delete(notaryStamps).where(eq(notaryStamps.userId, id));
+        await tx.delete(notaryStamps).where(eq(notaryStamps.notaryId, id));
         await tx.delete(notaryAvailability).where(eq(notaryAvailability.notaryId, id));
         await tx.delete(notaryTimeSlots).where(eq(notaryTimeSlots.notaryId, id));
         await tx.delete(notaryWorkingHours).where(eq(notaryWorkingHours.notaryId, id));

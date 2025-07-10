@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { NotaryStampManager } from '@/components/user/notary-stamp-manager';
 import { SignatureManager } from '@/components/user/signature-manager';
+import { NotaryProfileDocumentManager } from '@/components/notary/NotaryProfileDocumentManager';
 import { useToast } from '@/hooks/use-toast';
 import { 
   User, 
@@ -105,15 +106,28 @@ export default function Profile() {
     loadUserProfile();
   }, []);
 
+  // Helper function to format date for HTML date input
+  const formatDateForInput = (dateString: string | null) => {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      return date.toISOString().split('T')[0]; // Returns YYYY-MM-DD format
+    } catch (error) {
+      return '';
+    }
+  };
+
   const loadUserProfile = async () => {
     try {
       const token = localStorage.getItem('token');
       const user = JSON.parse(localStorage.getItem('user') || '{}');
       
+
+      
       if (token && user.id) {
         // Try to get comprehensive notary profile first
         let profileData = null;
-        if (user.isNotary || user.role === 'notary') {
+        if (user.role === 'notary' || user.role === 'admin') {
           try {
             const notaryResponse = await fetch(`/api/notary/profile/comprehensive`, {
               headers: {
@@ -162,7 +176,7 @@ export default function Profile() {
             title: profileData.title || 'Notary Public',
             nameOnCommission: profileData.nameOnCommission || '',
             commissionNumber: profileData.commissionNumber || '',
-            commissionExpiration: profileData.commissionExpiration || '',
+            commissionExpiration: formatDateForInput(profileData.commissionExpiration),
             county: profileData.county || '',
             disclosure: profileData.disclosure || 'I acknowledge that this document was signed before me on this date.',
             
@@ -177,20 +191,20 @@ export default function Profile() {
             // E&O Insurance
             eoInsuranceCompany: profileData.eoInsuranceCompany || '',
             eoInsuranceAmount: profileData.eoInsuranceAmount || 0,
-            eoInsuranceExpiration: profileData.eoInsuranceExpiration || '',
+            eoInsuranceExpiration: formatDateForInput(profileData.eoInsuranceExpiration),
             
             // Bond Information
             bondCompanyName: profileData.bondCompanyName || '',
             bondAmount: profileData.bondAmount || 0,
-            bondExpiration: profileData.bondExpiration || '',
+            bondExpiration: formatDateForInput(profileData.bondExpiration),
             
             // Public Certificate
-            publicCertificateExpiration: profileData.publicCertificateExpiration || '',
+            publicCertificateExpiration: formatDateForInput(profileData.publicCertificateExpiration),
             publicCertificatePassword: '',
             
             // Signing Agent
             signingAgentCertified: profileData.signingAgentCertified || false,
-            signingAgentExpirationDate: profileData.signingAgentExpirationDate || '',
+            signingAgentExpirationDate: formatDateForInput(profileData.signingAgentExpirationDate),
             
             // Languages
             foreignLanguages: profileData.foreignLanguages || [],
@@ -282,7 +296,7 @@ export default function Profile() {
       }
 
       // For notary users, use the comprehensive notary profile API
-      if (currentUser?.isNotary || currentUser?.role === 'notary') {
+      if (currentUser?.role === 'notary' || currentUser?.role === 'admin') {
         const notaryProfileData = {
           // Basic personal information
           firstName: formData.firstName,
@@ -563,7 +577,7 @@ export default function Profile() {
             <Tabs defaultValue="profile" className="w-full">
               <div className="bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
                 <TabsList className={`grid w-full h-16 bg-transparent p-2 ${
-                  (currentUser?.isNotary || currentUser?.role === 'notary' || currentUser?.role === 'admin') ? 'grid-cols-4' : 
+                  (currentUser?.role === 'notary' || currentUser?.role === 'admin') ? 'grid-cols-4' : 
                   (currentUser?.role === 'title_company') ? 'grid-cols-2' : 'grid-cols-3'
                 }`}>
                   <TabsTrigger 
@@ -573,7 +587,7 @@ export default function Profile() {
                     <User className="w-5 h-5" />
                     Profile
                   </TabsTrigger>
-                  {(currentUser?.isNotary || currentUser?.role === 'notary' || currentUser?.role === 'admin') && (
+                  {(currentUser?.role === 'notary' || currentUser?.role === 'admin') && (
                     <TabsTrigger 
                       value="stamps" 
                       className="flex items-center gap-2 h-12 text-sm font-medium data-[state=active]:bg-white data-[state=active]:shadow-md data-[state=active]:text-blue-600 rounded-xl transition-all duration-200"
@@ -680,7 +694,7 @@ export default function Profile() {
                     </div>
 
                     {/* Enhanced Notary Information Section */}
-                    {(currentUser?.isNotary || currentUser?.role === 'notary' || currentUser?.role === 'admin') && (
+                    {(currentUser?.role === 'notary' || currentUser?.role === 'admin') && (
                       <>
                         <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl p-8 border border-purple-100">
                           <div className="flex items-center gap-3 mb-6">
@@ -1107,106 +1121,12 @@ export default function Profile() {
                           </div>
                         </div>
 
-                        {/* Document Status Section */}
+                        {/* Document Management Section */}
                         <div className="bg-gradient-to-br from-gray-50 to-slate-50 rounded-2xl p-8 border border-gray-100">
-                          <div className="flex items-center gap-3 mb-6">
-                            <div className="w-10 h-10 bg-gray-500 rounded-xl flex items-center justify-center">
-                              <FileText className="w-5 h-5 text-white" />
-                            </div>
-                            <h3 className="text-2xl font-bold text-gray-900">Document Status</h3>
-                            <Badge className="bg-gray-100 text-gray-800">Files</Badge>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            <div className={`p-4 rounded-xl border-2 ${formData.hasNotaryCommissionFile ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                              <div className="flex items-center gap-3">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${formData.hasNotaryCommissionFile ? 'bg-green-500' : 'bg-red-500'}`}>
-                                  {formData.hasNotaryCommissionFile ? (
-                                    <Check className="w-4 h-4 text-white" />
-                                  ) : (
-                                    <FileText className="w-4 h-4 text-white" />
-                                  )}
-                                </div>
-                                <div>
-                                  <h4 className="font-semibold text-gray-900">Commission Certificate</h4>
-                                  <p className={`text-sm ${formData.hasNotaryCommissionFile ? 'text-green-600' : 'text-red-600'}`}>
-                                    {formData.hasNotaryCommissionFile ? 'Uploaded' : 'Not uploaded'}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className={`p-4 rounded-xl border-2 ${formData.hasEOInsuranceFile ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                              <div className="flex items-center gap-3">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${formData.hasEOInsuranceFile ? 'bg-green-500' : 'bg-red-500'}`}>
-                                  {formData.hasEOInsuranceFile ? (
-                                    <Check className="w-4 h-4 text-white" />
-                                  ) : (
-                                    <Shield className="w-4 h-4 text-white" />
-                                  )}
-                                </div>
-                                <div>
-                                  <h4 className="font-semibold text-gray-900">E&O Insurance</h4>
-                                  <p className={`text-sm ${formData.hasEOInsuranceFile ? 'text-green-600' : 'text-red-600'}`}>
-                                    {formData.hasEOInsuranceFile ? 'Uploaded' : 'Not uploaded'}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className={`p-4 rounded-xl border-2 ${formData.hasPublicCertificateFile ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                              <div className="flex items-center gap-3">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${formData.hasPublicCertificateFile ? 'bg-green-500' : 'bg-red-500'}`}>
-                                  {formData.hasPublicCertificateFile ? (
-                                    <Check className="w-4 h-4 text-white" />
-                                  ) : (
-                                    <Lock className="w-4 h-4 text-white" />
-                                  )}
-                                </div>
-                                <div>
-                                  <h4 className="font-semibold text-gray-900">Digital Certificate</h4>
-                                  <p className={`text-sm ${formData.hasPublicCertificateFile ? 'text-green-600' : 'text-red-600'}`}>
-                                    {formData.hasPublicCertificateFile ? 'Uploaded' : 'Not uploaded'}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className={`p-4 rounded-xl border-2 ${formData.hasBondFile ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                              <div className="flex items-center gap-3">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${formData.hasBondFile ? 'bg-green-500' : 'bg-red-500'}`}>
-                                  {formData.hasBondFile ? (
-                                    <Check className="w-4 h-4 text-white" />
-                                  ) : (
-                                    <FileText className="w-4 h-4 text-white" />
-                                  )}
-                                </div>
-                                <div>
-                                  <h4 className="font-semibold text-gray-900">Bond Certificate</h4>
-                                  <p className={`text-sm ${formData.hasBondFile ? 'text-green-600' : 'text-red-600'}`}>
-                                    {formData.hasBondFile ? 'Uploaded' : 'Not uploaded'}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className={`p-4 rounded-xl border-2 ${formData.hasSigningAgentFile ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
-                              <div className="flex items-center gap-3">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${formData.hasSigningAgentFile ? 'bg-green-500' : 'bg-gray-500'}`}>
-                                  {formData.hasSigningAgentFile ? (
-                                    <Check className="w-4 h-4 text-white" />
-                                  ) : (
-                                    <Award className="w-4 h-4 text-white" />
-                                  )}
-                                </div>
-                                <div>
-                                  <h4 className="font-semibold text-gray-900">NSA Certificate</h4>
-                                  <p className={`text-sm ${formData.hasSigningAgentFile ? 'text-green-600' : 'text-gray-600'}`}>
-                                    {formData.hasSigningAgentFile ? 'Uploaded' : formData.signingAgentCertified ? 'Not uploaded' : 'Not applicable'}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
+                          <NotaryProfileDocumentManager 
+                            notaryId={currentUser.id}
+                            onDocumentsChange={loadUserProfile}
+                          />
                         </div>
                       </>
                     )}
@@ -1253,7 +1173,7 @@ export default function Profile() {
                 </TabsContent>
 
                 {/* Notary Stamps Tab */}
-                {(currentUser?.isNotary || currentUser?.role === 'notary' || currentUser?.role === 'admin') && (
+                {(currentUser?.role === 'notary' || currentUser?.role === 'admin') && (
                   <TabsContent value="stamps">
                     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-8 border border-blue-100">
                       <NotaryStampManager notaryId={currentUser.id} />
