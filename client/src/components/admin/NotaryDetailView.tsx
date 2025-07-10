@@ -82,6 +82,16 @@ interface NotaryProfile {
   hasBondFile: boolean;
   hasSigningAgentFile: boolean;
   
+  // Document status (from API response)
+  documents?: {
+    hasCommissionFile: boolean;
+    hasEOInsuranceFile: boolean;
+    hasBondFile: boolean;
+    hasPublicCertificateFile: boolean;
+    hasSigningAgentFile: boolean;
+    hasDigitalCertificateFile: boolean;
+  };
+  
   // Timestamps
   lastProfileUpdate: string;
 }
@@ -156,12 +166,58 @@ export function NotaryDetailView({ notaryId, onClose }: NotaryDetailViewProps) {
     );
   };
 
-  const getFileBadge = (hasFile: boolean, fileName: string) => {
+  const getFileBadge = (hasFile: boolean, fileName: string, documentType: string) => {
+    const handleViewDocument = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const previewUrl = `/api/notary/profile/documents/${notaryId}/preview/${documentType}?token=${token}`;
+        window.open(previewUrl, '_blank');
+      } catch (error) {
+        console.error('Error opening document:', error);
+      }
+    };
+
+    const handleDownloadDocument = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const downloadUrl = `/api/notary/profile/documents/${notaryId}/download/${documentType}?token=${token}`;
+        window.open(downloadUrl, '_blank');
+      } catch (error) {
+        console.error('Error downloading document:', error);
+      }
+    };
+
     return (
-      <div className={`flex items-center gap-2 p-2 rounded-lg ${hasFile ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-        {hasFile ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
-        <span className="text-sm font-medium">{fileName}</span>
-        <span className="text-xs">{hasFile ? 'Uploaded' : 'Missing'}</span>
+      <div className={`flex items-center justify-between p-3 rounded-lg border ${hasFile ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+        <div className="flex items-center gap-3">
+          {hasFile ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+          <div>
+            <span className="text-sm font-medium">{fileName}</span>
+            <p className="text-xs text-gray-500">{hasFile ? 'Uploaded' : 'Missing'}</p>
+          </div>
+        </div>
+        {hasFile && (
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleViewDocument}
+              className="h-8 px-3"
+            >
+              <Eye className="w-3 h-3 mr-1" />
+              View
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleDownloadDocument}
+              className="h-8 px-3"
+            >
+              <ExternalLink className="w-3 h-3 mr-1" />
+              Download
+            </Button>
+          </div>
+        )}
       </div>
     );
   };
@@ -420,11 +476,11 @@ export function NotaryDetailView({ notaryId, onClose }: NotaryDetailViewProps) {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {getFileBadge(profile.hasNotaryCommissionFile, 'Commission Certificate')}
-            {getFileBadge(profile.hasEOInsuranceFile, 'E&O Insurance Certificate')}
-            {getFileBadge(profile.hasPublicCertificateFile, 'Digital Certificate')}
-            {getFileBadge(profile.hasBondFile, 'Bond Certificate')}
-            {getFileBadge(profile.hasSigningAgentFile, 'Signing Agent Certificate')}
+            {getFileBadge(profile.documents?.hasCommissionFile || profile.hasNotaryCommissionFile, 'Commission Certificate', 'notaryCommissionFile')}
+            {getFileBadge(profile.documents?.hasEOInsuranceFile || profile.hasEOInsuranceFile, 'E&O Insurance Certificate', 'eoInsuranceFile')}
+            {getFileBadge(profile.documents?.hasPublicCertificateFile || profile.hasPublicCertificateFile, 'Digital Certificate', 'publicCertificateFile')}
+            {getFileBadge(profile.documents?.hasBondFile || profile.hasBondFile, 'Bond Certificate', 'bondFile')}
+            {getFileBadge(profile.documents?.hasSigningAgentFile || profile.hasSigningAgentFile, 'Signing Agent Certificate', 'signingAgentFile')}
           </CardContent>
         </Card>
       </div>
