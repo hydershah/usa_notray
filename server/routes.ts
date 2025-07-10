@@ -26,6 +26,8 @@ import nodemailer from "nodemailer";
 import crypto from "crypto";
 import path from "path";
 import fs from "fs";
+import speakeasy from "speakeasy";
+import QRCode from "qrcode";
 import { promises as fsPromises } from "fs";
 import { 
   insertUserSchema, 
@@ -204,7 +206,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Authentication routes
   app.post('/api/auth/login', authLimiter, checkAccountLockout, async (req, res) => {
     try {
-      const { email, password } = req.body;
+      const { email, password, twoFactorCode } = req.body;
       
       if (!email || !password) {
         return res.status(400).json({ message: 'Email and password are required' });
@@ -220,6 +222,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!isValidPassword) {
         recordFailedLogin(email);
         return res.status(401).json({ message: 'Invalid credentials' });
+      }
+
+      // Check if 2FA is enabled for this user
+      if (user.mfaEnabled) {
+        if (!twoFactorCode) {
+          // Return without token, indicating 2FA is required
+          return res.json({
+            requiresTwoFactor: true,
+            message: 'Two-factor authentication is required'
+          });
+        }
+
+        // Verify 2FA code
+        if (!user.mfaSecret) {
+          return res.status(500).json({ message: '2FA configuration error' });
+        }
+
+        const verified = speakeasy.totp.verify({
+          secret: user.mfaSecret,
+          encoding: 'base32',
+          token: twoFactorCode,
+          window: 2 // Allow 2 time steps before/after for clock drift
+        });
+
+        if (!verified) {
+          recordFailedLogin(email);
+          return res.status(401).json({ message: 'Invalid two-factor authentication code' });
+        }
       }
 
       // Clear failed attempts on successful login
@@ -356,6 +386,202 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: 'Logged out successfully' });
     } catch (error) {
       console.error('Logout error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // ==========================================
+  // 2FA AUTHENTICATION ROUTES
+  // ==========================================
+
+  // Get 2FA status for current user
+  app.get('/api/auth/2fa/status', verifyToken, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      res.json({
+        enabled: user.mfaEnabled || false,
+        hasSecret: !!(user.mfaSecret)
+      });
+    } catch (error) {
+      console.error('2FA status error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Setup 2FA for current user
+  app.post('/api/auth/2fa/setup', verifyToken, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Generate secret for TOTP
+      const secret = speakeasy.generateSecret({
+        name: `USA Notary (${user.email})`,
+        issuer: 'USA Notary Platform',
+        length: 32
+      });
+
+      // Generate QR code
+      const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url || '');
+
+      // Store secret in database (not enabled yet)
+      await db.update(users)
+        .set({ 
+          mfaSecret: secret.base32 || '',
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, user.id));
+
+      res.json({
+        secret: secret.base32 || '',
+        qrCode: qrCodeUrl,
+        manualEntryKey: secret.base32 || '',
+        backupCodes: [] // Could implement backup codes later
+      });
+    } catch (error) {
+      console.error('2FA setup error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Verify 2FA token and enable 2FA
+  app.post('/api/auth/2fa/verify', verifyToken, async (req: any, res) => {
+    try {
+      const { token } = req.body;
+      
+      if (!token || token.length !== 6) {
+        return res.status(400).json({ message: 'Invalid token format' });
+      }
+
+      const user = await storage.getUser(req.user.id);
+      if (!user || !user.mfaSecret) {
+        return res.status(400).json({ message: 'No 2FA secret found' });
+      }
+
+      // Verify the token
+      const verified = speakeasy.totp.verify({
+        secret: user.mfaSecret,
+        encoding: 'base32',
+        token: token,
+        window: 2 // Allow 2 time steps before/after for clock drift
+      });
+
+      if (!verified) {
+        return res.status(400).json({ message: 'Invalid verification code' });
+      }
+
+      // Enable 2FA
+      await db.update(users)
+        .set({ 
+          mfaEnabled: true,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, user.id));
+
+      res.json({ 
+        message: '2FA enabled successfully',
+        enabled: true
+      });
+    } catch (error) {
+      console.error('2FA verification error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Disable 2FA
+  app.post('/api/auth/2fa/disable', verifyToken, async (req: any, res) => {
+    try {
+      const { token, password } = req.body;
+      
+      const user = await storage.getUser(req.user.id);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      if (!user.mfaEnabled) {
+        return res.status(400).json({ message: '2FA is not enabled' });
+      }
+
+      // Verify either 2FA token or password
+      let verified = false;
+      
+      if (token && token.length === 6) {
+        // Verify 2FA token
+        verified = speakeasy.totp.verify({
+          secret: user.mfaSecret,
+          encoding: 'base32',
+          token: token,
+          window: 2
+        });
+      } else if (password) {
+        // Verify password
+        verified = await bcrypt.compare(password, user.password);
+      }
+
+      if (!verified) {
+        return res.status(400).json({ message: 'Invalid verification code or password' });
+      }
+
+      // Disable 2FA
+      await db.update(users)
+        .set({ 
+          mfaEnabled: false,
+          mfaSecret: null,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, user.id));
+
+      res.json({ 
+        message: '2FA disabled successfully',
+        enabled: false
+      });
+    } catch (error) {
+      console.error('2FA disable error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Admin toggle 2FA for any user
+  app.patch('/api/users/:id/2fa/toggle', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const userId = parseInt(req.params.id);
+      const { enabled } = req.body;
+
+      if (typeof enabled !== 'boolean') {
+        return res.status(400).json({ message: 'enabled field must be a boolean' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Update user's 2FA status
+      await db.update(users)
+        .set({ 
+          mfaEnabled: enabled,
+          // If disabling 2FA, also clear the secret
+          mfaSecret: enabled ? user.mfaSecret : null,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, userId));
+
+      res.json({ 
+        message: `2FA ${enabled ? 'enabled' : 'disabled'} for user ${user.email}`,
+        enabled: enabled
+      });
+    } catch (error) {
+      console.error('Admin 2FA toggle error:', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   });
