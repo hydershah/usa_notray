@@ -22,6 +22,16 @@ import {
   notaryLogEntries,
   documentTags,
   documentVersions,
+  passwordResetTokens,
+  jobNotifications,
+  notaryApprovalQueue,
+  userVerificationAttempts,
+  kbaSessions,
+  accountTransactions,
+  contractorPayments,
+  stripeWebhookEvents,
+  titleCompanyNotaryAssignments,
+  legacyTitleCompanyNotaryAssignments,
   InsertUser,
   InsertTitleCompany,
   InsertJob,
@@ -260,8 +270,89 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteUser(id: number): Promise<boolean> {
-    const result = await db.delete(users).where(eq(users.id, id));
-    return (result.rowCount || 0) > 0;
+    try {
+      // Check if user exists first
+      const user = await db.select().from(users).where(eq(users.id, id)).limit(1);
+      if (user.length === 0) {
+        return false;
+      }
+
+      // Handle cascading deletes and foreign key constraints
+      // This is done in a transaction to ensure data consistency
+      await db.transaction(async (tx) => {
+        // 1. Handle jobs created by this user - transfer ownership to admin or delete
+        const userJobs = await tx.select().from(jobs).where(eq(jobs.userId, id));
+        
+        // For jobs, we'll set userId to NULL to preserve job history
+        // In production, you might want to transfer to an admin user instead
+        await tx.update(jobs).set({ userId: null }).where(eq(jobs.userId, id));
+        
+        // 2. Handle account transactions - preserve for audit, set user_id to NULL
+        await tx.update(accountTransactions).set({ userId: null }).where(eq(accountTransactions.userId, id));
+        
+        // 3. Handle audit trail - preserve for audit, set user_id to NULL
+        await tx.update(auditTrail).set({ userId: null }).where(eq(auditTrail.userId, id));
+        
+        // 4. Handle company relationships
+        // Remove user from any companies they're associated with
+        await tx.update(companies).set({ companyManagerId: null }).where(eq(companies.companyManagerId, id));
+        await tx.update(companies).set({ preferredNotaryId: null }).where(eq(companies.preferredNotaryId, id));
+        await tx.update(companies).set({ createdBy: null }).where(eq(companies.createdBy, id));
+        await tx.update(companies).set({ lastModifiedBy: null }).where(eq(companies.lastModifiedBy, id));
+        
+        // 5. Handle user approval relationships
+        await tx.update(users).set({ approvedBy: null }).where(eq(users.approvedBy, id));
+        
+        // 6. Handle job documents uploaded by this user
+        await tx.update(jobDocuments).set({ uploadedBy: null }).where(eq(jobDocuments.uploadedBy, id));
+        
+        // 7. Handle password reset tokens
+        await tx.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, id));
+        
+        // 8. Handle signers table
+        await tx.delete(signers).where(eq(signers.userId, id));
+        
+        // 9. Handle job notifications
+        await tx.delete(jobNotifications).where(eq(jobNotifications.userId, id));
+        
+        // 10. Handle notary-specific data
+        await tx.delete(notaryStamps).where(eq(notaryStamps.userId, id));
+        await tx.delete(notaryAvailability).where(eq(notaryAvailability.notaryId, id));
+        await tx.delete(notaryTimeSlots).where(eq(notaryTimeSlots.notaryId, id));
+        await tx.delete(notaryWorkingHours).where(eq(notaryWorkingHours.notaryId, id));
+        await tx.delete(calendarEvents).where(eq(calendarEvents.notaryId, id));
+        await tx.delete(notaryAssignmentLog).where(eq(notaryAssignmentLog.notaryId, id));
+        await tx.delete(notaryApprovalQueue).where(eq(notaryApprovalQueue.notaryId, id));
+        
+        // 11. Handle verification attempts
+        await tx.delete(userVerificationAttempts).where(eq(userVerificationAttempts.userId, id));
+        
+        // 12. Handle KBA sessions
+        await tx.delete(kbaSessions).where(eq(kbaSessions.userId, id));
+        
+        // 13. Handle financial records
+        await tx.delete(contractorPayments).where(eq(contractorPayments.contractorId, id));
+        
+        // 14. Handle Stripe webhook events
+        await tx.delete(stripeWebhookEvents).where(eq(stripeWebhookEvents.userId, id));
+        
+        // 15. Handle title company assignments
+        await tx.delete(titleCompanyNotaryAssignments).where(eq(titleCompanyNotaryAssignments.notaryId, id));
+        await tx.delete(legacyTitleCompanyNotaryAssignments).where(eq(legacyTitleCompanyNotaryAssignments.notaryId, id));
+        
+        // 16. Handle legacy title company relationships
+        await tx.update(titleCompanies).set({ preferredNotaryId: null }).where(eq(titleCompanies.preferredNotaryId, id));
+        
+        // 17. Finally, delete the user
+        await tx.delete(users).where(eq(users.id, id));
+      });
+      
+      console.log(`✅ Successfully deleted user ${id} and handled all cascading relationships`);
+      return true;
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      throw new Error(`Failed to delete user: ${error.message}`);
+    }
   }
 
   async getUsers(): Promise<User[]> {

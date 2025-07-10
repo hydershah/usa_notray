@@ -724,6 +724,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const userId = parseInt(req.params.id);
+      
+      // Validate userId
+      if (isNaN(userId) || userId <= 0) {
+        return res.status(400).json({ message: 'Invalid user ID' });
+      }
+
+      // Prevent self-deletion
+      if (req.user.id === userId) {
+        return res.status(400).json({ message: 'Cannot delete your own account' });
+      }
+
       const deleted = await storage.deleteUser(userId);
       
       if (!deleted) {
@@ -744,7 +755,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: 'User deleted successfully' });
     } catch (error) {
       console.error('Delete user error:', error);
-      res.status(500).json({ message: 'Internal server error' });
+      
+      // Provide more specific error messages
+      if (error.message.includes('foreign key constraint')) {
+        res.status(400).json({ 
+          message: 'Cannot delete user due to existing relationships. Please remove all associated records first.' 
+        });
+      } else if (error.message.includes('Failed to delete user')) {
+        res.status(500).json({ 
+          message: 'Failed to delete user. Please try again or contact support if the problem persists.' 
+        });
+      } else {
+        res.status(500).json({ message: 'Internal server error' });
+      }
     }
   });
 
