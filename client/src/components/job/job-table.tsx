@@ -95,6 +95,8 @@ export function JobTable({ onCreateJob }: JobTableProps) {
   const [statusFilter, setStatusFilter] = useState('all');
   const [companyFilter, setCompanyFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('all');
+  const [assignmentFilter, setAssignmentFilter] = useState('all'); // New filter for assignment status
+  const [notaryFilter, setNotaryFilter] = useState('all'); // New filter for notary assignments
   const [sortBy, setSortBy] = useState('created');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
@@ -137,6 +139,38 @@ export function JobTable({ onCreateJob }: JobTableProps) {
       const matchesStatus = statusFilter === 'all' || job.jobStatus === statusFilter;
       const matchesCompany = companyFilter === 'all' || job.titleCompany === companyFilter;
       
+      // Assignment status filter
+      let matchesAssignment = true;
+      if (assignmentFilter !== 'all') {
+        switch (assignmentFilter) {
+          case 'unassigned':
+            matchesAssignment = !job.notaryId && !job.selectedNotary;
+            break;
+          case 'pending_approval':
+            matchesAssignment = job.notaryApprovalStatus === 'assigned_pending_approval';
+            break;
+          case 'approved':
+            matchesAssignment = job.notaryApprovalStatus === 'approved';
+            break;
+          case 'rejected':
+            matchesAssignment = job.notaryApprovalStatus === 'rejected';
+            break;
+          case 'assigned':
+            matchesAssignment = !!(job.notaryId || job.selectedNotary);
+            break;
+        }
+      }
+      
+      // Notary filter
+      let matchesNotary = true;
+      if (notaryFilter !== 'all') {
+        if (notaryFilter === 'unassigned') {
+          matchesNotary = !job.notaryId && !job.selectedNotary;
+        } else {
+          matchesNotary = job.notaryId?.toString() === notaryFilter || job.selectedNotary === notaryFilter;
+        }
+      }
+      
       // Date filter logic
       let matchesDate = true;
       if (dateFilter !== 'all') {
@@ -157,7 +191,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
         }
       }
       
-      return matchesSearch && matchesStatus && matchesCompany && matchesDate;
+      return matchesSearch && matchesStatus && matchesCompany && matchesAssignment && matchesNotary && matchesDate;
     });
 
     // Sort jobs
@@ -181,6 +215,12 @@ export function JobTable({ onCreateJob }: JobTableProps) {
           aValue = new Date(a.createdAt || 0).getTime();
           bValue = new Date(b.createdAt || 0).getTime();
           break;
+        case 'assignment':
+          // Sort by assignment status priority: unassigned -> pending -> approved -> rejected
+          const statusOrder = { 'pending_assignment': 0, 'assigned_pending_approval': 1, 'approved': 2, 'rejected': 3 };
+          aValue = statusOrder[a.notaryApprovalStatus as keyof typeof statusOrder] || 0;
+          bValue = statusOrder[b.notaryApprovalStatus as keyof typeof statusOrder] || 0;
+          break;
         default:
           aValue = a.internalReference?.toLowerCase() || `job-${a.id}`;
           bValue = b.internalReference?.toLowerCase() || `job-${b.id}`;
@@ -194,7 +234,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
     });
 
     return filtered;
-  }, [jobs, searchTerm, statusFilter, companyFilter, dateFilter, sortBy, sortOrder]);
+  }, [jobs, searchTerm, statusFilter, companyFilter, dateFilter, assignmentFilter, notaryFilter, sortBy, sortOrder]);
 
   // Pagination
   const totalPages = Math.ceil(filteredAndSortedJobs.length / itemsPerPage);
@@ -207,6 +247,20 @@ export function JobTable({ onCreateJob }: JobTableProps) {
   const uniqueCompanies = useMemo(() => {
     const companies = new Set(jobs.map(job => job.titleCompany).filter(Boolean));
     return Array.from(companies);
+  }, [jobs]);
+
+  // Get unique notaries for filter
+  const uniqueNotaries = useMemo(() => {
+    const notaries = new Set();
+    jobs.forEach(job => {
+      if (job.notaryId) {
+        notaries.add(job.notaryId.toString());
+      }
+      if (job.selectedNotary) {
+        notaries.add(job.selectedNotary);
+      }
+    });
+    return Array.from(notaries);
   }, [jobs]);
 
   const updateStatusMutation = useMutation({
@@ -392,6 +446,67 @@ export function JobTable({ onCreateJob }: JobTableProps) {
     return progress;
   };
 
+  const getAssignedNotary = (job: Job): string => {
+    if (job.selectedNotary) {
+      return job.selectedNotary;
+    }
+    return 'Unassigned';
+  };
+
+  const getAssignmentBadge = (job: Job) => {
+    if (!job.notaryId && !job.selectedNotary) {
+      return (
+        <Badge className="flex items-center gap-1 bg-gray-50 border-gray-200 text-gray-600 hover:shadow-sm transition-all duration-200">
+          <AlertCircle className="w-3 h-3" />
+          Unassigned
+        </Badge>
+      );
+    }
+
+    const config = {
+      pending_assignment: {
+        icon: Clock,
+        color: 'text-orange-600',
+        bgColor: 'bg-orange-50 border-orange-200',
+        text: 'Pending Assignment'
+      },
+      assigned_pending_approval: {
+        icon: Clock,
+        color: 'text-yellow-600',
+        bgColor: 'bg-yellow-50 border-yellow-200',
+        text: 'Pending Approval'
+      },
+      approved: {
+        icon: CheckCircle,
+        color: 'text-green-600',
+        bgColor: 'bg-green-50 border-green-200',
+        text: 'Approved'
+      },
+      rejected: {
+        icon: XCircle,
+        color: 'text-red-600',
+        bgColor: 'bg-red-50 border-red-200',
+        text: 'Rejected'
+      },
+      approved_with_conditions: {
+        icon: AlertCircle,
+        color: 'text-blue-600',
+        bgColor: 'bg-blue-50 border-blue-200',
+        text: 'Approved (Conditions)'
+      }
+    };
+
+    const status = job.notaryApprovalStatus || 'pending_assignment';
+    const { icon: Icon, color, bgColor, text } = config[status as keyof typeof config] || config.pending_assignment;
+
+    return (
+      <Badge className={`flex items-center gap-1 ${bgColor} ${color} border hover:shadow-sm transition-all duration-200`}>
+        <Icon className="w-3 h-3" />
+        {text}
+      </Badge>
+    );
+  };
+
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
   };
@@ -504,6 +619,79 @@ export function JobTable({ onCreateJob }: JobTableProps) {
           </div>
         </div>
 
+        {/* Quick Filter Bar */}
+        <div className="px-6">
+          <div className="flex gap-2 flex-wrap mb-4">
+            <Button
+              variant={statusFilter === 'all' && assignmentFilter === 'all' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setStatusFilter('all');
+                setAssignmentFilter('all');
+                setNotaryFilter('all');
+              }}
+              className="h-8 px-3"
+            >
+              All Jobs
+            </Button>
+            <Button
+              variant={statusFilter === 'completed' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setStatusFilter('completed');
+                setAssignmentFilter('all');
+              }}
+              className="h-8 px-3"
+            >
+              Completed
+            </Button>
+            <Button
+              variant={assignmentFilter === 'unassigned' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setAssignmentFilter('unassigned');
+                setStatusFilter('all');
+              }}
+              className="h-8 px-3"
+            >
+              Unassigned
+            </Button>
+            <Button
+              variant={assignmentFilter === 'pending_approval' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setAssignmentFilter('pending_approval');
+                setStatusFilter('all');
+              }}
+              className="h-8 px-3"
+            >
+              Pending Approval
+            </Button>
+            <Button
+              variant={assignmentFilter === 'approved' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setAssignmentFilter('approved');
+                setStatusFilter('all');
+              }}
+              className="h-8 px-3"
+            >
+              Approved
+            </Button>
+            <Button
+              variant={statusFilter === 'pending' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setStatusFilter('pending');
+                setAssignmentFilter('all');
+              }}
+              className="h-8 px-3"
+            >
+              In Progress
+            </Button>
+          </div>
+        </div>
+
         {/* Enhanced Filters */}
         <div className="px-6 space-y-4">
           <div className="flex flex-col lg:flex-row gap-4">
@@ -534,9 +722,41 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   <SelectItem value="expired">Expired</SelectItem>
                 </SelectContent>
               </Select>
+
+              <Select value={assignmentFilter} onValueChange={setAssignmentFilter}>
+                <SelectTrigger className="w-[160px] h-11 bg-white border-2 border-gray-200 rounded-xl">
+                  <User className="h-4 w-4 mr-2 text-gray-500" />
+                  <SelectValue placeholder="Assignment" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Assignments</SelectItem>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  <SelectItem value="assigned">Assigned</SelectItem>
+                  <SelectItem value="pending_approval">Pending Approval</SelectItem>
+                  <SelectItem value="approved">Approved</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={notaryFilter} onValueChange={setNotaryFilter}>
+                <SelectTrigger className="w-[150px] h-11 bg-white border-2 border-gray-200 rounded-xl">
+                  <Briefcase className="h-4 w-4 mr-2 text-gray-500" />
+                  <SelectValue placeholder="Notary" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Notaries</SelectItem>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  {uniqueNotaries.map(notaryId => (
+                    <SelectItem key={notaryId as string} value={notaryId as string}>
+                      Notary {notaryId as string}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               
               <Select value={companyFilter} onValueChange={setCompanyFilter}>
                 <SelectTrigger className="w-[160px] h-11 bg-white border-2 border-gray-200 rounded-xl">
+                  <Building className="h-4 w-4 mr-2 text-gray-500" />
                   <SelectValue placeholder="Company" />
                 </SelectTrigger>
                 <SelectContent>
@@ -549,6 +769,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
 
               <Select value={dateFilter} onValueChange={setDateFilter}>
                 <SelectTrigger className="w-[130px] h-11 bg-white border-2 border-gray-200 rounded-xl">
+                  <Calendar className="h-4 w-4 mr-2 text-gray-500" />
                   <SelectValue placeholder="Date" />
                 </SelectTrigger>
                 <SelectContent>
@@ -558,6 +779,24 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   <SelectItem value="month">This Month</SelectItem>
                 </SelectContent>
               </Select>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearchTerm('');
+                  setStatusFilter('all');
+                  setAssignmentFilter('all');
+                  setNotaryFilter('all');
+                  setCompanyFilter('all');
+                  setDateFilter('all');
+                  setCurrentPage(1);
+                }}
+                className="h-11 px-4 bg-white border-2 border-gray-200 hover:border-blue-300 hover:bg-blue-50"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Reset Filters
+              </Button>
             </div>
           </div>
         </div>
@@ -601,11 +840,6 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                           checked={selectedJobs.includes(job.id)}
                           onCheckedChange={(checked) => handleSelectJob(job.id, !!checked)}
                         />
-                        <Avatar className="h-10 w-10">
-                          <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-                            <Building className="h-5 w-5" />
-                          </AvatarFallback>
-                        </Avatar>
                       </div>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -642,8 +876,8 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                         <span className="font-medium">{job.titleCompany}</span>
                       </div>
                       <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <MapPin className="h-4 w-4" />
-                        <span>{job.propertyAddressOne}</span>
+                        <User className="h-4 w-4" />
+                        <span>{getAssignedNotary(job)}</span>
                       </div>
                       {job.closingType && (
                         <Badge variant="outline" className="text-xs">
@@ -714,6 +948,17 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                       <Button
                         variant="ghost"
                         size="sm"
+                        onClick={() => handleSort('assignment')}
+                        className="h-8 px-3 font-semibold text-gray-700 hover:text-blue-600"
+                      >
+                        Assignment
+                        {getSortIcon('assignment')}
+                      </Button>
+                    </TableHead>
+                    <TableHead className="py-4">
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => handleSort('date')}
                         className="h-8 px-3 font-semibold text-gray-700 hover:text-blue-600"
                       >
@@ -751,11 +996,6 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                       </TableCell>
                       <TableCell className="py-4">
                         <div className="flex items-center gap-4">
-                          <Avatar className="h-12 w-12 shadow-md">
-                            <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
-                              <Building className="h-6 w-6" />
-                            </AvatarFallback>
-                          </Avatar>
                           <div>
                             <div className="font-semibold text-gray-900 text-base">
                               {job.internalReference || `Job #${job.id}`}
@@ -764,10 +1004,10 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                               <Building className="h-3 w-3" />
                               {job.titleCompany}
                             </div>
-                            <div className="text-sm text-gray-500 flex items-center gap-1">
-                              <MapPin className="h-3 w-3" />
-                              {job.propertyAddressOne}
-                            </div>
+                                                      <div className="text-sm text-gray-500 flex items-center gap-1">
+                            <User className="h-3 w-3" />
+                            {getAssignedNotary(job)}
+                          </div>
                             {job.closingType && (
                               <Badge variant="outline" className="text-xs mt-2">
                                 {job.closingType}
@@ -785,6 +1025,14 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                               <span className="font-semibold">{getJobProgress(job)}%</span>
                             </div>
                             <Progress value={getJobProgress(job)} className="h-2" />
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="py-4">
+                        <div className="space-y-2">
+                          {getAssignmentBadge(job)}
+                          <div className="text-sm text-gray-600">
+                            {getAssignedNotary(job)}
                           </div>
                         </div>
                       </TableCell>
