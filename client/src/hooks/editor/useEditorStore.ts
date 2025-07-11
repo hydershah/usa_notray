@@ -118,7 +118,7 @@ export const useEditorStore = create<EditorStore>()(
       viewer: {
         currentPage: 1,
         totalPages: 0,
-        zoomLevel: 0.75,
+        zoomLevel: 1.5,
         scrollTop: 0,
         documentId: ''
       },
@@ -402,7 +402,7 @@ export const useEditorStore = create<EditorStore>()(
           viewer: {
             currentPage: 1,
             totalPages: 0,
-            zoomLevel: 0.75,
+            zoomLevel: 1.5,
             scrollTop: 0,
             documentId: ''
           }
