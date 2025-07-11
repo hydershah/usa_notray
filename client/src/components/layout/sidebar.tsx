@@ -120,26 +120,50 @@ const menuItems: MenuItem[] = [
     description: 'System management',
     subsections: [
       {
+        id: 'admin-overview',
+        label: 'Overview',
+        icon: BarChart3,
+        path: '/dashboard',
+        roles: ['admin'],
+        description: 'System overview and statistics'
+      },
+      {
+        id: 'approvals',
+        label: 'Approvals',
+        icon: CheckCircle,
+        path: '/admin/approvals',
+        roles: ['admin'],
+        description: 'User and company approvals'
+      },
+      {
+        id: 'verification',
+        label: 'KYC/KBA',
+        icon: Shield,
+        path: '/admin/verification',
+        roles: ['admin'],
+        description: 'Identity verification management'
+      },
+      {
         id: 'user-management',
         label: 'Users',
         icon: Users,
-        path: '/user-management',
+        path: '/admin/users',
         roles: ['admin'],
         description: 'Manage user accounts'
       },
       {
         id: 'notary-management',
         label: 'Notaries',
-        icon: Shield,
-        path: '/notary-management',
+        icon: Award,
+        path: '/admin/notaries',
         roles: ['admin'],
-        description: 'Notary assignments'
+        description: 'Notary management and assignments'
       },
       {
         id: 'title-companies',
         label: 'Companies',
         icon: Building,
-        path: '/title-companies',
+        path: '/admin/companies',
         roles: ['admin'],
         description: 'Title company management'
       },
@@ -155,7 +179,7 @@ const menuItems: MenuItem[] = [
         id: 'system-logs',
         label: 'System Logs',
         icon: Activity,
-        path: '/logs',
+        path: '/admin/logs',
         roles: ['admin'],
         description: 'System audit logs'
       }

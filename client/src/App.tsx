@@ -300,7 +300,7 @@ function Router() {
 
       <Route path="/user-management">
         <ProtectedRoute allowedRoles={['admin']}>
-          <UserManagement />
+          <Redirect to="/admin/users" />
         </ProtectedRoute>
       </Route>
 
@@ -350,7 +350,84 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      {/* New Admin Routes */}
+      <Route path="/admin/overview">
+        <ProtectedRoute allowedRoles={['admin']}>
+          <Redirect to="/dashboard" />
+        </ProtectedRoute>
+      </Route>
 
+      <Route path="/admin/approvals">
+        <ProtectedRoute allowedRoles={['admin']}>
+          <MainLayout>
+            <ErrorBoundary fallback={<LoadingFallback />}>
+              <React.Suspense fallback={<LoadingFallback />}>
+                {React.createElement(React.lazy(() => import("@/components/admin").then(m => ({ default: m.AdminApprovals }))))}
+              </React.Suspense>
+            </ErrorBoundary>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/verification">
+        <ProtectedRoute allowedRoles={['admin']}>
+          <MainLayout>
+            <ErrorBoundary fallback={<LoadingFallback />}>
+              <React.Suspense fallback={<LoadingFallback />}>
+                {React.createElement(React.lazy(() => import("@/components/admin").then(m => ({ default: m.AdminVerification }))))}
+              </React.Suspense>
+            </ErrorBoundary>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/users">
+        <ProtectedRoute allowedRoles={['admin']}>
+          <MainLayout>
+            <ErrorBoundary fallback={<LoadingFallback />}>
+              <React.Suspense fallback={<LoadingFallback />}>
+                {React.createElement(React.lazy(() => import("@/components/admin").then(m => ({ default: m.AdminUsers }))))}
+              </React.Suspense>
+            </ErrorBoundary>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/notaries">
+        <ProtectedRoute allowedRoles={['admin']}>
+          <MainLayout>
+            <ErrorBoundary fallback={<LoadingFallback />}>
+              <React.Suspense fallback={<LoadingFallback />}>
+                {React.createElement(React.lazy(() => import("@/components/admin").then(m => ({ default: m.AdminNotaries }))))}
+              </React.Suspense>
+            </ErrorBoundary>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/companies">
+        <ProtectedRoute allowedRoles={['admin']}>
+          <MainLayout>
+            <ErrorBoundary fallback={<LoadingFallback />}>
+              <React.Suspense fallback={<LoadingFallback />}>
+                {React.createElement(React.lazy(() => import("@/components/admin").then(m => ({ default: m.AdminCompanies }))))}
+              </React.Suspense>
+            </ErrorBoundary>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/logs">
+        <ProtectedRoute allowedRoles={['admin']}>
+          <MainLayout>
+            <ErrorBoundary fallback={<LoadingFallback />}>
+              <React.Suspense fallback={<LoadingFallback />}>
+                {React.createElement(React.lazy(() => import("@/components/admin").then(m => ({ default: m.AdminLogs }))))}
+              </React.Suspense>
+            </ErrorBoundary>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
 
       <Route path="/logs">
         <ProtectedRoute allowedRoles={['admin', 'notary']}>

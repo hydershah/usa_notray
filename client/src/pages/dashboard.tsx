@@ -38,6 +38,7 @@ import { EVSVerification } from '@/components/verification/evs-verification';
 
 // Import role-specific dashboard components
 import { AdminDashboard } from '@/components/admin/AdminDashboard';
+import { AdminOverview } from '@/components/admin/AdminOverview';
 import { NotaryDashboard } from '@/components/notary/NotaryDashboard';
 import { ClientDashboard } from '@/components/client/ClientDashboard';
 import { TitleCompanyDashboard } from '@/components/admin/ManagerDashboard';
@@ -1318,7 +1319,7 @@ export default function Dashboard() {
         return <NotaryDashboard />;
       }
       // Default to admin dashboard for all admin users
-      return <AdminDashboard />;
+      return <AdminOverview />;
     }
     
     // THEN: Handle non-admin users based on their role
