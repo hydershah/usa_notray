@@ -102,7 +102,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   const handleDragStop = (e: any, data: any) => {
     if (!canEdit || !onSave) return;
     
-    // Save to server only when drag ends
+    // Save coordinates when drag ends (optimistic - server update happens in parent)
     const newCoordinates = validateAndSanitizeCoordinates({
       x: data.x / scaleFactor,
       y: data.y / scaleFactor
@@ -163,7 +163,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       enableResizing={canEdit}
       disableDragging={!canEdit}
       bounds="parent"
-      onClick={(e) => {
+      onClick={(e: React.MouseEvent) => {
         e.stopPropagation();
         console.log('🏷️ Tag clicked in PDFViewer:', {
           tagId: tag.id,
@@ -201,14 +201,14 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         backgroundColor: mode === 'signing' && tag.isCompleted 
           ? 'transparent' // No background for completed tags
           : mode === 'signing' && !tag.isCompleted
-          ? 'rgba(59, 130, 246, 0.1)' // Blue background for incomplete/clickable
-          : 'rgba(255, 255, 255, 0.95)', // White for tagging mode
+          ? 'rgba(59, 130, 246, 0.05)' // Very light blue background for incomplete/clickable
+          : 'rgba(255, 255, 255, 0.8)', // Light white for tagging mode
         border: mode === 'signing' && tag.isCompleted
           ? 'none' // No border for completed tags
           : mode === 'signing' && !tag.isCompleted
-          ? '2px dashed #3b82f6' // Dashed blue border for clickable
-          : `2px solid ${tag.colorCode || '#3B82F6'}`, // Normal border for tagging
-        borderRadius: mode === 'signing' && tag.isCompleted ? '0' : '6px',
+          ? '1px dashed #3b82f6' // Thin dashed blue border for clickable
+          : `1px solid ${tag.colorCode || '#3B82F6'}`, // Thin border for tagging
+        borderRadius: mode === 'signing' && tag.isCompleted ? '0' : '3px',
         color: mode === 'signing' && tag.isCompleted 
           ? '#000000' // Black text for completed content (plain text appearance)
           : tag.colorCode || '#3B82F6',
@@ -218,25 +218,25 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         boxShadow: mode === 'signing' && tag.isCompleted
           ? 'none' // No shadow for completed tags
           : isSelected 
-          ? `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${(tag.colorCode || '#3B82F6')}20` 
+          ? `0 1px 3px rgba(0,0,0,0.1), 0 0 0 1px ${(tag.colorCode || '#3B82F6')}40` 
           : mode === 'signing' && !tag.isCompleted
-          ? '0 2px 8px rgba(59, 130, 246, 0.3)' // Blue glow for clickable
-          : '0 2px 4px rgba(0,0,0,0.1)'
+          ? '0 1px 2px rgba(59, 130, 246, 0.2)' // Subtle blue glow for clickable
+          : '0 1px 2px rgba(0,0,0,0.05)'
       }}
       resizeHandleStyles={canEdit ? {
         bottomRight: { 
-          width: '10px', 
-          height: '10px', 
+          width: '6px', 
+          height: '6px', 
           backgroundColor: tag.colorCode || '#3B82F6',
-          border: '2px solid white',
+          border: '1px solid white',
           borderRadius: '50%',
-          right: '-5px',
-          bottom: '-5px',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+          right: '-3px',
+          bottom: '-3px',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
         }
       } : undefined}
     >
-      <div className="w-full h-full flex flex-col items-center justify-center p-1">
+      <div className="w-full h-full flex items-center justify-center">
         {mode === 'signing' ? (
           // Signing mode: Show interactive state
           tag.isCompleted ? (
@@ -256,10 +256,10 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                   />
                 ) : (
                   <div 
-                    className="text-black w-full h-full flex items-center justify-center p-1"
+                    className="text-black w-full h-full flex items-center justify-center"
                     style={{ 
-                      fontSize: Math.max(10, Math.min(16, tag.coordinates.height * 0.6)),
-                      lineHeight: '1.2',
+                      fontSize: Math.max(10, Math.min(15, tag.coordinates.height * 0.4)),
+                      lineHeight: '1.1',
                       wordBreak: 'break-word',
                       fontFamily: 'inherit'
                     }}
@@ -270,37 +270,36 @@ const TagRenderer: React.FC<TagRendererProps> = ({
               )}
             </div>
           ) : (
-            // Incomplete tag - show clickable state
-            <div className="text-center">
-              <span className="text-lg mb-1 block">{tagInfo.icon}</span>
-              <span className="text-xs font-medium text-gray-700 block">
-                Click to {['S', 'I'].includes(tag.tagType) ? 'apply' : 'enter'}
-              </span>
-              <span className="text-xs text-gray-500">{tagInfo.label}</span>
+            // Incomplete tag - show compact clickable state
+            <div className="text-center px-1">
+              <div className="flex items-center justify-center gap-1">
+                <span className="text-[12px]">{tagInfo.icon}</span>
+                <span className="text-[9px] font-medium truncate">{tagInfo.label}</span>
+              </div>
+              <span className="text-[7px] text-gray-600 block">click</span>
             </div>
           )
         ) : (
-          // Tagging mode: Show tag info
-          <>
-            {/* Main tag content */}
+          // Tagging mode: Show tag info with text
+          <div className="flex flex-col items-center justify-center text-center px-1">
             <div className="flex items-center gap-1">
-              <span className="text-xs opacity-80">{tagInfo.icon}</span>
-              <span className="text-xs font-medium truncate">{tagInfo.label}</span>
+              <span className="text-[12px] opacity-80">{tagInfo.icon}</span>
+              <span className="text-[10px] font-medium truncate max-w-[60px]">{tagInfo.label}</span>
             </div>
             
             {/* User identification - extract from displayLabel */}
             {tag.displayLabel && tag.displayLabel.includes(' - ') && (
-              <div className="flex items-center gap-1 mt-0.5 px-1 py-0.5 bg-white bg-opacity-70 rounded-full">
+              <div className="flex items-center gap-1 mt-0.5">
                 <div 
                   className="w-2 h-2 rounded-full border border-white shadow-sm" 
                   style={{ backgroundColor: tag.colorCode }}
                 />
-                <span className="text-xs font-medium opacity-90 truncate">
+                <span className="text-[8px] font-medium opacity-90 truncate max-w-[50px]">
                   {tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
                 </span>
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
     </Rnd>
@@ -360,9 +359,12 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   }, [mode, editorMode.canPlaceTags]);
 
   // Load PDF document with improved error handling and redirect support
-  const loadPDF = useCallback(async (url: string) => {
+  const loadPDF = useCallback(async (url: string, retryCount = 0) => {
+    const maxRetries = 3;
+    const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 10000); // Exponential backoff, max 10s
+    
     try {
-      console.log('📄 Starting PDF load for URL:', url);
+      console.log(`📄 Starting PDF load for URL (attempt ${retryCount + 1}/${maxRetries + 1}):`, url);
       setLoading(true);
       setError(null);
       
@@ -377,8 +379,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       if (loadingTaskRef.current) {
         try {
           loadingTaskRef.current.destroy();
-        } catch (e: any) {
-          console.log('Previous task cleanup:', e?.message || 'Unknown error');
+        } catch (e: unknown) {
+          const error = e as Error;
+          console.log('Previous task cleanup:', error?.message || 'Unknown error');
         }
         loadingTaskRef.current = null;
         await new Promise(resolve => setTimeout(resolve, 50)); // Wait for cleanup
@@ -404,6 +407,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
           if (response.status === 502) {
             errorMessage = 'Server error (502): The document service is temporarily unavailable. Please try again in a few moments.';
             console.error('📄 502 Bad Gateway - backend server may be down or misconfigured');
+          } else if (response.status === 408) {
+            errorMessage = 'Request timeout (408): The document server is experiencing connectivity issues. Please try again.';
+            console.error('📄 408 Request Timeout - Vultr connectivity issue');
           } else if (response.status === 404) {
             errorMessage = 'Document not found (404): The requested PDF file does not exist on the server.';
           } else if (response.status === 403) {
@@ -505,13 +511,41 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       
     } catch (err) {
       if (!isMountedRef.current) return;
-      console.error('❌ PDF load error:', err);
+      console.error(`❌ PDF load error (attempt ${retryCount + 1}):`, err);
       
-      // Provide more specific error messages
+      // Check if this is a retryable error and we haven't exceeded max retries
+      const isRetryableError = err instanceof Error && (
+        err.message.includes('NetworkError') || 
+        err.message.includes('fetch') ||
+        err.message.includes('timeout') ||
+        err.message.includes('ETIMEDOUT') ||
+        err.message.includes('404') ||
+        err.message.includes('408') ||
+        err.message.includes('Request timeout') ||
+        err.message.includes('connectivity issues')
+      );
+      
+      if (isRetryableError && retryCount < maxRetries) {
+        console.log(`🔄 Retrying PDF load in ${retryDelay}ms (attempt ${retryCount + 2}/${maxRetries + 1})`);
+        // Show retry feedback to user
+        setError(`⏳ Connection timeout. Retrying in ${Math.ceil(retryDelay/1000)}s... (attempt ${retryCount + 2}/${maxRetries + 1})`);
+        setTimeout(() => {
+          loadPDF(url, retryCount + 1);
+        }, retryDelay);
+        return;
+      }
+      
+      // Provide more specific error messages for final failure
       let errorMessage = 'Failed to load PDF';
       if (err instanceof Error) {
-        if (err.message.includes('NetworkError') || err.message.includes('fetch')) {
-          errorMessage = 'Network error: Unable to download PDF. Please check your connection and try again.';
+        if (err.message.includes('408') || err.message.includes('Request timeout') || err.message.includes('connectivity issues')) {
+          errorMessage = retryCount > 0 
+            ? `Connection timeout: Failed to load PDF after ${retryCount + 1} attempts due to server connectivity issues. The document server may be temporarily unavailable.`
+            : 'Connection timeout: The document server is experiencing connectivity issues. Please try again.';
+        } else if (err.message.includes('NetworkError') || err.message.includes('fetch') || err.message.includes('timeout')) {
+          errorMessage = retryCount > 0 
+            ? `Network error: Failed to load PDF after ${retryCount + 1} attempts. Please check your connection and try again.`
+            : 'Network error: Unable to download PDF. Please check your connection and try again.';
         } else if (err.message.includes('Invalid PDF')) {
           errorMessage = 'Invalid PDF file. The document may be corrupted or not a valid PDF.';
         } else if (err.message.includes('Password')) {
@@ -794,10 +828,10 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     }
     
     // Ensure coordinates are positive and reasonable
-    const tagX = Math.max(0, Math.round(pdfX - 75)); // Center tag, ensure non-negative
-    const tagY = Math.max(0, Math.round(pdfY - 20));
-    const tagWidth = 150;
-    const tagHeight = 40;
+    const tagX = Math.max(0, Math.round(pdfX - 47)); // Center tag, ensure non-negative
+    const tagY = Math.max(0, Math.round(pdfY - 12));
+    const tagWidth = 94;
+const tagHeight = 25;
     
     // Final validation of coordinates
     if (isNaN(tagX) || isNaN(tagY) || !isFinite(tagX) || !isFinite(tagY)) {
@@ -841,12 +875,34 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
   // Tag event handlers
   const handleTagUpdate = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {
-    onTagUpdate?.(tagId, coordinates);
-  }, [onTagUpdate]);
+    // Ensure we have complete coordinates by finding the existing tag
+    const existingTag = tags.find(t => t.id === tagId);
+    if (existingTag && onTagUpdate) {
+      const fullCoordinates: TagCoordinates = {
+        x: coordinates.x ?? existingTag.coordinates.x,
+        y: coordinates.y ?? existingTag.coordinates.y,
+        width: coordinates.width ?? existingTag.coordinates.width,
+        height: coordinates.height ?? existingTag.coordinates.height,
+        pageNumber: coordinates.pageNumber ?? existingTag.coordinates.pageNumber
+      };
+      onTagUpdate(tagId, fullCoordinates);
+    }
+  }, [onTagUpdate, tags]);
 
   const handleTagSave = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {
-    onTagResize?.(tagId, coordinates); // onTagResize acts as save method for now
-  }, [onTagResize]);
+    // Ensure we have complete coordinates by finding the existing tag
+    const existingTag = tags.find(t => t.id === tagId);
+    if (existingTag && onTagResize) {
+      const fullCoordinates: TagCoordinates = {
+        x: coordinates.x ?? existingTag.coordinates.x,
+        y: coordinates.y ?? existingTag.coordinates.y,
+        width: coordinates.width ?? existingTag.coordinates.width,
+        height: coordinates.height ?? existingTag.coordinates.height,
+        pageNumber: coordinates.pageNumber ?? existingTag.coordinates.pageNumber
+      };
+      onTagResize(tagId, fullCoordinates);
+    }
+  }, [onTagResize, tags]);
 
   const handleTagDelete = useCallback((tagId: string) => {
     onTagDelete?.(tagId);
@@ -883,7 +939,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
           <div className="text-red-500 text-xl mb-4">⚠️</div>
           <p className="text-gray-600 mb-4">{error}</p>
           <button
-            onClick={() => loadPDF(documentUrl)}
+            onClick={() => loadPDF(documentUrl, 0)}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
             Retry

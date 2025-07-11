@@ -7325,6 +7325,14 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
       req.setTimeout(30000); // 30 second timeout
       res.setTimeout(30000);
       
+      // Add connection timeout handler
+      req.on('timeout', () => {
+        console.error('📄 Document request timed out for:', filePath);
+        if (!res.headersSent) {
+          res.status(408).json({ error: 'Request timeout', message: 'Document request timed out' });
+        }
+      });
+      
       // Check if this is a Vultr file or local file
       const isVultrFile = !filePath.startsWith('/') && !filePath.includes('\\') && !filePath.includes('uploads/');
       
@@ -7402,17 +7410,44 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
           
         } catch (vultrError) {
           console.error('📄 Vultr direct access failed:', vultrError);
-            
-            // Return error response
-            console.error('📄 Document not found in any storage location:', filePath);
+          
+          // Check if this is a timeout/connection error that should be retryable
+          const isTimeoutError = vultrError instanceof Error && (
+            vultrError.message.includes('ETIMEDOUT') ||
+            vultrError.message.includes('timeout') ||
+            vultrError.message.includes('ENOTFOUND') ||
+            vultrError.message.includes('ECONNRESET') ||
+            vultrError.message.includes('network') ||
+            vultrError.message.includes('fetch') ||
+            (vultrError as any).code === 'ETIMEDOUT' ||
+            (vultrError as any).code === 'ENOTFOUND' ||
+            (vultrError as any).code === 'ECONNRESET' ||
+            (vultrError as any).errno === 'ETIMEDOUT'
+          );
+          
+          if (isTimeoutError) {
+            console.error('📄 Vultr connection timeout - returning retryable error');
             res.setHeader('Content-Type', 'application/json');
-            return res.status(404).json({ 
-              error: 'Document not found',
-              message: 'The requested document could not be found in cloud or local storage.',
+            return res.status(408).json({ 
+              error: 'Request timeout',
+              message: 'The document server is experiencing connectivity issues. Please try again.',
               filePath: filePath,
-              vultrError: vultrError instanceof Error ? vultrError.message : 'Unknown Vultr error',
+              retryable: true,
+              vultrError: vultrError.message,
               timestamp: new Date().toISOString()
             });
+          }
+          
+          // For actual 404s or other non-retryable errors
+          console.error('📄 Document not found in any storage location:', filePath);
+          res.setHeader('Content-Type', 'application/json');
+          return res.status(404).json({ 
+            error: 'Document not found',
+            message: 'The requested document could not be found in cloud or local storage.',
+            filePath: filePath,
+            vultrError: vultrError instanceof Error ? vultrError.message : 'Unknown Vultr error',
+            timestamp: new Date().toISOString()
+          });
         }
       } else {
         // Handle local files

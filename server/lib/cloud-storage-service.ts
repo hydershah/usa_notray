@@ -1,7 +1,9 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { NodeHttpHandler } from '@aws-sdk/node-http-handler';
 import { createHash } from 'crypto';
 import { Readable } from 'stream';
+import https from 'https';
 
 // Ensure environment variables are loaded
 import dotenv from 'dotenv';
@@ -42,6 +44,9 @@ export class CloudStorageService {
   private bucketName: string;
   private region: string;
   private isEnabled: boolean = false;
+  private consecutiveFailures: number = 0;
+  private lastFailureTime: number = 0;
+  private healthCheckInterval: number = 60000; // 1 minute
 
   constructor() {
     this.region = process.env.VULTR_REGION || 'ewr1'; // Vultr region codes
@@ -54,7 +59,16 @@ export class CloudStorageService {
       try {
         console.log(`🔑 Vultr credentials found - initializing cloud storage...`);
         
-        // Initialize S3-compatible client for Vultr Object Storage
+        // Initialize S3-compatible client for Vultr Object Storage with enhanced reliability
+        const httpsAgent = new https.Agent({
+          keepAlive: true,
+          keepAliveMsecs: 10000,
+          timeout: 15000,           // Reduced to 15 seconds for faster failover
+          maxSockets: 50,           // Max concurrent connections
+          maxFreeSockets: 10,       // Max idle connections
+          family: 4,                // Force IPv4 for better compatibility
+        });
+
         this.s3Client = new S3Client({
           region: this.region,
           endpoint: process.env.VULTR_ENDPOINT || `https://${this.region}.vultrobjects.com`,
@@ -64,6 +78,13 @@ export class CloudStorageService {
           },
           maxAttempts: 3, // Retry failed requests
           forcePathStyle: false, // Vultr uses virtual hosted style
+          retryMode: 'adaptive', // Use adaptive retry strategy
+          requestHandler: new NodeHttpHandler({
+            requestTimeout: 20000,      // Reduced to 20 seconds total request timeout
+            connectionTimeout: 8000,    // Reduced to 8 seconds to establish connection  
+            socketTimeout: 15000,       // Reduced to 15 seconds socket timeout
+            httpsAgent: httpsAgent      // Use custom HTTPS agent
+          })
         });
         
         this.isEnabled = true;
@@ -77,6 +98,49 @@ export class CloudStorageService {
       console.warn('📝 To enable cloud storage, set VULTR_ACCESS_KEY and VULTR_SECRET_KEY environment variables');
       console.warn(`🔍 Current env check: ACCESS_KEY=${!!process.env.VULTR_ACCESS_KEY}, SECRET_KEY=${!!process.env.VULTR_SECRET_KEY}`);
       this.isEnabled = false;
+    }
+  }
+
+  /**
+   * Check if Vultr is currently healthy or should be temporarily disabled
+   */
+  private isVultrHealthy(): boolean {
+    const now = Date.now();
+    const maxFailures = 3;
+    const backoffTime = 30000; // 30 seconds backoff after consecutive failures
+    
+    if (this.consecutiveFailures >= maxFailures) {
+      const timeSinceLastFailure = now - this.lastFailureTime;
+      if (timeSinceLastFailure < backoffTime) {
+        console.log(`🚫 Vultr temporarily disabled due to ${this.consecutiveFailures} consecutive failures. Retrying in ${Math.ceil((backoffTime - timeSinceLastFailure) / 1000)}s`);
+        return false;
+      } else {
+        // Reset failure count after backoff period
+        console.log(`🔄 Vultr backoff period expired, resetting failure count`);
+        this.consecutiveFailures = 0;
+      }
+    }
+    
+    return true;
+  }
+
+  /**
+   * Record a Vultr operation failure
+   */
+  private recordFailure(): void {
+    this.consecutiveFailures++;
+    this.lastFailureTime = Date.now();
+    console.log(`📊 Vultr failure recorded: ${this.consecutiveFailures} consecutive failures`);
+  }
+
+  /**
+   * Record a Vultr operation success
+   */
+  private recordSuccess(): void {
+    if (this.consecutiveFailures > 0) {
+      console.log(`✅ Vultr success: resetting ${this.consecutiveFailures} failure count`);
+      this.consecutiveFailures = 0;
+      this.lastFailureTime = 0;
     }
   }
 
@@ -211,7 +275,7 @@ export class CloudStorageService {
   }
 
   /**
-   * Generate a signed URL for file access
+   * Generate a signed URL for file access with timeout handling and health checks
    */
   async getSignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
     console.log(`🔗 getSignedUrl called for: ${key}`);
@@ -223,18 +287,50 @@ export class CloudStorageService {
       return `/dev-storage/${key}?expires=${Date.now() + (expiresIn * 1000)}`;
     }
 
+    // Check if Vultr is healthy before attempting
+    if (!this.isVultrHealthy()) {
+      console.log('🚫 Vultr health check failed - using fallback URL');
+      return `/api/documents/${encodeURIComponent(key)}?fallback=true`;
+    }
+
     try {
       console.log(`🔗 Generating real Vultr signed URL for: ${key}`);
-      const command = new GetObjectCommand({
-        Bucket: this.bucketName,
-        Key: key,
+      
+      // Create promise with timeout wrapper
+      const signedUrlPromise = (async () => {
+        const command = new GetObjectCommand({
+          Bucket: this.bucketName,
+          Key: key,
+        });
+        return await getSignedUrl(this.s3Client!, command, { expiresIn });
+      })();
+
+      // Add timeout wrapper (reduced timeout for faster failover)
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Signed URL generation timed out')), 10000); // 10 second timeout
       });
 
-      const signedUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
+      const signedUrl = await Promise.race([signedUrlPromise, timeoutPromise]);
       console.log(`✅ Generated Vultr signed URL: ${signedUrl.substring(0, 100)}...`);
+      
+      // Record success
+      this.recordSuccess();
       return signedUrl;
     } catch (error) {
       console.error('Failed to generate signed URL:', error);
+      
+      // Record failure for health tracking
+      this.recordFailure();
+      
+      // Handle specific timeout errors
+      if (error instanceof Error) {
+        if (error.message.includes('timeout') || error.message.includes('ETIMEDOUT')) {
+          console.error('🚨 Vultr connection timeout - falling back to local serving');
+          // Return a fallback URL that will be handled by the document proxy
+          return `/api/documents/${encodeURIComponent(key)}?fallback=true`;
+        }
+      }
+      
       throw new Error(`Failed to generate signed URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }

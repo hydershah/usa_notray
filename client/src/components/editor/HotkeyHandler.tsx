@@ -55,8 +55,8 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
         coordinates: {
           x: centerX / viewer.zoomLevel,
           y: centerY / viewer.zoomLevel,
-          width: 150,
-          height: 40,
+          width: 94,
+          height: 25,
           pageNumber: viewer.currentPage
         },
         assignedUserId: selectedUser.userId

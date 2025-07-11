@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
 import { useTagOperations } from '../../hooks/editor/useTagOperations';
 import PDFViewer from './PDFViewer';
-import TaggingToolbar from './TaggingToolbar';
+import { ReferenceStyleSidebar } from './ReferenceStyleSidebar';
 import HotkeyHandler from './HotkeyHandler';
 import VideoIntegration from './VideoIntegration';
 import { TagInputModal } from './TagInputModal';
@@ -375,7 +375,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       await batchSaveChanges();
       console.log('💾 Pending changes saved');
       
-      // The actual completion is now handled by the TaggingToolbar
+      // The actual completion is now handled by the ReferenceStyleSidebar
       // which calls the /api/editor/session/:sessionId/complete endpoint
       // When that succeeds, it will call onSessionComplete
       
@@ -592,7 +592,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
                   📊 {participants.length} participants
                 </div>
                 
-                {/* Complete Tagging Button is now in TaggingToolbar.tsx - this was just a dummy */}
+                {/* Complete Tagging Button is now in ReferenceStyleSidebar.tsx - this was just a dummy */}
               </div>
             )}
             
@@ -654,18 +654,11 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         </div>
 
         {/* Right Column - Controls & Tools */}
-        <div className="w-80 bg-gray-50 border-l border-gray-200">
-          <div className="h-full p-6">
-            <TaggingToolbar
-              participants={participants}
-              sessionId={sessionId}
-              mode={mode}
-              onDocumentSwitch={handleDocumentSwitch}
-              onSessionComplete={handleSessionComplete}
-              className="h-full"
-            />
-          </div>
-        </div>
+        <ReferenceStyleSidebar
+          sessionId={sessionId}
+          onSessionComplete={handleSessionComplete}
+          className="h-full"
+        />
       </div>
 
       {/* Interactive Tag Input Modal */}

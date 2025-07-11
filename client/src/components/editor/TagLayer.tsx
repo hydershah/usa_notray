@@ -28,6 +28,60 @@ const USER_COLORS = {
   witness2: '#F97316'
 } as const;
 
+// Enhanced debounced server update system with batch processing
+let updateTimeouts: { [key: string]: NodeJS.Timeout } = {};
+let pendingUpdates: { [key: string]: { coordinates: TagCoordinates; sessionId: string; timestamp: number } } = {};
+let batchTimeout: NodeJS.Timeout | null = null;
+
+const debouncedServerUpdate = (tagId: string, coordinates: TagCoordinates, sessionId?: string) => {
+  // Clear existing timeout for this tag
+  if (updateTimeouts[tagId]) {
+    clearTimeout(updateTimeouts[tagId]);
+  }
+  
+  // Store the pending update
+  pendingUpdates[tagId] = {
+    coordinates,
+    sessionId: sessionId || '',
+    timestamp: Date.now()
+  };
+  
+  // Set new timeout to execute update after 300ms of inactivity (reduced for better responsiveness)
+  updateTimeouts[tagId] = setTimeout(async () => {
+    const update = pendingUpdates[tagId];
+    if (!update) return;
+    
+    console.log('🚀 Executing server update for tag:', tagId);
+    
+    try {
+      const response = await fetch(`/api/editor/session/${update.sessionId}/tag/${tagId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          coordinates: update.coordinates
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to update tag: ${response.statusText}`);
+      }
+      
+      console.log('✅ Tag updated on server:', tagId);
+      
+    } catch (error) {
+      console.error('❌ Failed to update tag on server:', error);
+      // Could add error handling/retry logic here
+    } finally {
+      // Clean up
+      delete updateTimeouts[tagId];
+      delete pendingUpdates[tagId];
+    }
+  }, 300); // Reduced to 300ms debounce delay for better responsiveness
+};
+
 interface TagRendererProps {
   tag: DocumentTag;
   isSelected: boolean;
@@ -88,7 +142,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
     scaleFactor
   });
 
-  // Handle drag stop - convert back to PDF coordinates and save to server
+  // Handle drag stop - convert back to PDF coordinates and save to server (debounced)
   const handleDragStop = useCallback(async (e: any, data: any) => {
     if (!canModifyTag || !session) return;
     
@@ -97,44 +151,23 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       y: Math.round(data.y / scaleFactor)
     };
     
-    console.log('🔄 Tag drag update:', {
+    console.log('🔄 Tag drag update (optimistic):', {
       canvas: { x: data.x, y: data.y },
       pdf: newPdfCoordinates,
       scaleFactor
     });
     
-    try {
-      // Update local state immediately (optimistic update)
-      onUpdate(newPdfCoordinates);
-      
-      // Send to server
-      const response = await fetch(`/api/editor/session/${session.id}/tag/${tag.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          coordinates: {
-            ...tag.coordinates,
-            ...newPdfCoordinates
-          }
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to update tag position: ${response.statusText}`);
-      }
-      
-      console.log('✅ Tag position updated on server');
-      
-    } catch (error) {
-      console.error('❌ Failed to update tag position:', error);
-      // TODO: Show error toast and revert position
-    }
+    // Update local state immediately (optimistic update)
+    onUpdate(newPdfCoordinates);
+    
+    // Debounced server update (will be batched if multiple calls happen quickly)
+    debouncedServerUpdate(tag.id, {
+      ...tag.coordinates,
+      ...newPdfCoordinates
+    }, session.id);
   }, [canModifyTag, scaleFactor, onUpdate, session, tag]);
 
-  // Handle resize stop - convert back to PDF coordinates and save to server
+  // Handle resize stop - convert back to PDF coordinates and save to server (debounced)
   const handleResizeStop = useCallback(async (e: any, direction: any, ref: any, delta: any, position: any) => {
     if (!canModifyTag || !session) return;
     
@@ -145,38 +178,17 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       height: Math.round(ref.offsetHeight / scaleFactor)
     };
     
-    console.log('🔄 Tag resize update:', {
+    console.log('🔄 Tag resize update (optimistic):', {
       canvas: { x: position.x, y: position.y, width: ref.offsetWidth, height: ref.offsetHeight },
       pdf: newPdfCoordinates,
       scaleFactor
     });
     
-    try {
-      // Update local state immediately (optimistic update)  
-      onUpdate(newPdfCoordinates);
-      
-      // Send to server
-      const response = await fetch(`/api/editor/session/${session.id}/tag/${tag.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          coordinates: newPdfCoordinates
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to update tag size: ${response.statusText}`);
-      }
-      
-      console.log('✅ Tag size updated on server');
-      
-    } catch (error) {
-      console.error('❌ Failed to update tag size:', error);
-      // TODO: Show error toast and revert size
-    }
+    // Update local state immediately (optimistic update)  
+    onUpdate(newPdfCoordinates);
+    
+    // Debounced server update (will be batched if multiple calls happen quickly)
+    debouncedServerUpdate(tag.id, newPdfCoordinates, session.id);
   }, [canModifyTag, scaleFactor, onUpdate, session, tag]);
 
   // Handle keyboard events for tag deletion
@@ -277,7 +289,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
               <div 
                 className="text-black w-full h-full flex items-center justify-center p-1"
                 style={{ 
-                  fontSize: Math.max(10, Math.min(16, tag.coordinates.height * 0.6)),
+                  fontSize: Math.max(12, Math.min(18, tag.coordinates.height * 0.6)),
                   lineHeight: '1.2',
                   wordBreak: 'break-word',
                   fontFamily: 'inherit'
@@ -614,10 +626,15 @@ export const TagLayer: React.FC<TagLayerProps> = ({
     updateTag(tagId, { coordinates: updates });
   }, [updateTag]);
 
-  // Handle tag deletion with server call
+  // Handle tag deletion with optimistic update
   const handleTagDelete = useCallback(async (tagId: string) => {
     if (!session) return;
     
+    // Delete immediately from local state (optimistic update)
+    deleteTag(tagId);
+    console.log('🗑️ Tag deleted (optimistic):', tagId);
+    
+    // Send delete to server in background
     try {
       const response = await fetch(`/api/editor/session/${session.id}/tag/${tagId}`, {
         method: 'DELETE',
@@ -630,12 +647,11 @@ export const TagLayer: React.FC<TagLayerProps> = ({
         throw new Error(`Failed to delete tag: ${response.statusText}`);
       }
       
-      deleteTag(tagId);
-      console.log('✅ Tag deleted from server');
+      console.log('✅ Tag deleted from server (confirmed):', tagId);
       
     } catch (error) {
-      console.error('❌ Failed to delete tag:', error);
-      // TODO: Show error toast
+      console.error('❌ Failed to delete tag from server:', error);
+      // TODO: Show error toast and restore tag if needed
     }
   }, [session, deleteTag]);
 
