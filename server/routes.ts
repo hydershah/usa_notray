@@ -6326,6 +6326,65 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     }
   });
 
+  // Sync all users to notary view
+  app.post('/api/session/:sessionId/sync-users', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      const { pageNumber, documentId } = req.body;
+      const userId = req.user.id;
+
+      // Verify user is notary
+      const [user] = await db
+        .select({ role: users.role })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (!user || user.role !== 'notary') {
+        return res.status(403).json({ 
+          message: 'Only notaries can sync users',
+          error: 'insufficient_permissions'
+        });
+      }
+
+      // Import WebSocket service and trigger sync
+      const { WebSocketService } = await import('./services/editor/WebSocketService');
+      
+      // Broadcast sync command to all session participants
+      const syncMessage = {
+        type: 'sync_to_notary',
+        payload: {
+          sessionId,
+          pageNumber: pageNumber || 1,
+          documentId: documentId || null,
+          syncedBy: userId,
+          notaryName: user.role, // You might want to get the actual user name
+          timestamp: Date.now()
+        },
+        userId: userId.toString(),
+        sessionId,
+        timestamp: Date.now()
+      };
+
+      // Send sync message to all participants in the session
+      WebSocketService.broadcastToSession(sessionId, syncMessage);
+      
+      res.json({
+        success: true,
+        message: `All users synced to page ${pageNumber || 1}`,
+        pageNumber: pageNumber || 1,
+        documentId: documentId || null
+      });
+      
+    } catch (error) {
+      console.error('Sync users error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to sync users',
+        error: 'sync_users_failed'
+      });
+    }
+  });
+
   // Pause session
   app.post('/api/session/:sessionId/pause', verifyToken, async (req: any, res) => {
     try {

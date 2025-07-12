@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useEditorStore } from './useEditorStore';
+import { useToast } from '@/hooks/use-toast';
 import type { CollaborationUpdate, UserCursor } from '../../types/editor';
 
 interface WebSocketConfig {
@@ -27,6 +28,7 @@ interface ConnectionState {
 }
 
 export const useWebSocket = (config: WebSocketConfig) => {
+  const { toast } = useToast();
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -177,15 +179,27 @@ export const useWebSocket = (config: WebSocketConfig) => {
 
         case 'sync_to_notary':
           console.log(`🔗 Syncing to notary view: page ${message.payload.pageNumber}`);
+          
+          // Show notification about the sync
+          if (message.payload.notaryName) {
+            console.log(`📢 Synced by notary ${message.payload.notaryName} to page ${message.payload.pageNumber}`);
+            toast({
+              title: `Synced by ${message.payload.notaryName} to page ${message.payload.pageNumber}`,
+              description: `You are now viewing the notary's view of page ${message.payload.pageNumber}.`,
+            });
+          }
+          
+          // Switch document if needed
           if (message.payload.documentId) {
-            // Switch document if needed
             const documents = useEditorStore.getState().documents;
             const targetDoc = documents.find(d => d.id === message.payload.documentId);
             if (targetDoc) {
               setCurrentDocument(targetDoc);
             }
           }
-          syncToPage(message.payload.pageNumber);
+          
+          // Sync to the specified page
+          syncToPage(message.payload.pageNumber || 1);
           break;
 
         case 'user_typing':
@@ -210,7 +224,7 @@ export const useWebSocket = (config: WebSocketConfig) => {
   }, [
     addTag, updateTag, deleteTag, updateCursor, setCurrentPage, 
     setCurrentDocument, replaceAllTags, syncToPage, updateLastSync, 
-    setConnectionStatus, processMessageQueue
+    setConnectionStatus, processMessageQueue, toast
   ]);
 
   // Connect to WebSocket

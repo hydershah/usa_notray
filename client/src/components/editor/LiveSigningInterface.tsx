@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { useWebSocket } from '@/hooks/editor/useWebSocket';
+import { useEditorStore } from '@/hooks/editor/useEditorStore';
 import { 
   Play, 
   Pause, 
@@ -12,7 +14,8 @@ import {
   ChevronRight,
   Clock,
   CheckCircle,
-  Loader2
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/auth';
 import SimpleVideoConference from './SimpleVideoConference';
@@ -80,6 +83,18 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   const isNotary = currentUser?.userType === 'notary';
   const isSigner = currentUser?.userType === 'signer';
   const canControlSession = isNotary;
+
+  // WebSocket connection for real-time sync
+  const webSocket = useWebSocket({
+    sessionId: liveSessionId || sessionId,
+    userId: currentUserId,
+    autoReconnect: true,
+    reconnectInterval: 3000,
+    maxReconnectAttempts: 10
+  });
+
+  // Access editor store to get current page and document
+  const { viewer, currentDocument } = useEditorStore();
 
   // Session timer
   useEffect(() => {
@@ -212,6 +227,47 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     }
   };
 
+  const handleSyncUsers = async () => {
+    if (isLoading || !isNotary) return;
+    setIsLoading(true);
+    
+    try {
+      // Send sync command via WebSocket with current page and document info
+      webSocket.syncUsers(
+        viewer.currentPage || 1,
+        currentDocument?.id
+      );
+      
+      // Also make API call to record the sync event
+      const targetSessionId = liveSessionId || sessionId;
+      await authenticatedFetch(`/api/session/${targetSessionId}/sync-users`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          pageNumber: viewer.currentPage || 1,
+          documentId: currentDocument?.id
+        })
+      });
+
+      toast({
+        title: "Success",
+        description: `All users synced to page ${viewer.currentPage || 1}`
+      });
+      
+    } catch (error) {
+      console.error('Failed to sync users:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to sync users to notary view"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const formatDuration = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -322,6 +378,25 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
 
         <div className="flex items-center gap-2">
           {renderSessionControls()}
+          
+          {/* Sync Button - Only for notaries */}
+          {isNotary && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSyncUsers}
+              disabled={isLoading}
+              className="px-3 text-xs"
+              title={`Sync all users to page ${viewer.currentPage || 1}${currentDocument ? ` of ${currentDocument.fileName}` : ''}`}
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              <span className="ml-1">Sync to p.{viewer.currentPage || 1}</span>
+            </Button>
+          )}
           
           <Button
             variant="outline"

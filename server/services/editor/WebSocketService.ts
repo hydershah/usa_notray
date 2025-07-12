@@ -327,20 +327,26 @@ export class WebSocketService {
       return;
     }
     
+    // Get page and document from message payload or use user's current state
+    const pageNumber = message.payload?.pageNumber || user.currentPage || 1;
+    const documentId = message.payload?.documentId || user.currentDocumentId;
+    
     // Broadcast to all users to sync to notary's view
     this.broadcastToSession(user.sessionId, {
       type: 'sync_to_notary',
       payload: {
-        pageNumber: user.currentPage,
-        documentId: user.currentDocumentId,
-        notaryName: user.displayName
+        pageNumber,
+        documentId,
+        notaryName: user.displayName,
+        syncedBy: user.userId,
+        timestamp: Date.now()
       },
       userId: user.userId,
       sessionId: user.sessionId,
       timestamp: Date.now()
     });
     
-    console.log(`🔗 Users synced by notary ${user.displayName} to page ${user.currentPage}`);
+    console.log(`🔗 Users synced by notary ${user.displayName} to page ${pageNumber}${documentId ? ` of document ${documentId}` : ''}`);
   }
   
   /**
