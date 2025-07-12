@@ -289,7 +289,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     lineHeight: '1.2',
     cursor: isDragging ? 'grabbing' : isEditing ? 'text' : 'grab',
     zIndex: isSelected ? 1000 : 100,
-    pointerEvents: 'auto',
+    pointerEvents: 'auto', // Important: Allow interaction with text inputs
     userSelect: isEditing ? 'text' : 'none'
   };
 

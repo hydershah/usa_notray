@@ -52,13 +52,15 @@ export const StreamlinedTextLayer: React.FC<StreamlinedTextLayerProps> = ({
     input.coordinates.pageNumber === pageNumber
   );
 
-  // Handle layer clicks for deselection
+  // Handle layer clicks for deselection - FIXED to not block canvas clicks
   const handleLayerClick = useCallback((e: React.MouseEvent) => {
     // Only deselect if clicking directly on the layer (not on a text input)
     if (e.target === layerRef.current && onTextInputSelect) {
       console.log('🎯 Layer clicked - deselecting text input');
       onTextInputSelect(null);
     }
+    // Important: Don't prevent default or stop propagation
+    // This allows clicks to pass through to the canvas underneath
   }, [onTextInputSelect]);
 
   // Handle text input position updates
@@ -114,7 +116,7 @@ export const StreamlinedTextLayer: React.FC<StreamlinedTextLayerProps> = ({
       left: `${left + containerScrollLeft}px`,
       width: `${canvasElement.width}px`,
       height: `${canvasElement.height}px`,
-      pointerEvents: 'auto', // Changed from 'none' to 'auto' to detect clicks
+      pointerEvents: 'none', // Allow clicks to pass through to canvas below
       zIndex: 500
     };
 
@@ -130,7 +132,7 @@ export const StreamlinedTextLayer: React.FC<StreamlinedTextLayerProps> = ({
       position: 'relative',
       width: '100%',
       height: '100%',
-      pointerEvents: 'auto', // Changed from 'none' to 'auto' to detect clicks
+      pointerEvents: 'none', // Allow clicks to pass through to canvas below
       zIndex: 500
     };
   }

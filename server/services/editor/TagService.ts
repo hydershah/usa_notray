@@ -135,6 +135,9 @@ export class TagService {
       
       console.log(`✅ Tag placed: ${request.tagType} for ${assignedUser.firstName} ${assignedUser.lastName} at page ${request.coordinates.pageNumber}`);
       
+      // Invalidate cache for this session and document
+      await this.invalidateTagCache(request.sessionId, request.documentId);
+      
       return this.convertToDocumentTagData(createdTag, displayLabel, colorCode);
       
     } catch (error) {
@@ -154,45 +157,128 @@ export class TagService {
         .from(editorSessions)
         .where(eq(editorSessions.sessionId, sessionId))
         .limit(1);
-      
+
       if (!session) {
         return [];
       }
-      
+
+      // Optimized query with JOIN to get user information in one query
       const tags = await db
-        .select()
+        .select({
+          id: documentTags.id,
+          sessionId: documentTags.sessionId,
+          documentId: documentTags.documentId,
+          tagType: documentTags.tagType,
+          assignedUserId: documentTags.assignedUserId,
+          pageNumber: documentTags.pageNumber,
+          xPosition: documentTags.xPosition,
+          yPosition: documentTags.yPosition,
+          width: documentTags.width,
+          height: documentTags.height,
+          isCompleted: documentTags.isCompleted,
+          content: documentTags.content,
+          contentType: documentTags.contentType,
+          contentData: documentTags.contentData,
+          createdAt: documentTags.createdAt,
+          updatedAt: documentTags.updatedAt,
+          // User information
+          firstName: users.firstName,
+          lastName: users.lastName,
+          userRole: users.role
+        })
         .from(documentTags)
+        .leftJoin(users, eq(documentTags.assignedUserId, users.id))
         .where(eq(documentTags.sessionId, session.id));
-      
-      // Convert each tag and add display information
-      const convertedTags = [];
-      for (const tag of tags) {
-        // Get user info for display
+
+      // Convert to DocumentTagData format
+      const convertedTags = tags.map(tag => {
         let displayLabel = 'Unknown User';
         let colorCode = '#000000';
         
-        if (tag.assignedUserId) {
-          const [user] = await db
-            .select()
-            .from(users)
-            .where(eq(users.id, tag.assignedUserId))
-            .limit(1);
-          
-          if (user) {
-            const tagTypeInfo = this.getTagTypeInfo(tag.tagType);
-            displayLabel = `${tagTypeInfo.icon} ${tagTypeInfo.label} - ${user.firstName} ${user.lastName}`;
-            colorCode = this.getUserColor(user);
-          }
+        if (tag.firstName && tag.lastName) {
+          const tagTypeInfo = this.getTagTypeInfo(tag.tagType);
+          displayLabel = `${tagTypeInfo.icon} ${tagTypeInfo.label} - ${tag.firstName} ${tag.lastName}`;
+          colorCode = this.getUserColor({ role: tag.userRole, id: tag.assignedUserId });
         }
         
-        convertedTags.push(this.convertToDocumentTagData(tag, displayLabel, colorCode));
-      }
-      
+        return this.convertToDocumentTagData(tag, displayLabel, colorCode);
+      });
+
       return convertedTags;
       
     } catch (error) {
       console.error('Failed to get session tags:', error);
       throw new Error(`Failed to get tags: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Get tags for a specific document in a session
+   */
+  static async getDocumentTags(sessionId: string, documentId: string): Promise<DocumentTagData[]> {
+    try {
+      // Get session first to get the DB ID
+      const [session] = await db
+        .select()
+        .from(editorSessions)
+        .where(eq(editorSessions.sessionId, sessionId))
+        .limit(1);
+
+      if (!session) {
+        return [];
+      }
+
+      // Optimized query with JOIN to get user information in one query, filtered by document
+      const tags = await db
+        .select({
+          id: documentTags.id,
+          sessionId: documentTags.sessionId,
+          documentId: documentTags.documentId,
+          tagType: documentTags.tagType,
+          assignedUserId: documentTags.assignedUserId,
+          pageNumber: documentTags.pageNumber,
+          xPosition: documentTags.xPosition,
+          yPosition: documentTags.yPosition,
+          width: documentTags.width,
+          height: documentTags.height,
+          isCompleted: documentTags.isCompleted,
+          content: documentTags.content,
+          contentType: documentTags.contentType,
+          contentData: documentTags.contentData,
+          createdAt: documentTags.createdAt,
+          updatedAt: documentTags.updatedAt,
+          // User information
+          firstName: users.firstName,
+          lastName: users.lastName,
+          userRole: users.role
+        })
+        .from(documentTags)
+        .leftJoin(users, eq(documentTags.assignedUserId, users.id))
+        .where(and(
+          eq(documentTags.sessionId, session.id),
+          eq(documentTags.documentId, parseInt(documentId))
+        ));
+
+      // Convert to DocumentTagData format
+      const convertedTags = tags.map(tag => {
+        let displayLabel = 'Unknown User';
+        let colorCode = '#000000';
+        
+        if (tag.firstName && tag.lastName) {
+          const tagTypeInfo = this.getTagTypeInfo(tag.tagType);
+          displayLabel = `${tagTypeInfo.icon} ${tagTypeInfo.label} - ${tag.firstName} ${tag.lastName}`;
+          colorCode = this.getUserColor({ role: tag.userRole, id: tag.assignedUserId });
+        }
+        
+        return this.convertToDocumentTagData(tag, displayLabel, colorCode);
+      });
+
+      console.log(`🏷️ Retrieved ${convertedTags.length} tags for document ${documentId} in session ${sessionId}`);
+      return convertedTags;
+      
+    } catch (error) {
+      console.error('Failed to get document tags:', error);
+      throw new Error(`Failed to get document tags: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
   
@@ -342,6 +428,11 @@ export class TagService {
       
       console.log(`✅ Tag updated: ${tagId}`);
       
+      // Invalidate cache for this session and document
+      if (session) {
+        await this.invalidateTagCache(session.sessionId, updatedTag.documentId.toString());
+      }
+      
       return this.convertToDocumentTagData(updatedTag, displayLabel, colorCode);
       
     } catch (error) {
@@ -413,6 +504,11 @@ export class TagService {
       }
       
       console.log(`✅ Tag deleted: ${tagId} by user ${deletedBy}`);
+      
+      // Invalidate cache for this session and document
+      if (session && currentTag) {
+        await this.invalidateTagCache(session.sessionId, currentTag.documentId.toString());
+      }
       
     } catch (error) {
       console.error('Failed to delete tag:', error);
@@ -675,6 +771,28 @@ export class TagService {
     }
     
     return baseColor;
+  }
+  
+  /**
+   * Invalidate cache for tag-related endpoints
+   */
+  private static async invalidateTagCache(sessionId: string, documentId?: string): Promise<void> {
+    try {
+      const { redisCache } = await import('../../services/redis-cache');
+      
+      // Invalidate session-wide tag cache
+      await redisCache.delPattern(`*:session:${sessionId}:*`);
+      
+      // Invalidate document-specific tag cache if documentId provided
+      if (documentId) {
+        await redisCache.delPattern(`*:session:${sessionId}:doc:${documentId}:*`);
+      }
+      
+      console.log(`🗑️ Cache invalidated for session ${sessionId}${documentId ? ` document ${documentId}` : ''}`);
+    } catch (error) {
+      console.error('Failed to invalidate tag cache:', error);
+      // Don't throw error - cache invalidation failure shouldn't break the operation
+    }
   }
   
   private static async getDefaultContentForTag(tag: any): Promise<string> {

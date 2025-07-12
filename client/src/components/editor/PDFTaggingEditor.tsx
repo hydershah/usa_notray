@@ -207,7 +207,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
           showPlaceholders: mode === 'tagging' || mode === 'signing'
         });
 
-        // Load existing tags
+        // Load existing tags for all documents in session
         console.log(`🔍 Loading existing tags for session: ${sessionId}`);
         const response = await fetch(`/api/editor/session/${sessionId}/tags?t=${Date.now()}`, {
           headers: {

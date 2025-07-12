@@ -113,6 +113,15 @@ export function cacheJobData(ttl: number = 180) {
     ttl,
     keyGenerator: (req: Request) => {
       const jobId = req.params.id || req.query.jobId;
+      const sessionId = req.params.sessionId;
+      const documentId = req.query.documentId;
+      
+      // For editor endpoints, include session and document context
+      if (sessionId && req.originalUrl.includes('/editor/session/')) {
+        const docContext = documentId ? `:doc:${documentId}` : '';
+        return `job:${jobId}:session:${sessionId}${docContext}:${req.originalUrl}:${JSON.stringify(req.query)}`;
+      }
+      
       return `job:${jobId}:${req.originalUrl}:${JSON.stringify(req.query)}`;
     }
   });

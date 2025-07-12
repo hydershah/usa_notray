@@ -6989,18 +6989,27 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     }
   });
 
-  // Get all tags for a session
+  // Get all tags for a session, optionally filtered by document
   app.get('/api/editor/session/:sessionId/tags', verifyToken, cacheJobData(10), async (req: any, res) => {
     try {
       const { sessionId } = req.params;
+      const { documentId } = req.query;
       
       const { TagService } = await import('./services/editor/TagService');
       
-      const tags = await TagService.getSessionTags(sessionId);
+      let tags;
+      if (documentId) {
+        // Get tags for specific document
+        tags = await TagService.getDocumentTags(sessionId, documentId);
+      } else {
+        // Get all tags for session
+        tags = await TagService.getSessionTags(sessionId);
+      }
       
       res.json({
         tags,
         count: tags.length,
+        documentId: documentId || null,
         timestamp: Date.now() // Include timestamp to ensure fresh data
       });
       
