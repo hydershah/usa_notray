@@ -385,90 +385,173 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       }
       
       // FIXED: First fetch the PDF as a blob to handle redirects properly
-      let pdfData: ArrayBuffer;
-      try {
-        console.log('📄 Fetching PDF document...');
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          },
-          credentials: 'same-origin'
-        });
-        
-        if (!response.ok) {
-          // Try to parse error response as JSON first
-          let errorMessage = `HTTP error! status: ${response.status}`;
+      let pdfData: ArrayBuffer | undefined;
+      let retryCount = 0;
+      const maxRetries = 3;
+      const retryDelay = 1000; // Start with 1 second delay
+      
+      while (retryCount <= maxRetries) {
+        try {
+          console.log(`📄 Fetching PDF document... (attempt ${retryCount + 1}/${maxRetries + 1})`);
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            credentials: 'same-origin'
+          });
           
-          // Handle specific HTTP status codes
-          if (response.status === 502) {
-            errorMessage = 'Server error (502): The document service is temporarily unavailable. Please try again in a few moments.';
-            console.error('📄 502 Bad Gateway - backend server may be down or misconfigured');
-          } else if (response.status === 404) {
-            errorMessage = 'Document not found (404): The requested PDF file does not exist on the server.';
-          } else if (response.status === 403) {
-            errorMessage = 'Access denied (403): You do not have permission to view this document.';
-          } else if (response.status === 401) {
-            errorMessage = 'Authentication required (401): Please log in again to access this document.';
-          } else {
-            try {
-              const errorData = await response.json();
-              if (errorData.error || errorData.message) {
-                errorMessage = errorData.message || errorData.error;
-                console.log('📄 Server error details:', errorData);
+          if (!response.ok) {
+            // Try to parse error response as JSON first
+            let errorMessage = `HTTP error! status: ${response.status}`;
+            
+            // Handle specific HTTP status codes
+            if (response.status === 502) {
+              errorMessage = 'Server error (502): The document service is temporarily unavailable. Please try again in a few moments.';
+              console.error('📄 502 Bad Gateway - backend server may be down or misconfigured');
+            } else if (response.status === 404) {
+              // Check if this is a JSON error response (file not ready yet)
+              const contentType = response.headers.get('content-type');
+              if (contentType && contentType.includes('application/json')) {
+                const errorData = await response.json();
+                console.log('📄 JSON error response:', errorData);
+                
+                // If Vultr is accessible but file not found, it might be uploading
+                if (errorData.vultrStatus === 'accessible' && retryCount < maxRetries) {
+                  console.log(`📄 File not found but Vultr is accessible, retrying in ${retryDelay * Math.pow(2, retryCount)}ms...`);
+                  await new Promise(resolve => setTimeout(resolve, retryDelay * Math.pow(2, retryCount)));
+                  retryCount++;
+                  continue; // Retry the request
+                }
+                errorMessage = errorData.message || errorData.error || 'Document not found (404)';
+              } else {
+                errorMessage = 'Document not found (404): The requested PDF file does not exist on the server.';
               }
-            } catch (parseError) {
-              // If not JSON, use status text
-              errorMessage = `HTTP ${response.status}: ${response.statusText || 'Document request failed'}`;
+            } else if (response.status === 403) {
+              errorMessage = 'Access denied (403): You do not have permission to view this document.';
+            } else if (response.status === 401) {
+              errorMessage = 'Authentication required (401): Please log in again to access this document.';
+            } else {
+              try {
+                const errorData = await response.json();
+                if (errorData.error || errorData.message) {
+                  errorMessage = errorData.message || errorData.error;
+                  console.log('📄 Server error details:', errorData);
+                }
+              } catch (parseError) {
+                // If not JSON, use status text
+                errorMessage = `HTTP ${response.status}: ${response.statusText || 'Document request failed'}`;
+              }
+            }
+            throw new Error(errorMessage);
+          }
+          
+          // Check if response is JSON (error response) instead of PDF
+          const contentType = response.headers.get('content-type');
+          console.log('📄 Response content-type:', contentType);
+          console.log('📄 Response headers:', Object.fromEntries(response.headers.entries()));
+          
+          if (contentType && contentType.includes('application/json')) {
+            const errorData = await response.json();
+            console.error('📄 Server returned JSON instead of PDF:', errorData);
+            
+            // If this is a "file not found" error and we have retries left, wait and retry
+            if (errorData.error === 'Document not found' && retryCount < maxRetries) {
+              console.log(`📄 Document not ready yet, retrying in ${retryDelay * Math.pow(2, retryCount)}ms...`);
+              await new Promise(resolve => setTimeout(resolve, retryDelay * Math.pow(2, retryCount)));
+              retryCount++;
+              continue; // Retry the request
+            }
+            
+            const errorMessage = errorData.message || errorData.error || 'Document not found on server';
+            throw new Error(errorMessage);
+          }
+          
+          // Check if response is HTML (likely an error page)
+          if (contentType && contentType.includes('text/html')) {
+            const htmlText = await response.text();
+            console.error('📄 Server returned HTML instead of PDF. First 500 chars:', htmlText.substring(0, 500));
+            throw new Error('Server returned an HTML page instead of PDF. This usually means authentication failed or the document URL is incorrect.');
+          }
+          
+          // Get the PDF data as ArrayBuffer
+          pdfData = await response.arrayBuffer();
+          console.log('✅ PDF data fetched successfully, size:', pdfData.byteLength);
+          
+          // Check if the data starts with PDF header
+          const uint8Array = new Uint8Array(pdfData);
+          const header = String.fromCharCode(...Array.from(uint8Array.slice(0, 5)));
+          console.log('📄 PDF header check:', header);
+          
+          if (header !== '%PDF-') {
+            // Log first 100 bytes as text to see what we got
+            const textPreview = String.fromCharCode(...Array.from(uint8Array.slice(0, Math.min(100, uint8Array.length))));
+            console.error('📄 Invalid PDF header. First 100 bytes as text:', textPreview);
+            
+            // Check if this looks like JSON (starts with { or [)
+            if (textPreview.trim().startsWith('{') || textPreview.trim().startsWith('[')) {
+              try {
+                const jsonError = JSON.parse(new TextDecoder().decode(uint8Array));
+                console.error('📄 Received JSON error instead of PDF:', jsonError);
+                
+                // If file not found and we have retries, try again
+                if (jsonError.error === 'Document not found' && retryCount < maxRetries) {
+                  console.log(`📄 Document not ready (JSON response), retrying in ${retryDelay * Math.pow(2, retryCount)}ms...`);
+                  await new Promise(resolve => setTimeout(resolve, retryDelay * Math.pow(2, retryCount)));
+                  retryCount++;
+                  continue;
+                }
+                
+                throw new Error(jsonError.message || jsonError.error || 'The server returned an error instead of the PDF file.');
+              } catch (parseErr) {
+                // Not valid JSON either
+              }
+            }
+            throw new Error('The document does not appear to be a valid PDF file. The server may have returned an error page.');
+          }
+          
+          // Validate PDF data size (basic check for corrupted/empty files)
+          if (pdfData.byteLength < 1000) {
+            console.warn('⚠️ PDF data seems too small:', pdfData.byteLength, 'bytes');
+            
+            // Try to parse as JSON to see if it's an error response
+            try {
+              const textData = new TextDecoder().decode(pdfData);
+              const jsonError = JSON.parse(textData);
+              console.error('📄 Small response is JSON error:', jsonError);
+              
+              // If file not found and we have retries, try again
+              if (jsonError.error === 'Document not found' && retryCount < maxRetries) {
+                console.log(`📄 Document not ready (small JSON), retrying in ${retryDelay * Math.pow(2, retryCount)}ms...`);
+                await new Promise(resolve => setTimeout(resolve, retryDelay * Math.pow(2, retryCount)));
+                retryCount++;
+                continue;
+              }
+              
+              throw new Error(jsonError.message || jsonError.error || 'The document appears to be corrupted or empty.');
+            } catch (parseErr) {
+              // Not JSON, just a small/corrupted file
+              throw new Error('The document appears to be corrupted or empty. Please try uploading the document again.');
             }
           }
-          throw new Error(errorMessage);
+          
+          // Success! Break out of the retry loop
+          break;
+          
+        } catch (fetchError) {
+          console.error(`❌ Failed to fetch PDF (attempt ${retryCount + 1}):`, fetchError);
+          
+          // If this is the last retry, throw the error
+          if (retryCount >= maxRetries) {
+            throw fetchError;
+          }
+          
+          // Otherwise, wait and retry with exponential backoff
+          const waitTime = retryDelay * Math.pow(2, retryCount);
+          console.log(`📄 Retrying in ${waitTime}ms...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          retryCount++;
         }
-        
-        // Check if response is JSON (error response) instead of PDF
-        const contentType = response.headers.get('content-type');
-        console.log('📄 Response content-type:', contentType);
-        console.log('📄 Response headers:', Object.fromEntries(response.headers.entries()));
-        
-        if (contentType && contentType.includes('application/json')) {
-          const errorData = await response.json();
-          const errorMessage = errorData.message || errorData.error || 'Document not found on server';
-          console.error('📄 Server returned error instead of PDF:', errorData);
-          throw new Error(errorMessage);
-        }
-        
-        // Check if response is HTML (likely an error page)
-        if (contentType && contentType.includes('text/html')) {
-          const htmlText = await response.text();
-          console.error('📄 Server returned HTML instead of PDF. First 500 chars:', htmlText.substring(0, 500));
-          throw new Error('Server returned an HTML page instead of PDF. This usually means authentication failed or the document URL is incorrect.');
-        }
-        
-        // Get the PDF data as ArrayBuffer
-        pdfData = await response.arrayBuffer();
-        console.log('✅ PDF data fetched successfully, size:', pdfData.byteLength);
-        
-        // Check if the data starts with PDF header
-        const uint8Array = new Uint8Array(pdfData);
-        const header = String.fromCharCode(...Array.from(uint8Array.slice(0, 5)));
-        console.log('📄 PDF header check:', header);
-        
-        if (header !== '%PDF-') {
-          // Log first 100 bytes as text to see what we got
-          const textPreview = String.fromCharCode(...Array.from(uint8Array.slice(0, Math.min(100, uint8Array.length))));
-          console.error('📄 Invalid PDF header. First 100 bytes as text:', textPreview);
-          throw new Error('The document does not appear to be a valid PDF file. The server may have returned an error page.');
-        }
-        
-        // Validate PDF data size (basic check for corrupted/empty files)
-        if (pdfData.byteLength < 1000) {
-          console.warn('⚠️ PDF data seems too small:', pdfData.byteLength, 'bytes');
-          throw new Error('The document appears to be corrupted or empty. Please try uploading the document again.');
-        }
-        
-      } catch (fetchError) {
-        console.error('❌ Failed to fetch PDF:', fetchError);
-        throw fetchError; // Re-throw the original error with its message
       }
       
       // Load the PDF from the ArrayBuffer
@@ -524,7 +607,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       setError(errorMessage);
       setLoading(false);
     }
-  }, []);
+  }, [documentUrl]);
 
   // Render individual page with optimized scaling
   const renderPage = useCallback(async (pageNumber: number, forceRender = false) => {
@@ -657,7 +740,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         setTimeout(() => loadingTaskRef.current?.destroy(), 100);
       }
     };
-  }, [documentUrl, loadPDF]);
+  }, [documentUrl]);
 
   // Initial page rendering when PDF loads (OPTIMIZED)
   useEffect(() => {
@@ -883,7 +966,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
           <div className="text-red-500 text-xl mb-4">⚠️</div>
           <p className="text-gray-600 mb-4">{error}</p>
           <button
-            onClick={() => loadPDF(documentUrl)}
+            onClick={() => window.location.reload()}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
             Retry

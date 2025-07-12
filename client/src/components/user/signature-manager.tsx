@@ -596,9 +596,9 @@ export function SignatureManager({ userId, onSignatureSelect }: SignatureManager
                             <div className="text-sm text-gray-500 mb-4">
                               or click to browse files
                             </div>
-                            <Button variant="outline" type="button" className="mx-auto group-hover:border-blue-400 group-hover:text-blue-600 transition-colors duration-200">
+                            <div className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-blue-400 hover:text-blue-600 transition-colors duration-200 shadow-sm">
                               Choose File
-                            </Button>
+                            </div>
                           </label>
                           <p className="text-xs text-gray-400 mt-4">
                             Supports PNG, JPG, GIF and other image formats • Maximum 5MB

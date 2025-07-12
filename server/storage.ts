@@ -32,6 +32,7 @@ import {
   stripeWebhookEvents,
   titleCompanyNotaryAssignments,
   legacyTitleCompanyNotaryAssignments,
+  userSignatures,
   InsertUser,
   InsertTitleCompany,
   InsertJob,
@@ -1077,59 +1078,91 @@ export class DatabaseStorage implements IStorage {
 
   // Signature management operations
   async getUserSignatures(userId: number): Promise<any[]> {
-    // For now, we'll use a simple in-memory storage approach
-    // In production, you would store these in a dedicated database table
-    const signatures = this.userSignatures.get(userId) || [];
-    return signatures;
+    try {
+      const signatures = await db
+        .select()
+        .from(userSignatures)
+        .where(eq(userSignatures.userId, userId))
+        .orderBy(desc(userSignatures.createdAt));
+
+      // Transform to match expected format
+      return signatures.map(sig => ({
+        id: sig.id.toString(),
+        userId: sig.userId,
+        name: sig.signatureType, // Use signatureType as name for now
+        type: sig.format,
+        imageUrl: sig.data,
+        metadata: {
+          format: sig.format,
+          signatureType: sig.signatureType,
+          ipAddress: sig.ipAddress,
+          userAgent: sig.userAgent
+        },
+        isDefault: false, // We'll need to track this separately
+        createdAt: sig.createdAt
+      }));
+    } catch (error) {
+      console.error('Error fetching user signatures:', error);
+      return [];
+    }
   }
 
   async createUserSignature(signature: any): Promise<any> {
-    const signatureId = Math.random().toString(36).substring(2) + Date.now().toString(36);
-    const newSignature = {
-      id: signatureId,
-      ...signature,
-      createdAt: new Date().toISOString()
-    };
+    try {
+      const [newSignature] = await db
+        .insert(userSignatures)
+        .values({
+          userId: signature.userId,
+          signatureType: signature.type === 'uploaded' ? 'signature' : 
+                        signature.type === 'drawn' ? 'signature' :
+                        signature.type === 'generated' ? 'signature' : 'signature',
+          format: signature.type === 'uploaded' ? 'upload' :
+                  signature.type === 'drawn' ? 'draw' :
+                  signature.type === 'generated' ? 'type' : 'upload',
+          data: signature.imageUrl || signature.content || '',
+          ipAddress: signature.ipAddress || null,
+          userAgent: signature.userAgent || null
+        })
+        .returning();
 
-    if (!this.userSignatures.has(signature.userId)) {
-      this.userSignatures.set(signature.userId, []);
+      // Return in expected format
+      return {
+        id: newSignature.id.toString(),
+        userId: newSignature.userId,
+        name: signature.name || 'New Signature',
+        type: signature.type,
+        imageUrl: signature.imageUrl,
+        metadata: signature.metadata || {},
+        isDefault: false,
+        createdAt: newSignature.createdAt
+      };
+    } catch (error) {
+      console.error('Error creating user signature:', error);
+      throw error;
     }
-
-    const userSignatures = this.userSignatures.get(signature.userId)!;
-    
-    // If this is the first signature, make it default
-    if (userSignatures.length === 0) {
-      newSignature.isDefault = true;
-    }
-
-    userSignatures.push(newSignature);
-    return newSignature;
   }
 
   async setDefaultSignature(userId: number, signatureId: string): Promise<void> {
-    const userSignatures = this.userSignatures.get(userId) || [];
-    
-    // Reset all signatures to not default
-    userSignatures.forEach(sig => sig.isDefault = false);
-    
-    // Set the specified signature as default
-    const targetSignature = userSignatures.find(sig => sig.id === signatureId);
-    if (targetSignature) {
-      targetSignature.isDefault = true;
-    }
+    // For now, we'll handle default signatures in the user profile
+    // This could be implemented by adding a default_signature_id field to users table
+    console.log(`Setting default signature ${signatureId} for user ${userId}`);
   }
 
   async deleteUserSignature(userId: number, signatureId: string): Promise<void> {
-    const userSignatures = this.userSignatures.get(userId) || [];
-    const index = userSignatures.findIndex(sig => sig.id === signatureId);
-    
-    if (index >= 0) {
-      userSignatures.splice(index, 1);
+    try {
+      await db
+        .delete(userSignatures)
+        .where(
+          and(
+            eq(userSignatures.userId, userId),
+            eq(userSignatures.id, parseInt(signatureId))
+          )
+        );
+    } catch (error) {
+      console.error('Error deleting user signature:', error);
+      throw error;
     }
   }
-
-  // In-memory storage for signatures (in production, use a database table)
-  private userSignatures = new Map<number, any[]>();
 }
 
 export const storage = new DatabaseStorage();

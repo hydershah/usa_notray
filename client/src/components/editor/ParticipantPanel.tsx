@@ -246,34 +246,7 @@ export const ParticipantPanel: React.FC<ParticipantPanelProps> = ({
           })}
         </div>
 
-        <Separator className="my-4" />
 
-        {/* Session Instructions */}
-        <div className="space-y-3">
-          <h4 className="text-sm font-medium text-gray-700">Instructions</h4>
-          
-          <div className="space-y-2 text-xs text-gray-600">
-            <div className="flex items-start gap-2">
-              <div className="w-1 h-1 bg-gray-400 rounded-full mt-1.5 flex-shrink-0"></div>
-              <span>Only the active user can interact with documents</span>
-            </div>
-            
-            <div className="flex items-start gap-2">
-              <div className="w-1 h-1 bg-gray-400 rounded-full mt-1.5 flex-shrink-0"></div>
-              <span>Notary controls user activation and session flow</span>
-            </div>
-            
-            <div className="flex items-start gap-2">
-              <div className="w-1 h-1 bg-gray-400 rounded-full mt-1.5 flex-shrink-0"></div>
-              <span>Use keyboard shortcuts to quickly change active user</span>
-            </div>
-            
-            <div className="flex items-start gap-2">
-              <div className="w-1 h-1 bg-gray-400 rounded-full mt-1.5 flex-shrink-0"></div>
-              <span>All actions are logged for compliance</span>
-            </div>
-          </div>
-        </div>
       </CardContent>
     </div>
   );

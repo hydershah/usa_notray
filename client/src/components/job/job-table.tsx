@@ -1188,8 +1188,10 @@ export function JobTable({ onCreateJob }: JobTableProps) {
           setIsModalOpen(false);
           setSelectedJob(null);
         }}
-        onStatusUpdate={(jobId, status) => {
-          updateStatusMutation.mutate({ jobId, status });
+        onStatusUpdate={(status) => {
+          if (selectedJob) {
+            updateStatusMutation.mutate({ jobId: selectedJob.id, status });
+          }
         }}
       />
 

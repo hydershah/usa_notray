@@ -19,7 +19,7 @@ import NotaryManagement from "@/pages/notary-management";
 const EditorDemo = React.lazy(() => import("@/pages/EditorDemo"));
 
 // PDF Editor Integration
-const EditorPage = React.lazy(() => import("./pages/EditorPage"));
+const EditorPage = React.lazy(() => import("@/pages/EditorPage"));
 
 // Signer invitation page
 const SignPage = React.lazy(() => import("@/pages/sign-page"));

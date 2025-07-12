@@ -1,38 +1,29 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { 
   Play, 
   Pause, 
   Square, 
   Users,
-  Shield,
-  AlertCircle,
-  CheckCircle,
-  Clock,
-  Activity,
-  FileText,
-  Zap,
-  Keyboard,
   Video,
-  StopCircle
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  CheckCircle,
+  Loader2
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/auth';
 import SimpleVideoConference from './SimpleVideoConference';
-import { WebRTCVideoConference } from './WebRTCVideoConference';
 import { PDFTaggingEditor } from './PDFTaggingEditor';
-import { LiveSigningControls } from './LiveSigningControls';
 import { ParticipantPanel } from './ParticipantPanel';
-import { SessionStatus } from './SessionStatus';
 import type { 
   SessionDocument, 
   SessionParticipant, 
   DocumentTag,
   EditorSession 
 } from '@/types/editor';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface LiveSigningInterfaceProps {
   sessionId: string;
@@ -72,26 +63,22 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   onSessionComplete,
   onTagsChanged
 }) => {
-  // Toast hook
   const { toast } = useToast();
   
-  // Live signing state
+  // State management
   const [liveSession, setLiveSession] = useState<LiveSessionState>({
     state: 'waiting',
     participants: []
   });
   const [sessionDuration, setSessionDuration] = useState(0);
+  const [showVideo, setShowVideo] = useState(true);
   const [showParticipants, setShowParticipants] = useState(true);
-  const [currentDocumentIndex, setCurrentDocumentIndex] = useState(0);
-  const [completedTags, setCompletedTags] = useState<DocumentTag[]>([]);
-  const [missingRequiredTags, setMissingRequiredTags] = useState<DocumentTag[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Get current user role - ENHANCED FOR UI RESTRICTIONS
+  // User role detection
   const currentUser = useMemo(() => participants.find(p => p.userId === currentUserId), [participants, currentUserId]);
   const isNotary = currentUser?.userType === 'notary';
   const isSigner = currentUser?.userType === 'signer';
-  const isWitness = currentUser?.userType === 'witness';
   const canControlSession = isNotary;
 
   // Session timer
@@ -110,11 +97,10 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     };
   }, [liveSession.state, liveSession.startedAt]);
 
-  // Load live session state with optimized polling
+  // Session state polling
   useEffect(() => {
     if (liveSessionId || sessionId) {
       loadLiveSessionState();
-      // Reduce polling frequency to every 10 seconds to improve performance
       const pollInterval = setInterval(loadLiveSessionState, 10000);
       return () => clearInterval(pollInterval);
     }
@@ -129,7 +115,6 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         const data = await response.json();
         const sessionState = data.success ? data.data : data;
         
-        // Ensure we have a valid session state object
         const validSessionState = {
           state: sessionState?.state || 'waiting',
           activeUserId: sessionState?.activeUserId,
@@ -142,18 +127,19 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
       }
     } catch (error) {
       console.error('Failed to load live session state:', error);
-      // Keep the current state on error, don't reset
     }
   };
 
   // Session control functions
-  const handleStartSession = async () => {
+  const handleSessionAction = async (action: 'start' | 'pause' | 'resume' | 'complete') => {
     if (isLoading) return;
     setIsLoading(true);
     
     try {
       const targetSessionId = liveSessionId || sessionId;
-      const response = await authenticatedFetch(`/api/session/${targetSessionId}/start-signing`, {
+      const endpoint = action === 'start' ? 'start-signing' : action;
+      
+      const response = await authenticatedFetch(`/api/session/${targetSessionId}/${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -161,130 +147,33 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
       });
 
       if (response.ok) {
+        const messages = {
+          start: 'Session started successfully',
+          pause: 'Session paused',
+          resume: 'Session resumed',
+          complete: 'Session completed successfully'
+        };
+        
         toast({
-          title: "Session Started",
-          description: "Live signing session is now active"
-        });
-        await loadLiveSessionState();
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to start session');
-      }
-    } catch (error) {
-      console.error('Failed to start session:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to start live signing session"
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handlePauseSession = async () => {
-    if (isLoading) return;
-    setIsLoading(true);
-    
-    try {
-      const targetSessionId = liveSessionId || sessionId;
-      const response = await authenticatedFetch(`/api/session/${targetSessionId}/pause`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        toast({
-          title: "Session Paused",
-          description: "Session has been paused. You can resume anytime."
-        });
-        await loadLiveSessionState();
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to pause session');
-      }
-    } catch (error) {
-      console.error('Failed to pause session:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to pause session"
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleResumeSession = async () => {
-    if (isLoading) return;
-    setIsLoading(true);
-    
-    try {
-      const targetSessionId = liveSessionId || sessionId;
-      const response = await authenticatedFetch(`/api/session/${targetSessionId}/resume`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        toast({
-          title: "Session Resumed",
-          description: "Session has been resumed"
-        });
-        await loadLiveSessionState();
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to resume session');
-      }
-    } catch (error) {
-      console.error('Failed to resume session:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to resume session"
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleCompleteSession = async () => {
-    if (isLoading) return;
-    setIsLoading(true);
-    
-    try {
-      const targetSessionId = liveSessionId || sessionId;
-      const response = await authenticatedFetch(`/api/session/${targetSessionId}/complete`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        toast({
-          title: "Session Completed",
-          description: "Live signing session has been completed successfully"
+          title: "Success",
+          description: messages[action]
         });
         
-        // Call the parent completion handler
-        if (onSessionComplete) {
+        if (action === 'complete' && onSessionComplete) {
           onSessionComplete();
+        } else {
+          await loadLiveSessionState();
         }
       } else {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to complete session');
+        throw new Error(errorData.message || `Failed to ${action} session`);
       }
     } catch (error) {
-      console.error('Failed to complete session:', error);
+      console.error(`Failed to ${action} session:`, error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to complete session"
+        description: `Failed to ${action} session. Please try again.`
       });
     } finally {
       setIsLoading(false);
@@ -324,153 +213,175 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   };
 
   const formatDuration = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
+    const minutes = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const getSessionStateColor = (state?: string) => {
+  const getStatusColor = (state: string) => {
     switch (state) {
-      case 'active': return 'bg-green-100 text-green-800 border-green-200';
-      case 'paused': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'waiting': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'completing': return 'bg-purple-100 text-purple-800 border-purple-200';
-      case 'completed': return 'bg-gray-100 text-gray-800 border-gray-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+      case 'active': return 'bg-green-500';
+      case 'paused': return 'bg-yellow-500';
+      case 'waiting': return 'bg-blue-500';
+      case 'completing': return 'bg-purple-500';
+      case 'completed': return 'bg-gray-500';
+      default: return 'bg-gray-500';
     }
   };
 
-  return (
-    <div className="h-screen bg-gray-50 flex flex-col" data-testid="live-signing-interface">
-      {/* Session Header - ENHANCED WITH ROLE INDICATOR */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0">
-        <div className="flex items-center justify-between">
-          {/* Session Info with Role Indicator */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <div className="h-3 w-3 bg-red-500 rounded-full animate-pulse"></div>
-              <h1 className="text-lg font-semibold text-gray-800">Live Signing Session</h1>
-              
-              {/* ✅ ROLE INDICATOR FOR SIGNERS */}
-              {isSigner && (
-                <Badge className="bg-blue-100 text-blue-800 border-blue-300">
-                  👤 Signer Role
-                </Badge>
-              )}
-              {isNotary && (
-                <Badge className="bg-red-100 text-red-800 border-red-300">
-                  🔐 Notary Control
-                </Badge>
-              )}
-            </div>
-            
-            <Badge className={`border ${getSessionStateColor(liveSession.state || 'waiting')}`}>
-              {liveSession.state || 'waiting'}
-            </Badge>
-            
-            {liveSession.state === 'active' && (
-              <span className="text-sm text-gray-600">
-                Duration: {formatDuration(sessionDuration)}
-              </span>
-            )}
-          </div>
+  const renderSessionControls = () => {
+    if (!canControlSession) return null;
 
-          {/* Session Controls - RESTRICTED FOR SIGNERS */}
-          <div className="flex items-center gap-2">
-            {/* ❌ SIGNERS CANNOT SEE SESSION CONTROLS */}
-            {canControlSession && (
-              <LiveSigningControls
-                sessionState={liveSession.state || 'waiting'}
-                canControlSession={canControlSession}
-                onStartSession={handleStartSession}
-                onPauseSession={handlePauseSession}
-                onResumeSession={handleResumeSession}
-                onCompleteSession={handleCompleteSession}
-                isLoading={isLoading}
-              />
-            )}
-            
-            {/* ✅ SIGNER STATUS INDICATOR */}
-            {isSigner && (
-              <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="flex items-center gap-1">
-                  {liveSession.activeUserId === parseInt(currentUserId) ? (
-                    <>
-                      <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
-                      <span className="text-sm text-green-700 font-medium">Active</span>
-                    </>
-                  ) : (
-                    <>
-                      <div className="h-2 w-2 bg-yellow-500 rounded-full"></div>
-                      <span className="text-sm text-yellow-700 font-medium">Waiting</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-            
-            {/* Participants toggle - available to all */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowParticipants(!showParticipants)}
-            >
-              <Users className="h-4 w-4 mr-2" />
-              {showParticipants ? 'Hide' : 'Show'} Participants
-            </Button>
-          </div>
-        </div>
+    return (
+      <div className="flex items-center gap-2">
+        {liveSession.state === 'waiting' && (
+          <Button 
+            onClick={() => handleSessionAction('start')} 
+            size="sm"
+            className="bg-green-600 hover:bg-green-700"
+            disabled={isLoading}
+          >
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+          </Button>
+        )}
         
-        {/* ✅ SIGNER INSTRUCTIONS BAR */}
-        {isSigner && (
-          <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-start gap-3">
-              <div className="flex-shrink-0 text-blue-600">
-                <Shield className="h-5 w-5" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-sm font-semibold text-blue-800">Signer Instructions</h3>
-                <p className="text-sm text-blue-700 mt-1">
-                  {liveSession.activeUserId === parseInt(currentUserId) ? (
-                    <>
-                      <strong>You are now active!</strong> Click on tags assigned to you to fill them out. 
-                      The notary will guide you through the process.
-                    </>
-                  ) : (
-                    <>
-                      Please wait for the notary to activate you. You can view the document but cannot make changes yet.
-                    </>
-                  )}
-                </p>
-              </div>
-            </div>
-          </div>
+        {liveSession.state === 'active' && (
+          <>
+            <Button 
+              onClick={() => handleSessionAction('pause')} 
+              size="sm"
+              variant="outline"
+              disabled={isLoading}
+            >
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pause className="h-4 w-4" />}
+            </Button>
+            
+            <Button 
+              onClick={() => handleSessionAction('complete')} 
+              size="sm"
+              className="bg-purple-600 hover:bg-purple-700"
+              disabled={isLoading}
+            >
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+            </Button>
+          </>
+        )}
+        
+        {liveSession.state === 'paused' && (
+          <>
+            <Button 
+              onClick={() => handleSessionAction('resume')} 
+              size="sm"
+              className="bg-blue-600 hover:bg-blue-700"
+              disabled={isLoading}
+            >
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+            </Button>
+            
+            <Button 
+              onClick={() => handleSessionAction('complete')} 
+              size="sm"
+              className="bg-purple-600 hover:bg-purple-700"
+              disabled={isLoading}
+            >
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+            </Button>
+          </>
         )}
       </div>
+    );
+  };
+
+  return (
+    <div className="h-screen bg-gray-50 flex flex-col">
+      {/* Simplified Header */}
+      <div className="bg-white border-b px-4 py-2 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <div className={`h-2 w-2 rounded-full ${getStatusColor(liveSession.state)} ${liveSession.state === 'active' ? 'animate-pulse' : ''}`}></div>
+            <span className="font-medium">Live Signing</span>
+          </div>
+          
+          <Badge variant="secondary" className="text-xs">
+            {liveSession.state}
+          </Badge>
+          
+          {isSigner && (
+            <Badge variant={liveSession.activeUserId === parseInt(currentUserId) ? "default" : "outline"} className="text-xs">
+              {liveSession.activeUserId === parseInt(currentUserId) ? 'Active' : 'Waiting'}
+            </Badge>
+          )}
+          
+          {liveSession.state === 'active' && (
+            <div className="flex items-center gap-1 text-sm text-gray-600">
+              <Clock className="h-3 w-3" />
+              {formatDuration(sessionDuration)}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {renderSessionControls()}
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowVideo(!showVideo)}
+            className="px-2"
+          >
+            <Video className="h-4 w-4" />
+          </Button>
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowParticipants(!showParticipants)}
+            className="px-2"
+          >
+            <Users className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Simplified Instructions for Signers */}
+      {isSigner && liveSession.state === 'waiting' && (
+        <div className="bg-blue-50 border-b px-4 py-2 text-sm text-blue-800">
+          Waiting for notary to start the session...
+        </div>
+      )}
+      
+      {isSigner && liveSession.state === 'active' && liveSession.activeUserId !== parseInt(currentUserId) && (
+        <div className="bg-yellow-50 border-b px-4 py-2 text-sm text-yellow-800">
+          Please wait for the notary to activate you
+        </div>
+      )}
+      
+      {isSigner && liveSession.state === 'active' && liveSession.activeUserId === parseInt(currentUserId) && (
+        <div className="bg-green-50 border-b px-4 py-2 text-sm text-green-800">
+          You're active! Click on your tags to fill them out
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Video Integration Panel */}
-        <div className="w-80 bg-white border-r border-gray-200 flex-shrink-0">
-          <SimpleVideoConference
-            sessionId={sessionId}
-            currentUser={{
-              id: currentUserId,
-              name: currentUser?.displayName || 'Unknown User',
-              role: currentUser?.userType || 'signer'
-            }}
-            participants={participants}
-            className="h-full"
-          />
-        </div>
+        {/* Collapsible Video Panel */}
+        {showVideo && (
+          <div className="w-64 bg-white border-r flex-shrink-0">
+            <SimpleVideoConference
+              sessionId={sessionId}
+              currentUser={{
+                id: currentUserId,
+                name: currentUser?.displayName || 'Unknown User',
+                role: currentUser?.userType || 'signer'
+              }}
+              participants={participants}
+              className="h-full"
+            />
+          </div>
+        )}
 
         {/* Document Editor */}
-        <div className="flex-1 bg-gray-50 overflow-hidden">
+        <div className="flex-1 overflow-hidden">
           <PDFTaggingEditor
             sessionId={sessionId}
             mode="signing"
@@ -484,9 +395,9 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
           />
         </div>
 
-        {/* Participants Panel */}
+        {/* Collapsible Participants Panel */}
         {showParticipants && (
-          <div className="w-72 bg-white border-l border-gray-200">
+          <div className="w-60 bg-white border-l flex-shrink-0">
             <ParticipantPanel
               participants={participants}
               liveSession={liveSession}
@@ -496,18 +407,6 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
             />
           </div>
         )}
-      </div>
-
-      {/* Session Status Bar */}
-      <div className="bg-white border-t border-gray-200 p-3">
-        <SessionStatus
-          completedTags={completedTags.length}
-          totalTags={completedTags.length + missingRequiredTags.length}
-          missingRequiredTags={missingRequiredTags.length}
-          sessionState={liveSession.state}
-          sessionDuration={sessionDuration}
-          participantCount={participants.length}
-        />
       </div>
     </div>
   );

@@ -492,20 +492,70 @@ export class PDFProcessorService {
   }
 
   /**
-   * Load document buffer from file system
+   * Load document buffer from file system or Vultr cloud storage
    */
   private async loadDocumentBuffer(filePath: string): Promise<Buffer> {
     try {
-      if (filePath.startsWith('vultr://')) {
-        // Handle Vultr storage - would need to implement download
-        throw new Error('Vultr storage documents not yet supported for PDF processing');
+      console.log(`📄 Loading document from: ${filePath}`);
+      
+      // Check if this is a Vultr file (doesn't start with / or contain file system path separators)
+      const isVultrFile = !filePath.startsWith('/') && !filePath.includes('\\') && !filePath.includes('uploads/');
+      
+      if (isVultrFile) {
+        // Handle Vultr cloud storage
+        console.log('☁️ Downloading document from Vultr cloud storage');
+        
+        const { cloudStorage } = await import('../lib/cloud-storage-service');
+        
+        // Check if file exists in Vultr
+        const fileExists = await cloudStorage.fileExists(filePath);
+        if (!fileExists) {
+          throw new Error(`Document not found in cloud storage: ${filePath}`);
+        }
+        
+        // Get signed URL to download the file content
+        const signedUrl = await cloudStorage.getSignedUrl(filePath, 300); // 5 minutes for processing
+        
+        // Fetch the file content from Vultr with timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout for PDF processing
+        
+        try {
+          const response = await fetch(signedUrl, {
+            signal: controller.signal,
+            headers: {
+              'User-Agent': 'USA-Notary-PDF-Processor/1.0'
+            }
+          });
+          
+          clearTimeout(timeoutId);
+          
+          if (!response.ok) {
+            throw new Error(`Failed to download PDF from Vultr: ${response.status} ${response.statusText}`);
+          }
+          
+          const arrayBuffer = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          
+          console.log(`✅ Downloaded document from Vultr: ${buffer.length} bytes`);
+          return buffer;
+          
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          throw fetchError;
+        }
+        
       } else {
         // Local file
+        console.log('📁 Loading document from local file system');
         const fullPath = path.resolve(filePath);
-        return await fs.readFile(fullPath);
+        const buffer = await fs.readFile(fullPath);
+        console.log(`✅ Loaded local document: ${buffer.length} bytes`);
+        return buffer;
       }
+      
     } catch (error) {
-      console.error('Failed to load document buffer:', error);
+      console.error('❌ Failed to load document buffer:', error);
       throw error;
     }
   }

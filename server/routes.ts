@@ -14,8 +14,13 @@ import notaryVerificationRoutes from "./routes/notary-verification-routes";
 import screenRecordingRoutes from "./routes/screen-recording-api";
 import { auditLoggingService } from "./services/audit-logging-service";
 import { notificationService } from "./notification-service";
-import { verifyToken, hasAdminPrivileges, hasNotaryPrivileges } from "./auth";
+import { verifyToken, hasAdminPrivileges, hasNotaryPrivileges, type AuthUser } from "./auth";
 import { cacheAdminData, cacheUserData, cacheCompanyData, cacheJobData } from "./middleware/cache-middleware";
+
+// Define the extended request interface for authentication
+interface AuthenticatedRequest extends Express.Request {
+  user: AuthUser;
+}
 import { redisCache } from "./services/redis-cache";
 import { eq, and, gte, lte, desc, inArray, sql, or } from "drizzle-orm";
 import { randomNotaryService, NotaryQualifications, TimeSlotRequest } from "./random-notary-service";
@@ -77,6 +82,7 @@ import {
   sessionParticipants,
   documentVersions,
   jobNotifications,
+  userSignatures,
 } from "@shared/schema";
 
 // Import enhanced upload handlers
@@ -202,7 +208,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   // Add audit logging middleware to all routes
-  app.use(auditLoggingService.auditMiddleware());
+  app.use((req: any, res: any, next: any) => {
+    auditLoggingService.auditMiddleware()(req, res, next);
+  });
 
   // Authentication routes
   app.post('/api/auth/login', authLimiter, checkAccountLockout, async (req, res) => {
@@ -296,13 +304,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userData = insertUserSchema.parse(req.body);
       
       // Check if user already exists
-      const existingUser = await storage.getUserByEmail(userData.email);
+      const existingUser = await storage.getUserByEmail(userData.email as string);
       if (existingUser) {
         return res.status(400).json({ message: 'User already exists' });
       }
 
       // Hash password
-      const hashedPassword = await bcrypt.hash(userData.password, 10);
+      const hashedPassword = await bcrypt.hash(userData.password as string, 10);
       
       const user = await storage.createUser({
         ...userData,
@@ -758,14 +766,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('Delete user error:', error);
       
       // Provide more specific error messages
-      if (error.message.includes('foreign key constraint')) {
-        res.status(400).json({ 
-          message: 'Cannot delete user due to existing relationships. Please remove all associated records first.' 
-        });
-      } else if (error.message.includes('Failed to delete user')) {
-        res.status(500).json({ 
-          message: 'Failed to delete user. Please try again or contact support if the problem persists.' 
-        });
+      if (error instanceof Error) {
+        if (error.message.includes('foreign key constraint')) {
+          res.status(400).json({ 
+            message: 'Cannot delete user due to existing relationships. Please remove all associated records first.' 
+          });
+        } else if (error.message.includes('Failed to delete user')) {
+          res.status(500).json({ 
+            message: 'Failed to delete user. Please try again or contact support if the problem persists.' 
+          });
+        } else {
+          res.status(500).json({ message: 'Internal server error' });
+        }
       } else {
         res.status(500).json({ message: 'Internal server error' });
       }
@@ -778,7 +790,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = parseInt(req.params.id);
       
       // Check if user can access these signatures
-      if (!hasAdminPrivileges(req.user) && req.user.id !== userId) {
+      if (!req.user || (!hasAdminPrivileges(req.user) && req.user.id !== userId)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -799,7 +811,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = parseInt(req.params.id);
       
       // Check if user can create signatures for this user
-      if (!hasAdminPrivileges(req.user) && req.user.id !== userId) {
+      if (!req.user || (!hasAdminPrivileges(req.user) && req.user.id !== userId)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -812,17 +824,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let imageUrl = '';
       let metadata = {};
 
+      // VULTR ONLY - All signatures are stored in Vultr cloud storage
+      const { VultrUploadHandler } = await import('./vultr-upload-handler');
+
       if (type === 'uploaded' && req.file) {
         // Handle uploaded signature
-        const uploadDir = path.join(process.cwd(), 'uploads', 'signatures', userId.toString());
-        await fsPromises.mkdir(uploadDir, { recursive: true });
+        const uploadResult = await VultrUploadHandler.handleSignatureUpload(
+          req.file.buffer,
+          req.file.originalname,
+          `user-${userId}`,
+          userId,
+          'signature'
+        );
+
+        if (!uploadResult.success) {
+          return res.status(500).json({ 
+            message: `Failed to upload signature: ${uploadResult.error}`,
+            error: 'vultr_upload_failed'
+          });
+        }
+
+        imageUrl = uploadResult.signedUrl || uploadResult.fileKey || '';
+        metadata = { originalName: req.file.originalname, vultrKey: uploadResult.fileKey };
         
-        const filename = `${Date.now()}_${req.file.originalname}`;
-        const filePath = path.join(uploadDir, filename);
-        
-        await fsPromises.writeFile(filePath, req.file.buffer);
-        imageUrl = `/uploads/signatures/${userId}/${filename}`;
-        metadata = { originalName: req.file.originalname };
       } else if (type === 'drawn') {
         // Handle drawn signature from canvas
         const { imageData } = req.body;
@@ -833,23 +857,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
         const buffer = Buffer.from(base64Data, 'base64');
         
-        const uploadDir = path.join(process.cwd(), 'uploads', 'signatures', userId.toString());
-        await fsPromises.mkdir(uploadDir, { recursive: true });
-        
         const filename = `drawn_${Date.now()}.png`;
-        const filePath = path.join(uploadDir, filename);
+        const uploadResult = await VultrUploadHandler.handleSignatureUpload(
+          buffer,
+          filename,
+          `user-${userId}`,
+          userId,
+          'signature'
+        );
+
+        if (!uploadResult.success) {
+          return res.status(500).json({ 
+            message: `Failed to upload drawn signature: ${uploadResult.error}`,
+            error: 'vultr_upload_failed'
+          });
+        }
+
+        imageUrl = uploadResult.signedUrl || uploadResult.fileKey || '';
+        metadata = { style: 'handwritten', vultrKey: uploadResult.fileKey };
         
-        await fsPromises.writeFile(filePath, buffer);
-        imageUrl = `/uploads/signatures/${userId}/${filename}`;
-        metadata = { style: 'handwritten' };
-             } else if (type === 'generated') {
+      } else if (type === 'generated') {
         // Handle generated signature
         if (!text) {
           return res.status(400).json({ message: 'Text is required for generated signatures' });
         }
         
         try {
-          // Generate signature image using canvas (server-side)
+          let buffer: Buffer;
+          let filename: string;
+          
+          try {
+            // Try to generate signature image using canvas (server-side)
           const { createCanvas } = await import('canvas');
           const canvas = createCanvas(400, 100);
           const ctx = canvas.getContext('2d');
@@ -863,19 +901,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ctx.textBaseline = 'middle';
           ctx.fillText(text, 200, 50);
           
-          const buffer = canvas.toBuffer('image/png');
+            buffer = canvas.toBuffer('image/png');
+            filename = `generated_${Date.now()}.png`;
+            
+            console.log(`✅ Successfully generated signature canvas for: ${text}`);
           
-          const uploadDir = path.join(process.cwd(), 'uploads', 'signatures', userId.toString());
-          await fsPromises.mkdir(uploadDir, { recursive: true });
-          
-          const filename = `generated_${Date.now()}.png`;
-          const filePath = path.join(uploadDir, filename);
-          
-          await fsPromises.writeFile(filePath, buffer);
-          imageUrl = `/uploads/signatures/${userId}/${filename}`;
-          metadata = { fontFamily, fontSize, text };
         } catch (canvasError) {
-          console.error('Canvas generation failed, using fallback:', canvasError);
+            console.warn('Canvas generation failed, using SVG fallback:', canvasError);
           
           // Fallback: Create a simple SVG-based signature
           const svgContent = `
@@ -886,15 +918,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
             </svg>
           `;
           
-          const uploadDir = path.join(process.cwd(), 'uploads', 'signatures', userId.toString());
-          await fsPromises.mkdir(uploadDir, { recursive: true });
+            filename = `generated_${Date.now()}.svg`;
+            buffer = Buffer.from(svgContent, 'utf8');
+          }
           
-          const filename = `generated_${Date.now()}.svg`;
-          const filePath = path.join(uploadDir, filename);
+          const uploadResult = await VultrUploadHandler.handleSignatureUpload(
+            buffer,
+            filename,
+            `user-${userId}`,
+            userId,
+            'signature'
+          );
+
+          if (!uploadResult.success) {
+            return res.status(500).json({ 
+              message: `Failed to upload generated signature: ${uploadResult.error}`,
+              error: 'vultr_upload_failed'
+            });
+          }
+
+          imageUrl = uploadResult.signedUrl || uploadResult.fileKey || '';
+          metadata = { fontFamily, fontSize, text, vultrKey: uploadResult.fileKey };
           
-          await fsPromises.writeFile(filePath, svgContent);
-          imageUrl = `/uploads/signatures/${userId}/${filename}`;
-          metadata = { fontFamily, fontSize, text, fallback: 'svg' };
+        } catch (outerError) {
+          console.error('Signature generation failed completely:', outerError);
+          return res.status(500).json({ 
+            message: 'Failed to generate signature',
+            error: 'signature_generation_failed'
+          });
         }
       }
 
@@ -905,7 +956,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         type,
         imageUrl,
         metadata,
-        isDefault: false
+        isDefault: false,
+        ipAddress: req.ip || req.connection?.remoteAddress,
+        userAgent: req.get('User-Agent')
       });
 
       res.json(signature);
@@ -922,7 +975,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const signatureId = req.params.signatureId;
       
       // Check if user can modify signatures for this user
-      if (req.user.role !== 'admin' && req.user.id !== userId) {
+      if (!req.user || (req.user.role !== 'admin' && req.user.id !== userId)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -942,7 +995,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const signatureId = req.params.signatureId;
       
       // Check if user can delete signatures for this user
-      if (req.user.role !== 'admin' && req.user.id !== userId) {
+      if (!req.user || (req.user.role !== 'admin' && req.user.id !== userId)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -961,7 +1014,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = parseInt(req.params.id);
       
       // Check if user can access this profile
-      if (req.user.role !== 'admin' && req.user.id !== userId) {
+      if (!req.user || (req.user.role !== 'admin' && req.user.id !== userId)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -1008,7 +1061,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = parseInt(req.params.id);
       
       // Check if user can update this profile
-      if (req.user.role !== 'admin' && req.user.id !== userId) {
+      if (!req.user || (req.user.role !== 'admin' && req.user.id !== userId)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -1068,28 +1121,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const notaryId = parseInt(req.params.id);
       
       // Check if user can access these stamps
-      if (req.user.role !== 'admin' && req.user.id !== notaryId && req.user.role !== 'notary') {
+      if (!req.user || (!hasAdminPrivileges(req.user) && req.user.id !== notaryId && req.user.role !== 'notary')) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // For now, return mock notary stamp data - in production this would come from database
-      const stamps = [
-        {
-          id: 1,
-          notaryId: notaryId,
-          notaryName: 'John Doe',
-          commissionNumber: 'NC123456',
-          state: 'North Carolina',
-          expirationDate: '2025-12-31',
-          stampImage: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
-          createdAt: new Date().toISOString()
-        }
-      ];
+      // Get actual stamps from database using correct column names
+      let stamps;
+      try {
+        stamps = await db.execute(sql`
+          SELECT 
+            id,
+            notary_id as "notaryId",
+            stamp_name as "stampType",
+            stamp_image as "stampData", 
+            is_active as "isActive",
+            created_at as "createdAt",
+            updated_at as "updatedAt"
+          FROM notary_stamps 
+          WHERE notary_id = ${notaryId}
+          ORDER BY created_at DESC
+        `);
+      } catch (dbError) {
+        console.error('Database query failed for notary stamps:', dbError);
+        return res.status(500).json({ 
+          message: 'Failed to retrieve stamps from database',
+          error: 'database_query_failed'
+        });
+      }
+
+      // Transform stamps to include proper image URLs
+      const { cloudStorage } = await import('./lib/cloud-storage-service');
       
-      res.json(stamps);
+      const stampsWithUrls = await Promise.all((stamps.rows || []).map(async (stamp: any) => {
+        let imageUrl = '';
+        
+        if (stamp?.stampData && typeof stamp.stampData === 'string') {
+          // Check if it's a Vultr key (no base64 prefix) or base64 data
+          if (stamp.stampData.startsWith('data:image/')) {
+            // Already base64 data, use directly
+            imageUrl = stamp.stampData;
+          } else {
+            // Vultr key, generate signed URL
+            try {
+              const fileExists = await cloudStorage.fileExists(stamp.stampData);
+              if (fileExists) {
+                const signedUrl = await cloudStorage.getSignedUrl(stamp.stampData, 3600); // 1 hour expiry
+                imageUrl = signedUrl || '/api/placeholder/stamp-error';
+              } else {
+                console.warn(`Stamp image not found in Vultr: ${stamp.stampData}`);
+                imageUrl = '/api/placeholder/stamp-missing';
+              }
+            } catch (vultrError) {
+              console.warn(`Failed to get Vultr URL for stamp ${stamp.id}:`, vultrError);
+              imageUrl = '/api/placeholder/stamp-error';
+            }
+          }
+        } else {
+          imageUrl = '/api/placeholder/stamp-missing';
+        }
+
+        return {
+          id: stamp?.id || 0,
+          notaryId: stamp?.notaryId || notaryId,
+          stampType: stamp?.stampType || 'notary',
+          imageUrl,
+          isActive: stamp?.isActive || false,
+          uploadedAt: stamp?.createdAt ? new Date(stamp.createdAt).toISOString() : new Date().toISOString(),
+          createdAt: stamp?.createdAt ? new Date(stamp.createdAt).toISOString() : new Date().toISOString()
+        };
+      }));
+      
+      res.json(stampsWithUrls);
     } catch (error) {
       console.error('Get notary stamps error:', error);
-      res.status(500).json({ message: 'Internal server error' });
+      
+      // Provide a fallback response with empty array if stamps loading fails
+      res.status(200).json([]);
     }
   });
 
@@ -1106,7 +1213,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/companies', verifyToken, async (req: any, res) => {
     try {
-      if (!hasAdminPrivileges(req.user)) {
+      if (!req.user || !hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -1132,7 +1239,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put('/api/companies/:id', verifyToken, async (req: any, res) => {
     try {
-      if (!hasAdminPrivileges(req.user)) {
+      if (!req.user || !hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -1163,7 +1270,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete('/api/companies/:id', verifyToken, async (req: any, res) => {
     try {
-      if (!hasAdminPrivileges(req.user)) {
+      if (!req.user || !hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -1872,7 +1979,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put('/api/jobs/:id/status', verifyToken, async (req: any, res) => {
     try {
-      const jobId = parseInt(req.params.id);
+      const jobIdParam = req.params.id;
+      const jobId = parseInt(jobIdParam);
+      
+      // Validate job ID
+      if (isNaN(jobId) || jobId <= 0) {
+        console.error('Invalid job ID provided:', jobIdParam);
+        return res.status(400).json({ 
+          message: 'Invalid job ID provided',
+          providedId: jobIdParam,
+          error: 'invalid_job_id'
+        });
+      }
+      
       const { status } = req.body;
 
       const job = await storage.getJob(jobId);
@@ -2226,55 +2345,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // File download routes
-  app.get('/api/jobs/:id/download/:type', async (req: any, res) => {
-    try {
-      // Handle authentication via header or query parameter (for iframe compatibility)
-      let token = req.headers.authorization?.split(' ')[1];
-      if (!token && req.query.token) {
-        token = req.query.token as string;
-      }
-      
-      if (!token) {
-        return res.status(401).json({ message: 'No token provided' });
-      }
-
-      let user;
-      try {
-        const decoded = jwt.verify(token, JWT_SECRET) as any;
-        user = decoded;
-      } catch (error) {
-        return res.status(401).json({ message: 'Invalid token' });
-      }
-
-      const jobId = parseInt(req.params.id);
-      const fileType = req.params.type; // 'original' or 'notarized'
-
-      const job = await storage.getJob(jobId);
-      if (!job) {
-        return res.status(404).json({ message: 'Job not found' });
-      }
-
-      // Check if user has access to this job
-      if (user.role !== 'admin' && job.userId !== user.id && job.selectedNotary !== user.id.toString()) {
-        return res.status(403).json({ message: 'Access denied' });
-      }
-
-      const filePath = fileType === 'original' ? job.uploadedFile : job.notarizedFile;
-      if (!filePath || !fs.existsSync(filePath)) {
-        return res.status(404).json({ message: 'File not found' });
-      }
-
-      // Set appropriate headers for inline viewing
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Cache-Control', 'private, max-age=300'); // 5 minute cache
-      
-      res.sendFile(path.resolve(filePath));
-    } catch (error) {
-      console.error('Download file error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  });
+  // Legacy file download route - REMOVED (Use document-specific routes instead)
+  // All files are now stored in Vultr cloud storage
+  // Use /api/jobs/:jobId/documents/:documentId/download instead
 
   // Dashboard stats
   app.get('/api/dashboard/stats', verifyToken, cacheUserData(300), async (req: any, res) => {
@@ -2889,7 +2962,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     process.env.NODE_ENV === 'development' ? 
       (req: any, res: any, next: any) => {
         console.log('Development mode: bypassing authentication for signature upload');
-        req.user = { id: 1, role: 'admin' };
+        req.user = { id: 1, role: 'admin', email: 'admin@example.com' };
         next();
       } : verifyToken, 
     upload.single('signature'), async (req: any, res) => {
@@ -2944,7 +3017,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     process.env.NODE_ENV === 'development' ? 
       (req: any, res: any, next: any) => {
         console.log('Development mode: bypassing authentication for document upload');
-        req.user = { id: 1, role: 'admin' };
+        req.user = { id: 1, role: 'admin', email: 'admin@example.com' };
         next();
       } : verifyToken, 
     upload.single('document'), async (req: any, res) => {
@@ -3017,7 +3090,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     process.env.NODE_ENV === 'development' ? 
       (req: any, res: any, next: any) => {
         console.log('Development mode: bypassing authentication for stamp upload');
-        req.user = { id: 1, role: 'admin' };
+        req.user = { id: 1, role: 'admin', email: 'admin@example.com' };
         next();
       } : verifyToken, 
     upload.single('stamp'), async (req: any, res) => {
@@ -3054,25 +3127,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        // Create notary stamp record in database
-        await db.insert(notaryStamps).values({
-          notaryId: parseInt(notaryId),
-          stampType: 'notary',
-          stampData: uploadResult.fileKey!, // Store Vultr key instead of base64 data
-          isActive: false // Admin needs to approve
-        });
+        // Create notary stamp record in database using correct column names
+        if (!uploadResult.fileKey) {
+          return res.status(500).json({ 
+            error: 'Failed to get file key from upload result',
+            code: 'missing_file_key'
+          });
+        }
 
-        console.log(`✅ Uploaded notary stamp to Vultr: ${req.file.originalname} → ${uploadResult.fileKey}`);
+        try {
+          const insertResult = await db.execute(sql`
+            INSERT INTO notary_stamps (notary_id, stamp_name, stamp_image, is_active, created_at, updated_at)
+            VALUES (${parseInt(notaryId)}, 'notary', ${uploadResult.fileKey}, false, NOW(), NOW())
+            RETURNING id
+          `);
 
-        res.json({
-          success: true,
-          message: 'Notary stamp uploaded successfully to Vultr',
-          fileKey: uploadResult.fileKey,
-          fileUrl: uploadResult.signedUrl,
-          size: uploadResult.size,
-          storageType: 'vultr',
-          note: 'Stamp requires admin approval before activation'
-        });
+          console.log(`✅ Uploaded notary stamp to Vultr: ${req.file.originalname} → ${uploadResult.fileKey}`);
+          console.log(`✅ Created database record with ID:`, insertResult.rows[0]?.id);
+
+          res.json({
+            success: true,
+            message: 'Notary stamp uploaded successfully to Vultr',
+            fileKey: uploadResult.fileKey,
+            fileUrl: uploadResult.signedUrl || '',
+            size: uploadResult.size || 0,
+            storageType: 'vultr',
+            stampId: insertResult.rows[0]?.id,
+            note: 'Stamp requires admin approval before activation'
+          });
+        } catch (dbError) {
+          console.error('Database insertion failed:', dbError);
+          // Try to clean up the uploaded file if database insertion fails
+          try {
+            const { cloudStorage } = await import('./lib/cloud-storage-service');
+            await cloudStorage.deleteFile(uploadResult.fileKey);
+            console.log(`🧹 Cleaned up orphaned file: ${uploadResult.fileKey}`);
+          } catch (cleanupError) {
+            console.error('Failed to cleanup orphaned file:', cleanupError);
+          }
+          
+          return res.status(500).json({ 
+            error: 'Failed to save stamp record to database',
+            code: 'database_insert_failed'
+          });
+        }
       } catch (error) {
         console.error('Notary stamp upload error:', error);
         res.status(500).json({ error: 'Notary stamp upload failed' });
@@ -3082,102 +3180,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Secure file retrieval
   app.get('/api/uploads/:type/:fileId', verifyToken, getUploadedFile);
 
-  // Serve uploaded stamp images (with authentication)
-  app.get('/uploads/stamps/:notaryId/:filename', 
-    // In development, bypass authentication for images
-    process.env.NODE_ENV === 'development' ? 
-      (req: any, res: any, next: any) => {
-        console.log(`Development mode: serving stamp image ${req.params.notaryId}/${req.params.filename}`);
-        req.user = { id: 1, role: 'admin' };
-        next();
-      } : verifyToken, 
-    async (req: any, res) => {
-    try {
-      const { notaryId, filename } = req.params;
-      
-      // Check if user can access this stamp
-      if (req.user.role !== 'admin' && req.user.role !== 'notary' && req.user.id.toString() !== notaryId) {
-        return res.status(403).json({ message: 'Access denied' });
-      }
-      
-      const filePath = path.join(process.cwd(), 'uploads', 'stamps', notaryId, filename);
-      
-      // Check if file exists
-      if (!fs.existsSync(filePath)) {
-        console.error(`Stamp image not found: ${filePath}`);
-        return res.status(404).json({ message: 'Stamp image not found' });
-      }
-      
-      // Set appropriate headers
-      res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Cache-Control', 'private, max-age=3600');
-      
-      // Send the file
-      res.sendFile(path.resolve(filePath));
-    } catch (error) {
-      console.error('Serve stamp image error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  });
-
-  // Serve uploaded signature images (with authentication)
-  app.get('/uploads/signatures/:userId/:filename', 
-    // In development, bypass authentication for images
-    process.env.NODE_ENV === 'development' ? 
-      (req: any, res: any, next: any) => {
-        console.log(`Development mode: serving signature image ${req.params.userId}/${req.params.filename}`);
-        req.user = { id: 1, role: 'admin' };
-        next();
-      } : verifyToken, 
-    async (req: any, res) => {
-    try {
-      const { userId, filename } = req.params;
-      
-      // Check if user can access this signature
-      if (req.user.role !== 'admin' && req.user.id.toString() !== userId) {
-        return res.status(403).json({ message: 'Access denied' });
-      }
-      
-      const filePath = path.join(process.cwd(), 'uploads', 'signatures', userId, filename);
-      
-      // Check if file exists
-      if (!fs.existsSync(filePath)) {
-        console.error(`Signature image not found: ${filePath}`);
-        return res.status(404).json({ message: 'Signature image not found' });
-      }
-      
-      // Set appropriate headers based on file type
-      const fileExtension = path.extname(filename).toLowerCase();
-      const contentType = fileExtension === '.svg' ? 'image/svg+xml' : 'image/png';
-      
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Cache-Control', 'private, max-age=3600');
-      
-      // Send the file
-      res.sendFile(path.resolve(filePath));
-    } catch (error) {
-      console.error('Serve signature image error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  });
+  // Legacy local file serving routes - REMOVED
+  // All stamps and signatures are now stored in Vultr cloud storage
+  // Use /api/uploads/:type/:fileId with proper Vultr URLs instead
 
   // ===== NOTARY STAMP MANAGEMENT ROUTES =====
 
   // Set active notary stamp
   app.put('/api/notary/stamps/:stampId/activate', verifyToken, async (req: any, res) => {
     try {
-      const stampId = req.params.stampId;
+      const stampId = parseInt(req.params.stampId);
       
       // Check if user is a notary or admin
       if (req.user.role !== 'admin' && req.user.role !== 'notary') {
         return res.status(403).json({ message: 'Access denied - notary access required' });
       }
       
-      // In production, this would update the database to set this stamp as active
-      // For now, just return success
+      if (isNaN(stampId)) {
+        return res.status(400).json({ message: 'Invalid stamp ID' });
+      }
+
+      // Get the stamp to verify ownership and existence
+      const stampResult = await db.execute(sql`
+        SELECT 
+          id,
+          notary_id as "notaryId",
+          stamp_name as "stampType",
+          stamp_image as "stampData",
+          is_active as "isActive"
+        FROM notary_stamps 
+        WHERE id = ${stampId}
+        LIMIT 1
+      `);
+      
+      const stamp = stampResult.rows[0];
+
+      if (!stamp) {
+        return res.status(404).json({ message: 'Stamp not found' });
+      }
+
+      // Check if user owns this stamp or is admin
+      if (req.user.role !== 'admin' && stamp.notaryId !== req.user.id) {
+        return res.status(403).json({ message: 'Access denied - you can only activate your own stamps' });
+      }
+
+      // First, deactivate all other stamps for this notary to ensure only one is active
+      await db.execute(sql`
+        UPDATE notary_stamps 
+        SET is_active = false, updated_at = NOW()
+        WHERE notary_id = ${stamp.notaryId}
+      `);
+
+      // Then activate the selected stamp
+      const updateResult = await db.execute(sql`
+        UPDATE notary_stamps 
+        SET is_active = true, updated_at = NOW()
+        WHERE id = ${stampId}
+      `);
+      
+      const updatedStamp = (updateResult.rowCount ?? 0) > 0;
+
+      if (!updatedStamp) {
+        return res.status(500).json({ message: 'Failed to activate stamp' });
+      }
+
+      console.log(`✅ Activated stamp ${stampId} for notary ${stamp.notaryId}`);
+      
       res.json({
         success: true,
-        message: 'Stamp activated successfully'
+        message: 'Stamp activated successfully',
+        stamp: {
+          id: stampId,
+          isActive: true,
+          updatedAt: new Date()
+        }
       });
     } catch (error) {
       console.error('Activate stamp error:', error);
@@ -3188,15 +3264,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete notary stamp
   app.delete('/api/notary/stamps/:stampId', verifyToken, async (req: any, res) => {
     try {
-      const stampId = req.params.stampId;
+      const stampId = parseInt(req.params.stampId);
       
       // Check if user is a notary or admin
       if (req.user.role !== 'admin' && req.user.role !== 'notary') {
         return res.status(403).json({ message: 'Access denied - notary access required' });
       }
       
-      // In production, this would delete from database and file system
-      // For now, just return success
+      if (isNaN(stampId)) {
+        return res.status(400).json({ message: 'Invalid stamp ID' });
+      }
+
+      // Get the stamp to verify ownership and get file path
+      const stampResult = await db.execute(sql`
+        SELECT 
+          id,
+          notary_id as "notaryId",
+          stamp_name as "stampType",
+          stamp_image as "stampData",
+          is_active as "isActive"
+        FROM notary_stamps 
+        WHERE id = ${stampId}
+        LIMIT 1
+      `);
+      
+      const stamp = stampResult.rows[0];
+
+      if (!stamp) {
+        return res.status(404).json({ message: 'Stamp not found' });
+      }
+
+      // Check if user owns this stamp or is admin
+      if (req.user.role !== 'admin' && stamp.notaryId !== req.user.id) {
+        return res.status(403).json({ message: 'Access denied - you can only delete your own stamps' });
+      }
+
+      // Delete file from Vultr storage if it exists
+      if (stamp.stampData && typeof stamp.stampData === 'string' && !stamp.stampData.startsWith('data:image/')) {
+        try {
+          const { cloudStorage } = await import('./lib/cloud-storage-service');
+          const fileExists = await cloudStorage.fileExists(stamp.stampData);
+          if (fileExists) {
+            await cloudStorage.deleteFile(stamp.stampData);
+            console.log(`✅ Deleted stamp file from Vultr: ${stamp.stampData}`);
+          }
+        } catch (vultrError) {
+          console.error(`❌ Failed to delete stamp file from Vultr: ${stamp.stampData}`, vultrError);
+          // Continue with database deletion even if file deletion fails
+        }
+      }
+
+      // Delete from database
+      const deleteResult = await db.execute(sql`
+        DELETE FROM notary_stamps WHERE id = ${stampId}
+      `);
+      
+      const deletedStamp = (deleteResult.rowCount ?? 0) > 0;
+
+      if (!deletedStamp) {
+        return res.status(500).json({ message: 'Failed to delete stamp from database' });
+      }
+
+      console.log(`✅ Deleted stamp ${stampId} for notary ${stamp.notaryId}`);
+      
       res.json({
         success: true,
         message: 'Stamp deleted successfully'
@@ -3206,7 +3336,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-  
+
+  // Placeholder routes for missing stamp images
+  app.get('/api/placeholder/stamp-missing', async (req, res) => {
+    try {
+      // Return a simple SVG placeholder for missing stamps
+      const svgPlaceholder = `
+        <svg width="150" height="100" xmlns="http://www.w3.org/2000/svg">
+          <rect width="150" height="100" fill="#f3f4f6" stroke="#d1d5db" stroke-width="2" rx="8"/>
+          <text x="75" y="45" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#6b7280">
+            Stamp Missing
+          </text>
+          <text x="75" y="65" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#9ca3af">
+            File not found
+          </text>
+        </svg>
+      `;
+      
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.send(svgPlaceholder);
+    } catch (error) {
+      console.error('Placeholder stamp error:', error);
+      res.status(500).send('Error generating placeholder');
+    }
+  });
+
+  app.get('/api/placeholder/stamp-error', async (req, res) => {
+    try {
+      // Return a simple SVG placeholder for stamp errors
+      const svgPlaceholder = `
+        <svg width="150" height="100" xmlns="http://www.w3.org/2000/svg">
+          <rect width="150" height="100" fill="#fef2f2" stroke="#fecaca" stroke-width="2" rx="8"/>
+          <text x="75" y="45" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#dc2626">
+            Stamp Error
+          </text>
+          <text x="75" y="65" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#b91c1c">
+            Cannot load image
+          </text>
+        </svg>
+      `;
+      
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.send(svgPlaceholder);
+    } catch (error) {
+      console.error('Placeholder stamp error:', error);
+      res.status(500).send('Error generating placeholder');
+    }
+  });
+
   // Recording upload endpoint for enhanced video system  
   app.post('/api/recordings/upload', verifyToken, upload.single('recording'), async (req: any, res) => {
     try {
@@ -3520,29 +3699,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Delete the file from both local filesystem and Vultr cloud storage
+      // VULTR ONLY - Delete file from cloud storage
       const filePath = document.filePath;
-      const isVultrFile = !filePath.startsWith('/') && !filePath.includes('\\') && !filePath.includes('uploads/');
       
-      if (isVultrFile) {
-        // Delete from Vultr cloud storage
-        try {
-          const { cloudStorage } = await import('./lib/cloud-storage-service');
-          const fileExists = await cloudStorage.fileExists(filePath);
-          if (fileExists) {
-            await cloudStorage.deleteFile(filePath);
-            console.log(`✅ Deleted document from Vultr: ${filePath}`);
-          }
-        } catch (vultrError) {
-          console.error(`❌ Failed to delete document from Vultr: ${filePath}`, vultrError);
-          // Continue with database deletion even if cloud file deletion fails
+      try {
+        const { cloudStorage } = await import('./lib/cloud-storage-service');
+        const fileExists = await cloudStorage.fileExists(filePath);
+        if (fileExists) {
+          await cloudStorage.deleteFile(filePath);
+          console.log(`✅ Deleted document from Vultr: ${filePath}`);
         }
-      } else {
-        // Delete local file if it exists (legacy support)
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-          console.log(`✅ Deleted local document: ${filePath}`);
-        }
+      } catch (vultrError) {
+        console.error(`❌ Failed to delete document from Vultr: ${filePath}`, vultrError);
+        // Continue with database deletion even if cloud file deletion fails
       }
 
       // Delete from database
@@ -3641,74 +3810,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Handle both local files (legacy) and Vultr files
+      // VULTR ONLY - All documents are stored in Vultr cloud storage
       const filePath = document.filePath;
       
-      // Check if this is a Vultr key (doesn't start with / or contain file system path separators)
-      const isVultrFile = !filePath.startsWith('/') && !filePath.includes('\\') && !filePath.includes('uploads/');
-      
-      if (isVultrFile) {
-        // File is stored in Vultr - generate signed URL and redirect
-        try {
-          const { cloudStorage } = await import('./lib/cloud-storage-service');
-          
-          // Check if file exists in Vultr
-          const fileExists = await cloudStorage.fileExists(filePath);
-          if (!fileExists) {
-            return res.status(404).json({ message: 'File not found in cloud storage' });
-          }
-          
-          // Generate signed URL for download (valid for 1 hour)
-          const signedUrl = await cloudStorage.getSignedUrl(filePath, 3600);
-          
-          // Check if this is a signed PDF request
-          const isSigned = req.query.signed === 'true';
-          const timestamp = req.query.timestamp;
-          
-          // Set appropriate headers for download
-          const filename = isSigned 
-            ? `SIGNED_${timestamp}_${document.originalName}` 
-            : document.originalName;
-            
-          res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-          
-          if (isSigned) {
-            res.setHeader('X-Document-Status', 'signed');
-            res.setHeader('X-Signing-Timestamp', timestamp || new Date().toISOString());
-            console.log(`Serving signed PDF from Vultr: ${filename}`);
-          }
-          
-          // Redirect to Vultr signed URL
-          console.log(`Redirecting to Vultr download: ${document.originalName}`);
-          res.redirect(302, signedUrl);
-          
-        } catch (vultrError) {
-          console.error('Vultr download error:', vultrError);
-          return res.status(500).json({ message: 'Failed to access file in cloud storage' });
+      try {
+        const { cloudStorage } = await import('./lib/cloud-storage-service');
+        
+        // Check if file exists in Vultr
+        const fileExists = await cloudStorage.fileExists(filePath);
+        if (!fileExists) {
+          return res.status(404).json({ message: 'File not found in cloud storage' });
         }
-      } else {
-        // Legacy local file handling
-        if (!fs.existsSync(filePath)) {
-          return res.status(404).json({ message: 'File not found on disk' });
-        }
-
+        
+        // Generate signed URL for download (valid for 1 hour)
+        const signedUrl = await cloudStorage.getSignedUrl(filePath, 3600);
+        
+        // Check if this is a signed PDF request
         const isSigned = req.query.signed === 'true';
         const timestamp = req.query.timestamp;
         
+        // Set appropriate headers for download
         const filename = isSigned 
           ? `SIGNED_${timestamp}_${document.originalName}` 
           : document.originalName;
           
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.setHeader('Content-Type', document.mimeType);
         
         if (isSigned) {
           res.setHeader('X-Document-Status', 'signed');
           res.setHeader('X-Signing-Timestamp', timestamp || new Date().toISOString());
-          console.log(`Serving signed PDF from local: ${filename}`);
+          console.log(`Serving signed PDF from Vultr: ${filename}`);
         }
         
-        res.sendFile(path.resolve(filePath));
+        // Redirect to Vultr signed URL
+        console.log(`Redirecting to Vultr download: ${document.originalName}`);
+        res.redirect(302, signedUrl);
+        
+      } catch (vultrError) {
+        console.error('Vultr download error:', vultrError);
+        return res.status(500).json({ message: 'Failed to access file in cloud storage' });
       }
     } catch (error) {
       console.error('Download document error:', error);
@@ -3769,36 +3909,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         let pdfBytes: Buffer;
         
-        // Handle both local files (legacy) and Vultr files
+        // VULTR ONLY - All documents are stored in Vultr cloud storage
         const filePath = document.filePath;
-        const isVultrFile = !filePath.startsWith('/') && !filePath.includes('\\') && !filePath.includes('uploads/');
         
-        if (isVultrFile) {
-          // File is stored in Vultr - download for processing
-          const { cloudStorage } = await import('./lib/cloud-storage-service');
-          
-          const fileExists = await cloudStorage.fileExists(filePath);
-          if (!fileExists) {
-            return res.status(404).json({ message: 'PDF file not found in cloud storage' });
-          }
-          
-          // Get signed URL to download the file content
-          const signedUrl = await cloudStorage.getSignedUrl(filePath, 300); // 5 minutes for processing
-          
-          // Fetch the file content from Vultr
-          const response = await fetch(signedUrl);
-          if (!response.ok) {
-            throw new Error(`Failed to download PDF from Vultr: ${response.statusText}`);
-          }
-          
-          const arrayBuffer = await response.arrayBuffer();
-          pdfBytes = Buffer.from(arrayBuffer);
-          console.log(`Downloaded PDF from Vultr for signing: ${document.originalName}`);
-        } else {
-          // Legacy local file handling
-          pdfBytes = await fs.promises.readFile(filePath);
-          console.log(`Read PDF from local storage for signing: ${document.originalName}`);
+        const { cloudStorage } = await import('./lib/cloud-storage-service');
+        
+        const fileExists = await cloudStorage.fileExists(filePath);
+        if (!fileExists) {
+          return res.status(404).json({ message: 'PDF file not found in cloud storage' });
         }
+        
+        // Get signed URL to download the file content
+        const signedUrl = await cloudStorage.getSignedUrl(filePath, 300); // 5 minutes for processing
+        
+        // Fetch the file content from Vultr with timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout for PDF processing
+        
+        const response = await fetch(signedUrl, {
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'USA-Notary-Service/1.0'
+          }
+        });
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          throw new Error(`Failed to download PDF from Vultr: ${response.status} ${response.statusText}`);
+        }
+        
+        const arrayBuffer = await response.arrayBuffer();
+        pdfBytes = Buffer.from(arrayBuffer);
+        console.log(`Downloaded PDF from Vultr for signing: ${document.originalName}`);
         const pdfDoc = await PDFDocument.load(pdfBytes);
         const pages = pdfDoc.getPages();
         const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -3962,51 +4104,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Handle both local files (legacy) and Vultr files
+      // VULTR ONLY - All documents are stored in Vultr cloud storage
       const filePath = document.filePath;
       
-      // Check if this is a Vultr key (doesn't start with / or contain file system path separators)
-      const isVultrFile = !filePath.startsWith('/') && !filePath.includes('\\') && !filePath.includes('uploads/');
-      
-      if (isVultrFile) {
-        // File is stored in Vultr - generate signed URL and redirect
-        try {
-          const { cloudStorage } = await import('./lib/cloud-storage-service');
-          
-          // Check if file exists in Vultr
-          const fileExists = await cloudStorage.fileExists(filePath);
-          if (!fileExists) {
-            return res.status(404).json({ message: 'File not found in cloud storage' });
-          }
-          
-          // Generate signed URL for preview (valid for 1 hour)
-          const signedUrl = await cloudStorage.getSignedUrl(filePath, 3600);
-          
-          // Set appropriate headers for inline viewing
-          res.setHeader('Content-Type', document.mimeType);
-          res.setHeader('Cache-Control', 'private, max-age=300'); // 5 minute cache
-          
-          // Redirect to Vultr signed URL for inline viewing
-          console.log(`Redirecting to Vultr preview: ${document.originalName}`);
-          res.redirect(302, signedUrl);
-          
-        } catch (vultrError) {
-          console.error('Vultr preview error:', vultrError);
-          return res.status(500).json({ message: 'Failed to access file in cloud storage' });
+      try {
+        const { cloudStorage } = await import('./lib/cloud-storage-service');
+        
+        // Check if file exists in Vultr
+        const fileExists = await cloudStorage.fileExists(filePath);
+        if (!fileExists) {
+          return res.status(404).json({ message: 'File not found in cloud storage' });
         }
-      } else {
-        // Legacy local file handling
-        if (!fs.existsSync(filePath)) {
-          console.error('File not found on disk:', filePath);
-          return res.status(404).json({ message: 'File not found on disk' });
-        }
-
+        
+        // Generate signed URL for preview (valid for 1 hour)
+        const signedUrl = await cloudStorage.getSignedUrl(filePath, 3600);
+        
         // Set appropriate headers for inline viewing
         res.setHeader('Content-Type', document.mimeType);
         res.setHeader('Cache-Control', 'private, max-age=300'); // 5 minute cache
         
-        // Send the file for inline viewing
-        res.sendFile(path.resolve(filePath));
+        // Redirect to Vultr signed URL for inline viewing
+        console.log(`Redirecting to Vultr preview: ${document.originalName}`);
+        res.redirect(302, signedUrl);
+        
+      } catch (vultrError) {
+        console.error('Vultr preview error:', vultrError);
+        return res.status(500).json({ message: 'Failed to access file in cloud storage' });
       }
     } catch (error) {
       console.error('Preview document error:', error);
@@ -4017,12 +4140,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Calendar Management API
 
   // Get notary time slots
-app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req, res) => {
+app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req: any, res) => {
     try {
       const { month, year } = req.query;
-      const notaryId = req.user?.id;
+      const notaryId = req.user.id;
 
-      if (req.user?.role !== 'notary' && req.user?.role !== 'admin') {
+      if (req.user.role !== 'notary' && req.user.role !== 'admin') {
         return res.status(403).json({ error: 'Access denied' });
       }
 
@@ -4053,12 +4176,12 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
   });
 
   // Create time slot
-  app.post('/api/calendar/time-slots', verifyToken, async (req, res) => {
+  app.post('/api/calendar/time-slots', verifyToken, async (req: any, res) => {
     try {
-      const notaryId = req.user?.id;
+      const notaryId = req.user.id;
       const { date, startTime, endTime, status, blockReason } = req.body;
 
-      if (req.user?.role !== 'notary' && req.user?.role !== 'admin') {
+      if (req.user.role !== 'notary' && req.user.role !== 'admin') {
         return res.status(403).json({ error: 'Access denied' });
       }
 
@@ -4083,12 +4206,12 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
   });
 
   // Bulk create time slots
-  app.post('/api/calendar/bulk-slots', verifyToken, async (req, res) => {
+  app.post('/api/calendar/bulk-slots', verifyToken, async (req: any, res) => {
     try {
-      const notaryId = req.user?.id;
+      const notaryId = req.user.id;
       const { date, startTime, endTime, status, blockReason } = req.body;
 
-      if (req.user?.role !== 'notary' && req.user?.role !== 'admin') {
+      if (req.user.role !== 'notary' && req.user.role !== 'admin') {
         return res.status(403).json({ error: 'Access denied' });
       }
 
@@ -4144,12 +4267,12 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
   });
 
   // Enhanced bulk availability setup with date range and days of week
-  app.post('/api/calendar/bulk-availability', verifyToken, async (req, res) => {
+  app.post('/api/calendar/bulk-availability', verifyToken, async (req: any, res) => {
     try {
-      const notaryId = req.user?.id;
+      const notaryId = req.user.id;
       const { dateRange, timeRange, daysOfWeek, type, blockReason } = req.body;
 
-      if (req.user?.role !== 'notary' && req.user?.role !== 'admin') {
+      if (req.user.role !== 'notary' && req.user.role !== 'admin') {
         return res.status(403).json({ error: 'Access denied' });
       }
 
@@ -5466,6 +5589,10 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
   registerFeeRoutes(app);
   registerAdminVerificationRoutes(app);
   
+  // Register enhanced text tag routes
+  const { registerTextTagRoutes } = await import('./routes/text-tag-routes');
+  registerTextTagRoutes(app);
+  
   // Register admin logs routes
   app.use('/api/admin', adminLogsRoutes);
   app.use('/api/notary', notaryVerificationRoutes);
@@ -6360,74 +6487,140 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
       }
 
       // For live signing sessions, handle completion
-      if (session.sessionType === 'notary' || session.sessionType === 'signing') {
+      if (session.sessionType === 'notary' || session.sessionType === 'tagging') {
         try {
           // Get all tags for validation
           const { TagService } = await import('./services/editor/TagService');
           const tags = await TagService.getSessionTags(actualSessionId);
           
-          // Check if all required tags are completed (unless forced)
-          const incompleteTags = tags.filter(tag => !tag.isCompleted && tag.isRequired !== false);
-          if (incompleteTags.length > 0 && !force) {
-            return res.status(400).json({
-              success: false,
-              message: `Cannot complete session: ${incompleteTags.length} required tags are not completed`,
-              error: 'incomplete_required_tags',
-              canForce: true,
-              incompleteTags: incompleteTags.map(t => ({
+          console.log(`📊 Session completion validation - Total tags: ${tags.length}`);
+          
+          // Tags will only be marked as completed when users manually click and fill them
+          // No auto-completion needed - tags are just markers for the tagging session
+          
+          console.log(`📊 Validation results:`);
+          console.log(`  - Total tags: ${tags.length}`);
+          console.log(`  - Completed tags: ${tags.filter(t => t.isCompleted).length}`);
+          
+          // For tagging sessions: Allow completion regardless of tag completion status
+          // For live signing sessions: Only allow completion if users have filled their assigned tags
+          if (session.sessionType === 'notary') {
+            // Live signing session - check if tags have real content from users
+            const incompleteTags = tags.filter(tag => !tag.isCompleted);
+            
+            if (incompleteTags.length > 0 && !force) {
+              console.log(`❌ Live signing session completion blocked - users haven't filled all tags:`, incompleteTags.map(t => ({
                 id: t.id,
                 type: t.tagType,
-                assignedUser: t.assignedUserId
-              }))
-            });
+                assignedUser: t.assignedUserId,
+                hasContent: !!(t.content && t.content.trim())
+              })));
+              
+              return res.status(400).json({
+                success: false,
+                message: `Cannot complete session: ${incompleteTags.length} tags haven't been filled by users`,
+                error: 'incomplete_user_tags',
+                canForce: true,
+                incompleteTags: incompleteTags.map(t => ({
+                  id: t.id,
+                  type: t.tagType,
+                  assignedUser: t.assignedUserId,
+                  note: 'User needs to click this tag to fill it with real content'
+                }))
+              });
+            }
           }
+          
+          // For tagging sessions, no validation needed - tags are just markers
 
-                     // Generate final PDF if there are completed tags
-           if (tags.length > 0 && tags.some(t => t.isCompleted)) {
-             try {
-               const { PDFProcessorService } = await import('./services/pdf-processor.service');
-               const pdfProcessor = PDFProcessorService.getInstance();
-               
-               // Process the document and apply real content
-               const processedDoc = await pdfProcessor.processCompletedDocument(actualSessionId);
-               
-               if (processedDoc && processedDoc.buffer) {
-                 // Save to uploads directory
-                 const fs = await import('fs/promises');
-                 const path = await import('path');
-                 const uploadsDir = path.resolve('uploads/signed');
-                 
-                 // Ensure directory exists
-                 try {
-                   await fs.mkdir(uploadsDir, { recursive: true });
-                 } catch (mkdirError) {
-                   console.log('Uploads directory already exists or created');
-                 }
-                 
-                 const signedFileName = `job_${session.jobId}_signed_${Date.now()}.pdf`;
-                 const signedFilePath = path.join(uploadsDir, signedFileName);
-                 
-                 // Write the signed PDF
-                 await fs.writeFile(signedFilePath, processedDoc.buffer);
-                 
-                 console.log(`✅ Generated signed PDF: ${signedFileName} (${processedDoc.fileSize} bytes)`);
-                 
-                 // Update job status to indicate signed documents are available
-                 await db
-                   .update(jobs)
-                   .set({
-                     status: 'completed',
-                     completedAt: new Date()
-                   })
-                   .where(eq(jobs.id, session.jobId));
-               }
-               
-             } catch (pdfError) {
-               console.error('❌ Failed to generate final signed PDF:', pdfError);
-               // Don't fail the completion, just log the error
-               console.warn('Session marked as completed but PDF generation failed');
-             }
-           }
+                               // Generate final PDF with real user content (only for live signing sessions)
+          if (session.sessionType === 'notary' && tags.length > 0 && tags.some(t => t.isCompleted)) {
+            try {
+              const { PDFProcessorService } = await import('./services/pdf-processor.service');
+              const pdfProcessor = PDFProcessorService.getInstance();
+              
+              // Process the document and apply real content
+              const processedDoc = await pdfProcessor.processCompletedDocument(actualSessionId);
+              
+              if (processedDoc && processedDoc.buffer) {
+                // Upload signed PDF to Vultr cloud storage
+                try {
+                  const { VultrUploadHandler } = await import('./vultr-upload-handler');
+                  
+                  const signedFileName = `job_${session.jobId}_signed_${Date.now()}.pdf`;
+                  
+                  // Upload to Vultr with proper organization
+                  const uploadResult = await VultrUploadHandler.handleJobDocumentUpload(
+                    processedDoc.buffer,
+                    signedFileName,
+                    session.jobId,
+                    req.user.id,
+                    {
+                      documentType: 'signed_document',
+                      isRequired: false,
+                      sessionId: actualSessionId,
+                      signedAt: new Date().toISOString(),
+                      processedTags: tags.length,
+                      completedTags: tags.filter(t => t.isCompleted).length
+                    }
+                  );
+                  
+                  if (uploadResult.success) {
+                                  console.log(`✅ Generated final document with real user content: ${signedFileName} (${processedDoc.fileSize} bytes)`);
+              console.log(`📁 Vultr location: ${uploadResult.fileKey}`);
+              console.log(`📊 Applied ${tags.filter(t => t.isCompleted).length} user-filled tags to document`);
+                    
+                    // Also save to local uploads directory as backup
+                    const fs = await import('fs/promises');
+                    const path = await import('path');
+                    const uploadsDir = path.resolve('uploads/signed');
+                    
+                    try {
+                      await fs.mkdir(uploadsDir, { recursive: true });
+                      const localPath = path.join(uploadsDir, signedFileName);
+                      await fs.writeFile(localPath, processedDoc.buffer);
+                      console.log(`📁 Local backup saved: ${signedFileName}`);
+                    } catch (localError) {
+                      console.warn('Failed to save local backup:', localError);
+                      // Don't fail on local backup error
+                    }
+                    
+                  } else {
+                    throw new Error(`Failed to upload signed PDF: ${uploadResult.error}`);
+                  }
+                  
+                } catch (uploadError) {
+                  console.error('❌ Failed to upload signed PDF to Vultr:', uploadError);
+                  
+                  // Fallback: Save to local uploads directory only
+                  const fs = await import('fs/promises');
+                  const path = await import('path');
+                  const uploadsDir = path.resolve('uploads/signed');
+                  
+                  await fs.mkdir(uploadsDir, { recursive: true });
+                  const signedFileName = `job_${session.jobId}_signed_${Date.now()}.pdf`;
+                  const signedFilePath = path.join(uploadsDir, signedFileName);
+                  await fs.writeFile(signedFilePath, processedDoc.buffer);
+                  
+                  console.log(`📁 Fallback: Saved signed PDF locally: ${signedFileName}`);
+                }
+                
+                // Update job status to indicate signed documents are available
+                await db
+                  .update(jobs)
+                  .set({
+                    status: 'completed',
+                    completedAt: new Date()
+                  })
+                  .where(eq(jobs.id, session.jobId));
+              }
+              
+            } catch (pdfError) {
+              console.error('❌ Failed to generate final signed PDF:', pdfError);
+              // Don't fail the completion, just log the error
+              console.warn('Session marked as completed but PDF generation failed');
+            }
+          }
           
           // Complete the live signing session
           await LiveSigningSessionService.completeSession(actualSessionId, req.user.id);
@@ -6754,7 +6947,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
       }
       
       // In signing sessions (notary mode), only notaries and admins can place new tags
-      if (session.sessionType === 'notary' || session.sessionType === 'signing') {
+      if (session.sessionType === 'notary' || session.sessionType === 'tagging') {
         const userRole = req.user.role;
         const isNotary = userRole === 'notary';
         const isAdmin = userRole === 'admin';
@@ -6862,7 +7055,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
       }
       
       // In signing sessions, only notaries and admins can delete tags
-      if (session.sessionType === 'notary' || session.sessionType === 'signing') {
+      if (session.sessionType === 'notary' || session.sessionType === 'tagging') {
         const userRole = req.user.role;
         const isNotary = userRole === 'notary';
         const isAdmin = userRole === 'admin';
@@ -6896,29 +7089,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
     }
   });
 
-  // Replace all tags with content (live signing mode)
-  app.post('/api/editor/session/:sessionId/replace-all', verifyToken, async (req: any, res) => {
-    try {
-      const { sessionId } = req.params;
-      
-      const { TagService } = await import('./services/editor/TagService');
-      
-      const result = await TagService.replaceAllTagsWithContent(sessionId, req.user.id);
-      
-      res.json({
-        success: true,
-        ...result,
-        message: 'All tags replaced with content successfully'
-      });
-      
-    } catch (error) {
-      console.error('Replace all tags error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to replace tags',
-        error: 'replace_all_failed'
-      });
-    }
-  });
+  // Remove the replace-all endpoint as tags should only be filled by user interaction
 
   // Removed duplicate endpoint - keeping the more comprehensive one below
 
@@ -7004,7 +7175,152 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
     }
   });
 
-  // Update tag content (for live signing sessions)
+  // Click to fill tag with profile data (auto-fill from user profile)
+  app.post('/api/editor/session/:sessionId/tag/:tagId/fill', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId, tagId } = req.params;
+      
+      const { TagService } = await import('./services/editor/TagService');
+      
+      // Get tag details first
+      const tags = await TagService.getSessionTags(sessionId);
+      const tag = tags.find(t => t.id === tagId);
+      
+      if (!tag) {
+        return res.status(404).json({ message: 'Tag not found' });
+      }
+      
+      // Get user profile data (assigned user for the tag)
+      const userId = parseInt(tag.assignedUserId) || req.user.id;
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      
+      if (!user) {
+        return res.status(404).json({ message: 'User profile not found' });
+      }
+      
+      // Generate content from profile based on tag type
+      let content = '';
+      let contentType = 'text';
+      let contentData = null;
+      
+      switch (tag.tagType) {
+        case 'A': // Name tag
+          content = user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim() || '[Name not set in profile]';
+          break;
+          
+        case 'S': // Signature tag
+          if (user.signatureImage) {
+            content = user.signatureImage;
+            contentType = 'signature';
+            contentData = { type: 'signature', value: user.signatureImage };
+          } else if (user.signatureData) {
+            content = user.signatureData;
+            contentType = 'signature';
+            contentData = { type: 'signature', value: user.signatureData };
+          } else if (user.signatureTyped) {
+            content = user.signatureTyped;
+            contentType = 'text';
+            contentData = { type: 'typed_signature', value: user.signatureTyped };
+          } else {
+            content = '[Please upload signature in profile]';
+          }
+          break;
+          
+        case 'I': // Initials tag
+          if (user.initialsImage) {
+            content = user.initialsImage;
+            contentType = 'signature';
+            contentData = { type: 'initials', value: user.initialsImage };
+          } else if (user.initialData) {
+            content = user.initialData;
+            contentType = 'signature';
+            contentData = { type: 'initials', value: user.initialData };
+          } else if (user.initialsTyped) {
+            content = user.initialsTyped;
+            contentType = 'text';
+            contentData = { type: 'typed_initials', value: user.initialsTyped };
+          } else if (user.firstName && user.lastName) {
+            // Auto-generate initials from name
+            content = `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase();
+            contentData = { type: 'generated_initials', value: content };
+          } else {
+            content = '[Please set initials in profile]';
+          }
+          break;
+          
+        case 'D': // Date tag
+          content = new Date().toLocaleDateString();
+          contentType = 'date';
+          contentData = { type: 'current_date', value: content };
+          break;
+          
+        case 'N': // Commission Number
+          content = user.commissionNumber || '[Commission number not set in profile]';
+          break;
+          
+        case 'X': // Commission Expiration
+          content = user.commissionExpiration || '[Expiration date not set in profile]';
+          contentType = 'date';
+          break;
+          
+        case 'O': // Disclosure
+          content = user.disclosure || '[Disclosure statement not set in profile]';
+          break;
+          
+        case 'E': // Notary Seal
+          content = '[Notary Seal Applied]';
+          contentType = 'seal';
+          contentData = { type: 'notary_seal', notaryId: userId, appliedAt: new Date().toISOString() };
+          break;
+          
+        case 'T': // Text tag
+          content = ''; // Text tags start empty
+          break;
+          
+        case 'W': // Whiteout
+          content = ''; // Whiteout tags have no content
+          contentType = 'whiteout';
+          break;
+          
+        default:
+          content = `[${tag.tagType} tag]`;
+      }
+      
+      // Update tag with profile content and mark as completed
+      const updatedTag = await TagService.updateTag(tagId, {
+        content,
+        contentType,
+        contentData: contentData ? JSON.stringify(contentData) : null,
+        isCompleted: true,
+        completedBy: req.user.id,
+        completedAt: new Date(),
+        updatedBy: req.user.id
+      });
+      
+      res.json({
+        success: true,
+        tag: updatedTag,
+        message: `Tag filled with ${user.firstName || 'user'}'s profile data`,
+        profile: {
+          userName: user.fullName || `${user.firstName} ${user.lastName}`,
+          userRole: user.role
+        }
+      });
+      
+    } catch (error) {
+      console.error('Fill tag error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to fill tag with profile data',
+        error: 'tag_fill_failed'
+      });
+    }
+  });
+
+  // Update tag content (for manual content entry)
   app.put('/api/editor/session/:sessionId/tag/:tagId/content', verifyToken, async (req: any, res) => {
     try {
       const { sessionId, tagId } = req.params;
@@ -7274,38 +7590,9 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
     }
   });
 
-  // Serve signed documents from live signing sessions
-  app.get('/api/documents/signed/:fileName', async (req: any, res) => {
-    try {
-      const { fileName } = req.params;
-      console.log('📄 Signed document request for:', fileName);
-      
-      const path = await import('path');
-      const fs = await import('fs/promises');
-      
-      const filePath = path.resolve('uploads/signed', fileName);
-      
-      // Check if file exists
-      try {
-        await fs.access(filePath);
-      } catch (error) {
-        return res.status(404).json({ message: 'Signed document not found' });
-      }
-      
-      // Set headers for PDF download
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-      res.setHeader('Cache-Control', 'no-cache');
-      
-      // Stream the file
-      const fileBuffer = await fs.readFile(filePath);
-      res.send(fileBuffer);
-      
-    } catch (error) {
-      console.error('Error serving signed document:', error);
-      res.status(500).json({ message: 'Failed to serve signed document' });
-    }
-  });
+  // Legacy signed document serving - REMOVED
+  // All signed documents are now stored in Vultr cloud storage
+  // Use document-specific download routes instead
 
   // Handle preflight OPTIONS requests for document serving
   app.options('/api/documents/:filePath(*)', (req: any, res) => {
@@ -7315,7 +7602,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
     res.status(200).end();
   });
 
-  // Serve documents directly by file path for editor (OPTIMIZED)
+    // Serve documents with Vultr cloud storage and local fallback
   app.get('/api/documents/:filePath(*)', async (req: any, res) => {
     try {
       const filePath = decodeURIComponent(req.params.filePath);
@@ -7325,62 +7612,41 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
       req.setTimeout(30000); // 30 second timeout
       res.setTimeout(30000);
       
-      // Check if this is a Vultr file or local file
-      const isVultrFile = !filePath.startsWith('/') && !filePath.includes('\\') && !filePath.includes('uploads/');
+      const { cloudStorage } = await import('./lib/cloud-storage-service');
       
-      if (isVultrFile) {
-        // Try direct Vultr access first (more reliable)
+      // Check if cloud storage is properly configured
+      const bucketStats = await cloudStorage.getBucketStats();
+      console.log('☁️ Cloud storage status:', bucketStats);
+      
+      if (bucketStats.isAccessible) {
+        // Try Vultr cloud storage first
         try {
-          const { cloudStorage } = await import('./lib/cloud-storage-service');
+          console.log('☁️ Attempting Vultr cloud storage for:', filePath);
           
-          // Quick file existence check
-          const fileExists = await cloudStorage.fileExists(filePath);
+          // Check if file exists in Vultr with timeout
+          const fileExists = await Promise.race([
+            cloudStorage.fileExists(filePath),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout checking file existence')), 10000))
+          ]);
+          
           if (!fileExists) {
-            console.log('📄 File not found in Vultr:', filePath);
-            
-            // Try local fallback before returning 404
-            console.log('📄 Checking for local fallback...');
-            
-            const path = await import('path');
-            const fs = await import('fs');
-            
-                          const possibleLocalPaths = [
-                path.join('uploads', filePath),
-                path.join(process.cwd(), 'uploads', filePath),
-                filePath,
-                // Additional fallback patterns for development files
-                path.join('uploads', 'development', path.basename(filePath)),
-                path.join('uploads', 'documents', path.basename(filePath))
-              ];
-            
-            for (const localPath of possibleLocalPaths) {
-              if (fs.existsSync(localPath)) {
-                console.log('📄 Found local fallback:', localPath);
-                res.setHeader('Content-Type', 'application/pdf');
-                res.setHeader('Cache-Control', 'private, max-age=300');
-                res.setHeader('Access-Control-Allow-Origin', '*');
-                res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-                res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-                res.setHeader('X-Served-From', 'local-fallback');
-                return res.sendFile(path.resolve(localPath));
-              }
-            }
-            
-            // No file found anywhere, return proper error response
-            console.error('📄 Document not found in any storage location:', filePath);
-            res.setHeader('Content-Type', 'application/json');
-            return res.status(404).json({ 
-              error: 'Document not found',
-              message: 'The requested document could not be found in cloud or local storage.',
-              filePath: filePath,
-              timestamp: new Date().toISOString()
-            });
+            console.log('📄 Document not found in Vultr, trying local fallback:', filePath);
+            throw new Error('File not found in cloud storage');
           }
           
-          // Generate signed URL and proxy content
-          const signedUrl = await cloudStorage.getSignedUrl(filePath, 3600); // 1 hour
+          // Generate signed URL with timeout
+          const signedUrl = await Promise.race([
+            cloudStorage.getSignedUrl(filePath, 3600),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout generating signed URL')), 10000))
+          ]);
           
-          console.log('📄 Proxying Vultr URL for:', filePath);
+          console.log('🔗 Generated Vultr signed URL for:', filePath);
+          
+          // Check if this is a development mock URL
+          if (signedUrl.includes('/dev-storage/')) {
+            console.log('🔄 Received dev storage URL, falling back to local');
+            throw new Error('Development mode - falling back to local storage');
+          }
           
           // Set proper headers for PDF viewing including CORS
           res.setHeader('Content-Type', 'application/pdf');
@@ -7388,60 +7654,116 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
           res.setHeader('Access-Control-Allow-Origin', '*');
           res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
           res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-          res.setHeader('X-Served-From', 'vultr-direct');
+          res.setHeader('X-Served-From', 'vultr-cloud');
           
-          // Proxy the PDF content instead of redirecting to avoid CORS issues
-          const pdfResponse = await fetch(signedUrl);
+          // Implement fetch with timeout and retry logic
+          const fetchWithTimeout = async (url: string, timeoutMs: number = 20000, retries: number = 1): Promise<Response> => {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+            
+            try {
+              const response = await fetch(url, {
+                signal: controller.signal,
+                headers: {
+                  'User-Agent': 'USA-Notary-Service/1.0'
+                }
+              });
+              clearTimeout(timeoutId);
+              return response;
+            } catch (error: any) {
+              clearTimeout(timeoutId);
+              
+              if (error.name === 'AbortError' && retries > 0) {
+                console.warn(`⏰ Vultr fetch timeout, retrying... (${retries} attempts left)`);
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s before retry
+                return fetchWithTimeout(url, timeoutMs, retries - 1);
+              }
+              throw error;
+            }
+          };
+          
+          // Fetch PDF content with shorter timeout for faster fallback
+          const pdfResponse = await fetchWithTimeout(signedUrl, 15000, 1); // 15 second timeout, 1 retry
+          
           if (!pdfResponse.ok) {
-            throw new Error(`Failed to fetch PDF from Vultr: ${pdfResponse.status}`);
+            throw new Error(`Failed to fetch PDF from Vultr: ${pdfResponse.status} ${pdfResponse.statusText}`);
           }
           
           const pdfBuffer = await pdfResponse.arrayBuffer();
+          console.log('✅ Successfully served document from Vultr:', filePath);
           res.send(Buffer.from(pdfBuffer));
           return;
           
-        } catch (vultrError) {
-          console.error('📄 Vultr direct access failed:', vultrError);
-            
-            // Return error response
-            console.error('📄 Document not found in any storage location:', filePath);
-            res.setHeader('Content-Type', 'application/json');
-            return res.status(404).json({ 
-              error: 'Document not found',
-              message: 'The requested document could not be found in cloud or local storage.',
-              filePath: filePath,
-              vultrError: vultrError instanceof Error ? vultrError.message : 'Unknown Vultr error',
-              timestamp: new Date().toISOString()
-            });
+        } catch (vultrError: any) {
+          console.warn('⚠️ Vultr failed, attempting local fallback:', vultrError.message);
+          // Don't return error yet, try local fallback
         }
       } else {
-        // Handle local files
-        const path = await import('path');
-        const fs = await import('fs');
-        
-        const fullPath = path.resolve(filePath);
-        
-        if (!fs.existsSync(fullPath)) {
-          console.log('📄 Local file not found:', fullPath);
-          res.setHeader('Content-Type', 'application/json');
-          return res.status(404).json({ 
-            error: 'Document not found',
-            message: 'The requested local document could not be found.',
-            filePath: filePath,
-            timestamp: new Date().toISOString()
-          });
-        }
-        
-        // Set proper headers for PDF viewing including CORS
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Cache-Control', 'private, max-age=300');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-        
-        console.log('📄 Serving local file:', fullPath);
-        res.sendFile(fullPath);
+        console.log('⚠️ Vultr not accessible, using local fallback for:', filePath);
       }
+      
+      // LOCAL STORAGE FALLBACK - Check if file exists locally
+      const path = await import('path');
+      const fs = await import('fs/promises');
+      
+      // Try different local paths where the file might exist
+      const possibleLocalPaths = [
+        path.resolve('uploads', filePath),
+        path.resolve('uploads', 'documents', filePath),
+        path.resolve(filePath.startsWith('/') ? filePath.substring(1) : filePath),
+        path.resolve(filePath)
+      ];
+      
+      let localFilePath = null;
+      let fileStats = null;
+      
+      for (const possiblePath of possibleLocalPaths) {
+        try {
+          fileStats = await fs.stat(possiblePath);
+          if (fileStats.isFile()) {
+            localFilePath = possiblePath;
+            console.log('📁 Found local file at:', localFilePath);
+            break;
+          }
+        } catch (e) {
+          // File doesn't exist at this path, continue checking
+        }
+      }
+      
+      if (localFilePath && fileStats) {
+        try {
+          // Serve local file
+          console.log('📁 Serving local file:', localFilePath);
+          
+          // Set appropriate headers
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Cache-Control', 'private, max-age=300');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+          res.setHeader('X-Served-From', 'local-storage');
+          res.setHeader('Content-Length', fileStats.size.toString());
+          
+          const fileBuffer = await fs.readFile(localFilePath);
+          res.send(fileBuffer);
+          return;
+          
+        } catch (localError: any) {
+          console.error('📁 Local file serving failed:', localError);
+        }
+      }
+      
+      // If we get here, both Vultr and local storage failed
+      console.error('❌ Document not found in Vultr or local storage:', filePath);
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(404).json({ 
+        error: 'Document not found',
+        message: 'The requested PDF file does not exist on the server.',
+        filePath: filePath,
+        timestamp: new Date().toISOString(),
+        searchedPaths: possibleLocalPaths,
+        vultrStatus: bucketStats.isAccessible ? 'accessible' : 'not accessible'
+      });
       
     } catch (error) {
       console.error('📄 Document serving error:', error);
@@ -7652,6 +7974,77 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req,
       console.error('WebRTC diagnostics error:', error);
       res.status(500).json({ 
         message: 'Failed to get WebRTC diagnostics',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Vultr cloud storage diagnostic endpoint
+  app.get('/api/diagnostics/storage', verifyToken, async (req: any, res) => {
+    try {
+      const { cloudStorage } = await import('./lib/cloud-storage-service');
+      
+      // Check required environment variables
+      const requiredVars = [
+        'VULTR_ACCESS_KEY',
+        'VULTR_SECRET_KEY', 
+        'VULTR_REGION',
+        'VULTR_BUCKET_NAME',
+        'VULTR_ENDPOINT'
+      ];
+      
+      const envCheck = requiredVars.reduce((acc, varName) => {
+        acc[varName] = process.env[varName] ? 'configured' : 'missing';
+        return acc;
+      }, {} as Record<string, string>);
+      
+      // Get bucket stats
+      const bucketStats = await cloudStorage.getBucketStats();
+      
+      // Test a simple operation
+      let testResult = { success: false, error: 'Not tested' };
+      try {
+        const testExists = await cloudStorage.fileExists('test-file-that-should-not-exist');
+        testResult = { success: true, error: null };
+      } catch (error) {
+        testResult = { 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Unknown error' 
+        };
+      }
+      
+      const diagnostics = {
+        environment: {
+          variables: envCheck,
+          allConfigured: !Object.values(envCheck).includes('missing')
+        },
+        bucket: bucketStats,
+        connectivity: testResult,
+        recommendations: []
+      };
+      
+      // Add recommendations based on findings
+      if (!diagnostics.environment.allConfigured) {
+        diagnostics.recommendations.push('Configure missing Vultr environment variables for cloud storage');
+      }
+      if (!diagnostics.bucket.isAccessible) {
+        diagnostics.recommendations.push('Check Vultr credentials and bucket permissions');
+      }
+      if (!diagnostics.connectivity.success) {
+        diagnostics.recommendations.push('Verify network connectivity to Vultr endpoints');
+      }
+      
+      res.json({
+        success: true,
+        diagnostics,
+        status: diagnostics.environment.allConfigured && diagnostics.bucket.isAccessible ? 'healthy' : 'degraded'
+      });
+      
+    } catch (error) {
+      console.error('Storage diagnostics error:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Failed to run storage diagnostics',
         error: error instanceof Error ? error.message : 'Unknown error'
       });
     }

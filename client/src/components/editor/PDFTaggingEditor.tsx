@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
 import { useTagOperations } from '../../hooks/editor/useTagOperations';
+import { useStreamlinedTextInputs } from '../../hooks/editor/useStreamlinedTextInputs';
 import PDFViewer from './PDFViewer';
 import TaggingToolbar from './TaggingToolbar';
 import HotkeyHandler from './HotkeyHandler';
-import VideoIntegration from './VideoIntegration';
 import { TagInputModal } from './TagInputModal';
-import { ReplaceAllButton } from './ReplaceAllButton';
+import { StreamlinedTextLayer } from './StreamlinedTextLayer';
 import { useToast } from '@/hooks/use-toast';
 import type { 
   SessionDocument, 
@@ -16,8 +16,6 @@ import type {
   TagType
 } from '../../types/editor';
 import { Badge } from '../ui/badge';
-import { Button } from '../ui/button';
-import { HelpCircle } from 'lucide-react';
 
 interface PDFTaggingEditorProps {
   sessionId: string;
@@ -47,6 +45,10 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
+  // Track current page canvas for StreamlinedTextLayer
+  const [currentPageCanvas, setCurrentPageCanvas] = useState<HTMLCanvasElement | null>(null);
+  const pdfViewerRef = useRef<any>(null); // Add ref to access PDFViewer internals
+  
   // Interactive tag modal state
   const [selectedTagForInput, setSelectedTagForInput] = useState<DocumentTag | null>(null);
   const [tagModalPosition, setTagModalPosition] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
@@ -54,7 +56,29 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
   
   const { toast } = useToast();
 
-  // Store state
+  // Tag operations with batching and debouncing
+  const {
+    placeTag,
+    updateTagPosition,
+    updateTagSize,
+    saveTagUpdate,
+    deleteTag,
+    batchSaveChanges
+  } = useTagOperations(sessionId);
+
+  // Streamlined text inputs for immediate editing
+  const {
+    textInputs,
+    selectedTextInputId,
+    placeTextInput,
+    saveTextContent,
+    updateFontSize,
+    deleteTextInput,
+    loadTextInputsFromTags,
+    selectTextInput
+  } = useStreamlinedTextInputs(sessionId);
+
+  // Store state - MOVED UP to fix initialization order
   const {
     session,
     currentDocument,
@@ -66,23 +90,80 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     setSession,
     setDocuments,
     setCurrentDocument,
+    setSelectedUser,
+    setSelectedTagType,
+    setTags,
     setParticipants,
     setCurrentUser,
-    setSelectedUser,
-    setMode,
-    setTags
+    setMode
   } = useEditorStore();
 
-  // Tag operations with batching and debouncing
-  const {
-    placeTag,
-    updateTagPosition,
-    updateTagSize,
-    saveTagUpdate,
-    deleteTag,
-    batchSaveChanges,
-    isProcessing
-  } = useTagOperations(sessionId);
+  // Handle page load from PDFViewer to get canvas element
+  const handlePageLoad = useCallback((pageNumber: number, canvas: HTMLCanvasElement, scaleFactor: number) => {
+    console.log(`📄 Canvas updated for page ${pageNumber}:`, canvas);
+    
+    // Update canvas if this is the current page
+    if (pageNumber === (viewer.currentPage || 1)) {
+      setCurrentPageCanvas(canvas);
+      console.log(`✅ Set current page canvas for page ${pageNumber}`);
+    }
+    
+    // Also store all page canvases for potential fallback (optional enhancement)
+  }, [viewer.currentPage]);
+
+  // Update canvas when current page changes - with fallback canvas retrieval
+  useEffect(() => {
+    const updateCanvasForCurrentPage = () => {
+      const currentPage = viewer.currentPage || 1;
+      
+      // Try to find the canvas element for the current page
+      const canvas = document.querySelector(`canvas[data-page-number="${currentPage}"]`) as HTMLCanvasElement;
+      
+      if (canvas) {
+        setCurrentPageCanvas(canvas);
+        console.log(`✅ Found canvas for page ${currentPage} via DOM query`);
+      } else {
+        console.log(`⚠️ Canvas not found for page ${currentPage}, will wait for page load event`);
+        // Reset canvas to trigger re-render when it becomes available
+        setCurrentPageCanvas(null);
+      }
+    };
+    
+    // Update immediately
+    updateCanvasForCurrentPage();
+    
+    // Also update after a small delay to catch late-rendered canvases
+    const timer = setTimeout(updateCanvasForCurrentPage, 100);
+    
+    return () => clearTimeout(timer);
+  }, [viewer.currentPage]);
+
+  // Handle global clicks to deselect text inputs
+  useEffect(() => {
+    const handleGlobalClick = (e: MouseEvent) => {
+      // Check if the click is outside any text input or control
+      const target = e.target as HTMLElement;
+      
+      // Don't deselect if clicking on StreamlinedTextLayer or its children
+      if (target.closest('.streamlined-text-layer')) {
+        return;
+      }
+      
+      // Don't deselect if clicking on toolbar or controls
+      if (target.closest('.tagging-toolbar') || target.closest('.tag-input-modal')) {
+        return;
+      }
+      
+      // Deselect text input
+      if (selectedTextInputId) {
+        console.log('🎯 Global click detected - deselecting text input');
+        selectTextInput(null);
+      }
+    };
+    
+    document.addEventListener('click', handleGlobalClick);
+    return () => document.removeEventListener('click', handleGlobalClick);
+  }, [selectedTextInputId, selectTextInput]);
 
   // Initialize session on mount
   useEffect(() => {
@@ -150,6 +231,9 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
           });
           
           setTags(validTags);
+          
+          // Load text tags into streamlined text input system
+          loadTextInputsFromTags(validTags);
           
           if (validTags.length > 0) {
             console.log(`🏷️  Tags loaded successfully - session appears to be a continuation of previous work`);
@@ -319,23 +403,90 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         selectedUser: !!selectedUser,
         currentDocument: !!currentDocument
       });
+      
+      // Provide helpful error message to user
+      let errorMessage = 'Cannot place tag: ';
+      const missing = [];
+      if (!selectedTagType) missing.push('Please select a tag type first');
+      if (!selectedUser) missing.push('Please select a user');
+      if (!currentDocument) missing.push('No document loaded');
+      
+      if (missing.length > 0) {
+        setError(errorMessage + missing.join(', '));
+        setTimeout(() => setError(null), 3000); // Clear error after 3 seconds
+      }
+      
       return;
     }
 
     try {
-      console.log('📍 Placing tag...');
-      await placeTag({
-        documentId: currentDocument.id,
-        tagType: selectedTagType,
-        coordinates,
-        assignedUserId: selectedUser.userId
-      });
-      console.log('✅ Tag placed successfully!');
+      // Check if this is a text tag - use streamlined text input system
+      if (selectedTagType === 'T') {
+        console.log('📝 Placing streamlined text input...');
+        console.log('Current text inputs before placement:', textInputs);
+        
+        const newTextInputId = await placeTextInput({
+          documentId: currentDocument.id,
+          coordinates,
+          assignedUserId: selectedUser.userId
+        }, selectedUser.colorCode || '#4ECDC4');
+        
+        console.log('✅ Streamlined text input placed successfully! ID:', newTextInputId);
+        console.log('Text inputs after placement:', textInputs);
+        
+        // Force a re-render by updating the canvas
+        setTimeout(() => {
+          const currentPage = viewer.currentPage || 1;
+          const canvas = document.querySelector(`canvas[data-page-number="${currentPage}"]`) as HTMLCanvasElement;
+          if (canvas) {
+            setCurrentPageCanvas(null);
+            setTimeout(() => setCurrentPageCanvas(canvas), 10);
+          }
+        }, 100);
+      } else {
+        console.log('📍 Placing regular tag...');
+        console.log('🔍 DEBUG: Tag placement data:', {
+          documentId: currentDocument.id,
+          tagType: selectedTagType,
+          coordinates,
+          assignedUserId: selectedUser.userId
+        });
+        
+        console.log('🔍 DEBUG: Store state before placement:', {
+          tagsCount: tags.length,
+          tags: tags.map(t => ({ id: t.id, type: t.tagType }))
+        });
+        
+        await placeTag({
+          documentId: currentDocument.id,
+          tagType: selectedTagType,
+          coordinates,
+          assignedUserId: selectedUser.userId
+        });
+        
+        console.log('✅ Tag placed successfully!');
+        
+        // Check store state after placement
+        setTimeout(() => {
+          const newTags = useEditorStore.getState().tags;
+          console.log('🔍 DEBUG: Store state after placement:', {
+            tagsCount: newTags.length,
+            tags: newTags.map(t => ({ id: t.id, type: t.tagType }))
+          });
+        }, 100);
+      }
     } catch (error) {
       console.error('❌ Failed to place tag:', error);
       setError('Failed to place tag. Please try again.');
+      
+      // Show more detailed error message
+      toast({
+        variant: "destructive",
+        title: "Tag Placement Failed",
+        description: error instanceof Error ? error.message : 'Unknown error occurred'
+      });
     }
-  }, [selectedTagType, selectedUser, currentDocument, placeTag]);
+  }, [selectedTagType, selectedUser, currentDocument, placeTag, placeTextInput, textInputs, viewer.currentPage, setCurrentPageCanvas, tags, toast]);
 
   // Handle user switching via hotkeys
   const handleUserSwitch = useCallback((userIndex: number) => {
@@ -444,205 +595,95 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      {/* Header - ENHANCED WITH ROLE RESTRICTIONS */}
-      <div className="bg-white border-b px-6 py-4 shadow-md">
+      {/* Simplified Header */}
+      <div className="bg-white border-b px-4 py-3 shadow-sm">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div>
-              <div className="flex items-center gap-3 mb-1">
-                <h1 className="text-xl font-semibold text-gray-900">
-                  {mode === 'tagging' ? 'Document Tagging' : 
-                   mode === 'signing' ? 'Live Signing Session' : 'Live Signing Session'}
-                </h1>
-                
-                {/* ✅ ROLE INDICATOR */}
-                {currentUser?.userType === 'signer' && (
-                  <Badge className="bg-blue-100 text-blue-800 border-blue-300">
-                    👤 Signer
-                  </Badge>
-                )}
-                {(currentUser?.userType === 'notary' || currentUser?.role === 'notary') && (
-                  <Badge className="bg-red-100 text-red-800 border-red-300">
-                    🔐 Notary
-                  </Badge>
-                )}
-                {currentUser?.role === 'admin' && (
-                  <Badge className="bg-purple-100 text-purple-800 border-purple-300">
-                    ⚙️ Admin
-                  </Badge>
-                )}
-              </div>
-              
-              <p className="text-sm text-gray-600">
-                Session: {sessionId.substring(0, 8)}... • {tags.length} tags placed
-                {mode === 'signing' && (
-                  <span className="ml-2 text-blue-600 font-medium">
-                    • {tags.filter(t => t.isCompleted).length} completed
-                  </span>
-                )}
-                {tags.length > 0 && mode === 'tagging' && (
-                  <span className="ml-2 text-green-600 font-medium">
-                    (Continue editing previous work)
-                  </span>
-                )}
-              </p>
-              
-              {/* ✅ SIGNER STATUS INDICATOR */}
-              {currentUser?.userType === 'signer' && mode === 'signing' && (
-                <div className="mt-2 flex items-center gap-2">
-                  {liveSessionState && liveSessionState.activeUserId === currentUserId ? (
-                    <div className="flex items-center gap-2 px-3 py-1 bg-green-50 border border-green-200 rounded-full">
-                      <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
-                      <span className="text-sm text-green-700 font-medium">Active - You can fill tags</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 px-3 py-1 bg-yellow-50 border border-yellow-200 rounded-full">
-                      <div className="h-2 w-2 bg-yellow-500 rounded-full"></div>
-                      <span className="text-sm text-yellow-700 font-medium">Waiting for notary activation</span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-semibold text-gray-900">
+              {mode === 'tagging' ? 'Document Tagging' : 'Live Signing Session'}
+            </h1>
+            <span className="text-sm text-gray-500">
+              {tags.length} tags • {tags.filter(t => t.isCompleted).length} completed
+            </span>
           </div>
           
-          {/* Action buttons and status - RESTRICTED FOR SIGNERS */}
-          <div className="flex items-center space-x-4">
-            {/* ❌ SIGNERS CANNOT SEE REPLACE ALL BUTTON */}
-            {mode === 'signing' && (currentUser?.userType === 'notary' || currentUser?.role === 'admin') && (
-              <ReplaceAllButton
-                sessionId={sessionId}
-                tags={tags}
-                participants={participants}
-                currentUserId={currentUserId}
-                isNotary={participants.find(p => p.userId === currentUserId)?.userType === 'notary'}
-                onTagsUpdated={setTags}
-              />
+          <div className="flex items-center gap-3">
+            {/* Role Badge */}
+            {currentUser?.userType === 'notary' && (
+              <Badge className="bg-red-100 text-red-800 border-red-300">
+                Notary
+              </Badge>
+            )}
+            {currentUser?.userType === 'signer' && (
+              <Badge className="bg-blue-100 text-blue-800 border-blue-300">
+                Signer
+              </Badge>
             )}
             
-            {/* ❌ SIGNERS CANNOT SEE TAGGING CONTROLS */}
-            {mode === 'tagging' && (currentUser?.userType !== 'signer') && (
-              <div className="flex items-center space-x-3">
-                {isProcessing && (
-                  <div className="flex items-center text-blue-600">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
-                    <span className="text-sm">Saving...</span>
-                  </div>
-                )}
-                
-                {/* Complete Tagging Button - MOVED TO LEFT OF PARTICIPANTS */}
-                <button
-                  onClick={async () => {
-                    if (!sessionId) return;
+            {/* Complete Button for Tagging Mode */}
+            {mode === 'tagging' && (
+              <button
+                onClick={async () => {
+                  if (!sessionId) return;
+                  
+                  try {
+                    const response = await fetch(`/api/editor/session/${sessionId}/complete`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                      },
+                      body: JSON.stringify({ force: false })
+                    });
                     
-                    try {
-                      const response = await fetch(`/api/editor/session/${sessionId}/complete`, {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          'Authorization': `Bearer ${localStorage.getItem('token')}`
-                        },
-                        body: JSON.stringify({ force: false })
-                      });
-                      
-                      const result = await response.json();
-                      
-                      if (!response.ok) {
-                        if (result.canForce) {
-                          const forceComplete = window.confirm(result.message + '\n\nDo you want to complete anyway?');
-                          if (forceComplete) {
-                            const forceResponse = await fetch(`/api/editor/session/${sessionId}/complete`, {
-                              method: 'POST',
-                              headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${localStorage.getItem('token')}`
-                              },
-                              body: JSON.stringify({ force: true })
-                            });
-                            
-                            if (forceResponse.ok) {
-                              console.log('✅ Session force completed successfully');
-                              handleSessionComplete();
-                            }
+                    const result = await response.json();
+                    
+                    if (!response.ok) {
+                      if (result.canForce) {
+                        const forceComplete = window.confirm(result.message + '\n\nDo you want to complete anyway?');
+                        if (forceComplete) {
+                          const forceResponse = await fetch(`/api/editor/session/${sessionId}/complete`, {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${localStorage.getItem('token')}`
+                            },
+                            body: JSON.stringify({ force: true })
+                          });
+                          
+                          if (forceResponse.ok) {
+                            handleSessionComplete();
                           }
-                        } else {
-                          alert(result.message || 'Failed to complete session');
                         }
                       } else {
-                        console.log('✅ Session completed successfully');
-                        handleSessionComplete();
+                        alert(result.message || 'Failed to complete session');
                       }
-                    } catch (error) {
-                      console.error('❌ Failed to complete session:', error);
-                      alert('Failed to complete session');
+                    } else {
+                      handleSessionComplete();
                     }
-                  }}
-                  className={`
-                    px-3 py-2 rounded-lg font-medium transition-colors text-sm mr-3
-                    ${tags.length === 0
-                      ? 'bg-orange-500 text-white hover:bg-orange-600'
-                      : 'bg-green-600 text-white hover:bg-green-700'
-                    }
-                  `}
-                >
-                  {tags.length === 0 ? 'Complete Without Tags' : 'Complete Tagging'}
-                </button>
-                
-                <div className="text-sm text-gray-600 bg-gray-100 px-3 py-2 rounded-lg">
-                  📊 {participants.length} participants
-                </div>
-                
-                {/* Complete Tagging Button is now in TaggingToolbar.tsx - this was just a dummy */}
-              </div>
-            )}
-            
-            {/* ✅ SIGNER HELP BUTTON */}
-            {currentUser?.userType === 'signer' && mode === 'signing' && (
-              <div className="flex items-center space-x-3">
-                <div className="text-sm text-gray-600 bg-blue-50 border border-blue-200 px-3 py-2 rounded-lg">
-                  📋 {tags.filter(t => t.assignedUserId === currentUserId).length} tags assigned to you
-                </div>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    toast({
-                      title: "Signer Help",
-                      description: "Wait for the notary to activate you, then click on blue tags assigned to you to fill them out.",
-                    });
-                  }}
-                >
-                  <HelpCircle className="h-4 w-4 mr-2" />
-                  Help
-                </Button>
-              </div>
+                  } catch (error) {
+                    console.error('❌ Failed to complete session:', error);
+                    alert('Failed to complete session');
+                  }
+                }}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+              >
+                Complete Tagging
+              </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* Main content */}
+      {/* Main content - Two column layout (no video) */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Column - Video (only in notary mode, not signing mode) */}
-        {mode === 'notary' && (
-          <div className="w-80 bg-black border-r">
-            <VideoIntegration
-              sessionId={sessionId}
-              mode={mode}
-              autoStart={true}
-              className="h-full"
-            />
-          </div>
-        )}
-
-        {/* Center Column - PDF Viewer */}
-        <div className="flex-1 relative bg-white">
+        {/* Center Column - PDF Viewer (expanded) */}
+        <div className="flex-1 relative bg-white" ref={containerRef}>
           <PDFViewer
             documentUrl={currentDocument.fileUrl}
             onCoordinateClick={handleTagPlacement}
             onTagClick={mode === 'signing' ? handleTagClick : undefined}
-            tags={tags.filter(tag => tag.documentId === currentDocument.id)}
+            tags={tags.filter(tag => tag.documentId === currentDocument.id && tag.tagType !== 'T')}
             mode={mode === 'notary' ? 'tagging' : mode as 'tagging' | 'signing'}
             selectedUser={selectedUser}
             onTagUpdate={updateTagPosition}
@@ -650,12 +691,28 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
             onTagDelete={deleteTag}
             liveSessionState={liveSessionState}
             onSetActiveUser={onSetActiveUser}
+            onPageLoad={handlePageLoad}
+          />
+          
+          {/* Streamlined Text Layer - overlays on top of PDF for immediate text editing */}
+          <StreamlinedTextLayer
+            sessionId={sessionId}
+            canvasElement={currentPageCanvas}
+            containerRef={containerRef}
+            scaleFactor={viewer.zoomLevel || 1}
+            pageNumber={viewer.currentPage || 1}
+            textInputs={textInputs}
+            selectedTextInputId={selectedTextInputId}
+            onTextInputSelect={selectTextInput}
+            onSaveContent={saveTextContent}
+            onDeleteTextInput={deleteTextInput}
+            debug={true} // Add debug mode
           />
         </div>
 
-        {/* Right Column - Controls & Tools */}
-        <div className="w-80 bg-gray-50 border-l border-gray-200">
-          <div className="h-full p-6">
+        {/* Right Column - Simplified Controls */}
+        <div className="w-80 bg-white border-l border-gray-200">
+          <div className="h-full">
             <TaggingToolbar
               participants={participants}
               sessionId={sessionId}
@@ -683,7 +740,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         />
       )}
 
-      {/* Keyboard shortcuts handler - enabled for both tagging and signing modes */}
+      {/* Keyboard shortcuts handler */}
       <HotkeyHandler
         onUserSwitch={handleUserSwitch}
         onTagTypeSelect={handleTagTypeSelect}
