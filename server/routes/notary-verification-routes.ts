@@ -426,4 +426,323 @@ router.get('/bypass-log/:jobId?', verifyToken, requireNotaryOrAdmin, async (req:
   }
 });
 
+/**
+ * GET /api/notary/job-participants/:jobId/verification-documents
+ * Get verification documents for all participants in a job (notary-specific)
+ */
+router.get('/job-participants/:jobId/verification-documents', verifyToken, requireNotaryOrAdmin, async (req: any, res: Response) => {
+  try {
+    const jobId = parseInt(req.params.jobId);
+    const notaryId = req.user.id;
+
+    if (isNaN(jobId)) {
+      return res.status(400).json({ error: 'Invalid job ID' });
+    }
+
+    // Check if this notary is assigned to this job (or if admin)
+    if (!hasAdminPrivileges(req.user)) {
+      const job = await db
+        .select()
+        .from(jobs)
+        .where(and(eq(jobs.id, jobId), eq(jobs.notaryId, notaryId)))
+        .limit(1);
+
+      if (job.length === 0) {
+        return res.status(403).json({ error: 'You are not assigned to this job' });
+      }
+    }
+
+    // Get all participants with their verification documents
+    const participants = await db.execute(sql`
+      SELECT 
+        jp.id as participant_id,
+        jp.user_id,
+        jp.role as participant_role,
+        jp.signer_name,
+        jp.signer_email,
+        jp.signer_phone_number,
+        -- User verification data
+        u.id as user_id,
+        u.username,
+        u.email,
+        u.full_name,
+        u.first_name,
+        u.last_name,
+        u.is_verified,
+        u.verification_status,
+        u.is_verification_bypassed,
+        u.notary_verification_bypassed,
+        u.verification_bypassed_at,
+        u.verification_bypass_reason,
+        u.notary_verification_bypassed_at,
+        u.notary_verification_bypass_reason,
+        u.notary_verification_bypassed_by,
+        bypass_admin.full_name as bypassed_by_admin_name,
+        notary_bypassed.full_name as bypassed_by_notary_name,
+        -- EVS verification data
+        u.evs_transaction_id,
+        u.evs_verification_confidence,
+        u.evs_verified_at,
+        u.evs_extracted_first_name,
+        u.evs_extracted_last_name,
+        u.evs_extracted_date_of_birth,
+        u.id_type,
+        u.id_number,
+        u.id_expiration_date,
+        u.evs_face_match_result,
+        u.evs_face_match_confidence,
+        u.evs_liveness_score,
+        u.verification_retry_count,
+        u.kba_verified,
+        u.kba_verification_date,
+        u.kba_score,
+        -- Verification image URLs
+        u.verification_image_front_url,
+        u.verification_image_back_url,
+        u.verification_image_selfie_url
+      FROM job_participants jp
+      LEFT JOIN users u ON jp.user_id = u.id
+      LEFT JOIN users bypass_admin ON u.verification_bypassed_by = bypass_admin.id
+      LEFT JOIN users notary_bypassed ON u.notary_verification_bypassed_by = notary_bypassed.id
+      WHERE jp.job_id = ${jobId}
+      AND jp.role IN ('signer', 'witness')
+      ORDER BY jp.role, jp.signer_name
+    `);
+
+    res.json(participants.rows);
+  } catch (error) {
+    console.error('Error fetching job participants verification documents:', error);
+    res.status(500).json({ error: 'Failed to fetch participants verification documents' });
+  }
+});
+
+/**
+ * GET /api/notary/participant/:userId/verification-documents/:jobId
+ * Get detailed verification documents for a specific participant
+ */
+router.get('/participant/:userId/verification-documents/:jobId', verifyToken, requireNotaryOrAdmin, async (req: any, res: Response) => {
+  try {
+    const userId = parseInt(req.params.userId);
+    const jobId = parseInt(req.params.jobId);
+    const notaryId = req.user.id;
+
+    if (isNaN(userId) || isNaN(jobId)) {
+      return res.status(400).json({ error: 'Invalid user ID or job ID' });
+    }
+
+    // Check if this notary is assigned to this job (or if admin)
+    if (!hasAdminPrivileges(req.user)) {
+      const job = await db
+        .select()
+        .from(jobs)
+        .where(and(eq(jobs.id, jobId), eq(jobs.notaryId, notaryId)))
+        .limit(1);
+
+      if (job.length === 0) {
+        return res.status(403).json({ error: 'You are not assigned to this job' });
+      }
+    }
+
+    // Check if user is a participant in this job
+    const participant = await db
+      .select()
+      .from(jobParticipants)
+      .where(and(
+        eq(jobParticipants.jobId, jobId),
+        eq(jobParticipants.userId, userId),
+        or(eq(jobParticipants.role, 'signer'), eq(jobParticipants.role, 'witness'))
+      ))
+      .limit(1);
+
+    if (participant.length === 0) {
+      return res.status(404).json({ error: 'Participant not found in this job' });
+    }
+
+    // Get comprehensive verification data
+    const verificationData = await db.execute(sql`
+      SELECT 
+        u.id,
+        u.username,
+        u.email,
+        u.first_name,
+        u.last_name,
+        u.full_name,
+        u.role,
+        u.phone_number,
+        u.is_verified,
+        u.verification_status,
+        u.is_verification_bypassed,
+        u.notary_verification_bypassed,
+        u.verification_bypassed_at,
+        u.verification_bypass_reason,
+        u.notary_verification_bypassed_at,
+        u.notary_verification_bypass_reason,
+        u.notary_verification_bypassed_by,
+        u.notary_verification_bypassed_job_id,
+        bypass_admin.full_name as bypassed_by_admin_name,
+        notary_bypassed.full_name as bypassed_by_notary_name,
+        u.evs_transaction_id,
+        u.evs_verification_confidence,
+        u.evs_verified_at,
+        u.evs_extracted_first_name,
+        u.evs_extracted_last_name,
+        u.evs_extracted_date_of_birth,
+        u.id_type,
+        u.id_number,
+        u.id_expiration_date,
+        u.evs_face_match_result,
+        u.evs_face_match_confidence,
+        u.evs_liveness_score,
+        u.verification_retry_count,
+        u.created_at,
+        u.last_login_at,
+        u.is_active,
+        u.kba_verified,
+        u.kba_verification_date,
+        u.kba_score,
+        u.verification_image_front_url,
+        u.verification_image_back_url,
+        u.verification_image_selfie_url,
+        u.verification_ip_address,
+        u.verification_user_agent
+      FROM users u
+      LEFT JOIN users bypass_admin ON u.verification_bypassed_by = bypass_admin.id
+      LEFT JOIN users notary_bypassed ON u.notary_verification_bypassed_by = notary_bypassed.id
+      WHERE u.id = ${userId}
+    `);
+
+    if (verificationData.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Get verification attempts history
+    const verificationAttempts = await db.execute(sql`
+      SELECT 
+        uva.id,
+        uva.attempted_at,
+        uva.status,
+        uva.confidence_score,
+        uva.processing_time_ms,
+        uva.error_message,
+        uva.verification_method,
+        uva.ip_address,
+        uva.user_agent
+      FROM user_verification_attempts uva
+      WHERE uva.user_id = ${userId}
+      ORDER BY uva.attempted_at DESC
+      LIMIT 10
+    `);
+
+    res.json({
+      user: verificationData.rows[0],
+      attempts: verificationAttempts.rows,
+      jobId: jobId,
+      participantRole: participant[0].role
+    });
+  } catch (error) {
+    console.error('Error fetching participant verification documents:', error);
+    res.status(500).json({ error: 'Failed to fetch participant verification documents' });
+  }
+});
+
+/**
+ * GET /api/notary/participant/:userId/verification-image/:imageType/:jobId
+ * Get verification image with proper authorization for notaries
+ */
+router.get('/participant/:userId/verification-image/:imageType/:jobId', verifyToken, requireNotaryOrAdmin, async (req: any, res: Response) => {
+  try {
+    const userId = parseInt(req.params.userId);
+    const imageType = req.params.imageType;
+    const jobId = parseInt(req.params.jobId);
+    const notaryId = req.user.id;
+
+    if (isNaN(userId) || isNaN(jobId)) {
+      return res.status(400).json({ error: 'Invalid user ID or job ID' });
+    }
+
+    if (!['front', 'back', 'selfie'].includes(imageType)) {
+      return res.status(400).json({ error: 'Invalid image type' });
+    }
+
+    // Check if this notary is assigned to this job (or if admin)
+    if (!hasAdminPrivileges(req.user)) {
+      const job = await db
+        .select()
+        .from(jobs)
+        .where(and(eq(jobs.id, jobId), eq(jobs.notaryId, notaryId)))
+        .limit(1);
+
+      if (job.length === 0) {
+        return res.status(403).json({ error: 'You are not assigned to this job' });
+      }
+    }
+
+    // Check if user is a participant in this job
+    const participant = await db
+      .select()
+      .from(jobParticipants)
+      .where(and(
+        eq(jobParticipants.jobId, jobId),
+        eq(jobParticipants.userId, userId),
+        or(eq(jobParticipants.role, 'signer'), eq(jobParticipants.role, 'witness'))
+      ))
+      .limit(1);
+
+    if (participant.length === 0) {
+      return res.status(404).json({ error: 'Participant not found in this job' });
+    }
+
+    // Get user's verification image URLs
+    const user = await db.execute(sql`
+      SELECT 
+        verification_image_front_url,
+        verification_image_back_url,
+        verification_image_selfie_url
+      FROM users 
+      WHERE id = ${userId}
+    `);
+
+    if (user.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const userData = user.rows[0];
+    let imageKey;
+
+    switch (imageType) {
+      case 'front':
+        imageKey = userData.verification_image_front_url;
+        break;
+      case 'back':
+        imageKey = userData.verification_image_back_url;
+        break;
+      case 'selfie':
+        imageKey = userData.verification_image_selfie_url;
+        break;
+    }
+
+    if (!imageKey) {
+      return res.status(404).json({ error: 'Image not found' });
+    }
+
+    // Generate signed URL for secure access
+    const { VultrUploadHandler } = await import('../vultr-upload-handler');
+    const signedUrl = await VultrUploadHandler.generateSignedUrl(imageKey);
+
+    if (!signedUrl) {
+      return res.status(500).json({ error: 'Failed to generate secure image URL' });
+    }
+
+    res.json({
+      imageUrl: signedUrl,
+      imageKey: imageKey,
+      expiresIn: 3600 // 1 hour
+    });
+
+  } catch (error) {
+    console.error('Error fetching verification image:', error);
+    res.status(500).json({ error: 'Failed to fetch verification image' });
+  }
+});
+
 export default router; 

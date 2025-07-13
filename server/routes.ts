@@ -11,6 +11,7 @@ import { registerTitleCompanyNotaryRoutes } from "./title-company-notary-routes"
 import { registerAdminVerificationRoutes } from "./routes/admin-verification-routes";
 import adminLogsRoutes from "./routes/admin-logs-routes";
 import notaryVerificationRoutes from "./routes/notary-verification-routes";
+import notaryJobApprovalRoutes from "./routes/notary-job-approval-routes";
 import screenRecordingRoutes from "./routes/screen-recording-api";
 import { auditLoggingService } from "./services/audit-logging-service";
 import { notificationService } from "./notification-service";
@@ -608,6 +609,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(users);
     } catch (error) {
       console.error('Get users error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+
+  // Get comprehensive notary data for admin management
+  app.get('/api/users/notaries-comprehensive', verifyToken, async (req: any, res) => {
+    try {
+      // SECURITY RESTRICTION: Only allow admin access to comprehensive notary data
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ 
+          message: 'Admin access required',
+          error: 'Access denied to comprehensive notary data'
+        });
+      }
+      
+      const comprehensiveNotaries = await db
+        .select()
+        .from(users)
+        .where(eq(users.role, 'notary'))
+        .orderBy(users.firstName, users.lastName, users.username);
+      
+      res.json(comprehensiveNotaries);
+    } catch (error) {
+      console.error('Get comprehensive notaries error:', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   });
@@ -5596,6 +5622,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   // Register admin logs routes
   app.use('/api/admin', adminLogsRoutes);
   app.use('/api/notary', notaryVerificationRoutes);
+  app.use('/api/notary', notaryJobApprovalRoutes);
   app.use('/api', screenRecordingRoutes);
   
   // ==========================================

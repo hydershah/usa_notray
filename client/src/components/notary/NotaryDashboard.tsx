@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { NotaryApprovalQueue } from './NotaryApprovalQueue';
 import { ParticipantVerificationManager } from './ParticipantVerificationManager';
+import { PendingJobsNotification } from './PendingJobsNotification';
+import { JobInvitations } from './JobInvitations';
 
 interface NotaryProfile {
   id: number;
@@ -259,6 +261,11 @@ export function NotaryDashboard() {
         )}
       </div>
 
+      {/* Pending Jobs Notification */}
+      {profile?.approvalStatus === 'approved' && profile?.isActive && (
+        <PendingJobsNotification />
+      )}
+
       {/* Quick Actions */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <Button 
@@ -275,7 +282,7 @@ export function NotaryDashboard() {
           className="h-16 flex flex-col items-center justify-center"
         >
           <ClipboardList className="h-6 w-6 mb-2" />
-          Pending List of Jobs
+          View All Jobs
         </Button>
         <Button 
           variant="outline"
@@ -296,8 +303,9 @@ export function NotaryDashboard() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-7">
+        <TabsList className="grid w-full grid-cols-8">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="invitations">Invitations</TabsTrigger>
           <TabsTrigger value="approvals">Approvals</TabsTrigger>
           <TabsTrigger value="verifications">Verifications</TabsTrigger>
           <TabsTrigger value="jobs">Jobs</TabsTrigger>
@@ -401,6 +409,11 @@ export function NotaryDashboard() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        {/* Job Invitations Tab */}
+        <TabsContent value="invitations" className="space-y-6">
+          <JobInvitations />
         </TabsContent>
 
         {/* Approvals Tab */}

@@ -52,6 +52,7 @@ import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
+import { SignerVerificationManager } from './SignerVerificationManager';
 
 interface JobDetailsModalProps {
   job: any;
@@ -884,6 +885,29 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                               <TooltipContent>Test invitation link</TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
+                        </div>
+                        
+                        {/* Verification Management */}
+                        <div className="mt-4 pt-3 border-t border-gray-200">
+                          <div className="flex items-center justify-between mb-2">
+                            <h5 className="text-sm font-medium text-gray-700">Verification Status</h5>
+                          </div>
+                          <SignerVerificationManager
+                            jobId={job.id}
+                            signer={{
+                              id: signer.id,
+                              signerName: signer.signerName,
+                              signerEmail: signer.signerEmail,
+                              signerPhoneNumber: signer.signerPhoneNumber,
+                              signerRole: signer.signerRole,
+                              userId: signer.userId
+                            }}
+                            currentUserRole={currentUser?.role || 'user'}
+                            onVerificationUpdate={() => {
+                              // Optionally refresh job data
+                              console.log('Verification updated for signer:', signer.signerName);
+                            }}
+                          />
                         </div>
                       </div>
                     ))}
