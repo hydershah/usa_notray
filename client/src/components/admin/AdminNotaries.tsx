@@ -21,7 +21,8 @@ import {
   Building,
   CheckCircle,
   XCircle,
-  Clock
+  Clock,
+  Hash
 } from 'lucide-react';
 
 interface NotaryData {
@@ -30,19 +31,70 @@ interface NotaryData {
   email: string;
   role: string;
   notaryType: string;
+  notaryIdCode?: string;
   isActive: boolean;
   approvalStatus: string;
+  
+  // Contact Information
   phoneNumber?: string;
-  state?: string;
+  address1?: string;
+  address2?: string;
   city?: string;
-  licenseNumber?: string;
-  commissionExpiry?: string;
+  state?: string;
+  zipCode?: string;
+  
+  // Commission Information
+  nameOnCommission?: string;
+  commissionNumber?: string;
+  commissionExpiration?: string;
+  commissionState?: string;
+  commissionCounty?: string;
+  commissionAddress1?: string;
+  commissionAddress2?: string;
+  commissionCity?: string;
+  commissionZipCode?: string;
+  
+  // Qualifications
+  isNotarySigningAgent?: boolean;
+  notarySigningAgentExpiration?: string;
+  isSpanishSpeaking?: boolean;
+  foreignLanguages?: string[];
+  maxConcurrentJobs?: number;
+  
+  // Insurance and Bond
+  eoInsuranceCompany?: string;
+  eoInsuranceAmount?: number;
+  eoInsuranceExpiration?: string;
+  bondCompanyName?: string;
+  bondAmount?: number;
+  bondExpiration?: string;
+  
+  // Document Files
+  hasCommissionFile?: boolean;
+  hasEOInsurance?: boolean;
+  hasBond?: boolean;
+  hasPublicCertificate?: boolean;
+  hasSigningAgentFile?: boolean;
+  
+  // ID Verification
+  idType?: string;
+  idNumber?: string;
+  idExpirationDate?: string;
+  isVerified?: boolean;
+  verificationStatus?: string;
+  
+  // Account Information
+  accountBalance?: number;
+  totalEarnings?: number;
+  totalSpent?: number;
+  
+  // Timestamps
   createdAt: string;
   lastActivity?: string;
-  hasCommissionFile: boolean;
-  hasEOInsurance: boolean;
-  hasBond: boolean;
-  hasPublicCertificate: boolean;
+  approvedAt?: string;
+  lastProfileUpdate?: string;
+  
+  // Performance
   assignedCompanies?: string[];
   completedJobs?: number;
 }
@@ -63,36 +115,44 @@ export function AdminNotaries() {
   const fetchNotariesData = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/users', {
+      // Use comprehensive profile endpoint for detailed notary information
+      const response = await fetch('/api/users/notaries-comprehensive', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
           'Content-Type': 'application/json'
         }
       });
       
-      if (!response.ok) {
-        throw new Error('Failed to fetch users');
-      }
-      
-      const users = await response.json();
-      console.log('📊 All users fetched:', users);
-      
-      // Filter only notaries and map to the expected structure
-      const notaries = Array.isArray(users) ? users
-        .filter((user: any) => user.role === 'notary')
-        .map((user: any) => ({
+      // If comprehensive endpoint doesn't exist, fall back to basic endpoint
+      if (!response.ok && response.status === 404) {
+        const basicResponse = await fetch('/api/users/notaries', {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!basicResponse.ok) {
+          throw new Error('Failed to fetch notaries');
+        }
+        
+        const basicNotaries = await basicResponse.json();
+        const mappedNotaries = Array.isArray(basicNotaries) ? basicNotaries.map((user: any) => ({
           id: user.id,
           fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username || user.email,
           email: user.email,
-          role: user.role,
+          role: 'notary',
           notaryType: user.notaryType || 'contractor',
+          notaryIdCode: user.notaryIdCode,
           isActive: user.isActive !== false,
           approvalStatus: user.approvalStatus || (user.isActive ? 'approved' : 'pending'),
           phoneNumber: user.phoneNumber,
           state: user.state,
           city: user.city,
-          licenseNumber: user.commissionNumber,
-          commissionExpiry: user.commissionExpiration,
+          commissionNumber: user.commissionNumber,
+          commissionExpiration: user.commissionExpiration,
+          isNotarySigningAgent: user.isNotarySigningAgent,
+          isSpanishSpeaking: user.isSpanishSpeaking,
           createdAt: user.createdAt,
           lastActivity: user.lastLoginAt,
           hasCommissionFile: user.hasCommissionFile || false,
@@ -102,9 +162,95 @@ export function AdminNotaries() {
           assignedCompanies: [],
           completedJobs: 0
         })) : [];
+        
+        setAllNotaries(mappedNotaries);
+        return;
+      }
       
-      console.log('👨‍⚖️ Processed notaries:', notaries);
-      setAllNotaries(notaries);
+      if (!response.ok) {
+        throw new Error('Failed to fetch comprehensive notary data');
+      }
+      
+      const comprehensiveNotaries = await response.json();
+      console.log('👨‍⚖️ Comprehensive notaries fetched:', comprehensiveNotaries);
+      
+      // Map comprehensive notary data
+      const mappedNotaries = Array.isArray(comprehensiveNotaries) ? comprehensiveNotaries.map((user: any) => ({
+        id: user.id,
+        fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username || user.email,
+        email: user.email,
+        role: 'notary',
+        notaryType: user.notaryType || 'contractor',
+        notaryIdCode: user.notaryIdCode,
+        isActive: user.isActive !== false,
+        approvalStatus: user.approvalStatus || (user.isActive ? 'approved' : 'pending'),
+        
+        // Contact Information
+        phoneNumber: user.phoneNumber,
+        address1: user.address1,
+        address2: user.address2,
+        city: user.city,
+        state: user.state,
+        zipCode: user.zipCode,
+        
+        // Commission Information
+        nameOnCommission: user.nameOnCommission,
+        commissionNumber: user.commissionNumber,
+        commissionExpiration: user.commissionExpiration,
+        commissionState: user.commissionState,
+        commissionCounty: user.commissionCounty,
+        commissionAddress1: user.commissionAddress1,
+        commissionAddress2: user.commissionAddress2,
+        commissionCity: user.commissionCity,
+        commissionZipCode: user.commissionZipCode,
+        
+        // Qualifications
+        isNotarySigningAgent: user.isNotarySigningAgent,
+        notarySigningAgentExpiration: user.notarySigningAgentExpiration,
+        isSpanishSpeaking: user.isSpanishSpeaking,
+        foreignLanguages: user.foreignLanguages,
+        maxConcurrentJobs: user.maxConcurrentJobs,
+        
+        // Insurance and Bond
+        eoInsuranceCompany: user.eoInsuranceCompany,
+        eoInsuranceAmount: user.eoInsuranceAmount,
+        eoInsuranceExpiration: user.eoInsuranceExpiration,
+        bondCompanyName: user.bondCompanyName,
+        bondAmount: user.bondAmount,
+        bondExpiration: user.bondExpiration,
+        
+        // Document Files
+        hasCommissionFile: user.hasCommissionFile || !!user.notaryCommissionFile,
+        hasEOInsurance: user.hasEOInsurance || !!user.eoInsuranceFile,
+        hasBond: user.hasBond || !!user.bondFile,
+        hasPublicCertificate: user.hasPublicCertificate || !!user.publicCertificateFile,
+        hasSigningAgentFile: user.hasSigningAgentFile || !!user.signingAgentFile,
+        
+        // ID Verification
+        idType: user.idType,
+        idNumber: user.idNumber,
+        idExpirationDate: user.idExpirationDate,
+        isVerified: user.isVerified,
+        verificationStatus: user.verificationStatus,
+        
+        // Account Information
+        accountBalance: user.accountBalance,
+        totalEarnings: user.totalEarnings,
+        totalSpent: user.totalSpent,
+        
+        // Timestamps
+        createdAt: user.createdAt,
+        lastActivity: user.lastLoginAt,
+        approvedAt: user.approvedAt,
+        lastProfileUpdate: user.lastProfileUpdate,
+        
+        // Performance
+        assignedCompanies: [],
+        completedJobs: 0
+      })) : [];
+      
+      console.log('👨‍⚖️ Processed comprehensive notaries:', mappedNotaries);
+      setAllNotaries(mappedNotaries);
     } catch (error) {
       console.error('Error fetching notaries data:', error);
     } finally {
@@ -250,6 +396,9 @@ export function AdminNotaries() {
                           <div>
                             <p className="font-medium text-gray-900">{notary.fullName}</p>
                             <p className="text-sm text-gray-600">{notary.email}</p>
+                            {notary.notaryIdCode && (
+                              <p className="text-xs text-gray-500 font-mono mt-1">ID: {notary.notaryIdCode}</p>
+                            )}
                             <div className="flex items-center gap-2 mt-1">
                               <Badge 
                                 variant="secondary" 
@@ -299,7 +448,7 @@ export function AdminNotaries() {
             <CardContent>
               {selectedNotary ? (
                 <div className="space-y-6">
-                  {/* Notary Info */}
+                  {/* Basic Information */}
                   <div className="space-y-4">
                     <div className="flex items-center gap-3">
                       <div className="p-3 bg-blue-100 rounded-lg">
@@ -311,8 +460,20 @@ export function AdminNotaries() {
                       </div>
                     </div>
 
-                    <div className="space-y-3">
+                    {/* ID Code and Status */}
+                    <div className="grid grid-cols-1 gap-3">
+                      {selectedNotary.notaryIdCode && (
+                        <div className="flex items-center gap-2">
+                          <Hash className="h-4 w-4 text-gray-400" />
+                          <span className="text-sm font-medium">ID Code:</span>
+                          <Badge variant="outline" className="font-mono text-blue-600 bg-blue-50">
+                            {selectedNotary.notaryIdCode}
+                          </Badge>
+                        </div>
+                      )}
+                      
                       <div className="flex items-center gap-2">
+                        <Shield className="h-4 w-4 text-gray-400" />
                         <span className="text-sm font-medium">Type:</span>
                         <Badge 
                           variant="secondary" 
@@ -323,6 +484,7 @@ export function AdminNotaries() {
                       </div>
                       
                       <div className="flex items-center gap-2">
+                        <User className="h-4 w-4 text-gray-400" />
                         <span className="text-sm font-medium">Status:</span>
                         <Badge 
                           variant="secondary" 
@@ -331,78 +493,245 @@ export function AdminNotaries() {
                           {getStatusText(selectedNotary)}
                         </Badge>
                       </div>
-                      
+                    </div>
+                  </div>
+
+                  {/* Contact Information */}
+                  <div className="border-t pt-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                      <Phone className="h-4 w-4" />
+                      Contact Information
+                    </h4>
+                    <div className="space-y-2 text-sm">
                       {selectedNotary.phoneNumber && (
-                        <div className="flex items-center gap-2 text-sm">
-                          <Phone className="h-4 w-4 text-gray-500" />
-                          <span className="font-medium">Phone:</span>
-                          <span className="text-gray-700">{selectedNotary.phoneNumber}</span>
+                        <div className="flex items-center gap-2">
+                          <Phone className="h-3 w-3 text-gray-400" />
+                          <span>{selectedNotary.phoneNumber}</span>
                         </div>
                       )}
-                      
-                      {selectedNotary.state && (
-                        <div className="flex items-center gap-2 text-sm">
-                          <MapPin className="h-4 w-4 text-gray-500" />
-                          <span className="font-medium">Location:</span>
-                          <span className="text-gray-700">
-                            {selectedNotary.city && `${selectedNotary.city}, `}{selectedNotary.state}
-                          </span>
-                        </div>
-                      )}
-                      
-                      {selectedNotary.licenseNumber && (
-                        <div className="flex items-center gap-2 text-sm">
-                          <FileText className="h-4 w-4 text-gray-500" />
-                          <span className="font-medium">License:</span>
-                          <span className="text-gray-700">{selectedNotary.licenseNumber}</span>
-                        </div>
-                      )}
-                      
-                      {selectedNotary.commissionExpiry && (
-                        <div className="flex items-center gap-2 text-sm">
-                          <Calendar className="h-4 w-4 text-gray-500" />
-                          <span className="font-medium">Commission Expires:</span>
-                          <span className="text-gray-700">
-                            {new Date(selectedNotary.commissionExpiry).toLocaleDateString()}
+                      {(selectedNotary.address1 || selectedNotary.city || selectedNotary.state) && (
+                        <div className="flex items-center gap-2">
+                          <MapPin className="h-3 w-3 text-gray-400" />
+                          <span>
+                            {[selectedNotary.address1, selectedNotary.city, selectedNotary.state, selectedNotary.zipCode]
+                              .filter(Boolean).join(', ')}
                           </span>
                         </div>
                       )}
                     </div>
+                  </div>
 
-                    {/* Documents Status */}
-                    <div>
-                      <h4 className="text-sm font-medium text-gray-700 mb-2">Required Documents:</h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        {[
-                          { key: 'hasCommissionFile', label: 'Commission' },
-                          { key: 'hasEOInsurance', label: 'E&O Insurance' },
-                          { key: 'hasBond', label: 'Bond' },
-                          { key: 'hasPublicCertificate', label: 'Certificate' }
-                        ].map(({ key, label }) => (
-                          <div key={key} className="flex items-center gap-2">
-                            {selectedNotary[key as keyof NotaryData] ? (
+                  {/* Commission Information */}
+                  <div className="border-t pt-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                      <Award className="h-4 w-4" />
+                      Commission Details
+                    </h4>
+                    <div className="space-y-2 text-sm">
+                      {selectedNotary.nameOnCommission && (
+                        <div><strong>Name:</strong> {selectedNotary.nameOnCommission}</div>
+                      )}
+                      {selectedNotary.commissionNumber && (
+                        <div><strong>Number:</strong> {selectedNotary.commissionNumber}</div>
+                      )}
+                      {selectedNotary.commissionExpiration && (
+                        <div><strong>Expires:</strong> {new Date(selectedNotary.commissionExpiration).toLocaleDateString()}</div>
+                      )}
+                      {selectedNotary.commissionState && (
+                        <div><strong>State:</strong> {selectedNotary.commissionState}</div>
+                      )}
+                      {selectedNotary.commissionCounty && (
+                        <div><strong>County:</strong> {selectedNotary.commissionCounty}</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Qualifications */}
+                  <div className="border-t pt-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4" />
+                      Qualifications
+                    </h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        {selectedNotary.isNotarySigningAgent ? (
+                          <CheckCircle className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-red-500" />
+                        )}
+                        <span>Notary Signing Agent (NSA)</span>
+                        {selectedNotary.notarySigningAgentExpiration && (
+                          <span className="text-xs text-gray-500">
+                            (Expires: {new Date(selectedNotary.notarySigningAgentExpiration).toLocaleDateString()})
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {selectedNotary.isSpanishSpeaking ? (
+                          <CheckCircle className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-red-500" />
+                        )}
+                        <span>Spanish Speaking</span>
+                      </div>
+                      {selectedNotary.foreignLanguages && selectedNotary.foreignLanguages.length > 0 && (
+                        <div>
+                          <strong>Languages:</strong> {selectedNotary.foreignLanguages.join(', ')}
+                        </div>
+                      )}
+                      {selectedNotary.maxConcurrentJobs && (
+                        <div>
+                          <strong>Max Concurrent Jobs:</strong> {selectedNotary.maxConcurrentJobs}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Insurance & Bond */}
+                  {(selectedNotary.eoInsuranceCompany || selectedNotary.bondCompanyName) && (
+                    <div className="border-t pt-4">
+                      <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                        <Shield className="h-4 w-4" />
+                        Insurance & Bond
+                      </h4>
+                      <div className="space-y-2 text-sm">
+                        {selectedNotary.eoInsuranceCompany && (
+                          <div>
+                            <strong>E&O Insurance:</strong> {selectedNotary.eoInsuranceCompany}
+                            {selectedNotary.eoInsuranceAmount && (
+                              <span> - ${(selectedNotary.eoInsuranceAmount / 100).toLocaleString()}</span>
+                            )}
+                            {selectedNotary.eoInsuranceExpiration && (
+                              <span className="text-xs text-gray-500 ml-1">
+                                (Expires: {new Date(selectedNotary.eoInsuranceExpiration).toLocaleDateString()})
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {selectedNotary.bondCompanyName && (
+                          <div>
+                            <strong>Bond:</strong> {selectedNotary.bondCompanyName}
+                            {selectedNotary.bondAmount && (
+                              <span> - ${(selectedNotary.bondAmount / 100).toLocaleString()}</span>
+                            )}
+                            {selectedNotary.bondExpiration && (
+                              <span className="text-xs text-gray-500 ml-1">
+                                (Expires: {new Date(selectedNotary.bondExpiration).toLocaleDateString()})
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Document Status */}
+                  <div className="border-t pt-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      Required Documents
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { key: 'hasCommissionFile', label: 'Commission' },
+                        { key: 'hasEOInsurance', label: 'E&O Insurance' },
+                        { key: 'hasBond', label: 'Bond' },
+                        { key: 'hasPublicCertificate', label: 'Certificate' },
+                        { key: 'hasSigningAgentFile', label: 'NSA Certificate' }
+                      ].map(({ key, label }) => (
+                        <div key={key} className="flex items-center gap-2">
+                          {selectedNotary[key as keyof NotaryData] ? (
+                            <CheckCircle className="h-4 w-4 text-green-500" />
+                          ) : (
+                            <XCircle className="h-4 w-4 text-red-500" />
+                          )}
+                          <span className="text-xs text-gray-600">{label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ID Verification */}
+                  {(selectedNotary.idType || selectedNotary.isVerified !== undefined) && (
+                    <div className="border-t pt-4">
+                      <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                        <Shield className="h-4 w-4" />
+                        ID Verification
+                      </h4>
+                      <div className="space-y-2 text-sm">
+                        {selectedNotary.idType && (
+                          <div><strong>ID Type:</strong> {selectedNotary.idType}</div>
+                        )}
+                        {selectedNotary.idNumber && (
+                          <div><strong>ID Number:</strong> {selectedNotary.idNumber}</div>
+                        )}
+                        {selectedNotary.idExpirationDate && (
+                          <div><strong>ID Expires:</strong> {new Date(selectedNotary.idExpirationDate).toLocaleDateString()}</div>
+                        )}
+                        {selectedNotary.isVerified !== undefined && (
+                          <div className="flex items-center gap-2">
+                            {selectedNotary.isVerified ? (
                               <CheckCircle className="h-4 w-4 text-green-500" />
                             ) : (
                               <XCircle className="h-4 w-4 text-red-500" />
                             )}
-                            <span className="text-xs text-gray-600">{label}</span>
+                            <span>Verified Status: {selectedNotary.isVerified ? 'Verified' : 'Not Verified'}</span>
                           </div>
-                        ))}
+                        )}
                       </div>
                     </div>
+                  )}
 
-                    {/* Performance Stats */}
-                    {selectedNotary.completedJobs !== undefined && (
-                      <div className="pt-4 border-t">
-                        <h4 className="text-sm font-medium text-gray-700 mb-2">Performance:</h4>
-                        <div className="text-sm text-gray-600">
-                          <p>Completed Jobs: {selectedNotary.completedJobs}</p>
-                          {selectedNotary.assignedCompanies && (
-                            <p>Assigned Companies: {selectedNotary.assignedCompanies.length}</p>
-                          )}
-                        </div>
+                  {/* Account Information */}
+                  {(selectedNotary.accountBalance !== undefined || selectedNotary.totalEarnings !== undefined) && (
+                    <div className="border-t pt-4">
+                      <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                        <Building className="h-4 w-4" />
+                        Account Information
+                      </h4>
+                      <div className="space-y-2 text-sm">
+                        {selectedNotary.accountBalance !== undefined && (
+                          <div><strong>Balance:</strong> ${(selectedNotary.accountBalance / 100).toFixed(2)}</div>
+                        )}
+                        {selectedNotary.totalEarnings !== undefined && (
+                          <div><strong>Total Earnings:</strong> ${(selectedNotary.totalEarnings / 100).toFixed(2)}</div>
+                        )}
+                        {selectedNotary.totalSpent !== undefined && (
+                          <div><strong>Total Spent:</strong> ${(selectedNotary.totalSpent / 100).toFixed(2)}</div>
+                        )}
                       </div>
-                    )}
+                    </div>
+                  )}
+
+                  {/* Timestamps */}
+                  <div className="border-t pt-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                      <Calendar className="h-4 w-4" />
+                      Activity
+                    </h4>
+                    <div className="space-y-2 text-sm text-gray-600">
+                      <div><strong>Created:</strong> {new Date(selectedNotary.createdAt).toLocaleDateString()}</div>
+                      {selectedNotary.lastActivity && (
+                        <div><strong>Last Active:</strong> {new Date(selectedNotary.lastActivity).toLocaleDateString()}</div>
+                      )}
+                      {selectedNotary.approvedAt && (
+                        <div><strong>Approved:</strong> {new Date(selectedNotary.approvedAt).toLocaleDateString()}</div>
+                      )}
+                      {selectedNotary.lastProfileUpdate && (
+                        <div><strong>Profile Updated:</strong> {new Date(selectedNotary.lastProfileUpdate).toLocaleDateString()}</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Performance Stats */}
+                  <div className="border-t pt-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Performance:</h4>
+                    <div className="text-sm text-gray-600">
+                      <p>Completed Jobs: {selectedNotary.completedJobs || 0}</p>
+                      {selectedNotary.assignedCompanies && (
+                        <p>Assigned Companies: {selectedNotary.assignedCompanies.length}</p>
+                      )}
+                    </div>
                   </div>
 
                   {/* Actions */}
