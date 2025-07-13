@@ -1231,14 +1231,19 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                       const result = await response.json();
                       console.log('✅ Live signing session started:', result);
 
+                      // **CRITICAL FIX**: Use the actual session ID returned from backend
+                      const actualSessionId = result.data?.actualSessionId || result.data?.sessionId || job.sessionId || job.id;
+                      
+                      console.log(`🔄 Navigating to live signing session: ${actualSessionId}`);
+
                       // Show success toast
                       toast({
                         title: "Live Signing Session Started",
-                        description: "Session is now active for signing",
+                        description: "Session is now active for signing with existing tags preserved",
                       });
 
-                      // Navigate to editor in signing mode
-                      setLocation(`/editor/${job.id}?mode=signing&session=${job.sessionId || job.id}`);
+                      // Navigate to editor in signing mode with the correct session ID
+                      setLocation(`/editor/${job.id}?mode=signing&session=${actualSessionId}`);
                       onClose();
 
                     } catch (error) {

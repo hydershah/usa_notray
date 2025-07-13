@@ -5,6 +5,7 @@ import { useEditorStore } from '../../hooks/editor/useEditorStore';
 import { initializePDFWorker, isPDFWorkerReady } from '../../lib/pdf-worker';
 import type { TagCoordinates, DocumentTag, SessionParticipant } from '../../types/editor';
 import { TAG_TYPE_INFO } from '../../types/editor';
+import { StreamlinedTextInput } from './StreamlinedTextInput';
 
 // Define TagPosition type
 interface TagPosition {
@@ -16,6 +17,7 @@ interface TagPosition {
 
 interface PDFViewerProps {
   documentUrl: string;
+  sessionId?: string;
   onPageLoad?: (pageNumber: number, canvas: HTMLCanvasElement, scaleFactor: number) => void;
   onCoordinateClick?: (coordinates: TagCoordinates) => void;
   onTagClick?: (tag: DocumentTag, position: TagPosition) => void;
@@ -31,6 +33,29 @@ interface PDFViewerProps {
   selectedUser?: SessionParticipant | null;
   onTagUpdate?: (tagId: string, coordinates: Partial<TagCoordinates>) => void;
   className?: string;
+  // Text input specific props
+  textInputs?: Array<{
+    id: string;
+    coordinates: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      pageNumber: number;
+    };
+    content: string;
+    fontSize: number;
+    fontFamily: string;
+    textColor: string;
+    assignedUserId: number;
+    userColor: string;
+    isNew: boolean;
+    createdAt: Date;
+  }>;
+  selectedTextInputId?: string | null;
+  onTextInputSelect?: (textInputId: string | null) => void;
+  onSaveTextContent?: (textInputId: string, content: string) => void;
+  onDeleteTextInput?: (textInputId: string) => void;
 }
 
 interface TagRendererProps {
@@ -163,7 +188,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       enableResizing={canEdit}
       disableDragging={!canEdit}
       bounds="parent"
-      onClick={(e) => {
+      onClick={(e: React.MouseEvent<HTMLDivElement>) => {
         e.stopPropagation();
         console.log('🏷️ Tag clicked in PDFViewer:', {
           tagId: tag.id,
@@ -243,11 +268,18 @@ const TagRenderer: React.FC<TagRendererProps> = ({
             // Completed tag - show actual content as plain text/image
             <div className="w-full h-full flex items-center justify-center">
               {tag.contentData && (
-                tag.contentData.type === 'signature' ? (
-                  <img 
-                    src={tag.contentData.value} 
-                    alt="Signature" 
-                    className="max-h-full max-w-full object-contain"
+                ['signature', 'initials', 'seal', 'stamp'].includes(tag.contentData.type) || 
+                  (tag.contentData.value && (
+                    tag.contentData.value.startsWith('data:image/') ||
+                    tag.contentData.value.startsWith('http') ||
+                    tag.contentData.value.includes('vultrobjects.com')
+                  )) ? (
+                                      <img 
+                      src={tag.contentData.value} 
+                      alt={tag.contentData.type === 'signature' ? 'Signature' : 
+                           tag.contentData.type === 'initials' ? 'Initials' : 
+                           tag.contentData.type === 'seal' || tag.contentData.type === 'stamp' ? 'Notary Seal' : 'Image'} 
+                      className="max-h-full max-w-full object-contain"
                     style={{ 
                       filter: 'none',
                       maxHeight: '100%',
@@ -309,6 +341,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
 
 export const PDFViewer: React.FC<PDFViewerProps> = ({
   documentUrl,
+  sessionId,
   onPageLoad,
   onCoordinateClick,
   onTagClick,
@@ -320,7 +353,12 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   tags = [],
   selectedUser,
   onTagUpdate,
-  className = ''
+  className = '',
+  textInputs,
+  selectedTextInputId,
+  onTextInputSelect,
+  onSaveTextContent,
+  onDeleteTextInput
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRefs = useRef<HTMLCanvasElement[]>([]);
@@ -331,6 +369,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const { 
     viewer, 
     selectedTag,
+    selectedTagType,
     selectTag,
     setCurrentPage, 
     setZoomLevel,
@@ -878,9 +917,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     
     // Ensure coordinates are positive and reasonable
     const tagX = Math.max(0, Math.round(pdfX - 75)); // Center tag, ensure non-negative
-    const tagY = Math.max(0, Math.round(pdfY - 20));
+    const tagY = Math.max(0, Math.round(pdfY - 13)); // Adjusted for smaller height
     const tagWidth = 150;
-    const tagHeight = 40;
+    const tagHeight = 26; // Reduced from 40 by 35%
     
     // Final validation of coordinates
     if (isNaN(tagX) || isNaN(tagY) || !isFinite(tagX) || !isFinite(tagY)) {
@@ -928,8 +967,20 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   }, [onTagUpdate]);
 
   const handleTagSave = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {
-    onTagResize?.(tagId, coordinates); // onTagResize acts as save method for now
-  }, [onTagResize]);
+    if (!onTagResize) return;
+    
+    // Find the tag to get its full coordinates
+    const tag = tags.find(t => t.id === tagId);
+    if (!tag) return;
+    
+    // Merge partial updates with existing coordinates
+    const fullCoordinates: TagCoordinates = {
+      ...tag.coordinates,
+      ...coordinates
+    };
+    
+    onTagResize(tagId, fullCoordinates);
+  }, [onTagResize, tags]);
 
   const handleTagDelete = useCallback((tagId: string) => {
     onTagDelete?.(tagId);
@@ -1061,7 +1112,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                     className={`
                       block transition-all duration-200
                       ${mode === 'tagging' && canEditTags
-                        ? 'cursor-crosshair hover:ring-2 hover:ring-blue-300 hover:ring-opacity-50' 
+                        ? selectedTagType === null 
+                          ? 'cursor-default' // Pointer mode
+                          : 'cursor-crosshair hover:ring-2 hover:ring-blue-300 hover:ring-opacity-50' // Tag placement mode
                         : mode === 'signing'
                         ? 'cursor-default'
                         : 'cursor-default'
@@ -1074,19 +1127,52 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                   />
                   
                   {/* Tags overlay */}
-                  {pageTags.map(tag => (
-                    <div key={`${tag.id}-${scaleFactor}`} className="absolute top-0 left-0 w-full h-full pointer-events-none">
-                      <TagRenderer
-                        tag={tag}
+                  {pageTags.map(tag => {
+                    // Regular tag (text tags are handled separately via textInputs)
+                    return (
+                      <div key={`${tag.id}-${scaleFactor}`} className="absolute top-0 left-0 w-full h-full pointer-events-none">
+                        <TagRenderer
+                          tag={tag}
+                          scaleFactor={scaleFactor}
+                          isSelected={selectedTag?.id === tag.id}
+                          canEdit={canEditTags}
+                          onUpdate={(coords) => handleTagUpdate(tag.id, coords)}
+                          onSave={(coords) => handleTagSave(tag.id, coords)}
+                          onDelete={() => handleTagDelete(tag.id)}
+                          onSelect={() => handleTagSelect(tag)}
+                          onTagClick={onTagClick}
+                          mode={mode}
+                        />
+                      </div>
+                    );
+                  })}
+                  
+                  {/* Text inputs overlay (separate from regular tags) */}
+                  {textInputs?.filter(textInput => textInput.coordinates.pageNumber === pageNumber).map(textInput => (
+                    <div key={`text-${textInput.id}-${scaleFactor}`} className="absolute top-0 left-0 w-full h-full pointer-events-none">
+                      <StreamlinedTextInput
+                        id={textInput.id}
+                        coordinates={textInput.coordinates}
+                        sessionId={sessionId || ''}
+                        content={textInput.content}
+                        fontSize={textInput.fontSize}
+                        fontFamily={textInput.fontFamily}
+                        textColor={textInput.textColor}
+                        assignedUserId={textInput.assignedUserId}
+                        userColor={textInput.userColor}
+                        isNew={textInput.isNew}
+                        isSelected={selectedTextInputId === textInput.id}
                         scaleFactor={scaleFactor}
-                        isSelected={selectedTag?.id === tag.id}
-                        canEdit={canEditTags}
-                        onUpdate={(coords) => handleTagUpdate(tag.id, coords)}
-                        onSave={(coords) => handleTagSave(tag.id, coords)}
-                        onDelete={() => handleTagDelete(tag.id)}
-                        onSelect={() => handleTagSelect(tag)}
-                        onTagClick={onTagClick}
-                        mode={mode}
+                        onSave={(content) => {
+                          onSaveTextContent?.(textInput.id, content);
+                        }}
+                        onDelete={() => {
+                          onDeleteTextInput?.(textInput.id);
+                        }}
+                        onSelect={() => {
+                          onTextInputSelect?.(textInput.id);
+                        }}
+                        onMove={() => {}}
                       />
                     </div>
                   ))}

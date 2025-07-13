@@ -6244,7 +6244,11 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       
       res.json({
         success: true,
-        data: result,
+        data: {
+          ...result,
+          // Return the actual session ID that should be used for navigation
+          actualSessionId: result.sessionId || sessionId
+        },
         message: 'Live signing session started successfully'
       });
       
@@ -7249,6 +7253,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       const { sessionId, tagId } = req.params;
       
       const { TagService } = await import('./services/editor/TagService');
+      const { ProfileAutoFillService } = await import('./services/ProfileAutoFillService');
       
       // Get tag details first
       const tags = await TagService.getSessionTags(sessionId);
@@ -7258,111 +7263,27 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         return res.status(404).json({ message: 'Tag not found' });
       }
       
-      // Get user profile data (assigned user for the tag)
+      // 🔒 CRITICAL: Use ProfileAutoFillService with signing session validation
       const userId = parseInt(tag.assignedUserId) || req.user.id;
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
+      const autoFillResult = await ProfileAutoFillService.getTagAutoFillData(
+        tag.tagType, 
+        userId, 
+        sessionId
+      );
       
-      if (!user) {
-        return res.status(404).json({ message: 'User profile not found' });
-      }
-      
-      // Generate content from profile based on tag type
-      let content = '';
-      let contentType = 'text';
-      let contentData = null;
-      
-      switch (tag.tagType) {
-        case 'A': // Name tag
-          content = user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim() || '[Name not set in profile]';
-          break;
-          
-        case 'S': // Signature tag
-          if (user.signatureImage) {
-            content = user.signatureImage;
-            contentType = 'signature';
-            contentData = { type: 'signature', value: user.signatureImage };
-          } else if (user.signatureData) {
-            content = user.signatureData;
-            contentType = 'signature';
-            contentData = { type: 'signature', value: user.signatureData };
-          } else if (user.signatureTyped) {
-            content = user.signatureTyped;
-            contentType = 'text';
-            contentData = { type: 'typed_signature', value: user.signatureTyped };
-          } else {
-            content = '[Please upload signature in profile]';
-          }
-          break;
-          
-        case 'I': // Initials tag
-          if (user.initialsImage) {
-            content = user.initialsImage;
-            contentType = 'signature';
-            contentData = { type: 'initials', value: user.initialsImage };
-          } else if (user.initialData) {
-            content = user.initialData;
-            contentType = 'signature';
-            contentData = { type: 'initials', value: user.initialData };
-          } else if (user.initialsTyped) {
-            content = user.initialsTyped;
-            contentType = 'text';
-            contentData = { type: 'typed_initials', value: user.initialsTyped };
-          } else if (user.firstName && user.lastName) {
-            // Auto-generate initials from name
-            content = `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase();
-            contentData = { type: 'generated_initials', value: content };
-          } else {
-            content = '[Please set initials in profile]';
-          }
-          break;
-          
-        case 'D': // Date tag
-          content = new Date().toLocaleDateString();
-          contentType = 'date';
-          contentData = { type: 'current_date', value: content };
-          break;
-          
-        case 'N': // Commission Number
-          content = user.commissionNumber || '[Commission number not set in profile]';
-          break;
-          
-        case 'X': // Commission Expiration
-          content = user.commissionExpiration || '[Expiration date not set in profile]';
-          contentType = 'date';
-          break;
-          
-        case 'O': // Disclosure
-          content = user.disclosure || '[Disclosure statement not set in profile]';
-          break;
-          
-        case 'E': // Notary Seal
-          content = '[Notary Seal Applied]';
-          contentType = 'seal';
-          contentData = { type: 'notary_seal', notaryId: userId, appliedAt: new Date().toISOString() };
-          break;
-          
-        case 'T': // Text tag
-          content = ''; // Text tags start empty
-          break;
-          
-        case 'W': // Whiteout
-          content = ''; // Whiteout tags have no content
-          contentType = 'whiteout';
-          break;
-          
-        default:
-          content = `[${tag.tagType} tag]`;
+      if (!autoFillResult.success) {
+        return res.status(400).json({ 
+          message: autoFillResult.message || 'Auto-fill failed',
+          error: 'auto_fill_failed',
+          autoFillResult
+        });
       }
       
       // Update tag with profile content and mark as completed
       const updatedTag = await TagService.updateTag(tagId, {
-        content,
-        contentType,
-        contentData: contentData ? JSON.stringify(contentData) : null,
+        content: autoFillResult.content,
+        contentType: autoFillResult.contentType,
+        contentData: autoFillResult.contentData ? JSON.stringify(autoFillResult.contentData) : null,
         isCompleted: true,
         completedBy: req.user.id,
         completedAt: new Date(),
@@ -7372,11 +7293,9 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       res.json({
         success: true,
         tag: updatedTag,
-        message: `Tag filled with ${user.firstName || 'user'}'s profile data`,
-        profile: {
-          userName: user.fullName || `${user.firstName} ${user.lastName}`,
-          userRole: user.role
-        }
+        message: autoFillResult.message || 'Tag auto-filled successfully',
+        autoFillResult,
+        source: 'profile_auto_fill'
       });
       
     } catch (error) {

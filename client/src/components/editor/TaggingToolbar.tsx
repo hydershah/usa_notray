@@ -189,17 +189,19 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
   // Handle tag type selection - FIXED: Prevent accidental deselection
   const handleTagTypeSelect = useCallback((tagType: TagType) => {
     console.log('🏷️  Tag type selected:', tagType, 'was:', selectedTagType);
+    console.log('🔍 Current state:', { selectedUser: selectedUser?.displayName, propMode, isSigner, availableTagTypes: availableTagTypes.length });
     // Always select the tag type, don't toggle off
     setSelectedTagType(tagType);
-  }, [selectedTagType, setSelectedTagType]);
+  }, [selectedTagType, setSelectedTagType, selectedUser, propMode, isSigner, availableTagTypes.length]);
 
   // Handle user selection - FIXED: Don't clear tag type when switching users
   const handleUserSelect = useCallback((user: SessionParticipant) => {
     console.log('👤 User selected:', user.displayName, 'was:', selectedUser?.displayName);
+    console.log('🔍 User selection state:', { propMode, isSigner, userType: user.userType, availableTagTypes: getAvailableTagTypes(user).length });
     setSelectedUser(user);
     // Don't clear selected tag type when switching users - let user keep their selection
     // setSelectedTagType(null); // ❌ REMOVED - was causing tag type to be cleared
-  }, [setSelectedUser, selectedUser]);
+  }, [setSelectedUser, selectedUser, propMode, isSigner, getAvailableTagTypes]);
 
   // Handle completion
   const handleComplete = useCallback(async () => {
@@ -279,62 +281,152 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 pb-0 space-y-4">
           {/* User Selection */}
-          {!isSigner && (
-            <UserSelector
-              participants={participants}
-              selectedUser={selectedUser}
-              currentUser={currentUser}
-              onUserSelect={handleUserSelect}
-            />
+          {(propMode !== 'signing' || !isSigner) && (
+            <div className="space-y-3">
+              <UserSelector
+                participants={participants}
+                selectedUser={selectedUser}
+                currentUser={currentUser}
+                onUserSelect={handleUserSelect}
+              />
+              
+              {!selectedUser && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="flex items-center gap-2 text-blue-800">
+                    <span className="text-sm">👆</span>
+                    <span className="text-sm font-medium">Select a user above to start placing tags</span>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Signer Message */}
           {isSigner && propMode === 'signing' && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h3 className="text-sm font-medium text-blue-900 mb-2">
-                👤 Signer View
-              </h3>
-              <p className="text-sm text-blue-700">
-                Click on tags assigned to you to fill them out. Wait for the notary to activate you if needed.
-              </p>
+            <div className="space-y-3">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h3 className="text-sm font-medium text-blue-900 mb-2">
+                  👤 Signer View
+                </h3>
+                <p className="text-sm text-blue-700">
+                  Click on tags assigned to you to fill them out. Wait for the notary to activate you if needed.
+                </p>
+              </div>
+              
+              {/* Pointer Mode for Signers */}
+              <button
+                onClick={() => setSelectedTagType(null)}
+                className={`
+                  w-full flex items-center gap-3 p-3 rounded-lg border transition-all duration-200
+                  ${selectedTagType === null 
+                    ? 'border-blue-500 bg-blue-50 text-blue-700' 
+                    : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                  }
+                `}
+                title="Selection mode - click to select your assigned tags"
+              >
+                <span className="text-xl">👆</span>
+                <div className="flex-1 text-left">
+                  <div className="font-medium">Selection Mode</div>
+                  <div className="text-xs text-gray-600">Click on your assigned tags to fill them</div>
+                </div>
+                {selectedTagType === null && (
+                  <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
+                    <div className="w-2 h-2 bg-white rounded-full"></div>
+                  </div>
+                )}
+              </button>
             </div>
           )}
 
           {/* Tag Type Selection - Simplified */}
-          {selectedUser && availableTagTypes.length > 0 && !isSigner && (
+          {selectedUser && availableTagTypes.length > 0 && (propMode !== 'signing' || !isSigner) && (
             <div className="space-y-3">
               <h3 className="text-sm font-medium text-gray-900">
                 Tag Types for {selectedUser.displayName}
               </h3>
               
-              <div className="grid grid-cols-2 gap-2">
-                {availableTagTypes.map(tagType => (
-                  <TagTypeButton
-                    key={tagType}
-                    tagType={tagType}
-                    isSelected={selectedTagType === tagType}
-                    isDisabled={false}
-                    onClick={() => handleTagTypeSelect(tagType)}
-                    shortcut={tagType}
-                  />
-                ))}
+              {/* Pointer/Selection Mode */}
+              <button
+                onClick={() => setSelectedTagType(null)}
+                className={`
+                  w-full flex items-center gap-3 p-3 rounded-lg border transition-all duration-200
+                  ${selectedTagType === null 
+                    ? 'border-blue-500 bg-blue-50 text-blue-700' 
+                    : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                  }
+                `}
+                title="Selection mode - click to select existing tags"
+              >
+                <span className="text-xl">👆</span>
+                <div className="flex-1 text-left">
+                  <div className="font-medium">Selection Mode</div>
+                  <div className="text-xs text-gray-600">Click to select and edit existing tags</div>
+                </div>
+                {selectedTagType === null && (
+                  <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
+                    <div className="w-2 h-2 bg-white rounded-full"></div>
+                  </div>
+                )}
+              </button>
+              
+              <div className="border-t pt-3">
+                <div className="text-xs text-gray-500 mb-2">Or select a tag type to place:</div>
+                
+                {!selectedTagType && selectedTagType !== null && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-3">
+                    <div className="flex items-center gap-2 text-yellow-800">
+                      <span className="text-sm">👆</span>
+                      <span className="text-sm font-medium">Select a tag type below, then click on the document to place it</span>
+                    </div>
+                  </div>
+                )}
+                
+                <div className="grid grid-cols-2 gap-2">
+                  {availableTagTypes.map(tagType => (
+                    <TagTypeButton
+                      key={tagType}
+                      tagType={tagType}
+                      isSelected={selectedTagType === tagType}
+                      isDisabled={false}
+                      onClick={() => handleTagTypeSelect(tagType)}
+                      shortcut={tagType}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
           )}
 
           {/* Current Selection Display */}
-          {selectedUser && selectedTagType && !isSigner && (
+          {selectedUser && (selectedTagType !== undefined) && (propMode !== 'signing' || !isSigner) && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
               <div className="flex items-center gap-2">
-                <span className="text-lg">{TAG_TYPE_INFO[selectedTagType].icon}</span>
-                <div>
-                  <div className="text-sm font-medium text-blue-900">
-                    Ready to place {TAG_TYPE_INFO[selectedTagType].label}
-                  </div>
-                  <div className="text-xs text-blue-700">
-                    For {selectedUser.displayName} • Click on document
-                  </div>
-                </div>
+                {selectedTagType === null ? (
+                  <>
+                    <span className="text-lg">👆</span>
+                    <div>
+                      <div className="text-sm font-medium text-blue-900">
+                        Selection Mode Active
+                      </div>
+                      <div className="text-xs text-blue-700">
+                        Click on existing tags to select • Click and drag to move
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-lg">{TAG_TYPE_INFO[selectedTagType].icon}</span>
+                    <div>
+                      <div className="text-sm font-medium text-blue-900">
+                        Ready to place {TAG_TYPE_INFO[selectedTagType].label}
+                      </div>
+                      <div className="text-xs text-blue-700">
+                        For {selectedUser.displayName} • Click on document to place
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}

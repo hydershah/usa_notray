@@ -262,11 +262,18 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         
         return (
           <div className="w-full h-full flex items-center justify-center">
-            {contentData.type === 'signature' ? (
-              <img 
-                src={contentData.value} 
-                alt="Signature" 
-                className="max-h-full max-w-full object-contain"
+            {['signature', 'initials', 'seal', 'stamp'].includes(contentData.type) || 
+              (contentData.value && (
+                contentData.value.startsWith('data:image/') ||
+                contentData.value.startsWith('http') ||
+                contentData.value.includes('vultrobjects.com')
+              )) ? (
+                              <img 
+                  src={contentData.value} 
+                  alt={contentData.type === 'signature' ? 'Signature' : 
+                       contentData.type === 'initials' ? 'Initials' : 
+                       contentData.type === 'seal' || contentData.type === 'stamp' ? 'Notary Seal' : 'Image'} 
+                  className="max-h-full max-w-full object-contain"
                 style={{ 
                   filter: 'none',
                   maxHeight: '100%',

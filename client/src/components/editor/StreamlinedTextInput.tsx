@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { Trash2, Move } from 'lucide-react';
 
 interface StreamlinedTextInputProps {
   id: string;
@@ -56,6 +55,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     x: coordinates.x, 
     y: coordinates.y 
   });
+  const [isDeleted, setIsDeleted] = useState(false); // Track deletion state
   
   const inputRef = useRef<HTMLInputElement>(null);
   const spanRef = useRef<HTMLSpanElement>(null);
@@ -78,13 +78,13 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (!isSelected) return;
+    if (!isSelected || isDeleted) return;
     
     // Delete key - delete immediately without confirmation
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault();
       console.log('🗑️ Delete key pressed - deleting text input immediately');
-      onDelete();
+      handleDelete();
     }
     
     // Enter key - start editing
@@ -101,27 +101,29 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       setInputValue(content);
       setIsEditing(false);
     }
-  }, [isSelected, isEditing, onDelete, content]);
+  }, [isSelected, isEditing, isDeleted, content]);
 
   // Add keyboard event listener when selected
   useEffect(() => {
-    if (isSelected) {
+    if (isSelected && !isDeleted) {
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
     }
-  }, [isSelected, handleKeyDown]);
+  }, [isSelected, handleKeyDown, isDeleted]);
 
   // Auto-focus input when starting to edit
   useEffect(() => {
-    if (isEditing && inputRef.current) {
+    if (isEditing && inputRef.current && !isDeleted) {
       setTimeout(() => {
         inputRef.current?.focus();
       }, 50);
     }
-  }, [isEditing]);
+  }, [isEditing, isDeleted]);
 
   // Save text content
   const handleSave = useCallback(async () => {
+    if (isDeleted) return; // Prevent API calls after deletion
+    
     const trimmedValue = inputValue.trim();
     
     try {
@@ -140,6 +142,11 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       });
 
       if (!response.ok) {
+        // Don't show error if it's deleted (404)
+        if (response.status === 404 && isDeleted) {
+          console.log('Text input was deleted, ignoring save attempt');
+          return;
+        }
         throw new Error('Failed to save text content');
       }
 
@@ -150,22 +157,36 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       
     } catch (error) {
       console.error('❌ Failed to save text:', error);
-      toast({
-        variant: "destructive",
-        title: "Save Failed",
-        description: "Failed to save text. Please try again."
-      });
+      if (!isDeleted) {
+        toast({
+          variant: "destructive",
+          title: "Save Failed",
+          description: "Failed to save text. Please try again."
+        });
+      }
     }
-  }, [inputValue, sessionId, id, fontSize, fontFamily, textColor, onSave, toast]);
+  }, [inputValue, sessionId, id, fontSize, fontFamily, textColor, onSave, toast, isDeleted]);
 
   // Handle deletion
   const handleDelete = useCallback(() => {
+    if (isDeleted) return; // Prevent multiple deletions
+    
     console.log('🗑️ Deleting text input:', id);
+    setIsDeleted(true); // Mark as deleted immediately
+    setIsVisible(false); // Hide immediately
+    
+    // Cancel any ongoing editing
+    setIsEditing(false);
+    setIsDragging(false);
+    
+    // Clean up any pending operations
     onDelete();
-  }, [id, onDelete]);
+  }, [id, onDelete, isDeleted]);
 
   // Handle click to select or start editing
   const handleClick = useCallback((e: React.MouseEvent) => {
+    if (isDeleted) return;
+    
     e.stopPropagation();
     if (onSelect) {
       onSelect();
@@ -175,11 +196,11 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       setIsEditing(true);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }, [isNew, onSelect]);
+  }, [isNew, onSelect, isDeleted]);
 
   // Handle drag start
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (isEditing) return;
+    if (isEditing || isDeleted) return;
     
     e.preventDefault();
     e.stopPropagation();
@@ -196,16 +217,19 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     if (onSelect) {
       onSelect();
     }
-  }, [isEditing, onSelect]);
+  }, [isEditing, onSelect, isDeleted]);
 
   // Handle drag
   useEffect(() => {
-    if (!isDragging) return;
+    if (!isDragging || isDeleted) return;
     
     const handleMouseMove = (e: MouseEvent) => {
+      if (isDeleted) return; // Stop processing if deleted
+      
       const parentRect = containerRef.current?.parentElement?.getBoundingClientRect();
       if (!parentRect) return;
       
+      // Calculate new position relative to canvas
       const newX = (e.clientX - parentRect.left - dragStart.x) / scaleFactor;
       const newY = (e.clientY - parentRect.top - dragStart.y) / scaleFactor;
       
@@ -217,6 +241,12 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     
     const handleMouseUp = async () => {
       setIsDragging(false);
+      
+      // Don't save position if deleted
+      if (isDeleted) {
+        console.log('Text input was deleted, skipping position save');
+        return;
+      }
       
       // Save new position
       if (onMove) {
@@ -238,6 +268,11 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
         });
         
         if (!response.ok) {
+          // Don't show error if it's deleted (404)
+          if (response.status === 404) {
+            console.log('Text input was deleted, position save skipped');
+            return;
+          }
           throw new Error('Failed to save position');
         }
       } catch (error) {
@@ -252,10 +287,12 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, dragStart, scaleFactor, sessionId, id, position, onMove]);
+  }, [isDragging, dragStart, scaleFactor, sessionId, id, position, onMove, isDeleted]);
 
   // Handle keyboard in input field
   const handleInputKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (isDeleted) return;
+    
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSave();
@@ -265,16 +302,18 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       setInputValue(content);
       setIsEditing(false);
     }
-  }, [handleSave, content]);
+  }, [handleSave, content, isDeleted]);
 
   // Handle input blur (save when clicking outside)
   const handleBlur = useCallback(() => {
+    if (isDeleted) return;
+    
     if (isEditing && inputValue !== content) {
       handleSave();
     } else if (isEditing) {
       setIsEditing(false);
     }
-  }, [isEditing, inputValue, content, handleSave]);
+  }, [isEditing, inputValue, content, handleSave, isDeleted]);
 
   // Calculate display properties
   const displayStyle: React.CSSProperties = {
@@ -293,7 +332,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     userSelect: isEditing ? 'text' : 'none'
   };
 
-  if (!isVisible) {
+  if (!isVisible || isDeleted) {
     return null;
   }
 
@@ -306,7 +345,8 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     isSelected,
     isDragging,
     isNew,
-    isVisible
+    isVisible,
+    isDeleted
   });
 
   return (
@@ -328,9 +368,9 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
           style={{
             width: '100%',
             height: '100%',
-            background: 'rgba(255, 255, 255, 0.95)',
+            background: 'transparent', // Remove white background
             border: 'none',
-            outline: `2px solid ${userColor}`,
+            outline: '1px solid rgba(0, 0, 0, 0.3)', // Simple gray outline instead of colored
             borderRadius: '2px',
             padding: '2px 4px',
             margin: 0,
@@ -357,91 +397,33 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
             style={{
               display: 'inline-block',
               padding: '2px 4px',
-              background: isSelected ? `${userColor}20` : 'rgba(255, 255, 255, 0.8)',
-              border: isSelected ? `2px solid ${userColor}` : `1px solid ${userColor}40`,
+              background: 'transparent', // Remove white background
+              border: 'none', // Remove border entirely
               borderRadius: '2px',
               minWidth: '20px',
-              minHeight: '20px',
-              boxShadow: isSelected ? '0 0 0 2px rgba(59, 130, 246, 0.15)' : 'none',
+              minHeight: '13px', // Reduced proportionally with tag height (20px -> 13px)
+              boxShadow: 'none', // Remove any shadow
               transition: 'all 0.15s ease',
               width: '100%'
+              // Completely clean - no selection indicators
             }}
-            title="Double-click to edit, drag to move"
+            title="Double-click to edit, Delete key to delete"
           >
             {inputValue || (
               <span style={{ 
-                color: '#999', 
-                fontStyle: 'italic' 
+                color: '#ccc', 
+                fontStyle: 'italic',
+                fontSize: '0.9em'
               }}>
                 Double-click to add text
               </span>
             )}
           </span>
           
-          {/* Control buttons when selected */}
-          {isSelected && (
-            <div
-              style={{
-                position: 'absolute',
-                top: '-30px',
-                right: '0',
-                display: 'flex',
-                gap: '4px',
-                background: 'white',
-                border: '1px solid #e5e7eb',
-                borderRadius: '4px',
-                padding: '2px',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-              }}
-            >
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsEditing(true);
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '4px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: '2px',
-                  transition: 'background 0.15s'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#f3f4f6'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-                title="Edit text"
-              >
-                ✏️
-              </button>
-              {/* Delete button - instant delete without confirmation */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDelete();
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '4px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: '2px',
-                  transition: 'background 0.15s',
-                  color: '#ef4444'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#fee2e2'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-                title="Delete text (or press Delete key)"
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          )}
+          {/* Control buttons removed for clean text appearance - use keyboard shortcuts instead:
+              - Double-click to edit
+              - Delete key to delete
+          */}
         </div>
       )}
     </div>

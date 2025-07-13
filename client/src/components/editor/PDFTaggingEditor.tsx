@@ -1,21 +1,14 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
+import { PDFViewer } from './PDFViewer';
+import { TaggingToolbar } from './TaggingToolbar';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
+import { HotkeyHandler } from './HotkeyHandler';
+import { TagInputModal } from './TagInputModal';
+import { Badge } from '../ui/badge';
+import { useToast } from '@/hooks/use-toast';
 import { useTagOperations } from '../../hooks/editor/useTagOperations';
 import { useStreamlinedTextInputs } from '../../hooks/editor/useStreamlinedTextInputs';
-import PDFViewer from './PDFViewer';
-import TaggingToolbar from './TaggingToolbar';
-import HotkeyHandler from './HotkeyHandler';
-import { TagInputModal } from './TagInputModal';
-import { StreamlinedTextLayer } from './StreamlinedTextLayer';
-import { useToast } from '@/hooks/use-toast';
-import type { 
-  SessionDocument, 
-  SessionParticipant, 
-  TagCoordinates,
-  DocumentTag,
-  TagType
-} from '../../types/editor';
-import { Badge } from '../ui/badge';
+import type { SessionDocument, SessionParticipant, DocumentTag, TagType, TagCoordinates } from '../../types/editor';
 
 interface PDFTaggingEditorProps {
   sessionId: string;
@@ -275,8 +268,127 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     loadUserProfiles();
   }, [mode, participants]);
 
+  // Handle auto-fill tag with profile data - MOVED BEFORE useEffect to fix hoisting issue
+  const handleAutoFillTag = useCallback(async (tag: DocumentTag) => {
+    try {
+      console.log('🔥 Auto-filling tag:', tag.id, 'Type:', tag.tagType);
+      
+      // 🔒 CRITICAL: Don't auto-fill temporary tags
+      if (tag.id.startsWith('temp_')) {
+        console.log('⏳ Skipping auto-fill for temporary tag, waiting for server ID:', tag.id);
+        toast({
+          title: "Processing...", 
+          description: "Tag is being saved, please try again in a moment",
+          variant: "default"
+        });
+        return;
+      }
+      
+      const response = await fetch(`/api/editor/session/${sessionId}/tag/${tag.id}/fill`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Auto-fill failed');
+      }
+
+      const result = await response.json();
+      
+      // Handle special content types
+      if (result.autoFillResult?.contentType === 'stamp_selection') {
+        // Special case: Stamp selection required
+        console.log('🔖 Stamp selection required, showing stamp dialog');
+        toast({
+          title: "Select Notary Stamp",
+          description: `${result.autoFillResult.contentData.availableStamps.length} stamps available - please select one`,
+          variant: "default"
+        });
+        
+        // TODO: Show stamp selection dialog
+        // For now, just log the available stamps
+        console.log('Available stamps:', result.autoFillResult.contentData.availableStamps);
+        return;
+      }
+      
+      // Update local state with the auto-filled tag
+      const updatedTags = tags.map(t =>
+        t.id === tag.id ? { ...t, isCompleted: true, contentData: result.autoFillResult?.contentData } : t
+      );
+      setTags(updatedTags);
+
+      // Show success message
+      toast({
+        title: "Tag Auto-Filled",
+        description: result.message || 'Tag filled with profile data',
+        variant: "default"
+      });
+
+      console.log('✅ Tag auto-filled successfully:', result);
+
+    } catch (error) {
+      console.error('❌ Auto-fill failed:', error);
+      
+      // Show error but DON'T fallback to modal - keep it seamless
+      toast({
+        title: "Auto-Fill Failed", 
+        description: error instanceof Error ? error.message : 'Could not auto-fill from profile',
+        variant: "destructive"
+      });
+      
+      // DON'T show modal - just log and let user know they need to update their profile
+      console.log('❌ Auto-fill failed, profile data missing or invalid');
+      
+      // Show helpful message for missing profile data
+      if (error instanceof Error && error.message.includes('signature')) {
+        toast({
+          title: "Missing Signature", 
+          description: "Please add your signature in your profile settings first",
+          variant: "default"
+        });
+      } else if (error instanceof Error && error.message.includes('Commission')) {
+        toast({
+          title: "Missing Commission Info", 
+          description: "Please complete your notary commission details in profile settings",
+          variant: "default"
+        });
+      }
+    }
+  }, [sessionId, tags, setTags, toast, setSelectedTagForInput, setTagModalPosition]);
+
+  // 🚀 Auto-trigger auto-fill for newly placed tags once they get real IDs
+  useEffect(() => {
+    if (mode !== 'signing') return;
+    
+    const autoFillTags = ['S', 'A', 'I', 'N', 'X', 'D', 'O'];
+    
+    // Find tags that are ready for auto-fill
+    const tagsReadyForAutoFill = tags.filter(tag => 
+      autoFillTags.includes(tag.tagType) && 
+      !tag.isCompleted && 
+      !tag.id.startsWith('temp_') && // Has real database ID
+      tag.createdAt && // Recently created
+      Date.now() - new Date(tag.createdAt).getTime() < 10000 // Within last 10 seconds
+    );
+    
+    // Auto-fill each ready tag
+    tagsReadyForAutoFill.forEach(async (tag) => {
+      try {
+        console.log('🎯 Auto-triggering auto-fill for newly placed tag:', tag.id, tag.tagType);
+        await handleAutoFillTag(tag);
+      } catch (error) {
+        console.warn('Auto-trigger auto-fill failed:', error);
+      }
+    });
+    
+  }, [tags, mode, handleAutoFillTag]);
+
   // Handle tag click in signing mode - FIXED VERSION
-  const handleTagClick = useCallback((tag: DocumentTag, position: { x: number; y: number; width: number; height: number }) => {
+  const handleTagClick = useCallback(async (tag: DocumentTag, position: { x: number; y: number; width: number; height: number }) => {
     if (mode !== 'signing') return;
     
     console.log('🏷️ Tag click in PDFTaggingEditor:', {
@@ -335,10 +447,40 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       }
     }
 
-    console.log('✅ All permission checks passed, opening tag editor');
-    setSelectedTagForInput(tag);
-    setTagModalPosition(position);
-  }, [mode, participants, currentUserId, liveSessionState, toast]);
+    console.log('✅ All permission checks passed, determining tag interaction type');
+    
+    // 🚀 NEW AUTO-FILL LOGIC: Route by tag type
+    const autoFillTags = ['S', 'A', 'I', 'N', 'X', 'D', 'O']; // Auto-fill from profile
+    const inlineEditTags = ['T']; // Inline text editing
+    const dialogTags = ['E']; // Seal dialog
+    
+    if (autoFillTags.includes(tag.tagType)) {
+      // 🔥 AUTO-FILL: Call API to fill with profile data
+      console.log('🎯 Auto-filling tag with profile data:', tag.tagType);
+      await handleAutoFillTag(tag);
+    } else if (inlineEditTags.includes(tag.tagType)) {
+      // ✏️ INLINE EDIT: Start inline text editing
+      console.log('✏️ Starting inline text editing for tag:', tag.tagType);
+      toast({
+        title: "Text Editing",
+        description: "Click directly on the text tag to edit inline",
+        variant: "default"
+      });
+    } else if (dialogTags.includes(tag.tagType)) {
+      // 🔖 SEAL DIALOG: Show special seal configuration
+      console.log('🔖 Opening seal configuration dialog for tag:', tag.tagType);
+      toast({
+        title: "Seal Configuration",
+        description: "Seal dialog not yet implemented - coming soon!",
+        variant: "default"
+      });
+    } else {
+      // 📝 FALLBACK: Show modal for unknown tag types
+      console.log('📝 Fallback to modal for unknown tag type:', tag.tagType);
+      setSelectedTagForInput(tag);
+      setTagModalPosition(position);
+    }
+  }, [mode, participants, currentUserId, liveSessionState, toast, handleAutoFillTag]);
 
   // Handle tag content save
   const handleTagContentSave = useCallback(async (content: any) => {
@@ -397,6 +539,12 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       coordinates
     });
     
+    // In pointer mode (selectedTagType is null), don't place new tags
+    if (selectedTagType === null) {
+      console.log('👆 Pointer mode active - not placing new tag');
+      return;
+    }
+    
     if (!selectedTagType || !selectedUser || !currentDocument) {
       console.log('❌ Cannot place tag: missing requirements', {
         selectedTagType: !!selectedTagType,
@@ -404,17 +552,22 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         currentDocument: !!currentDocument
       });
       
-      // Provide helpful error message to user
-      let errorMessage = 'Cannot place tag: ';
-      const missing = [];
-      if (!selectedTagType) missing.push('Please select a tag type first');
-      if (!selectedUser) missing.push('Please select a user');
-      if (!currentDocument) missing.push('No document loaded');
-      
-      if (missing.length > 0) {
-        setError(errorMessage + missing.join(', '));
-        setTimeout(() => setError(null), 3000); // Clear error after 3 seconds
+      // Show helpful toast instead of session error
+      let message = '';
+      if (!selectedTagType) {
+        message = 'Please select a tag type first';
+      } else if (!selectedUser) {
+        message = 'Please select a user first';
+      } else if (!currentDocument) {
+        message = 'No document loaded';
       }
+      
+      toast({
+        title: "Select Tag Type",
+        description: message,
+        variant: "default",
+        duration: 3000
+      });
       
       return;
     }
@@ -477,9 +630,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       }
     } catch (error) {
       console.error('❌ Failed to place tag:', error);
-      setError('Failed to place tag. Please try again.');
       
-      // Show more detailed error message
+      // Show error toast instead of session error
       toast({
         variant: "destructive",
         title: "Tag Placement Failed",
@@ -681,6 +833,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         <div className="flex-1 relative bg-white" ref={containerRef}>
           <PDFViewer
             documentUrl={currentDocument.fileUrl}
+            sessionId={sessionId}
             onCoordinateClick={handleTagPlacement}
             onTagClick={mode === 'signing' ? handleTagClick : undefined}
             tags={tags.filter(tag => tag.documentId === currentDocument.id && tag.tagType !== 'T')}
@@ -692,21 +845,11 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
             liveSessionState={liveSessionState}
             onSetActiveUser={onSetActiveUser}
             onPageLoad={handlePageLoad}
-          />
-          
-          {/* Streamlined Text Layer - overlays on top of PDF for immediate text editing */}
-          <StreamlinedTextLayer
-            sessionId={sessionId}
-            canvasElement={currentPageCanvas}
-            containerRef={containerRef}
-            scaleFactor={viewer.zoomLevel || 1}
-            pageNumber={viewer.currentPage || 1}
             textInputs={textInputs}
             selectedTextInputId={selectedTextInputId}
             onTextInputSelect={selectTextInput}
-            onSaveContent={saveTextContent}
+            onSaveTextContent={saveTextContent}
             onDeleteTextInput={deleteTextInput}
-            debug={true} // Add debug mode
           />
         </div>
 

@@ -136,7 +136,7 @@ export const useTagOperations = (sessionId: string) => {
       } finally {
         setIsProcessing(false);
       }
-    }, 500) // Reduced from 2000ms to 500ms for more responsive saves
+    }, 100) // Optimized to 100ms for fast, responsive auto-fill experience
   ).current;
 
   // Single tag place API call with better error handling

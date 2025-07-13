@@ -843,7 +843,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getJobDocumentsByJobId(jobId: number): Promise<JobDocument[]> {
-    return await db.select().from(jobDocuments).where(eq(jobDocuments.jobId, jobId));
+    // Order documents to prioritize original documents first, then by creation date
+    return await db
+      .select()
+      .from(jobDocuments)
+      .where(eq(jobDocuments.jobId, jobId))
+      .orderBy(
+        // Original documents first (document_type = 'original')
+        sql`CASE WHEN ${jobDocuments.documentType} = 'original' THEN 0 ELSE 1 END`,
+        // Then by creation date (oldest first)
+        asc(jobDocuments.createdAt)
+      );
   }
 
   async getJobDocumentsByType(jobId: number, documentType: string): Promise<JobDocument[]> {

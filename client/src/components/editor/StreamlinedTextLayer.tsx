@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { StreamlinedTextInput } from './StreamlinedTextInput';
 
 interface StreamlinedTextLayerProps {
@@ -102,40 +102,17 @@ export const StreamlinedTextLayer: React.FC<StreamlinedTextLayerProps> = ({
     return null;
   }
 
-  // Calculate layer position and size with fallback values
-  let layerStyle: React.CSSProperties;
-  
-  try {
-    const { top, left } = canvasElement.getBoundingClientRect();
-    const containerScrollTop = containerRef.current?.scrollTop || 0;
-    const containerScrollLeft = containerRef.current?.scrollLeft || 0;
-    
-    layerStyle = {
-      position: 'absolute',
-      top: `${top + containerScrollTop}px`,
-      left: `${left + containerScrollLeft}px`,
-      width: `${canvasElement.width}px`,
-      height: `${canvasElement.height}px`,
-      pointerEvents: 'none', // Allow clicks to pass through to canvas below
-      zIndex: 500
-    };
-
-    console.log('📐 StreamlinedTextLayer positioning:', {
-      canvasRect: { top, left, width: canvasElement.width, height: canvasElement.height },
-      containerScroll: { top: containerScrollTop, left: containerScrollLeft },
-      finalPosition: { top: layerStyle.top, left: layerStyle.left }
-    });
-  } catch (error) {
-    console.error('❌ Error calculating layer position:', error);
-    // Fallback: Use relative positioning
-    layerStyle = {
-      position: 'relative',
-      width: '100%',
-      height: '100%',
-      pointerEvents: 'none', // Allow clicks to pass through to canvas below
-      zIndex: 500
-    };
-  }
+  // FIXED: Use a simpler approach - cover the entire container
+  // Let the individual StreamlinedTextInput components handle their own positioning
+  const layerStyle: React.CSSProperties = {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    pointerEvents: 'none', // Allow clicks to pass through except on text inputs
+    zIndex: 500
+  };
 
   return (
     <div
@@ -149,6 +126,7 @@ export const StreamlinedTextLayer: React.FC<StreamlinedTextLayerProps> = ({
           key={textInput.id}
           id={textInput.id}
           coordinates={textInput.coordinates}
+          canvasElement={canvasElement} // Pass canvas element for position calculation
           sessionId={sessionId}
           content={textInput.content}
           fontSize={textInput.fontSize}

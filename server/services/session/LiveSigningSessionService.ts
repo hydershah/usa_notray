@@ -1,6 +1,6 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { db } from '../../db';
-import { editorSessions, sessionParticipantsStatus, liveSessionEvents, users } from '../../../shared/schema';
+import { editorSessions, sessionParticipantsStatus, liveSessionEvents, users, documentTags } from '../../../shared/schema';
 import { redisCache } from '../redis-cache';
 import { withDatabaseProtection } from '../../middleware/circuit-breaker';
 
@@ -41,6 +41,7 @@ export interface SessionTransitionResult {
   newState: SigningSessionState;
   message: string;
   timestamp: Date;
+  sessionId?: string; // Added for clarity in the new_code
 }
 
 export class LiveSigningSessionService {
@@ -57,27 +58,66 @@ export class LiveSigningSessionService {
       
       // Use circuit breaker protection for database operations
       const result = await withDatabaseProtection(async () => {
-        // First, try to find existing editor session by sessionId
-        let [session] = await db
+        let session = null;
+        
+        // Strategy 1: Try to find existing editor session by sessionId
+        [session] = await db
           .select()
           .from(editorSessions)
           .where(eq(editorSessions.sessionId, sessionId))
           .limit(1);
         
-        // If no session found by sessionId, try to find by jobId (in case sessionId is actually jobId)
+        // Strategy 2: If no session found by sessionId, look for existing sessions by jobId
         if (!session) {
           const jobIdNum = parseInt(sessionId);
           if (!isNaN(jobIdNum)) {
-            console.log(`🔍 No session found with sessionId ${sessionId}, checking if it's a jobId...`);
-            [session] = await db
+            console.log(`🔍 No session found with sessionId ${sessionId}, looking for existing sessions for job ${jobIdNum}...`);
+            
+            // Look for completed tagging session with tags (priority #1)
+            const [taggedSession] = await db
               .select()
               .from(editorSessions)
-              .where(eq(editorSessions.jobId, jobIdNum))
+              .where(and(
+                eq(editorSessions.jobId, jobIdNum),
+                eq(editorSessions.sessionType, 'tagging'),
+                eq(editorSessions.status, 'completed')
+              ))
+              .orderBy(desc(editorSessions.updatedAt))
               .limit(1);
+            
+            if (taggedSession) {
+              // Check if this session has tags
+              const tagCount = await db
+                .select({ count: sql<number>`count(*)` })
+                .from(documentTags)
+                .where(eq(documentTags.sessionId, taggedSession.id));
+              
+              if (tagCount[0]?.count > 0) {
+                console.log(`✅ Found tagged session with ${tagCount[0].count} tags: ${taggedSession.sessionId}`);
+                session = taggedSession;
+              }
+            }
+            
+            // If no tagged session with tags, look for any active session for this job
+            if (!session) {
+              [session] = await db
+                .select()
+                .from(editorSessions)
+                .where(and(
+                  eq(editorSessions.jobId, jobIdNum),
+                  eq(editorSessions.status, 'active')
+                ))
+                .orderBy(desc(editorSessions.updatedAt))
+                .limit(1);
+              
+              if (session) {
+                console.log(`✅ Found active session for job ${jobIdNum}: ${session.sessionId}`);
+              }
+            }
           }
         }
         
-        // If still no session, create a new one for this job
+        // Strategy 3: If still no session, create a new one for this job
         if (!session) {
           const jobIdNum = parseInt(sessionId);
           if (isNaN(jobIdNum)) {
@@ -120,40 +160,49 @@ export class LiveSigningSessionService {
           throw new Error('Only the assigned notary or admin can start the session');
         }
         
-        // Update session to live signing mode
+        // **CRITICAL FIX**: Transition existing session to live signing mode (preserve tags!)
         await db
           .update(editorSessions)
           .set({
+            sessionType: 'notary', // Change to notary session type
             signingState: SigningSessionState.ACTIVE,
             isLiveSession: true,
             startedAt: new Date(),
             activeUserId: notaryUserId,
+            status: 'active', // Reactivate if completed
             updatedAt: new Date()
           })
           .where(eq(editorSessions.id, session.id));
+        
+        console.log(`🔄 Transitioned session ${session.sessionId} to live signing mode (tags preserved)`);
         
         // Log the transition
         await this.logSessionEvent(session.id, notaryUserId, 'session_started', {
           previousState: session.signingState,
           newState: SigningSessionState.ACTIVE,
-          startedBy: notaryUserId
+          startedBy: notaryUserId,
+          transitionedFrom: session.sessionType
         });
         
         return {
           success: true,
           newState: SigningSessionState.ACTIVE,
           message: 'Live signing session started successfully',
-          timestamp: new Date()
+          timestamp: new Date(),
+          sessionId: session.sessionId // Return the actual session ID being used
         };
       }, 'start_live_signing_session');
 
+      // Important: Use the actual session ID from the result
+      const actualSessionId = result.sessionId || sessionId;
+      
       // Activate the notary as the initial active user
-      await this.setActiveUser(sessionId, notaryUserId);
+      await this.setActiveUser(actualSessionId, notaryUserId);
       
       // Clear cache after state change
-      await this.clearSessionCache(sessionId);
+      await this.clearSessionCache(actualSessionId);
       
-      console.log(`✅ Live signing session started: ${sessionId}`);
+      console.log(`✅ Live signing session started: ${actualSessionId}`);
       
       return result;
       

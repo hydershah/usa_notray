@@ -135,31 +135,47 @@ const EditorPage: React.FC<EditorPageProps> = () => {
             if (existingSessionsResponse.ok) {
               const existingSessions = await existingSessionsResponse.json();
               
-              // Look for active live signing session first
-              const liveSession = existingSessions.sessions?.find((s: any) => 
-                s.sessionType === 'notary' && s.status === 'active' && s.isLiveSession
-              );
-              
-              if (liveSession) {
-                console.log('✅ Found existing live session:', liveSession.id);
-                sessionResult = {
-                  success: true,
-                  session: liveSession,
-                  message: 'Using existing live session'
-                };
-              } else {
-                // Look for completed tagging session to use as base
-                const taggedSession = existingSessions.sessions?.find((s: any) => 
-                  s.sessionType === 'tagging' && s.status === 'completed'
-                );
-                
-                if (taggedSession) {
-                  console.log('✅ Found existing tagged session:', taggedSession.id);
+              // For signing mode, prioritize session from URL parameter first
+              if (mode === 'signing' && sessionId) {
+                const specificSession = existingSessions.sessions?.find((s: any) => s.id === sessionId);
+                if (specificSession) {
+                  console.log('✅ Found specific session from URL parameter:', specificSession.id);
                   sessionResult = {
                     success: true,
-                    session: taggedSession,
-                    message: 'Using existing tagged session for signing'
+                    session: specificSession,
+                    message: 'Using specific session from URL parameter'
                   };
+                }
+              }
+              
+              // If no specific session found, use the existing logic
+              if (!sessionResult) {
+                // Look for active live signing session first
+                const liveSession = existingSessions.sessions?.find((s: any) => 
+                  s.sessionType === 'notary' && s.status === 'active' && s.isLiveSession
+                );
+                
+                if (liveSession) {
+                  console.log('✅ Found existing live session:', liveSession.id);
+                  sessionResult = {
+                    success: true,
+                    session: liveSession,
+                    message: 'Using existing live session'
+                  };
+                } else {
+                  // Look for completed tagging session to use as base
+                  const taggedSession = existingSessions.sessions?.find((s: any) => 
+                    s.sessionType === 'tagging' && s.status === 'completed'
+                  );
+                  
+                  if (taggedSession) {
+                    console.log('✅ Found existing tagged session:', taggedSession.id);
+                    sessionResult = {
+                      success: true,
+                      session: taggedSession,
+                      message: 'Using existing tagged session for signing'
+                    };
+                  }
                 }
               }
             }

@@ -1,7 +1,8 @@
 import { db } from "../../db";
 import { editorSessions, jobs, users, jobDocuments } from "../../../shared/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, asc } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { sql } from "drizzle-orm";
 
 
 export interface CreateSessionRequest {
@@ -174,10 +175,22 @@ export class SessionService {
    */
   static async getSessionDocuments(jobId: number): Promise<SessionDocument[]> {
     try {
+      // Order documents to prioritize original documents first, then by creation date
       const documents = await db
         .select()
         .from(jobDocuments)
-        .where(eq(jobDocuments.jobId, jobId));
+        .where(eq(jobDocuments.jobId, jobId))
+        .orderBy(
+          // Original documents first (document_type = 'original')
+          sql`CASE WHEN ${jobDocuments.documentType} = 'original' THEN 0 ELSE 1 END`,
+          // Then by creation date (oldest first - original docs uploaded first)
+          asc(jobDocuments.createdAt)
+        );
+      
+      console.log(`📄 Retrieved ${documents.length} documents for job ${jobId}:`);
+      documents.forEach((doc, index) => {
+        console.log(`  ${index + 1}. ${doc.fileName} (${doc.documentType}) - ${doc.createdAt}`);
+      });
       
       return documents.map(doc => ({
         id: doc.id.toString(),

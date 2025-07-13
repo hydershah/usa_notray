@@ -56,7 +56,7 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
           x: centerX / viewer.zoomLevel,
           y: centerY / viewer.zoomLevel,
           width: 150,
-          height: 40,
+          height: 26, // Reduced from 40 by 35%
           pageNumber: viewer.currentPage
         },
         assignedUserId: selectedUser.userId
@@ -152,6 +152,14 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
       }
     }
 
+    // Escape key - switch to pointer mode
+    if (key === 'Escape') {
+      event.preventDefault();
+      setSelectedTagType(null);
+      console.log('👆 Switched to pointer mode');
+      return;
+    }
+
     // Navigation and Editing Shortcuts
     switch (key) {
       case 'Delete':
@@ -160,12 +168,6 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
           event.preventDefault();
           deleteTag(selectedTag.id);
         }
-        break;
-
-      case 'Escape':
-        event.preventDefault();
-        selectTag(null);
-        setSelectedTagType(null);
         break;
 
       case 'ArrowUp':
@@ -326,7 +328,7 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
           <div className="flex items-center gap-2">
             {isCollapsed && selectedUser && (
               <span className="text-yellow-300 mr-2">
-                {selectedUser.displayName} {selectedTagType && `| ${selectedTagType}`}
+                {selectedUser.displayName} {selectedTagType === null ? '| Pointer' : selectedTagType && `| ${selectedTagType}`}
               </span>
             )}
             {isCollapsed ? (
@@ -343,14 +345,15 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
             <div className="space-y-1">
               <div>• ` → Notary, 1-8 → Signers</div>
               <div>• A,S,I,N,X,O,E,W,T,D → Tag types</div>
-              <div>• Del → Delete tag, Esc → Deselect</div>
+              <div>• Esc → Pointer mode / Deselect</div>
+              <div>• Del → Delete tag</div>
               <div>• Arrows → Move tag, PgUp/PgDn → Pages</div>
               <div>• Ctrl+Z/Y → Undo/Redo</div>
             </div>
             {selectedUser && (
               <div className="mt-2 pt-2 border-t border-gray-600 text-yellow-300">
                 Selected: {selectedUser?.displayName || 'None'} ({selectedUser?.userType || 'None'})
-                {selectedTagType && <span> | Tag: {selectedTagType}</span>}
+                {selectedTagType === null ? <span> | Mode: Pointer</span> : selectedTagType && <span> | Tag: {selectedTagType}</span>}
               </div>
             )}
           </div>

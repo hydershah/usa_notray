@@ -199,6 +199,13 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
   // Delete text input
   const deleteTextInput = useCallback(async (textInputId: string) => {
     try {
+      // Check if already being deleted or doesn't exist
+      const existingInput = textInputs.find(input => input.id === textInputId);
+      if (!existingInput) {
+        console.log(`Text input ${textInputId} already deleted or doesn't exist`);
+        return;
+      }
+
       // Remove from local state immediately
       setTextInputs(prev => prev.filter(input => input.id !== textInputId));
       
@@ -222,6 +229,11 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       });
 
       if (!response.ok) {
+        // If it's already deleted (404), that's ok
+        if (response.status === 404) {
+          console.log(`Text input ${textInputId} was already deleted on server`);
+          return;
+        }
         throw new Error('Failed to delete text input');
       }
 
@@ -229,13 +241,17 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
 
     } catch (error) {
       console.error('❌ Failed to delete text input:', error);
-      toast({
-        variant: "destructive",
-        title: "Delete Failed",
-        description: "Failed to delete text input. Please try again."
-      });
+      
+      // Only show toast if it's not a 404 (already deleted)
+      if (error instanceof Error && !error.message.includes('404')) {
+        toast({
+          variant: "destructive",
+          title: "Delete Failed",
+          description: "Failed to delete text input. Please try again."
+        });
+      }
     }
-  }, [sessionId, selectedTextInputId, toast]);
+  }, [sessionId, selectedTextInputId, textInputs, toast]);
 
   // Load existing text inputs from tags (for when switching to/from text mode)
   const loadTextInputsFromTags = useCallback((tags: any[]) => {

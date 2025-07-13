@@ -65,45 +65,34 @@ export class TagService {
         throw new Error('Invalid coordinates: width, height, and pageNumber must be positive');
       }
 
-      // Get session to verify it exists and check status
-      const [session] = await db
-        .select()
-        .from(editorSessions)
-        .where(eq(editorSessions.sessionId, request.sessionId))
-        .limit(1);
+      // 🚀 OPTIMIZED: Get session and user in parallel to reduce latency
+      const [sessionPromise, userPromise] = await Promise.all([
+        db.select().from(editorSessions).where(eq(editorSessions.sessionId, request.sessionId)).limit(1),
+        db.select().from(users).where(eq(users.id, parseInt(request.assignedUserId))).limit(1)
+      ]);
+      
+      const [session] = sessionPromise;
+      const [assignedUser] = userPromise;
       
       if (!session) {
         throw new Error('Session not found');
       }
       
+      if (!assignedUser) {
+        console.error('❌ Assigned user not found:', request.assignedUserId);
+        throw new Error('Assigned user not found');
+      }
+      
       // If session is completed, reactivate it since user is making changes
       // Only reactivate for tagging sessions, not for notary sessions
       if (session.status === 'completed' && session.sessionType === 'tagging') {
-        await db
-          .update(editorSessions)
-          .set({ 
-            status: 'in_progress',
-            updatedAt: new Date()
-          })
-          .where(eq(editorSessions.sessionId, request.sessionId));
+        // 🚀 OPTIMIZED: Don't await this update, let it run in background
+        db.update(editorSessions)
+          .set({ status: 'in_progress', updatedAt: new Date() })
+          .where(eq(editorSessions.sessionId, request.sessionId))
+          .catch(err => console.warn('Failed to reactivate session:', err));
         
-        console.log(`🔄 Reactivated completed tagging session: ${request.sessionId} (user making new changes)`);
-      }
-      
-      // Get assigned user info for display
-      console.log('🔍 Looking for assigned user with ID:', request.assignedUserId, 'parsed as:', parseInt(request.assignedUserId));
-      
-      const [assignedUser] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, parseInt(request.assignedUserId)))
-        .limit(1);
-      
-      if (!assignedUser) {
-        console.error('❌ Assigned user not found in database. Available users:');
-        const allUsers = await db.select({ id: users.id, username: users.username, firstName: users.firstName }).from(users).limit(10);
-        console.error('Available users:', allUsers);
-        throw new Error('Assigned user not found');
+        console.log(`🔄 Reactivating completed tagging session: ${request.sessionId} (background)`);
       }
       
       // Generate display label and color
@@ -135,8 +124,9 @@ export class TagService {
       
       console.log(`✅ Tag placed: ${request.tagType} for ${assignedUser.firstName} ${assignedUser.lastName} at page ${request.coordinates.pageNumber}`);
       
-      // Invalidate cache for this session and document
-      await this.invalidateTagCache(request.sessionId, request.documentId);
+      // 🚀 OPTIMIZED: Run cache invalidation in background to avoid blocking the response
+      this.invalidateTagCache(request.sessionId, request.documentId)
+        .catch(err => console.warn('Cache invalidation failed:', err));
       
       return this.convertToDocumentTagData(createdTag, displayLabel, colorCode);
       
