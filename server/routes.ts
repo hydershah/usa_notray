@@ -6088,7 +6088,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   // Password reset and setup routes
   
   // Initiate password reset (forgot password)
-  app.post('/api/auth/forgot-password', passwordResetLimiter, async (req, res) => {
+  app.post('/api/auth/forgot-password', async (req, res) => {
     try {
       const { email } = req.body;
       
@@ -6160,7 +6160,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     }
   });
 
-  app.post('/api/auth/validate-password-reset-token', passwordResetLimiter, async (req, res) => {
+  app.post('/api/auth/validate-password-reset-token', async (req, res) => {
     try {
       const { token } = req.body;
       
@@ -6291,6 +6291,60 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       });
     } catch (error) {
       console.error('Password setup error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Password reset route (for existing users who forgot their password)
+  app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+      const { token, password } = req.body;
+      
+      if (!token || !password) {
+        return res.status(400).json({ message: 'Token and password are required' });
+      }
+
+      // Find the password reset token
+      const [resetToken] = await db.select()
+        .from(passwordResetTokens)
+        .where(eq(passwordResetTokens.token, token));
+
+      if (!resetToken) {
+        return res.status(404).json({ message: 'Invalid token' });
+      }
+
+      // Check if token is expired
+      if (new Date() > resetToken.expiresAt) {
+        return res.status(400).json({ message: 'Token has expired' });
+      }
+
+      // Check if token is already used
+      if (resetToken.used) {
+        return res.status(400).json({ message: 'Token has already been used' });
+      }
+
+      // Hash the new password
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // Update user password (don't change accountSetupComplete for existing users)
+      await db.update(users)
+        .set({ 
+          password: hashedPassword,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, resetToken.userId));
+
+      // Mark token as used
+      await db.update(passwordResetTokens)
+        .set({ used: true })
+        .where(eq(passwordResetTokens.id, resetToken.id));
+
+      res.json({ 
+        message: 'Password reset successfully',
+        success: true
+      });
+    } catch (error) {
+      console.error('Password reset error:', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   });
@@ -8667,7 +8721,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     try {
       const userId = req.user.id;
       
-      // For now, return empty array until notary log entries are populated
+      // For now, return empty array until notary log entries table has data
       const logs: any[] = [];
       
       // TODO: Uncomment when notary_log_entries table has data
