@@ -98,6 +98,7 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
+
   // Create HTTP server for Socket.IO
   const httpServer = createServer(app);
   

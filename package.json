@@ -5,11 +5,11 @@
   "license": "MIT",
   "scripts": {
     "dev": "concurrently \"npm:dev:server\" \"npm:dev:client\" -k --names \"SERVER,CLIENT\"",
-    "dev:simple": "NODE_ENV=development npx nodemon",
+    "dev:simple": "cross-env NODE_ENV=development npx nodemon",
     "dev:all": "kill-port 3000 3002 && concurrently \"npm:dev:server\" \"npm:dev:client\" -k --names \"SERVER,CLIENT\"",
     "dev:sequential": "kill-port 3000 3002 && npm run dev:server & sleep 3 && npm run dev:client",
     "dev:reliable": "kill-port 3000 3002 && concurrently \"npm:dev:server\" \"npm:dev:client-wait\" -k --names \"SERVER,CLIENT\"",
-    "dev:server": "NODE_ENV=development npx nodemon",
+    "dev:server": "cross-env NODE_ENV=development npx nodemon",
     "dev:client": "npx vite",
     "dev:client-wait": "wait-on http://localhost:3000 && npm run dev:client",
     "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && mkdir -p dist/public && cp -r client/dist/* dist/public/",

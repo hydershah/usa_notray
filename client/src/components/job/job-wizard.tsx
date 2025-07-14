@@ -224,6 +224,7 @@ function JobWizardInternal() {
       if (!response.ok) {
         throw new Error('Failed to fetch existing signers');
       }
+      console.log("response",response)
       return response.json();
     }
   });
@@ -442,6 +443,7 @@ function JobWizardInternal() {
           'Content-Type': 'application/json'
         }
       });
+      console.log("response",response)
 
       if (response.ok) {
         const notary = await response.json();

@@ -1,5 +1,5 @@
 import { Express } from 'express';
-import { verifyToken, hasNotaryPrivileges } from './auth';
+import { verifyToken, hasNotaryPrivileges, hasAdminPrivileges } from './auth';
 import { cacheUserData } from './middleware/cache-middleware';
 import { redisCache } from './services/redis-cache';
 import multer from 'multer';
@@ -9,6 +9,8 @@ import jwt from 'jsonwebtoken';
 import { storage } from './storage';
 import { cloudStorage, handleCloudFileUpload } from './lib/cloud-storage-service';
 import { optimizedStorage } from './lib/optimized-storage-strategy';
+import { db } from './db';
+import { sql } from 'drizzle-orm';
 
 // Updated multer configuration for Vultr cloud storage
 const upload = multer({
@@ -204,6 +206,90 @@ export function registerNotaryProfileRoutes(app: Express) {
       res.status(500).json({ message: 'Failed to migrate documents' });
     }
   });
+
+   app.get('/api/notary/:id/stamps', verifyToken, async (req: any, res) => {
+      try {
+        const notaryId = parseInt(req.params.id);
+        
+        // Check if user can access these stamps
+        if (!req.user || (!hasAdminPrivileges(req.user) && req.user.id !== notaryId && req.user.role !== 'notary')) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+  
+        // Get actual stamps from database using correct column names
+        let stamps;
+        try {
+          stamps = await db.execute(sql`
+            SELECT 
+              id,
+              notary_id as "notaryId",
+              stamp_name as "stampType",
+              stamp_image as "stampData", 
+              is_active as "isActive",
+              created_at as "createdAt",
+              updated_at as "updatedAt"
+            FROM notary_stamps 
+            WHERE notary_id = ${notaryId}
+            ORDER BY created_at DESC
+          `);
+        } catch (dbError) {
+          console.error('Database query failed for notary stamps:', dbError);
+          return res.status(500).json({ 
+            message: 'Failed to retrieve stamps from database',
+            error: 'database_query_failed'
+          });
+        }
+  
+        // Transform stamps to include proper image URLs
+        const { cloudStorage } = await import('./lib/cloud-storage-service');
+        
+        const stampsWithUrls = await Promise.all((stamps.rows || []).map(async (stamp: any) => {
+          let imageUrl = '';
+          
+          if (stamp?.stampData && typeof stamp.stampData === 'string') {
+            // Check if it's a Vultr key (no base64 prefix) or base64 data
+            if (stamp.stampData.startsWith('data:image/')) {
+              // Already base64 data, use directly
+              imageUrl = stamp.stampData;
+            } else {
+              // Vultr key, generate signed URL
+              try {
+                const fileExists = await cloudStorage.fileExists(stamp.stampData);
+                if (fileExists) {
+                  const signedUrl = await cloudStorage.getSignedUrl(stamp.stampData, 3600); // 1 hour expiry
+                  imageUrl = signedUrl || '/api/placeholder/stamp-error';
+                } else {
+                  console.warn(`Stamp image not found in Vultr: ${stamp.stampData}`);
+                  imageUrl = '/api/placeholder/stamp-missing';
+                }
+              } catch (vultrError) {
+                console.warn(`Failed to get Vultr URL for stamp ${stamp.id}:`, vultrError);
+                imageUrl = '/api/placeholder/stamp-error';
+              }
+            }
+          } else {
+            imageUrl = '/api/placeholder/stamp-missing';
+          }
+  
+          return {
+            id: stamp?.id || 0,
+            notaryId: stamp?.notaryId || notaryId,
+            stampType: stamp?.stampType || 'notary',
+            imageUrl,
+            isActive: stamp?.isActive || false,
+            uploadedAt: stamp?.createdAt ? new Date(stamp.createdAt).toISOString() : new Date().toISOString(),
+            createdAt: stamp?.createdAt ? new Date(stamp.createdAt).toISOString() : new Date().toISOString()
+          };
+        }));
+        
+        res.json(stampsWithUrls);
+      } catch (error) {
+        console.error('Get notary stamps error:', error);
+        
+        // Provide a fallback response with empty array if stamps loading fails
+        res.status(200).json([]);
+      }
+    });
 
   /**
    * GET /api/notary/profile/documents/:notaryId

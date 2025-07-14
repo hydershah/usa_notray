@@ -3,6 +3,8 @@ import { insertCompanySchema, insertUserSchema } from '../shared/schema.js';
 import { storage } from './storage';
 import bcrypt from 'bcrypt';
 import { verifyToken, hasAdminPrivileges } from './auth.js';
+import { cacheAdminData } from './middleware/cache-middleware.js';
+import { redisCache } from './services/redis-cache';
 
 export function registerCompanyRoutes(app: Express) {
   
@@ -151,6 +153,103 @@ export function registerCompanyRoutes(app: Express) {
       res.status(500).json({ message: 'Internal server error during company registration' });
     }
   });
+
+  app.get('/api/companies', verifyToken, cacheAdminData(300), async (req, res) => {
+      try {
+        const companies = await storage.getCompanies();
+        res.json(companies);
+      } catch (error) {
+        console.error('Get companies error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+      }
+    });
+  
+  app.post('/api/companies', verifyToken, async (req: any, res) => {
+        try {
+          if (!req.user || !hasAdminPrivileges(req.user)) {
+            return res.status(403).json({ message: 'Access denied' });
+          }
+    
+          const companyData = insertCompanySchema.parse(req.body);
+          const company = await storage.createCompany(companyData);
+          
+          // Invalidate companies cache to ensure fresh data on next request
+          try {
+            await redisCache.delPattern(`admin:*`); // Clear admin caches
+            await redisCache.delPattern(`api:*companies*`); // Clear companies API cache
+            console.log(`🧹 Invalidated company caches after creating company ${company.id}`);
+          } catch (cacheError) {
+            console.error('Failed to invalidate cache after company creation:', cacheError);
+            // Don't fail the request if cache invalidation fails
+          }
+          
+          res.status(201).json(company);
+        } catch (error) {
+          console.error('Create company error:', error);
+          res.status(500).json({ message: 'Internal server error' });
+        }
+      });
+
+  app.put('/api/companies/:id', verifyToken, async (req: any, res) => {
+      try {
+        if (!req.user || !hasAdminPrivileges(req.user)) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+  
+        const companyId = parseInt(req.params.id);
+        const updateData = req.body;
+  
+        const company = await storage.updateCompany(companyId, updateData);
+        if (!company) {
+          return res.status(404).json({ message: 'Company not found' });
+        }
+  
+        // Invalidate companies cache to ensure fresh data on next request
+        try {
+          await redisCache.delPattern(`admin:*`); // Clear admin caches
+          await redisCache.delPattern(`api:*companies*`); // Clear companies API cache
+          console.log(`🧹 Invalidated company caches after updating company ${companyId}`);
+        } catch (cacheError) {
+          console.error('Failed to invalidate cache after company update:', cacheError);
+          // Don't fail the request if cache invalidation fails
+        }
+  
+        res.json(company);
+      } catch (error) {
+        console.error('Update company error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+      }
+    });
+   app.delete('/api/companies/:id', verifyToken, async (req: any, res) => {
+      try {
+        if (!req.user || !hasAdminPrivileges(req.user)) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+  
+        const companyId = parseInt(req.params.id);
+        const deleted = await storage.deleteCompany(companyId);
+        
+        if (!deleted) {
+          return res.status(404).json({ message: 'Company not found' });
+        }
+  
+        // Invalidate companies cache to ensure fresh data on next request
+        try {
+          await redisCache.delPattern(`admin:*`); // Clear admin caches
+          await redisCache.delPattern(`api:*companies*`); // Clear companies API cache
+          console.log(`🧹 Invalidated company caches after deleting company ${companyId}`);
+        } catch (cacheError) {
+          console.error('Failed to invalidate cache after company deletion:', cacheError);
+          // Don't fail the request if cache invalidation fails
+        }
+  
+        res.json({ message: 'Company deleted successfully' });
+      } catch (error) {
+        console.error('Delete company error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+      }
+    })
+
 
   // ============================================================================
   // QUICK UPDATE ROUTES (for partial updates)

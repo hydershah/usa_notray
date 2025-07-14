@@ -1,10 +1,11 @@
 import Redis from 'ioredis';
 import { performance } from 'perf_hooks';
-
+import dotenv from 'dotenv'
+dotenv.config()
 export class RedisCache {
   private redis: Redis;
   private isConnected: boolean = false;
-  private connectionAttempts: number = 0;
+  private connectionAttempts: number = 0
   private maxRetries: number = 3;
   private disabled: boolean = false; // New flag to completely disable Redis
 
