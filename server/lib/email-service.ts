@@ -432,7 +432,7 @@ class EmailService {
           <a href="${invitationLink}" 
              style="background-color: #2563eb; color: white; padding: 12px 24px; 
                     text-decoration: none; border-radius: 6px; font-weight: 600; 
-                    display: inline-block;">
+                    display: inline-block; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
             Set Up Account & Verify Identity
           </a>
         </div>
@@ -486,7 +486,16 @@ class EmailService {
         </div>
         
         <div style="text-align: center; margin: 30px 0;">
-            <a href="${invitationLink}" class="button">
+            <a href="${invitationLink}" 
+               style="display: inline-block; 
+                      background: #1e40af; 
+                      color: white; 
+                      padding: 12px 24px; 
+                      text-decoration: none; 
+                      border-radius: 6px; 
+                      font-weight: 600;
+                      margin: 20px 0;
+                      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
                 🚀 Complete Registration
             </a>
         </div>
@@ -543,7 +552,16 @@ class EmailService {
         </div>
         
         <div style="text-align: center; margin: 30px 0;">
-            <a href="${accountSetupLink}" class="button">
+            <a href="${accountSetupLink}" 
+               style="display: inline-block; 
+                      background: #1e40af; 
+                      color: white; 
+                      padding: 12px 24px; 
+                      text-decoration: none; 
+                      border-radius: 6px; 
+                      font-weight: 600;
+                      margin: 20px 0;
+                      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
                 🔐 Complete Account Setup
             </a>
         </div>
@@ -606,7 +624,16 @@ class EmailService {
         <p>We received a request to reset your password for Sharp Note platform.</p>
         
         <div style="text-align: center; margin: 30px 0;">
-            <a href="${resetLink}" class="button">
+            <a href="${resetLink}" 
+               style="display: inline-block; 
+                      background: #1e40af; 
+                      color: white; 
+                      padding: 12px 24px; 
+                      text-decoration: none; 
+                      border-radius: 6px; 
+                      font-weight: 600;
+                      margin: 20px 0;
+                      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
                 🔑 Reset Password
             </a>
         </div>
