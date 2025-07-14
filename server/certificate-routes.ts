@@ -105,6 +105,160 @@ router.post('/generate-self', verifyToken, async (req: any, res: Response) => {
 });
 
 /**
+ * Generate certificate for a verified signer/witness user
+ * POST /api/certificates/generate-signer/:userId
+ */
+router.post('/generate-signer/:userId', verifyToken, async (req: any, res: Response) => {
+  try {
+    const requestedUserId = parseInt(req.params.userId);
+    const currentUserId = req.user.id;
+    const currentUserRole = req.user.role;
+    
+    if (isNaN(requestedUserId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid user ID'
+      });
+    }
+
+    // Authorization: Users can generate their own certificates, admins can generate for anyone
+    if (requestedUserId !== currentUserId && currentUserRole !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. You can only generate certificates for yourself.'
+      });
+    }
+
+    const result = await certificateService.generateSignerCertificate(requestedUserId);
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        message: 'Certificate generated successfully',
+        certificateId: result.certificateId,
+        downloadUrl: `/api/certificates/download/${requestedUserId}`,
+        password: result.p12Password
+      });
+    } else {
+      res.status(400).json(result);
+    }
+
+  } catch (error) {
+    console.error('Error generating signer certificate:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate certificate'
+    });
+  }
+});
+
+/**
+ * Generate certificate for current verified signer/witness (self-service)
+ * POST /api/certificates/generate-signer-self
+ */
+router.post('/generate-signer-self', verifyToken, async (req: any, res: Response) => {
+  try {
+    // Only verified signers and witnesses can generate their own certificates
+    if (!['signer', 'witness'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Only signers and witnesses can generate certificates.'
+      });
+    }
+
+    const userId = req.user.id;
+    
+    // Check if user is verified (import storage directly)
+    const { storage } = await import('./storage');
+    const user = await storage.getUserById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    if (!user.isVerified && !user.isVerificationBypassed && !user.notaryVerificationBypassed) {
+      return res.status(403).json({
+        success: false,
+        error: 'Certificate generation is only available for verified users. Please complete ID verification first.'
+      });
+    }
+
+    const result = await certificateService.generateSignerCertificate(userId);
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        message: 'Certificate generated successfully',
+        certificateId: result.certificateId,
+        downloadUrl: `/api/certificates/download/${userId}`,
+        password: result.p12Password,
+        userRole: user.role
+      });
+    } else {
+      res.status(400).json(result);
+    }
+
+  } catch (error) {
+    console.error('Error generating signer certificate:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate certificate'
+    });
+  }
+});
+
+/**
+ * Universal certificate generation - supports all user types
+ * POST /api/certificates/generate-universal/:userId
+ */
+router.post('/generate-universal/:userId', verifyToken, async (req: any, res: Response) => {
+  try {
+    // Only admins can use universal generation for other users
+    const requestedUserId = parseInt(req.params.userId);
+    const currentUserId = req.user.id;
+    const currentUserRole = req.user.role;
+    
+    if (isNaN(requestedUserId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid user ID'
+      });
+    }
+
+    // Authorization: Users can generate their own certificates, admins can generate for anyone
+    if (requestedUserId !== currentUserId && currentUserRole !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. You can only generate certificates for yourself.'
+      });
+    }
+
+    const result = await certificateService.generateUserCertificate(requestedUserId);
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        message: 'Certificate generated successfully',
+        certificateId: result.certificateId,
+        downloadUrl: `/api/certificates/download/${requestedUserId}`,
+        password: result.p12Password
+      });
+    } else {
+      res.status(400).json(result);
+    }
+
+  } catch (error) {
+    console.error('Error generating universal certificate:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate certificate'
+    });
+  }
+});
+
+/**
  * Validate user certificate
  * GET /api/certificates/validate/:userId
  */

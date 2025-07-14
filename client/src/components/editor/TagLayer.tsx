@@ -257,27 +257,65 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       // In live signing mode, show interactive input or completed content
       if (tag.isCompleted && tag.contentData) {
         // Show completed content as plain text/image without any styling
-        const contentData = typeof tag.contentData === 'string' ? 
-          JSON.parse(tag.contentData) : tag.contentData;
+        let contentData;
+        try {
+          contentData = typeof tag.contentData === 'string' ? 
+            JSON.parse(tag.contentData) : tag.contentData;
+        } catch (e) {
+          console.error('Failed to parse contentData in TagLayer:', e);
+          contentData = tag.contentData;
+        }
         
+        // Enhanced image detection logic
+        const isImageContent = () => {
+          // Check if tag type is inherently image-based
+          if (['S', 'I', 'E'].includes(tag.tagType)) {
+            return true; // Signature, Initials, Seal are always images
+          }
+          
+          // Check contentData type
+          if (contentData?.type && ['signature', 'initials', 'seal', 'stamp'].includes(contentData.type)) {
+            return true;
+          }
+          
+          // Check if value looks like an image URL/data
+          if (contentData?.value && typeof contentData.value === 'string') {
+            return (
+              contentData.value.startsWith('data:image/') ||
+              contentData.value.startsWith('http') ||
+              contentData.value.includes('vultrobjects.com') ||
+              contentData.value.includes('.png') ||
+              contentData.value.includes('.jpg') ||
+              contentData.value.includes('.jpeg') ||
+              contentData.value.includes('.webp')
+            );
+          }
+          
+          return false;
+        };
+
         return (
           <div className="w-full h-full flex items-center justify-center">
-            {['signature', 'initials', 'seal', 'stamp'].includes(contentData.type) || 
-              (contentData.value && (
-                contentData.value.startsWith('data:image/') ||
-                contentData.value.startsWith('http') ||
-                contentData.value.includes('vultrobjects.com')
-              )) ? (
-                              <img 
-                  src={contentData.value} 
-                  alt={contentData.type === 'signature' ? 'Signature' : 
-                       contentData.type === 'initials' ? 'Initials' : 
-                       contentData.type === 'seal' || contentData.type === 'stamp' ? 'Notary Seal' : 'Image'} 
-                  className="max-h-full max-w-full object-contain"
+            {isImageContent() ? (
+              <img 
+                src={contentData.value} 
+                alt={contentData.type === 'signature' ? 'Signature' : 
+                     contentData.type === 'initials' ? 'Initials' : 
+                     contentData.type === 'seal' || contentData.type === 'stamp' ? 'Notary Seal' : 'Image'} 
+                className="max-h-full max-w-full object-contain"
                 style={{ 
                   filter: 'none',
                   maxHeight: '100%',
                   maxWidth: '100%'
+                }}
+                onError={(e) => {
+                  console.error('🖼️ Image failed to load in TagLayer:', contentData.value);
+                  // Fallback to text if image fails to load
+                  e.currentTarget.style.display = 'none';
+                  const parent = e.currentTarget.parentElement;
+                  if (parent) {
+                    parent.innerHTML = `<div class="text-red-500 text-xs p-1">Image failed to load</div>`;
+                  }
                 }}
               />
             ) : (
@@ -359,7 +397,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                   ? 'Wait for activation'
                   : isSigner && tagState === 'forbidden'
                   ? 'Not your tag'
-                  : `Click to ${['S', 'I'].includes(tag.tagType) ? 'apply' : 'enter'}`
+                  : `Click to ${['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter'}`
                 }
               </span>
               <span className={`text-xs ${textColor}`}>{tagInfo.label}</span>

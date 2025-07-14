@@ -268,6 +268,57 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     loadUserProfiles();
   }, [mode, participants]);
 
+  // Handle instant tag completion (whiteout) - Complete immediately without user interaction
+  const handleInstantTagCompletion = useCallback(async (tag: DocumentTag) => {
+    try {
+      console.log('⚡ Instantly completing tag:', tag.id, 'Type:', tag.tagType);
+      
+      // 🔒 CRITICAL: Don't complete temporary tags
+      if (tag.id.startsWith('temp_')) {
+        console.log('⏳ Skipping instant completion for temporary tag, waiting for server ID:', tag.id);
+        return;
+      }
+      
+      // Whiteout tags don't need content - they just work as white rectangles
+      const response = await fetch(`/api/editor/session/${sessionId}/tag/${tag.id}/content`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          content: 'WHITEOUT',
+          contentType: 'whiteout',
+          completedBy: parseInt(currentUserId),
+          completedAt: new Date().toISOString()
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Instant completion failed');
+      }
+
+      const result = await response.json();
+      
+      // Update local state with the completed tag
+      const updatedTags = tags.map(t =>
+        t.id === tag.id ? { ...t, isCompleted: true, content: 'WHITEOUT', contentType: 'whiteout' } : t
+      );
+      setTags(updatedTags);
+
+      console.log('✅ Tag instantly completed:', tag.id);
+      
+    } catch (error) {
+      console.error('❌ Failed to instantly complete tag:', error);
+      toast({
+        title: "Whiteout Failed",
+        description: error instanceof Error ? error.message : 'Failed to apply whiteout',
+        variant: "destructive"
+      });
+    }
+  }, [sessionId, toast, tags, setTags, currentUserId]);
+
   // Handle auto-fill tag with profile data - MOVED BEFORE useEffect to fix hoisting issue
   const handleAutoFillTag = useCallback(async (tag: DocumentTag) => {
     try {
@@ -299,22 +350,6 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
 
       const result = await response.json();
       
-      // Handle special content types
-      if (result.autoFillResult?.contentType === 'stamp_selection') {
-        // Special case: Stamp selection required
-        console.log('🔖 Stamp selection required, showing stamp dialog');
-        toast({
-          title: "Select Notary Stamp",
-          description: `${result.autoFillResult.contentData.availableStamps.length} stamps available - please select one`,
-          variant: "default"
-        });
-        
-        // TODO: Show stamp selection dialog
-        // For now, just log the available stamps
-        console.log('Available stamps:', result.autoFillResult.contentData.availableStamps);
-        return;
-      }
-      
       // Update local state with the auto-filled tag
       const updatedTags = tags.map(t =>
         t.id === tag.id ? { ...t, isCompleted: true, contentData: result.autoFillResult?.contentData } : t
@@ -328,47 +363,37 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         variant: "default"
       });
 
-      console.log('✅ Tag auto-filled successfully:', result);
-
-    } catch (error) {
-      console.error('❌ Auto-fill failed:', error);
+      console.log('✅ Tag auto-filled successfully:', result.autoFillResult);
       
-      // Show error but DON'T fallback to modal - keep it seamless
+    } catch (error) {
+      console.error('❌ Failed to auto-fill tag:', error);
       toast({
-        title: "Auto-Fill Failed", 
-        description: error instanceof Error ? error.message : 'Could not auto-fill from profile',
+        title: "Auto-Fill Failed",
+        description: error instanceof Error ? error.message : 'Failed to auto-fill tag',
         variant: "destructive"
       });
-      
-      // DON'T show modal - just log and let user know they need to update their profile
-      console.log('❌ Auto-fill failed, profile data missing or invalid');
-      
-      // Show helpful message for missing profile data
-      if (error instanceof Error && error.message.includes('signature')) {
-        toast({
-          title: "Missing Signature", 
-          description: "Please add your signature in your profile settings first",
-          variant: "default"
-        });
-      } else if (error instanceof Error && error.message.includes('Commission')) {
-        toast({
-          title: "Missing Commission Info", 
-          description: "Please complete your notary commission details in profile settings",
-          variant: "default"
-        });
-      }
     }
-  }, [sessionId, tags, setTags, toast, setSelectedTagForInput, setTagModalPosition]);
+  }, [sessionId, toast, tags, setTags]);
 
   // 🚀 Auto-trigger auto-fill for newly placed tags once they get real IDs
   useEffect(() => {
     if (mode !== 'signing') return;
     
-    const autoFillTags = ['S', 'A', 'I', 'N', 'X', 'D', 'O'];
+    const autoFillTags = ['S', 'A', 'I', 'N', 'X', 'D', 'O', 'E']; // Auto-fill tags
+    const instantTags = ['W']; // Instant completion tags
     
     // Find tags that are ready for auto-fill
     const tagsReadyForAutoFill = tags.filter(tag => 
       autoFillTags.includes(tag.tagType) && 
+      !tag.isCompleted && 
+      !tag.id.startsWith('temp_') && // Has real database ID
+      tag.createdAt && // Recently created
+      Date.now() - new Date(tag.createdAt).getTime() < 10000 // Within last 10 seconds
+    );
+    
+    // Find tags that are ready for instant completion
+    const tagsReadyForInstant = tags.filter(tag => 
+      instantTags.includes(tag.tagType) && 
       !tag.isCompleted && 
       !tag.id.startsWith('temp_') && // Has real database ID
       tag.createdAt && // Recently created
@@ -385,7 +410,16 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       }
     });
     
-  }, [tags, mode, handleAutoFillTag]);
+    // Instantly complete whiteout tags
+    tagsReadyForInstant.forEach(async (tag) => {
+      try {
+        console.log('⚡ Auto-triggering instant completion for newly placed tag:', tag.id, tag.tagType);
+        await handleInstantTagCompletion(tag);
+      } catch (error) {
+        console.warn('Auto-trigger instant completion failed:', error);
+      }
+    });
+  }, [tags, mode, handleAutoFillTag, handleInstantTagCompletion]);
 
   // Handle tag click in signing mode - FIXED VERSION
   const handleTagClick = useCallback(async (tag: DocumentTag, position: { x: number; y: number; width: number; height: number }) => {
@@ -450,11 +484,15 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     console.log('✅ All permission checks passed, determining tag interaction type');
     
     // 🚀 NEW AUTO-FILL LOGIC: Route by tag type
-    const autoFillTags = ['S', 'A', 'I', 'N', 'X', 'D', 'O']; // Auto-fill from profile
+    const autoFillTags = ['S', 'A', 'I', 'N', 'X', 'D', 'O', 'E']; // Auto-fill from profile (including signatures and stamps)
     const inlineEditTags = ['T']; // Inline text editing
-    const dialogTags = ['E']; // Seal dialog
+    const instantTags = ['W']; // Tags that work instantly without user interaction (whiteout)
     
-    if (autoFillTags.includes(tag.tagType)) {
+    if (instantTags.includes(tag.tagType)) {
+      // ⚡ INSTANT: Complete whiteout tags immediately without user interaction
+      console.log('⚡ Instant completion for tag:', tag.tagType);
+      await handleInstantTagCompletion(tag);
+    } else if (autoFillTags.includes(tag.tagType)) {
       // 🔥 AUTO-FILL: Call API to fill with profile data
       console.log('🎯 Auto-filling tag with profile data:', tag.tagType);
       await handleAutoFillTag(tag);
@@ -464,14 +502,6 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       toast({
         title: "Text Editing",
         description: "Click directly on the text tag to edit inline",
-        variant: "default"
-      });
-    } else if (dialogTags.includes(tag.tagType)) {
-      // 🔖 SEAL DIALOG: Show special seal configuration
-      console.log('🔖 Opening seal configuration dialog for tag:', tag.tagType);
-      toast({
-        title: "Seal Configuration",
-        description: "Seal dialog not yet implemented - coming soon!",
         variant: "default"
       });
     } else {

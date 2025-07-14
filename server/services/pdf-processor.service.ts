@@ -148,7 +148,15 @@ export class PDFProcessorService {
       // Handle special tag types
       switch (tag.tagType) {
         case 'E': // Notary seal
-          await this.drawNotarySeal(page, tag.x, pdfY, tag.width, tag.height, tag.content);
+          // Enhanced seal image detection
+          const sealImageContent = await this.extractImageContent(contentData, content);
+          if (sealImageContent) {
+            // Draw actual seal image
+            await this.drawSignatureImage(page, tag.x, pdfY, tag.width, tag.height, sealImageContent);
+          } else {
+            // Draw placeholder seal
+            await this.drawNotarySeal(page, tag.x, pdfY, tag.width, tag.height, content);
+          }
           break;
           
         case 'W': // Whiteout
@@ -157,9 +165,11 @@ export class PDFProcessorService {
           
         case 'S': // Signature
         case 'I': // Initials
-          if (contentData?.type === 'signature' || (content && content.startsWith('data:image'))) {
+          // Enhanced image detection logic
+          const imageContent = await this.extractImageContent(contentData, content);
+          if (imageContent) {
             // Draw actual signature image
-            await this.drawSignatureImage(page, tag.x, pdfY, tag.width, tag.height, content);
+            await this.drawSignatureImage(page, tag.x, pdfY, tag.width, tag.height, imageContent);
           } else {
             // Draw text signature/initials
             this.drawTextField(page, tag.x, pdfY, tag.width, tag.height, content, currentFont, fontSize, textColor);
@@ -193,24 +203,15 @@ export class PDFProcessorService {
     fontSize: number,
     color: any
   ): void {
-    // Draw background rectangle
-    page.drawRectangle({
-      x: x,
-      y: y,
-      width: width,
-      height: height,
-      color: rgb(1, 1, 1), // White background
-      borderColor: rgb(0.8, 0.8, 0.8),
-      borderWidth: 1,
-    });
+    // No background rectangle - transparent background for clean appearance
     
-    // Draw text
+    // Draw text with black color for consistency
     page.drawText(text, {
       x: x + 4,
       y: y + (height / 2) - (fontSize / 2),
       size: fontSize,
       font: font,
-      color: color,
+      color: rgb(0, 0, 0), // Force black text color
     });
   }
 
@@ -240,7 +241,7 @@ export class PDFProcessorService {
       y: y + 5,
       size: fontSize,
       font: font,
-      color: rgb(0.5, 0.5, 0.5),
+      color: rgb(0, 0, 0), // Changed from gray to black for consistency
     });
   }
 
@@ -264,6 +265,143 @@ export class PDFProcessorService {
   }
 
   /**
+   * Extract image content from contentData or content field
+   */
+  private async extractImageContent(contentData: any, content: string): Promise<string | null> {
+    try {
+      // Check if contentData has image content (new structured format)
+      if (contentData?.value && typeof contentData.value === 'string') {
+        const value = contentData.value;
+        
+        // Check if it's already base64 data
+        if (value.startsWith('data:image/')) {
+          return value;
+        }
+        
+        // Check if it's a Vultr URL or regular URL
+        if (value.startsWith('http') || value.includes('vultrobjects.com')) {
+          console.log('🌐 Downloading image from URL for PDF (structured):', value.substring(0, 100));
+          return await this.downloadImageFromUrl(value);
+        }
+        
+        // Check if it's just base64 without the data: prefix
+        if (this.isBase64String(value)) {
+          // Try to determine format and add proper prefix
+          return `data:image/png;base64,${value}`;
+        }
+      }
+      
+      // FALLBACK: Handle legacy format where contentData might be a direct URL string
+      if (typeof contentData === 'string' && contentData.length > 0) {
+        // Check if contentData itself is a URL (legacy format)
+        if (contentData.startsWith('http') || contentData.includes('vultrobjects.com')) {
+          console.log('🌐 Downloading image from URL for PDF (legacy contentData):', contentData.substring(0, 100));
+          return await this.downloadImageFromUrl(contentData);
+        }
+        
+        // Check if it's base64 data
+        if (contentData.startsWith('data:image/')) {
+          return contentData;
+        }
+        
+        if (this.isBase64String(contentData)) {
+          return `data:image/png;base64,${contentData}`;
+        }
+      }
+      
+      // Check content field as fallback
+      if (content && typeof content === 'string') {
+        if (content.startsWith('data:image/')) {
+          return content;
+        }
+        
+        if (content.startsWith('http') || content.includes('vultrobjects.com')) {
+          console.log('🌐 Downloading image from URL for PDF (fallback):', content.substring(0, 100));
+          return await this.downloadImageFromUrl(content);
+        }
+        
+        if (this.isBase64String(content)) {
+          return `data:image/png;base64,${content}`;
+        }
+      }
+      
+      // Check if contentData type indicates it should be an image
+      if (contentData?.type && ['signature', 'initials', 'seal', 'stamp'].includes(contentData.type)) {
+        console.log('⚠️ Content type indicates image but no valid image data found:', {
+          type: contentData.type,
+          hasValue: !!contentData.value,
+          valueType: typeof contentData.value,
+          valuePreview: typeof contentData.value === 'string' ? contentData.value.substring(0, 50) : contentData.value
+        });
+      }
+      
+      return null;
+      
+    } catch (error) {
+      console.error('❌ Failed to extract image content:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Download image from URL and convert to base64
+   */
+  private async downloadImageFromUrl(url: string): Promise<string | null> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'USA-Notary-PDF-Processor/1.0'
+        }
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
+      }
+      
+      const contentType = response.headers.get('content-type') || 'image/png';
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const base64 = buffer.toString('base64');
+      
+      console.log(`✅ Downloaded image from URL: ${buffer.length} bytes, type: ${contentType}`);
+      return `data:${contentType};base64,${base64}`;
+      
+    } catch (error) {
+      console.error('❌ Failed to download image from URL:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if string is valid base64
+   */
+  private isBase64String(str: string): boolean {
+    try {
+      // Basic base64 validation
+      if (!str || str.length === 0) return false;
+      
+      // Check if it's a reasonable length and format
+      if (str.length < 100 || str.length > 1000000) return false; // Too short or too long
+      
+      // Check for base64 characters
+      const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+      if (!base64Regex.test(str)) return false;
+      
+      // Try to decode
+      Buffer.from(str, 'base64');
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
    * Draw signature image on PDF
    */
   private async drawSignatureImage(
@@ -275,29 +413,55 @@ export class PDFProcessorService {
     imageData: string
   ): Promise<void> {
     try {
+      console.log('🖼️ Drawing signature image:', {
+        x, y, width, height,
+        dataType: imageData.startsWith('data:') ? 'data URL' : 'raw base64',
+        dataLength: imageData.length,
+        preview: imageData.substring(0, 100)
+      });
+      
       // Extract base64 data if it's a data URL
       let base64Data = imageData;
       if (imageData.includes('base64,')) {
         base64Data = imageData.split('base64,')[1];
       }
       
-      const imageBytes = Buffer.from(base64Data, 'base64');
+      // Validate base64 data
+      if (!base64Data || base64Data.length < 100) {
+        throw new Error('Invalid or too short base64 data');
+      }
       
-      // Try to embed as PNG first, then JPG
+      const imageBytes = Buffer.from(base64Data, 'base64');
+      console.log(`📐 Image buffer size: ${imageBytes.length} bytes`);
+      
+      // Try to embed as PNG first, then JPG, then WEBP
       let image;
+      let imageFormat = 'unknown';
+      
       try {
         image = await page.doc.embedPng(imageBytes);
+        imageFormat = 'PNG';
       } catch (pngError) {
         try {
           image = await page.doc.embedJpg(imageBytes);
+          imageFormat = 'JPG';
         } catch (jpgError) {
-          console.error('Failed to embed image as PNG or JPG:', { pngError, jpgError });
+          // Try as WEBP (if supported in future)
+          console.error('Failed to embed image as PNG or JPG:', { 
+            pngError: pngError.message, 
+            jpgError: jpgError.message,
+            bufferSize: imageBytes.length,
+            first20Bytes: Array.from(imageBytes.slice(0, 20)).map(b => b.toString(16)).join(' ')
+          });
+          
           // Fallback to text
-          this.drawTextField(page, x, y, width, height, '[Signature]', 
-            await page.doc.embedFont(StandardFonts.Helvetica), 12, rgb(0, 0, 0));
+          this.drawTextField(page, x, y, width, height, '[Image Error]', 
+            await page.doc.embedFont(StandardFonts.Helvetica), 12, rgb(0.7, 0, 0));
           return;
         }
       }
+      
+      console.log(`✅ Successfully embedded image as ${imageFormat}`);
       
       // Calculate aspect ratio to fit within bounds
       const imgDims = image.scale(1);
@@ -312,6 +476,8 @@ export class PDFProcessorService {
       const centerX = x + (width - scaledWidth) / 2;
       const centerY = y + (height - scaledHeight) / 2;
       
+      console.log(`📏 Image scaling: original=${imgDims.width}x${imgDims.height}, scaled=${scaledWidth}x${scaledHeight}, position=${centerX},${centerY}`);
+      
       page.drawImage(image, {
         x: centerX,
         y: centerY,
@@ -319,11 +485,13 @@ export class PDFProcessorService {
         height: scaledHeight,
       });
       
+      console.log('✅ Image drawn successfully on PDF');
+      
     } catch (error) {
-      console.error('Failed to draw signature image:', error);
-      // Fallback to text
-      this.drawTextField(page, x, y, width, height, '[Signature]', 
-        await page.doc.embedFont(StandardFonts.Helvetica), 12, rgb(0, 0, 0));
+      console.error('❌ Failed to draw signature image:', error);
+      // Fallback to text with error indication
+      this.drawTextField(page, x, y, width, height, '[Image Failed]', 
+        await page.doc.embedFont(StandardFonts.Helvetica), 12, rgb(0.7, 0, 0));
     }
   }
 
@@ -383,17 +551,8 @@ export class PDFProcessorService {
    * Get color for tag type
    */
   private getTagColor(tagType: string): any {
-    switch (tagType) {
-      case 'N': // Notary commission
-      case 'X': // Commission expiration  
-      case 'O': // Disclosure
-        return rgb(0.2, 0.2, 0.8); // Blue for notary
-      case 'S': // Signature
-      case 'I': // Initials
-        return rgb(0.8, 0.2, 0.2); // Red for signatures
-      default:
-        return rgb(0, 0, 0); // Black for other text
-    }
+    // Always return black color for consistent, professional appearance
+    return rgb(0, 0, 0);
   }
 
   /**

@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
@@ -19,8 +20,59 @@ import {
   LogOut, 
   Settings,
   HelpCircle,
-  Sparkles
+  Sparkles,
+  Calendar,
+  Clock
 } from 'lucide-react';
+
+// Beautiful Date and Time Component
+const DateTimeDisplay: React.FC = () => {
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'America/New_York'
+    });
+  };
+
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'America/New_York'
+    });
+  };
+
+  return (
+    <div className="hidden md:flex items-center gap-3 px-3 py-1.5 bg-white/50 backdrop-blur-sm border border-gray-200/30 rounded-lg shadow-sm hover:shadow-md transition-all duration-200">
+      <div className="flex items-center gap-1.5">
+        <Calendar className="h-3.5 w-3.5 text-gray-500" />
+        <span className="text-sm font-medium text-gray-700">
+          {formatDate(currentTime)}
+        </span>
+      </div>
+      <div className="h-4 w-px bg-gray-300"></div>
+      <div className="flex items-center gap-1.5">
+        <Clock className="h-3.5 w-3.5 text-gray-500" />
+        <span className="text-sm font-semibold text-gray-800 font-mono tabular-nums">
+          {formatTime(currentTime)}
+        </span>
+      </div>
+    </div>
+  );
+};
 
 export function Header() {
   const { user, logout } = useAuth();
@@ -44,7 +96,7 @@ export function Header() {
       <div className="px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo Section */}
-          <div className="flex items-center">
+          <div className="flex items-center flex-1">
             <div className="relative">
               <div className="h-10 w-10 bg-gradient-to-br from-blue-500 via-purple-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
                 <IdCard className="h-5 w-5 text-white" />
@@ -59,8 +111,13 @@ export function Header() {
             </div>
           </div>
           
+          {/* Center - Beautiful Date and Time */}
+          <div className="flex-1 flex justify-center">
+            <DateTimeDisplay />
+          </div>
+          
           {/* Right Side Actions */}
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-3 flex-1 justify-end">
             {/* System Status - Hidden on mobile */}
             <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-full">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>

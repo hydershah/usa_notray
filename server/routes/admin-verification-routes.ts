@@ -144,7 +144,50 @@ router.get('/users/:userId/verification-data', verifyToken, requireAdmin, async 
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json(userData.rows[0]);
+    const userInfo = userData.rows[0];
+    
+    // Add certificate information for signers and witnesses
+    let certificateInfo = null;
+    if (['signer', 'witness'].includes(userInfo.role)) {
+      try {
+        const { selfSignedCertificateService } = await import('../services/self-signed-certificate-service');
+        const certificate = await selfSignedCertificateService.getUserCertificate(userId);
+        
+        if (certificate) {
+          const isExpired = new Date() > new Date(certificate.expires_at);
+          certificateInfo = {
+            hasCertificate: true,
+            certificateId: certificate.certificate_id,
+            commonName: certificate.common_name,
+            issuedAt: certificate.issued_at,
+            expiresAt: certificate.expires_at,
+            status: certificate.status,
+            isExpired,
+            certificateType: 'self-signed',
+            downloadUrl: `/api/admin/users/${userId}/certificate/download`
+          };
+        } else {
+          certificateInfo = {
+            hasCertificate: false,
+            eligibleForGeneration: userInfo.is_verified || userInfo.is_verification_bypassed,
+            reason: (userInfo.is_verified || userInfo.is_verification_bypassed) 
+              ? 'User is verified but no certificate generated yet' 
+              : 'User must complete ID verification first'
+          };
+        }
+      } catch (error) {
+        console.error('Error getting certificate info:', error);
+        certificateInfo = {
+          hasCertificate: false,
+          error: 'Failed to load certificate information'
+        };
+      }
+    }
+
+    res.json({
+      ...userInfo,
+      selfSignedCertificate: certificateInfo
+    });
   } catch (error) {
     console.error('Error fetching user verification data:', error);
     res.status(500).json({ error: 'Failed to fetch user verification data' });

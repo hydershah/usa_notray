@@ -18,7 +18,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/auth';
-import SimpleVideoConference from './SimpleVideoConference';
+import WherebyVideoConference from './WherebyVideoConference';
 import { PDFTaggingEditor } from './PDFTaggingEditor';
 import { ParticipantPanel } from './ParticipantPanel';
 import type { 
@@ -77,6 +77,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   const [showVideo, setShowVideo] = useState(true);
   const [showParticipants, setShowParticipants] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [videoAutoStarted, setVideoAutoStarted] = useState(false);
 
   // User role detection
   const currentUser = useMemo(() => participants.find(p => p.userId === currentUserId), [participants, currentUserId]);
@@ -439,19 +440,48 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Collapsible Video Panel */}
+        {/* Enhanced Video Panel - Wider for 8 participants */}
         {showVideo && (
-          <div className="w-64 bg-white border-r flex-shrink-0">
-            <SimpleVideoConference
-              sessionId={sessionId}
-              currentUser={{
-                id: currentUserId,
-                name: currentUser?.displayName || 'Unknown User',
-                role: currentUser?.userType || 'signer'
-              }}
-              participants={participants}
-              className="h-full"
-            />
+          <div className="w-96 bg-gradient-to-b from-gray-50 to-gray-100 border-r border-gray-200 flex-shrink-0 shadow-sm">
+            <div className="h-full flex flex-col">
+              {/* Video Header */}
+              <div className="bg-white border-b border-gray-200 p-3 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Video className="h-5 w-5 text-blue-600" />
+                    <span className="font-medium text-gray-900">Video Conference</span>
+                  </div>
+                  <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                    Live Session
+                  </Badge>
+                </div>
+                <div className="mt-2 text-sm text-gray-600">
+                  {participants.length + 1} participant{participants.length !== 0 ? 's' : ''} • Max 8 supported
+                </div>
+              </div>
+              
+              {/* Video Content */}
+              <div className="flex-1">
+                <WherebyVideoConference
+                  sessionId={sessionId}
+                  jobId={parseInt(sessionId.split('_')[1]) || parseInt(sessionId) || 1}
+                  currentUser={{
+                    id: currentUserId,
+                    name: currentUser?.displayName || 'Unknown User',
+                    email: currentUser?.email || '',
+                    role: currentUser?.userType || 'signer'
+                  }}
+                  participants={participants.map(p => ({
+                    userId: p.userId,
+                    displayName: p.displayName,
+                    email: p.email || '',
+                    userType: p.userType
+                  }))}
+                  autoStart={true}
+                  className="h-full"
+                />
+              </div>
+            </div>
           </div>
         )}
 

@@ -36,6 +36,8 @@ export default function Login() {
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const reason = urlParams.get('reason');
+    const reset = urlParams.get('reset');
+    const setup = urlParams.get('setup');
     
     if (reason === 'expired') {
       toast({
@@ -54,10 +56,20 @@ export default function Login() {
         title: "Authentication Required",
         description: "No valid authentication token found. Please log in.",
       });
+    } else if (reset === 'success') {
+      toast({
+        title: "Password Reset Complete",
+        description: "Your password has been successfully reset. You can now log in with your new password.",
+      });
+    } else if (setup === 'success') {
+      toast({
+        title: "Account Setup Complete",
+        description: "Your account has been successfully set up. Please log in to continue.",
+      });
     }
 
-    // Clear the URL parameter
-    if (reason) {
+    // Clear the URL parameters
+    if (reason || reset || setup) {
       const newUrl = window.location.pathname;
       window.history.replaceState({}, document.title, newUrl);
     }

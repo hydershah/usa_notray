@@ -351,6 +351,8 @@ export const jobs = pgTable("jobs", {
   signerNotificationsSentAt: timestamp("signer_notifications_sent_at"),
   // Job type for billing and workflow differentiation
   jobType: text("job_type").default("title_company"), // 'title_company', 'subscriber_personal'
+  completionReportPath: text('completion_report_path'),
+  completionReportGeneratedAt: timestamp('completion_report_generated_at'),
 });
 
 // Password reset tokens table
@@ -1997,3 +1999,22 @@ export const LOG_SEVERITIES = {
   ERROR: 'error',
   CRITICAL: 'critical',
 } as const;
+
+// Self-signed certificates table for signers and witnesses
+export const selfSignedCertificates = pgTable('self_signed_certificates', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  certificateId: varchar('certificate_id', { length: 255 }).notNull().unique(),
+  commonName: varchar('common_name', { length: 255 }).notNull(),
+  certificateContent: text('certificate_content').notNull(),
+  privateKey: text('private_key').notNull(),
+  publicKey: text('public_key').notNull(),
+  certificatePath: varchar('certificate_path', { length: 500 }),
+  privateKeyPath: varchar('private_key_path', { length: 500 }),
+  publicKeyPath: varchar('public_key_path', { length: 500 }),
+  issuedAt: timestamp('issued_at').defaultNow().notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  status: varchar('status', { length: 50 }).default('active').notNull(), // active, revoked, expired
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull()
+});

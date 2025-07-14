@@ -83,6 +83,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   onTagClick,
   mode
 }) => {
+  const [imageLoadError, setImageLoadError] = React.useState(false);
   const tagInfo = TAG_TYPE_INFO[tag.tagType];
   
   // Convert PDF coordinates to display coordinates
@@ -223,30 +224,79 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         ${canEdit ? 'hover:shadow-md' : ''}
       `}
       style={{
-        backgroundColor: mode === 'signing' && tag.isCompleted 
-          ? 'transparent' // No background for completed tags
-          : mode === 'signing' && !tag.isCompleted
-          ? 'rgba(59, 130, 246, 0.1)' // Blue background for incomplete/clickable
-          : 'rgba(255, 255, 255, 0.95)', // White for tagging mode
-        border: mode === 'signing' && tag.isCompleted
-          ? 'none' // No border for completed tags
-          : mode === 'signing' && !tag.isCompleted
-          ? '2px dashed #3b82f6' // Dashed blue border for clickable
-          : `2px solid ${tag.colorCode || '#3B82F6'}`, // Normal border for tagging
-        borderRadius: mode === 'signing' && tag.isCompleted ? '0' : '6px',
+        backgroundColor: (() => {
+          // Special handling for whiteout tags
+          if (tag.tagType === 'W') {
+            if (mode === 'signing' && tag.isCompleted) {
+              return '#FFFFFF'; // Solid white background for completed whiteout
+            } else if (mode === 'signing' && !tag.isCompleted) {
+              return 'rgba(255, 255, 255, 0.8)'; // Semi-transparent white for incomplete whiteout
+            } else {
+              return 'rgba(255, 255, 255, 0.95)'; // White for tagging mode
+            }
+          }
+          
+          // Default behavior for other tags
+          if (mode === 'signing' && tag.isCompleted) {
+            return 'transparent'; // No background for completed tags
+          } else if (mode === 'signing' && !tag.isCompleted) {
+            return 'rgba(59, 130, 246, 0.1)'; // Blue background for incomplete/clickable
+          } else {
+            return 'rgba(255, 255, 255, 0.95)'; // White for tagging mode
+          }
+        })(),
+        border: (() => {
+          // Special handling for whiteout tags
+          if (tag.tagType === 'W') {
+            if (mode === 'signing' && tag.isCompleted) {
+              return '1px solid #E5E7EB'; // Subtle border for completed whiteout
+            } else if (mode === 'signing' && !tag.isCompleted) {
+              return '2px dashed #6B7280'; // Gray dashed border for incomplete whiteout
+            } else {
+              return `2px solid ${tag.colorCode || '#6B7280'}`; // Gray border for tagging
+            }
+          }
+          
+          // Default behavior for other tags
+          if (mode === 'signing' && tag.isCompleted) {
+            return 'none'; // No border for completed tags
+          } else if (mode === 'signing' && !tag.isCompleted) {
+            return '2px dashed #3b82f6'; // Dashed blue border for clickable
+          } else {
+            return `2px solid ${tag.colorCode || '#3B82F6'}`; // Normal border for tagging
+          }
+        })(),
+        borderRadius: (tag.tagType === 'W' && mode === 'signing' && tag.isCompleted) ? '2px' : 
+                     (mode === 'signing' && tag.isCompleted) ? '0' : '6px',
         color: mode === 'signing' && tag.isCompleted 
           ? '#000000' // Black text for completed content (plain text appearance)
           : tag.colorCode || '#3B82F6',
-        zIndex: isSelected ? 1000 : 100,
+        zIndex: tag.tagType === 'W' ? (isSelected ? 1000 : 200) : (isSelected ? 1000 : 100), // Higher z-index for whiteout
         pointerEvents: 'auto',
         cursor: mode === 'signing' && !tag.isCompleted ? 'pointer' : 'default',
-        boxShadow: mode === 'signing' && tag.isCompleted
-          ? 'none' // No shadow for completed tags
-          : isSelected 
-          ? `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${(tag.colorCode || '#3B82F6')}20` 
-          : mode === 'signing' && !tag.isCompleted
-          ? '0 2px 8px rgba(59, 130, 246, 0.3)' // Blue glow for clickable
-          : '0 2px 4px rgba(0,0,0,0.1)'
+        boxShadow: (() => {
+          // Special shadow for whiteout tags
+          if (tag.tagType === 'W') {
+            if (mode === 'signing' && tag.isCompleted) {
+              return '0 1px 3px rgba(0,0,0,0.1)'; // Subtle shadow for completed whiteout
+            } else if (isSelected) {
+              return `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${(tag.colorCode || '#6B7280')}20`;
+            } else {
+              return '0 2px 4px rgba(107, 114, 128, 0.3)'; // Gray shadow for whiteout
+            }
+          }
+          
+          // Default shadow for other tags
+          if (mode === 'signing' && tag.isCompleted) {
+            return 'none'; // No shadow for completed tags
+          } else if (isSelected) {
+            return `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${(tag.colorCode || '#3B82F6')}20`;
+          } else if (mode === 'signing' && !tag.isCompleted) {
+            return '0 2px 8px rgba(59, 130, 246, 0.3)'; // Blue glow for clickable
+          } else {
+            return '0 2px 4px rgba(0,0,0,0.1)';
+          }
+        })()
       }}
       resizeHandleStyles={canEdit ? {
         bottomRight: { 
@@ -265,48 +315,110 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         {mode === 'signing' ? (
           // Signing mode: Show interactive state
           tag.isCompleted ? (
-            // Completed tag - show actual content as plain text/image
-            <div className="w-full h-full flex items-center justify-center">
-              {tag.contentData && (
-                ['signature', 'initials', 'seal', 'stamp'].includes(tag.contentData.type) || 
-                  (tag.contentData.value && (
-                    tag.contentData.value.startsWith('data:image/') ||
-                    tag.contentData.value.startsWith('http') ||
-                    tag.contentData.value.includes('vultrobjects.com')
-                  )) ? (
-                                      <img 
-                      src={tag.contentData.value} 
-                      alt={tag.contentData.type === 'signature' ? 'Signature' : 
-                           tag.contentData.type === 'initials' ? 'Initials' : 
-                           tag.contentData.type === 'seal' || tag.contentData.type === 'stamp' ? 'Notary Seal' : 'Image'} 
+            // Completed tag - show actual content as plain text/image OR whiteout
+            tag.tagType === 'W' ? (
+              // Whiteout tag: Show as solid white rectangle (no content)
+              <div className="w-full h-full bg-white" />
+            ) : (
+              // Regular completed tag - show actual content as plain text/image
+              <div className="w-full h-full flex items-center justify-center">
+                {tag.contentData && (() => {
+                  // Parse contentData if it's a string
+                  let contentData;
+                  try {
+                    contentData = typeof tag.contentData === 'string' ? JSON.parse(tag.contentData) : tag.contentData;
+                  } catch (e) {
+                    console.error('Failed to parse contentData:', e);
+                    contentData = tag.contentData;
+                  }
+                  
+                  // Enhanced image detection logic
+                  const isImageContent = () => {
+                    // CRITICAL: Whiteout tags should NEVER be treated as images
+                    if (tag.tagType === 'W') {
+                      return false; // Whiteout is always text/solid color, never an image
+                    }
+                    
+                    // Check if tag type is inherently image-based
+                    if (['S', 'I', 'E'].includes(tag.tagType)) {
+                      return true; // Signature, Initials, Seal are always images
+                    }
+                    
+                    // Check contentData type
+                    if (contentData?.type && ['signature', 'initials', 'seal', 'stamp'].includes(contentData.type)) {
+                      return true;
+                    }
+                    
+                    // Check if value looks like an image URL/data
+                    if (contentData?.value && typeof contentData.value === 'string') {
+                      return (
+                        contentData.value.startsWith('data:image/') ||
+                        contentData.value.startsWith('http') ||
+                        contentData.value.includes('vultrobjects.com') ||
+                        contentData.value.includes('.png') ||
+                        contentData.value.includes('.jpg') ||
+                        contentData.value.includes('.jpeg') ||
+                        contentData.value.includes('.webp')
+                      );
+                    }
+                    
+                    return false;
+                  };
+                  
+                  console.log('🏷️ Tag content rendering debug:', {
+                    tagId: tag.id,
+                    tagType: tag.tagType,
+                    contentData,
+                    isImageContent: isImageContent(),
+                    valueType: typeof contentData?.value,
+                    valuePreview: typeof contentData?.value === 'string' ? contentData.value.substring(0, 100) : contentData?.value
+                  });
+                  
+                  // If image failed to load or invalid, show text fallback
+                  if (imageLoadError || !isImageContent()) {
+                    return (
+                      <div 
+                        className="text-black w-full h-full flex items-center justify-center p-1"
+                        style={{ 
+                          fontSize: Math.max(10, Math.min(16, tag.coordinates.height * 0.6)),
+                          lineHeight: '1.2',
+                          wordBreak: 'break-word',
+                          fontFamily: 'inherit'
+                        }}
+                      >
+                        {imageLoadError ? 'Image failed to load' : 
+                         (typeof contentData?.value === 'string' ? contentData.value : JSON.stringify(contentData?.value || ''))}
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <img 
+                      src={contentData.value} 
+                      alt={contentData.type === 'signature' ? 'Signature' : 
+                           contentData.type === 'initials' ? 'Initials' : 
+                           contentData.type === 'seal' || contentData.type === 'stamp' ? 'Notary Seal' : 'Image'} 
                       className="max-h-full max-w-full object-contain"
-                    style={{ 
-                      filter: 'none',
-                      maxHeight: '100%',
-                      maxWidth: '100%'
-                    }}
-                  />
-                ) : (
-                  <div 
-                    className="text-black w-full h-full flex items-center justify-center p-1"
-                    style={{ 
-                      fontSize: Math.max(10, Math.min(16, tag.coordinates.height * 0.6)),
-                      lineHeight: '1.2',
-                      wordBreak: 'break-word',
-                      fontFamily: 'inherit'
-                    }}
-                  >
-                    {typeof tag.contentData.value === 'string' ? tag.contentData.value : JSON.stringify(tag.contentData.value)}
-                  </div>
-                )
-              )}
-            </div>
+                      style={{ 
+                        filter: 'none',
+                        maxHeight: '100%',
+                        maxWidth: '100%'
+                      }}
+                      onError={(e) => {
+                        console.error('🖼️ Image failed to load:', contentData.value);
+                        setImageLoadError(true);
+                      }}
+                    />
+                  );
+                })()}
+              </div>
+            )
           ) : (
             // Incomplete tag - show clickable state
             <div className="text-center">
               <span className="text-lg mb-1 block">{tagInfo.icon}</span>
               <span className="text-xs font-medium text-gray-700 block">
-                Click to {['S', 'I'].includes(tag.tagType) ? 'apply' : 'enter'}
+                Click to {['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter'}
               </span>
               <span className="text-xs text-gray-500">{tagInfo.label}</span>
             </div>
@@ -918,20 +1030,38 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     // Ensure coordinates are positive and reasonable
     const tagX = Math.max(0, Math.round(pdfX - 75)); // Center tag, ensure non-negative
     const tagY = Math.max(0, Math.round(pdfY - 13)); // Adjusted for smaller height
-    const tagWidth = 150;
-    const tagHeight = 26; // Reduced from 40 by 35%
     
-    // Final validation of coordinates
-    if (isNaN(tagX) || isNaN(tagY) || !isFinite(tagX) || !isFinite(tagY)) {
-      console.error('Invalid final tag coordinates:', { tagX, tagY, pdfX, pdfY });
-      return;
-    }
+    // Get appropriate dimensions based on selected tag type
+    const getTagDimensions = () => {
+      // Get the selected tag type from the editor store
+      const { selectedTagType } = useEditorStore.getState();
+      
+      if (selectedTagType === 'S' || selectedTagType === 'E') {
+        // Signatures and stamps need bigger dimensions for image content
+        return { width: 200, height: 60, offsetX: 100, offsetY: 30 };
+      } else if (selectedTagType === 'I') {
+        // Initials need medium size
+        return { width: 120, height: 40, offsetX: 60, offsetY: 20 };
+      } else if (selectedTagType === 'W') {
+        // Whiteout tags need larger dimensions to cover content effectively
+        return { width: 250, height: 40, offsetX: 125, offsetY: 20 };
+      } else {
+        // Other tags use standard size
+        return { width: 150, height: 30, offsetX: 75, offsetY: 15 };
+      }
+    };
+    
+    const dimensions = getTagDimensions();
+    
+    // Recalculate position with proper centering based on tag size
+    const finalTagX = Math.max(0, Math.round(pdfX - dimensions.offsetX));
+    const finalTagY = Math.max(0, Math.round(pdfY - dimensions.offsetY));
     
     const coordinates: TagCoordinates = {
-      x: tagX,
-      y: tagY,
-      width: tagWidth,
-      height: tagHeight,
+      x: finalTagX,
+      y: finalTagY,
+      width: dimensions.width,
+      height: dimensions.height,
       pageNumber
     };
 

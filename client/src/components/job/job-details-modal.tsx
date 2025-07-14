@@ -47,6 +47,7 @@ import {
   Edit3
 } from 'lucide-react';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
+import { JobCompletionReport } from '@/components/job/JobCompletionReport';
 import { JobStatus } from '@/types/job';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -76,12 +77,14 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
     signers: boolean;
     documents: boolean;
     completed: boolean;
+    completionReport: boolean;
   }>({
     jobInfo: true,
     schedule: true,
     signers: true,
     documents: true,
-    completed: false
+    completed: false,
+    completionReport: job?.jobStatus === 'completed' // Auto-expand for completed jobs
   });
   
   // Notary change functionality
@@ -1211,6 +1214,30 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                     ))}
                   </div>
                 )}
+              </CardContent>
+            )}
+          </Card>
+
+          {/* Completion Report Section */}
+          <Card className="shadow-sm">
+            <CardHeader 
+              className="cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg"
+              onClick={() => toggleSection('completionReport')}
+            >
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <FileCheck className="h-4 w-4 text-primary" />
+                  Completion Report
+                </CardTitle>
+                {expandedSections.completionReport ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </div>
+            </CardHeader>
+            {expandedSections.completionReport && (
+              <CardContent className="pt-0">
+                <JobCompletionReport 
+                  jobId={job.id} 
+                  jobStatus={job.jobStatus}
+                />
               </CardContent>
             )}
           </Card>

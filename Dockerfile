@@ -27,11 +27,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
-
-# Install dev dependencies needed for build
-RUN npm install --save-dev esbuild vite @vitejs/plugin-react typescript
+# Install all dependencies (including dev dependencies needed for build)
+RUN npm ci
 
 # Copy source code
 COPY . .

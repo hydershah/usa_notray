@@ -62,8 +62,24 @@ const validateCoordinates = (coordinates: Partial<TagCoordinates>): boolean => {
 };
 
 // Sanitize coordinates to ensure valid values
-const sanitizeCoordinates = (coordinates: Partial<TagCoordinates>): Partial<TagCoordinates> => {
+const sanitizeCoordinates = (coordinates: Partial<TagCoordinates>, tagType?: string): Partial<TagCoordinates> => {
   const sanitized: Partial<TagCoordinates> = {};
+  
+  // Get default dimensions based on tag type
+  const getDefaultDimensions = (type?: string) => {
+    if (type === 'S' || type === 'E') {
+      // Signatures and stamps need bigger dimensions for image content
+      return { width: 200, height: 60 };
+    } else if (type === 'I') {
+      // Initials need medium size
+      return { width: 120, height: 40 };
+    } else {
+      // Other tags use standard size
+      return { width: 150, height: 30 };
+    }
+  };
+  
+  const defaultDimensions = getDefaultDimensions(tagType);
   
   if (coordinates.x !== undefined) {
     sanitized.x = isFinite(coordinates.x) ? Math.round(coordinates.x) : 0;
@@ -72,10 +88,10 @@ const sanitizeCoordinates = (coordinates: Partial<TagCoordinates>): Partial<TagC
     sanitized.y = isFinite(coordinates.y) ? Math.round(coordinates.y) : 0;
   }
   if (coordinates.width !== undefined) {
-    sanitized.width = isFinite(coordinates.width) && coordinates.width > 0 ? Math.round(coordinates.width) : 100;
+    sanitized.width = isFinite(coordinates.width) && coordinates.width > 0 ? Math.round(coordinates.width) : defaultDimensions.width;
   }
   if (coordinates.height !== undefined) {
-    sanitized.height = isFinite(coordinates.height) && coordinates.height > 0 ? Math.round(coordinates.height) : 30;
+    sanitized.height = isFinite(coordinates.height) && coordinates.height > 0 ? Math.round(coordinates.height) : defaultDimensions.height;
   }
   if (coordinates.pageNumber !== undefined) {
     sanitized.pageNumber = isFinite(coordinates.pageNumber) ? Math.round(coordinates.pageNumber) : 1;
@@ -247,7 +263,7 @@ export const useTagOperations = (sessionId: string) => {
               continue;
             }
             
-            const sanitizedPlaceCoordinates = sanitizeCoordinates(coordinates);
+            const sanitizedPlaceCoordinates = sanitizeCoordinates(coordinates, tagType);
             
             const response = await fetch(`/api/editor/session/${sessionId}/place-tag`, {
               method: 'POST',
@@ -276,17 +292,16 @@ export const useTagOperations = (sessionId: string) => {
             break;
 
           case 'update':
-            if (!operation.tagId) continue;
+            const { tagId: updateTagId, coordinates: updateCoordinates } = operation.data;
             
-            // Validate and sanitize coordinates before sending
-            if (!validateCoordinates(operation.data.coordinates)) {
-              console.error('❌ Invalid coordinates for update operation:', operation.data.coordinates);
+            if (!validateCoordinates(updateCoordinates)) {
+              console.error('❌ Invalid coordinates for update operation:', updateCoordinates);
               continue;
             }
             
-            const sanitizedUpdateCoordinates = sanitizeCoordinates(operation.data.coordinates);
+            const sanitizedUpdateCoordinates = sanitizeCoordinates(updateCoordinates);
             
-            const updateResponse = await fetch(`/api/editor/session/${sessionId}/tag/${operation.tagId}`, {
+            const updateResponse = await fetch(`/api/editor/session/${sessionId}/tag/${updateTagId}`, {
               method: 'PUT',
               headers: {
                 'Content-Type': 'application/json',
@@ -340,7 +355,7 @@ export const useTagOperations = (sessionId: string) => {
       throw new Error('Invalid tag coordinates');
     }
 
-    const sanitizedCoordinates = sanitizeCoordinates(command.coordinates);
+    const sanitizedCoordinates = sanitizeCoordinates(command.coordinates, command.tagType);
 
     // Create optimistic tag for immediate UI feedback
     const tempTagId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;

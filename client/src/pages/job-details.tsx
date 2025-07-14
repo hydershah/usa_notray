@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { getStatusColor, formatDate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { JobCompletionReport } from '@/components/job/JobCompletionReport';
 
 export default function JobDetailsPage() {
   const [, params] = useRoute('/jobs/:id');
@@ -205,7 +206,7 @@ export default function JobDetailsPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Job Information */}
           <Card>
             <CardHeader>
@@ -319,6 +320,12 @@ export default function JobDetailsPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Completion Report */}
+          <JobCompletionReport 
+            jobId={job.id} 
+            jobStatus={job.jobStatus} 
+          />
         </div>
 
         {/* Documents */}

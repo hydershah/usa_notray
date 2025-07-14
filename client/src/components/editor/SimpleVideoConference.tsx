@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
@@ -6,17 +6,18 @@ import {
   VideoOff, 
   Mic, 
   MicOff,
+  Phone,
+  PhoneOff,
   Users,
-  AlertCircle
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 
 interface Participant {
-  id: string;
-  name: string;
-  role: 'notary' | 'signer' | 'witness' | 'admin';
-  stream?: MediaStream;
-  isAudioEnabled: boolean;
-  isVideoEnabled: boolean;
+  userId: string;
+  displayName: string;
+  email: string;
+  userType: 'notary' | 'signer' | 'witness' | 'admin';
 }
 
 interface SimpleVideoConferenceProps {
@@ -24,326 +25,326 @@ interface SimpleVideoConferenceProps {
   currentUser: {
     id: string;
     name: string;
-    email: string;
-    role: 'notary' | 'signer' | 'witness' | 'admin' | string;
+    role: 'notary' | 'signer' | 'witness' | 'admin';
   };
-  participants: Array<{
-    userId: string;
-    displayName: string;
-    email: string;
-    userType: 'notary' | 'signer' | 'witness' | 'admin' | string;
-  }>;
+  participants: Participant[];
   className?: string;
+  compact?: boolean;
+}
+
+interface WherebyMeeting {
+  roomUrl: string;
+  hostRoomUrl: string;
+  roomName: string;
+  meetingId: string;
+  endDate: string;
 }
 
 const SimpleVideoConference: React.FC<SimpleVideoConferenceProps> = ({
   sessionId,
   currentUser,
-  participants,
-  className = ''
+  participants = [],
+  className = '',
+  compact = false
 }) => {
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [isAudioEnabled, setIsAudioEnabled] = useState(true);
-  const [isVideoEnabled, setIsVideoEnabled] = useState(true);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [isVideoActive, setIsVideoActive] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [participantCount, setParticipantCount] = useState(0);
+  const [wherebyMeeting, setWherebyMeeting] = useState<WherebyMeeting | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [participantStreams, setParticipantStreams] = useState<Map<string, MediaStream>>(new Map());
-  const [participantControls, setParticipantControls] = useState<Map<string, { audio: boolean; video: boolean }>>(new Map());
-  
-  const localVideoRef = useRef<HTMLVideoElement>(null);
 
-  // Initialize local media stream
-  const initializeMedia = useCallback(async () => {
+  // Extract job ID from session ID
+  const jobId = React.useMemo(() => {
+    const match = sessionId.match(/(\d+)/);
+    return match ? parseInt(match[1]) : parseInt(sessionId) || 1;
+  }, [sessionId]);
+
+  // Start video session
+  const startVideo = useCallback(async () => {
+    if (isVideoActive) return;
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 320 },
-          height: { ideal: 240 },
-          frameRate: { ideal: 15 }
-        },
-        audio: true
-      });
-      
-      setLocalStream(stream);
-      
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
-      
+      setIsLoading(true);
       setError(null);
-    } catch (err) {
-      console.error('Failed to get media devices:', err);
-      setError('Failed to access camera or microphone. Please check your permissions.');
-    }
-  }, []);
 
-  // Toggle audio
-  const toggleAudio = useCallback(() => {
-    if (localStream) {
-      const audioTrack = localStream.getAudioTracks()[0];
-      if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        setIsAudioEnabled(audioTrack.enabled);
+      console.log(`🎥 Starting Whereby session for job ${jobId}`);
+
+      // Create Whereby meeting via API
+      const response = await fetch(`/api/jobs/${jobId}/video-session`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          participants: participants.map(p => ({
+            userId: p.userId,
+            name: p.displayName,
+            email: p.email,
+            role: p.userType
+          }))
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create Whereby meeting');
       }
-    }
-  }, [localStream]);
 
-  // Toggle video
-  const toggleVideo = useCallback(() => {
-    if (localStream) {
-      const videoTrack = localStream.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.enabled = !videoTrack.enabled;
-        setIsVideoEnabled(videoTrack.enabled);
+      const data = await response.json();
+      const meeting: WherebyMeeting = {
+        roomUrl: data.roomUrl,
+        hostRoomUrl: data.hostRoomUrl || data.roomUrl,
+        roomName: data.roomName || `session-${sessionId}`,
+        meetingId: data.meetingId || data.sessionId,
+        endDate: data.endDate
+      };
+
+      setWherebyMeeting(meeting);
+
+      // Configure Whereby embed URL
+      const isHost = currentUser.role === 'notary' || currentUser.role === 'admin';
+      const roomUrl = isHost ? meeting.hostRoomUrl : meeting.roomUrl;
+      
+      const params = new URLSearchParams({
+        embed: 'true',
+        displayName: currentUser.name,
+        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name)}&background=random`,
+        background: 'off',
+        chat: compact ? 'off' : 'on',
+        people: compact ? 'off' : 'on',
+        pipButton: 'off',
+        leaveButton: 'on',
+        screenshare: isHost ? 'on' : 'off',
+        quality: 'medium',
+        ...(isHost && {
+          lock: 'off',
+          precallReview: 'on'
+        })
+      });
+
+      const embedUrl = `${roomUrl}?${params.toString()}`;
+
+      // Load in iframe
+      if (iframeRef.current) {
+        iframeRef.current.src = embedUrl;
+        setIsVideoActive(true);
+        console.log(`✅ Whereby session started for ${currentUser.role}: ${currentUser.name}`);
       }
-    }
-  }, [localStream]);
 
-  // Initialize on mount
+    } catch (error) {
+      console.error('Failed to start Whereby session:', error);
+      setError(error instanceof Error ? error.message : 'Failed to start video');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isVideoActive, jobId, sessionId, currentUser, participants, compact]);
+
+  // Stop video session
+  const stopVideo = useCallback(() => {
+    if (!isVideoActive) return;
+
+    try {
+      if (iframeRef.current) {
+        iframeRef.current.src = 'about:blank';
+      }
+      
+      setIsVideoActive(false);
+      setWherebyMeeting(null);
+      setIsConnected(false);
+      setParticipantCount(0);
+      
+      console.log('🛑 Whereby session stopped');
+      
+    } catch (error) {
+      console.error('Failed to stop Whereby session:', error);
+    }
+  }, [isVideoActive]);
+
+  // Handle iframe messages from Whereby
   useEffect(() => {
-    initializeMedia();
+    const handleMessage = (event: MessageEvent) => {
+      // Verify origin is from Whereby
+      if (!event.origin.includes('whereby.com')) return;
 
-    // Cleanup on unmount
-    return () => {
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
+      try {
+        const data = event.data;
+        
+        switch (data.type) {
+          case 'whereby_participant_joined':
+            setParticipantCount(prev => prev + 1);
+            console.log(`👋 Participant joined: ${data.displayName}`);
+            break;
+            
+          case 'whereby_participant_left':
+            setParticipantCount(prev => Math.max(0, prev - 1));
+            console.log(`👋 Participant left: ${data.displayName}`);
+            break;
+            
+          case 'whereby_ready':
+            console.log('✅ Whereby ready');
+            setIsConnected(true);
+            setIsLoading(false);
+            break;
+            
+          case 'whereby_error':
+            console.error('Whereby error:', data.error);
+            setError(data.error);
+            break;
+            
+          case 'whereby_meeting_ended':
+            console.log('🏁 Whereby meeting ended');
+            stopVideo();
+            break;
+        }
+      } catch (error) {
+        console.error('Failed to handle Whereby message:', error);
       }
     };
-  }, []);
 
-  // For now, we'll just show the local user and placeholder boxes for other participants
-  // In a real implementation, you would connect to a video service here
-  // Filter out the current user from participants to prevent duplicates
-  const otherParticipants = participants.filter(p => p.userId !== currentUser.id);
-  
-  const allParticipants: Participant[] = [
-    {
-      id: 'local',
-      name: currentUser.name,
-      role: currentUser.role as 'notary' | 'signer' | 'witness' | 'admin',
-      stream: localStream,
-      isAudioEnabled,
-      isVideoEnabled
-    },
-    ...otherParticipants.slice(0, 7).map(p => ({
-      id: p.userId,
-      name: p.displayName,
-      role: p.userType as 'notary' | 'signer' | 'witness' | 'admin',
-      isAudioEnabled: true,
-      isVideoEnabled: true
-    }))
-  ];
-
-  const renderVideoBox = (participant: Participant, isLocal: boolean = false) => {
-    const controls = participantControls.get(participant.id) || { audio: true, video: true };
+    window.addEventListener('message', handleMessage);
     
-    return (
-      <div 
-        key={participant.id} 
-        className="relative bg-gray-900 rounded-lg overflow-hidden aspect-[16/9] group"
-      >
-        {/* Video element */}
-        {participant.stream || isLocal ? (
-          <video
-            ref={isLocal ? localVideoRef : undefined}
-            autoPlay
-            playsInline
-            muted={isLocal}
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          // Placeholder for remote participants
-          <div className="w-full h-full flex items-center justify-center bg-gray-800">
-            <div className="text-center">
-              <div className="w-10 h-10 bg-gray-700 rounded-full mx-auto mb-1 flex items-center justify-center">
-                <span className="text-base font-bold text-white">
-                  {participant.name?.charAt(0)?.toUpperCase() || '?'}
-                </span>
-              </div>
-              <p className="text-xs text-gray-400">Connecting...</p>
-            </div>
-          </div>
-        )}
-        
-        {/* Video disabled overlay */}
-        {((isLocal && !participant.isVideoEnabled) || (!isLocal && !controls.video)) && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-90">
-            <VideoOff className="w-8 h-8 text-gray-400" />
-          </div>
-        )}
-        
-        {/* Individual controls - show on hover for all participants */}
-        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-          <div className="flex gap-1">
-            {isLocal ? (
-              <>
-                <Button
-                  size="sm"
-                  variant={isAudioEnabled ? "secondary" : "destructive"}
-                  className="h-6 w-6 p-0 rounded"
-                  onClick={toggleAudio}
-                  title={isAudioEnabled ? "Mute" : "Unmute"}
-                >
-                  {isAudioEnabled ? <Mic className="h-3 w-3" /> : <MicOff className="h-3 w-3" />}
-                </Button>
-                <Button
-                  size="sm"
-                  variant={isVideoEnabled ? "secondary" : "destructive"}
-                  className="h-6 w-6 p-0 rounded"
-                  onClick={toggleVideo}
-                  title={isVideoEnabled ? "Turn off video" : "Turn on video"}
-                >
-                  {isVideoEnabled ? <Video className="h-3 w-3" /> : <VideoOff className="h-3 w-3" />}
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  size="sm"
-                  variant={controls.audio ? "secondary" : "destructive"}
-                  className="h-6 w-6 p-0 rounded"
-                  onClick={() => {
-                    const newControls = new Map(participantControls);
-                    newControls.set(participant.id, { ...controls, audio: !controls.audio });
-                    setParticipantControls(newControls);
-                  }}
-                  title={controls.audio ? "Mute participant" : "Unmute participant"}
-                >
-                  {controls.audio ? <Mic className="h-3 w-3" /> : <MicOff className="h-3 w-3" />}
-                </Button>
-                <Button
-                  size="sm"
-                  variant={controls.video ? "secondary" : "destructive"}
-                  className="h-6 w-6 p-0 rounded"
-                  onClick={() => {
-                    const newControls = new Map(participantControls);
-                    newControls.set(participant.id, { ...controls, video: !controls.video });
-                    setParticipantControls(newControls);
-                  }}
-                  title={controls.video ? "Hide video" : "Show video"}
-                >
-                  {controls.video ? <Video className="h-3 w-3" /> : <VideoOff className="h-3 w-3" />}
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-        
-        {/* Participant info */}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1 min-w-0">
-              <span className="text-white text-xs font-medium truncate">
-                {participant.name}{isLocal && ' (You)'}
-              </span>
-            </div>
-            
-            <div className="flex items-center gap-1">
-              {(isLocal ? participant.isAudioEnabled : controls.audio) ? (
-                <Mic className="h-3 w-3 text-green-400" />
-              ) : (
-                <MicOff className="h-3 w-3 text-red-400" />
-              )}
-            </div>
-          </div>
-          
-          <Badge 
-            variant="secondary" 
-            className={`text-[10px] mt-1 ${
-              participant.role === 'admin' ? 'bg-red-600 text-white' :
-              participant.role === 'notary' ? 'bg-purple-600 text-white' :
-              participant.role === 'signer' ? 'bg-blue-600 text-white' : 
-              'bg-green-600 text-white'
-            }`}
-          >
-            {participant.role}
-          </Badge>
-        </div>
-      </div>
-    );
-  };
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [stopVideo]);
 
+  // Update participant count when external participants change
+  useEffect(() => {
+    setParticipantCount(participants.length || 0);
+  }, [participants]);
+
+  // Render loading state
+  if (isLoading) {
+    return (
+      <div className={`${className} flex items-center justify-center bg-gray-900 text-white`}>
+            <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p className="text-lg font-medium">Connecting to Whereby...</p>
+          <p className="text-sm opacity-75 mt-2">Setting up secure video connection</p>
+            </div>
+          </div>
+    );
+  }
+
+  // Render error state
   if (error) {
     return (
-      <div className={`${className} flex items-center justify-center bg-gray-900 text-white p-4`}>
-        <div className="text-center">
-          <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-2" />
-          <p className="text-sm">{error}</p>
-          <Button
-            onClick={initializeMedia}
-            size="sm"
-            variant="outline"
-            className="mt-3 text-white border-white hover:bg-white/10"
-          >
-            Try Again
-          </Button>
+      <div className={`${className} flex items-center justify-center bg-red-50 text-red-800`}>
+        <div className="text-center max-w-md">
+          <div className="text-red-500 text-4xl mb-4">⚠️</div>
+          <h3 className="text-lg font-semibold mb-2">Video Connection Error</h3>
+          <p className="text-sm mb-4">{error}</p>
+          <div className="space-x-3">
+            <button
+              onClick={startVideo}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Retry Connection
+            </button>
+            <button
+              onClick={() => setError(null)}
+              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              Continue Without Video
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className={`${className} flex flex-col bg-gray-900`}>
-      {/* Header */}
-      <div className="bg-gray-800 border-b border-gray-700 p-3 shrink-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-white" />
-            <span className="text-white text-sm font-medium">
-              Video Conference
-            </span>
-            <Badge variant="secondary" className="bg-gray-700 text-white text-xs">
-              {allParticipants.length} / 8
-            </Badge>
-          </div>
-        </div>
-      </div>
-
-      {/* Video Grid - Single column layout for up to 8 participants */}
-      <div className="flex-1 p-3 overflow-auto">
-        <div className="grid grid-cols-1 gap-2">
-          {allParticipants.map((participant, index) => 
-            renderVideoBox(participant, participant.id === 'local')
-          )}
+  // Render video-disabled state
+  if (!isVideoActive) {
+    return (
+      <div className={`${className} flex items-center justify-center bg-gray-100`}>
+        <div className="text-center">
+          <div className="text-gray-400 text-6xl mb-4">📹</div>
+          <h3 className="text-lg font-semibold text-gray-700 mb-2">Whereby Video Session</h3>
+          <p className="text-gray-600 mb-4">
+            Start video to join the live signing session with secure Whereby conferencing
+          </p>
           
-          {/* Empty slots */}
-          {Array.from({ length: Math.max(0, 8 - allParticipants.length) }).map((_, index) => (
-            <div 
-              key={`empty-${index}`}
-              className="relative bg-gray-800 rounded-lg overflow-hidden aspect-[16/9] border-2 border-dashed border-gray-700"
-            >
-              <div className="w-full h-full flex items-center justify-center">
-                <div className="text-center">
-                  <Users className="w-6 h-6 text-gray-600 mx-auto mb-1" />
-                  <p className="text-xs text-gray-500">Empty Slot</p>
-                </div>
-              </div>
+          <div className="space-y-2 mb-4">
+            <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+              <Users className="w-4 h-4" />
+              <span>{participants.length + 1} participant{participants.length !== 0 ? 's' : ''}</span>
             </div>
-          ))}
+            
+            <div className="flex flex-wrap gap-2 justify-center">
+              <Badge variant="secondary" className="bg-purple-100 text-purple-800">
+                {currentUser.name} (You - {currentUser.role})
+              </Badge>
+              {participants.map(participant => (
+                <Badge 
+                  key={participant.userId} 
+                  variant="outline"
+                  className={
+                    participant.userType === 'notary' ? 'border-purple-300' :
+                    participant.userType === 'signer' ? 'border-blue-300' :
+                    'border-green-300'
+                  }
+                >
+                  {participant.displayName} ({participant.userType})
+                </Badge>
+              ))}
+            </div>
+          </div>
+          
+          <button
+            onClick={startVideo}
+            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+          >
+            Start Whereby Video Session
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Render active video session
+  return (
+    <div className={`${className} relative bg-black`}>
+      <iframe
+        ref={iframeRef}
+        className="w-full h-full border-0"
+        allow="camera; microphone; fullscreen; speaker; display-capture"
+        title="Whereby Video Session"
+      />
+      
+      {/* Status overlay */}
+      <div className="absolute top-4 left-4 right-4 z-10">
+        <div className="bg-black bg-opacity-75 rounded-lg p-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {/* Participant count */}
+            <div className="flex items-center gap-2 text-white text-sm">
+              <Users className="w-4 h-4" />
+              <span>{participantCount} participants</span>
+      </div>
+
+            {/* Connection status */}
+            <div className="flex items-center gap-2 text-white text-sm">
+              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-yellow-400'}`} />
+              <span>{isConnected ? 'Connected' : 'Connecting...'}</span>
+            </div>
+            
+            {/* Session info */}
+            <div className="text-white text-sm opacity-75">
+              Whereby Session • Job {jobId}
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="bg-gray-800 border-t border-gray-700 p-3 shrink-0">
-        <div className="flex items-center justify-center gap-2">
-          <Button
-            variant={isAudioEnabled ? "default" : "destructive"}
-            size="sm"
-            onClick={toggleAudio}
-            className="rounded-full w-10 h-10"
-            title={isAudioEnabled ? "Mute microphone" : "Unmute microphone"}
-          >
-            {isAudioEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-          </Button>
-          
-          <Button
-            variant={isVideoEnabled ? "default" : "destructive"}
-            size="sm"
-            onClick={toggleVideo}
-            className="rounded-full w-10 h-10"
-            title={isVideoEnabled ? "Turn off camera" : "Turn on camera"}
-          >
-            {isVideoEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* Leave button */}
+            <button
+              onClick={stopVideo}
+              className="p-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+              title="Leave video session"
+            >
+              <PhoneOff className="w-4 h-4 text-white" />
+            </button>
+          </div>
         </div>
       </div>
     </div>

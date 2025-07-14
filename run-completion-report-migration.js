@@ -1,0 +1,85 @@
+const { Pool } = require('pg');
+const fs = require('fs');
+const path = require('path');
+
+// Database configuration
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/notary_db',
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
+
+async function runMigration() {
+  const client = await pool.connect();
+  
+  try {
+    console.log('🚀 Starting completion report fields migration...');
+    
+    // Read migration file
+    const migrationPath = path.join(__dirname, 'migration-add-completion-report-fields.sql');
+    const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
+    
+    // Execute migration
+    await client.query('BEGIN');
+    
+    // Split SQL by semicolons and execute each statement
+    const statements = migrationSQL
+      .split(';')
+      .map(stmt => stmt.trim())
+      .filter(stmt => stmt.length > 0 && !stmt.startsWith('--'));
+    
+    for (const statement of statements) {
+      if (statement.trim()) {
+        console.log(`Executing: ${statement.substring(0, 60)}...`);
+        await client.query(statement);
+      }
+    }
+    
+    await client.query('COMMIT');
+    console.log('✅ Migration completed successfully!');
+    
+    // Verify the changes
+    const result = await client.query(`
+      SELECT column_name, data_type, is_nullable 
+      FROM information_schema.columns 
+      WHERE table_name = 'jobs' 
+      AND column_name IN ('completion_report_path', 'completion_report_generated_at')
+      ORDER BY column_name
+    `);
+    
+    console.log('\n📋 Added columns:');
+    result.rows.forEach(row => {
+      console.log(`  - ${row.column_name}: ${row.data_type} (nullable: ${row.is_nullable})`);
+    });
+    
+    // Check indexes
+    const indexResult = await client.query(`
+      SELECT indexname, indexdef 
+      FROM pg_indexes 
+      WHERE tablename = 'jobs' 
+      AND indexname = 'idx_jobs_completion_report'
+    `);
+    
+    if (indexResult.rows.length > 0) {
+      console.log('\n📊 Created index:');
+      console.log(`  - ${indexResult.rows[0].indexname}`);
+    }
+    
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('❌ Migration failed:', error);
+    throw error;
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+// Run migration
+if (require.main === module) {
+  runMigration().catch(error => {
+    console.error('Migration script failed:', error);
+    process.exit(1);
+  });
+}
+
+module.exports = { runMigration }; 

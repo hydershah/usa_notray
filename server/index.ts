@@ -20,7 +20,6 @@ import {
   rateLimiters 
 } from './middleware/validation';
 import { gracefulDegradation } from './middleware/circuit-breaker';
-import { WebRTCSignalingService } from './services/video/WebRTCSignalingService.js';
 
 const app = express();
 
@@ -104,9 +103,8 @@ app.use((req, res, next) => {
   // Fix EventEmitter memory leak by setting appropriate max listeners
   httpServer.setMaxListeners(20);
 
-  // Initialize WebRTC signaling service
-  const webRTCService = new WebRTCSignalingService(httpServer);
-  console.log('✅ WebRTC signaling service initialized');
+  // Video conferencing now handled by Whereby service
+  console.log('✅ Whereby video conferencing service ready');
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route

@@ -151,7 +151,7 @@ function SetPasswordPage() {
         }
         
         toast({
-          title: "Password Set Successfully",
+          title: "Account Setup Complete",
           description: userType === 'signer' 
             ? "Your account is now ready. Redirecting..." 
             : "Your account is now ready. Redirecting to your dashboard...",

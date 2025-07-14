@@ -76,8 +76,12 @@ export function AdminVerification() {
   };
 
   const filteredUsers = allUsers.filter(user => {
-    const matchesSearch = user.fullName.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-                         user.email.toLowerCase().includes(userSearchTerm.toLowerCase());
+    const fullName = user.fullName || '';
+    const email = user.email || '';
+    const searchTerm = userSearchTerm.toLowerCase();
+    
+    const matchesSearch = fullName.toLowerCase().includes(searchTerm) ||
+                         email.toLowerCase().includes(searchTerm);
     const matchesRole = userRoleFilter === 'all' || user.role === userRoleFilter;
     
     // Only show users that require verification (signers, witnesses, etc.)

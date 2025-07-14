@@ -1,0 +1,449 @@
+{
+  "testData": {
+    "name": "Test Person 1",
+    "firstName": "JOHN",
+    "lastName": "DOE",
+    "ssn": "123456789",
+    "dateOfBirth": "1980-01-01",
+    "street": "123 MAIN ST",
+    "city": "ANYTOWN",
+    "state": "CA",
+    "zipCode": "90210"
+  },
+  "kbaQuestions": {
+    "questions": [
+      {
+        "text": "Which one of the following addresses is associated with you?",
+        "questionType": 1,
+        "answers": [
+          {
+            "text": "581 MERTON AV",
+            "isCorrect": false
+          },
+          {
+            "text": "49 MERIDIAN ST",
+            "isCorrect": false
+          },
+          {
+            "text": "123 MAIN ST",
+            "isCorrect": true
+          },
+          {
+            "text": "705 COLORADO BLV",
+            "isCorrect": false
+          },
+          {
+            "text": "None of the above",
+            "isCorrect": false
+          }
+        ]
+      },
+      {
+        "text": "Which one of the following area codes is associated with you?",
+        "questionType": 2,
+        "answers": [
+          {
+            "text": "503/971",
+            "isCorrect": false
+          },
+          {
+            "text": "657",
+            "isCorrect": false
+          },
+          {
+            "text": "369",
+            "isCorrect": false
+          },
+          {
+            "text": "213",
+            "isCorrect": true
+          },
+          {
+            "text": "None of the above",
+            "isCorrect": false
+          }
+        ]
+      },
+      {
+        "text": "Which one of the following counties is associated with you?",
+        "questionType": 3,
+        "answers": [
+          {
+            "text": "Los Angeles",
+            "isCorrect": true
+          },
+          {
+            "text": "Skamania",
+            "isCorrect": false
+          },
+          {
+            "text": "Placer",
+            "isCorrect": false
+          },
+          {
+            "text": "Yukon Koyukuk",
+            "isCorrect": false
+          },
+          {
+            "text": "None of the above",
+            "isCorrect": false
+          }
+        ]
+      },
+      {
+        "text": "Which one of the following zip codes is associated with you?",
+        "questionType": 4,
+        "answers": [
+          {
+            "text": "90378",
+            "isCorrect": false
+          },
+          {
+            "text": "90062",
+            "isCorrect": false
+          },
+          {
+            "text": "90075",
+            "isCorrect": false
+          },
+          {
+            "text": "90046",
+            "isCorrect": true
+          },
+          {
+            "text": "None of the above",
+            "isCorrect": false
+          }
+        ]
+      },
+      {
+        "text": "Which one of the following adult individuals is most closely associated with you?",
+        "questionType": 6,
+        "answers": [
+          {
+            "text": "Eric",
+            "isCorrect": false
+          },
+          {
+            "text": "Melanie",
+            "isCorrect": false
+          },
+          {
+            "text": "Bryan",
+            "isCorrect": false
+          },
+          {
+            "text": "Danielle",
+            "isCorrect": false
+          },
+          {
+            "text": "None of the above",
+            "isCorrect": true
+          }
+        ]
+      }
+    ]
+  },
+  "fullResponse": {
+    "meta": {
+      "transactionId": 97273469,
+      "transactionDate": "2025-07-14T07:54:39.097",
+      "productName": "AssureID",
+      "productVersion": "3.0.0",
+      "customerReference": "TEST_Test_Person_1_1752479677637",
+      "dataProviderDuration": "0.874",
+      "totalDuration": "1.187438"
+    },
+    "data": {
+      "workflowOutcome": {
+        "code": "",
+        "description": "Workflow Disabled"
+      },
+      "assureId": {
+        "primaryResult": {
+          "code": "00"
+        },
+        "addressVerificationResult": {
+          "code": "A9",
+          "description": "Exact match on first and last name; City and ZIP do not match (all other fields match)"
+        },
+        "addressTypeResult": {
+          "code": "N",
+          "description": "No information available for address type for submitted address."
+        },
+        "addressHighRiskResult": {
+          "code": "N",
+          "description": "No address high risk information found for submitted address."
+        },
+        "phoneVerificationResult": {
+          "code": "NX",
+          "description": "No Match"
+        },
+        "phoneHighRiskResult": {
+          "code": "N",
+          "description": "No phone high risk information found."
+        },
+        "changeOfAddressResult": {
+          "code": "N",
+          "description": "No change of address information was found."
+        },
+        "driverLicenseResult": {
+          "code": "M",
+          "description": "DL number not submitted."
+        },
+        "socialSecurityNumberResult": {
+          "code": "F",
+          "description": "Social Security Number format is invalid per Social Security Administration."
+        },
+        "dateOfBirthResult": {
+          "code": "5",
+          "description": "Consumer not on file – no record."
+        },
+        "minorResult": {
+          "code": "N",
+          "description": "The matched consumer is an adult."
+        },
+        "reportedFraudResult": {
+          "code": "N",
+          "description": "No fraud has been reported for the matched consumer"
+        },
+        "ssnValidation": {
+          "formatResult": {
+            "code": "I",
+            "description": "Social Security Number is invalid per Social Security Administration files."
+          },
+          "stateIssued": "",
+          "issueStartRange": "",
+          "issueEndRange": ""
+        },
+        "additionalAddresses": [
+          {
+            "reportDate": {
+              "year": "2024",
+              "month": "06",
+              "day": "19"
+            },
+            "updateDate": {
+              "year": "2024",
+              "month": "06",
+              "day": "19"
+            },
+            "street": "123 MAIN ST",
+            "city": "WEST HOLLYWOOD",
+            "state": "CA",
+            "zipCode": "90046",
+            "zipPlusFour": "",
+            "county": ""
+          }
+        ],
+        "fraudShieldResults": {
+          "fraudShield01": {
+            "code": "Y",
+            "description": "Inquiry/Online current address conflict"
+          },
+          "fraudShield02": {
+            "code": "N"
+          },
+          "fraudShield03": {
+            "code": "N"
+          },
+          "fraudShield04": {
+            "code": "N"
+          },
+          "fraudShield05": {
+            "code": "N"
+          },
+          "fraudShield06": {
+            "code": "N"
+          },
+          "fraudShield10": {
+            "code": "N"
+          },
+          "fraudShield11": {
+            "code": "N"
+          },
+          "fraudShield13": {
+            "code": "N"
+          },
+          "fraudShield14": {
+            "code": "Y",
+            "description": "Input SSN invalid"
+          },
+          "fraudShield15": {
+            "code": "N"
+          },
+          "fraudShield16": {
+            "code": "N"
+          },
+          "fraudShield17": {
+            "code": "N"
+          },
+          "fraudShield18": {
+            "code": "N"
+          },
+          "fraudShield21": {
+            "code": "N"
+          },
+          "fraudShield25": {
+            "code": "N"
+          },
+          "fraudShield26": {
+            "code": "N"
+          }
+        },
+        "sharedApplicationResults": {}
+      },
+      "assurePhone": {
+        "phoneType": {
+          "code": "M",
+          "description": "Match to a mobile phone number."
+        },
+        "callerType": {
+          "code": "C",
+          "description": "Match to a consumer phone number."
+        },
+        "deliveryType": {
+          "code": "N",
+          "description": "Verification code not sent"
+        },
+        "phoneNumber": "+15551111111",
+        "callerName": "JOHN TEST",
+        "carrierName": "Fake Mobile Carrier"
+      },
+      "kbaQuestions": {
+        "questions": [
+          {
+            "text": "Which one of the following addresses is associated with you?",
+            "questionType": 1,
+            "answers": [
+              {
+                "text": "581 MERTON AV",
+                "isCorrect": false
+              },
+              {
+                "text": "49 MERIDIAN ST",
+                "isCorrect": false
+              },
+              {
+                "text": "123 MAIN ST",
+                "isCorrect": true
+              },
+              {
+                "text": "705 COLORADO BLV",
+                "isCorrect": false
+              },
+              {
+                "text": "None of the above",
+                "isCorrect": false
+              }
+            ]
+          },
+          {
+            "text": "Which one of the following area codes is associated with you?",
+            "questionType": 2,
+            "answers": [
+              {
+                "text": "503/971",
+                "isCorrect": false
+              },
+              {
+                "text": "657",
+                "isCorrect": false
+              },
+              {
+                "text": "369",
+                "isCorrect": false
+              },
+              {
+                "text": "213",
+                "isCorrect": true
+              },
+              {
+                "text": "None of the above",
+                "isCorrect": false
+              }
+            ]
+          },
+          {
+            "text": "Which one of the following counties is associated with you?",
+            "questionType": 3,
+            "answers": [
+              {
+                "text": "Los Angeles",
+                "isCorrect": true
+              },
+              {
+                "text": "Skamania",
+                "isCorrect": false
+              },
+              {
+                "text": "Placer",
+                "isCorrect": false
+              },
+              {
+                "text": "Yukon Koyukuk",
+                "isCorrect": false
+              },
+              {
+                "text": "None of the above",
+                "isCorrect": false
+              }
+            ]
+          },
+          {
+            "text": "Which one of the following zip codes is associated with you?",
+            "questionType": 4,
+            "answers": [
+              {
+                "text": "90378",
+                "isCorrect": false
+              },
+              {
+                "text": "90062",
+                "isCorrect": false
+              },
+              {
+                "text": "90075",
+                "isCorrect": false
+              },
+              {
+                "text": "90046",
+                "isCorrect": true
+              },
+              {
+                "text": "None of the above",
+                "isCorrect": false
+              }
+            ]
+          },
+          {
+            "text": "Which one of the following adult individuals is most closely associated with you?",
+            "questionType": 6,
+            "answers": [
+              {
+                "text": "Eric",
+                "isCorrect": false
+              },
+              {
+                "text": "Melanie",
+                "isCorrect": false
+              },
+              {
+                "text": "Bryan",
+                "isCorrect": false
+              },
+              {
+                "text": "Danielle",
+                "isCorrect": false
+              },
+              {
+                "text": "None of the above",
+                "isCorrect": true
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,6 +1,6 @@
 import { db } from "../db";
-import { users, editorSessions, notaryStamps } from "../../shared/schema";
-import { eq } from "drizzle-orm";
+import { users, editorSessions, notaryStamps, userSignatures } from "../../shared/schema";
+import { eq, sql } from "drizzle-orm";
 
 export interface UserProfileData {
   // Basic info
@@ -98,28 +98,96 @@ export class ProfileAutoFillService {
       return null;
     }
   }
-  
+
   /**
-   * Get notary stamps for a notary user
+   * Get user signatures from userSignatures table
+   */
+  static async getUserSignatures(userId: number): Promise<any[]> {
+    try {
+      const signatures = await db
+        .select()
+        .from(userSignatures)
+        .where(eq(userSignatures.userId, userId));
+      
+      return signatures;
+    } catch (error) {
+      console.error('Failed to get user signatures:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get notary stamps for a user
    */
   private static async getNotaryStamps(userId: number): Promise<Array<{ id: number; stampType: string; stampData: string; isActive: boolean; }>> {
     try {
-      const stampRecords = await db
-        .select()
-        .from(notaryStamps)
-        .where(eq(notaryStamps.notaryId, userId));
+      // Use raw SQL query to match the correct database column names (like routes.ts does)
+      const stampRecords = await db.execute(sql`
+        SELECT 
+          id,
+          notary_id as "notaryId",
+          stamp_name as "stampType",
+          stamp_image as "stampData", 
+          is_active as "isActive",
+          created_at as "createdAt",
+          updated_at as "updatedAt"
+        FROM notary_stamps 
+        WHERE notary_id = ${userId}
+        AND is_active = true
+        ORDER BY created_at DESC
+      `);
       
-      const stamps = stampRecords.map(stamp => ({
-        id: stamp.id,
-        stampType: stamp.stampType || 'notary',
-        stampData: stamp.stampData || '',
-        isActive: stamp.isActive || false
+      // Process stamps to include proper image URLs (like routes.ts does)
+      const { cloudStorage } = await import('../lib/cloud-storage-service');
+      
+      const stamps = await Promise.all((stampRecords.rows || []).map(async (stamp: any) => {
+        let imageUrl = '';
+        
+        if (stamp?.stampData && typeof stamp.stampData === 'string') {
+          // Check if it's a Vultr key (no base64 prefix) or base64 data
+          if (stamp.stampData.startsWith('data:image/')) {
+            // Already base64 data, use directly
+            imageUrl = stamp.stampData;
+          } else {
+            // Vultr key, generate signed URL
+            try {
+              const fileExists = await cloudStorage.fileExists(stamp.stampData);
+              if (fileExists) {
+                const signedUrl = await cloudStorage.getSignedUrl(stamp.stampData, 3600); // 1 hour expiry
+                imageUrl = signedUrl || '';
+              } else {
+                console.warn(`Stamp image not found in Vultr: ${stamp.stampData}`);
+                imageUrl = '';
+              }
+            } catch (vultrError) {
+              console.warn(`Failed to get Vultr URL for stamp ${stamp.id}:`, vultrError);
+              imageUrl = '';
+            }
+          }
+        }
+        
+        return {
+          id: stamp?.id || 0,
+          stampType: stamp?.stampType || 'notary',
+          stampData: imageUrl,
+          isActive: stamp?.isActive || false
+        };
       }));
       
-      console.log(`📸 Found ${stamps.length} stamps for notary ID ${userId}`);
-      return stamps;
+      // Filter out stamps with no valid image data
+      const validStamps = stamps.filter(stamp => stamp.stampData && stamp.stampData.trim() !== '');
+      
+      console.log(`📸 Found ${validStamps.length} active stamps with valid data for notary ID ${userId}:`, validStamps.map(s => ({
+        id: s.id,
+        type: s.stampType,
+        hasData: !!s.stampData,
+        isBase64: s.stampData.startsWith('data:image/'),
+        isVultrUrl: s.stampData.includes('vultrobjects.com')
+      })));
+      
+      return validStamps;
     } catch (error) {
-      console.warn('Failed to fetch notary stamps:', error);
+      console.error('Failed to fetch notary stamps:', error);
       return [];
     }
   }
@@ -158,8 +226,8 @@ export class ProfileAutoFillService {
         };
       }
       
-      // Map tag type to profile data
-      return this.mapTagTypeToProfileData(tagType, profile);
+      // Map tag type to profile data (now async)
+      return await this.mapTagTypeToProfileData(tagType, profile);
       
     } catch (error) {
       console.error('Failed to get tag auto-fill data:', error);
@@ -210,11 +278,15 @@ export class ProfileAutoFillService {
   /**
    * Map tag types to specific profile data
    */
-  private static mapTagTypeToProfileData(tagType: string, profile: UserProfileData): AutoFillResult {
+  private static async mapTagTypeToProfileData(tagType: string, profile: UserProfileData): Promise<AutoFillResult> {
     const isNotary = profile.role === 'notary';
+    
+    // Fetch user signatures once for all signature-related cases
+    const userSignatures = await this.getUserSignatures(profile.id);
     
     switch (tagType) {
       case 'S': // Signature
+        // First check for signature in users table
         if (profile.signatureImage) {
           return {
             success: true,
@@ -228,7 +300,28 @@ export class ProfileAutoFillService {
             source: 'profile_auto_fill',
             message: `Auto-filled signature for ${profile.fullName}`
           };
-        } else if (profile.signatureTyped) {
+        } 
+        
+        // Check userSignatures table for uploaded signatures
+        const signatureRecord = userSignatures.find(sig => sig.signatureType === 'signature');
+        
+        if (signatureRecord && signatureRecord.data) {
+          return {
+            success: true,
+            content: signatureRecord.data,
+            contentType: 'image',
+            contentData: {
+              type: 'signature',
+              value: signatureRecord.data,
+              signatureType: signatureRecord.format || 'uploaded'
+            },
+            source: 'profile_auto_fill',
+            message: `Auto-filled signature for ${profile.fullName} (from signature library)`
+          };
+        } 
+        
+        // Check typed signature
+        else if (profile.signatureTyped) {
           return {
             success: true,
             content: profile.signatureTyped,
@@ -286,6 +379,7 @@ export class ProfileAutoFillService {
         }
       
       case 'I': // Initials
+        // First check for initials in users table
         if (profile.initialsImage) {
           return {
             success: true,
@@ -293,12 +387,34 @@ export class ProfileAutoFillService {
             contentType: 'image',
             contentData: {
               type: 'initials',
-              value: profile.initialsImage
+              value: profile.initialsImage,
+              signatureType: profile.defaultSignatureType
             },
             source: 'profile_auto_fill',
             message: `Auto-filled initials for ${profile.fullName}`
           };
-        } else if (profile.initialsTyped) {
+        } 
+        
+        // Check userSignatures table for uploaded initials
+        const initialsRecord = userSignatures.find(sig => sig.signatureType === 'initials');
+        
+        if (initialsRecord && initialsRecord.data) {
+          return {
+            success: true,
+            content: initialsRecord.data,
+            contentType: 'image',
+            contentData: {
+              type: 'initials',
+              value: initialsRecord.data,
+              signatureType: initialsRecord.format || 'uploaded'
+            },
+            source: 'profile_auto_fill',
+            message: `Auto-filled initials for ${profile.fullName} (from signature library)`
+          };
+        } 
+        
+        // Check typed initials
+        else if (profile.initialsTyped) {
           return {
             success: true,
             content: profile.initialsTyped,
@@ -311,20 +427,34 @@ export class ProfileAutoFillService {
             message: `Auto-filled typed initials for ${profile.fullName}`
           };
         } else {
-          // GRACEFUL FALLBACK: Generate initials from first/last name
-          const generatedInitials = `${profile.firstName?.[0] || ''}${profile.lastName?.[0] || ''}`.toUpperCase();
-          return {
-            success: true,
-            content: generatedInitials || 'XX',
-            contentType: 'text',
-            contentData: {
-              type: 'initials_generated',
-              value: generatedInitials || 'XX',
-              note: 'Generated from name - user should upload actual initials'
-            },
-            source: 'profile_auto_fill',
-            message: `Auto-filled initials: ${generatedInitials || 'XX'} (Add initials image in profile for better results)`
-          };
+          // GRACEFUL FALLBACK: Generate initials from name
+          if (profile.firstName && profile.lastName) {
+            const generatedInitials = `${profile.firstName.charAt(0)}${profile.lastName.charAt(0)}`;
+            return {
+              success: true,
+              content: generatedInitials,
+              contentType: 'text',
+              contentData: {
+                type: 'initials_fallback',
+                value: generatedInitials,
+                note: 'Generated from name - user should upload actual initials image'
+              },
+              source: 'profile_auto_fill',
+              message: `Auto-filled initials with name: ${generatedInitials} (Add initials image in profile for better results)`
+            };
+          } else {
+            return {
+              success: true,
+              content: '[Please upload initials]',
+              contentType: 'text',
+              contentData: {
+                type: 'initials_missing',
+                note: 'User should upload initials image'
+              },
+              source: 'profile_auto_fill',
+              message: 'Please upload initials image in profile'
+            };
+          }
         }
       
       case 'N': // Commission Number (Notary only)
@@ -470,7 +600,7 @@ export class ProfileAutoFillService {
           message: 'Text tags use inline editing, not auto-fill'
         };
       
-      case 'E': // Seal/Stamp - Return available stamps for selection
+      case 'E': // Seal/Stamp - Auto-apply first available stamp
         if (!isNotary) {
           return {
             success: false,
@@ -481,22 +611,25 @@ export class ProfileAutoFillService {
           };
         }
         
-        // Return available stamps for frontend selection
+        // Get available stamps and auto-apply the first one
         const activeStamps = profile.stamps.filter(stamp => stamp.isActive);
         
         if (activeStamps.length > 0) {
+          // Auto-apply the first active stamp
+          const firstStamp = activeStamps[0];
           return {
             success: true,
-            content: '', // Will be filled when user selects a stamp
-            contentType: 'stamp_selection',
+            content: firstStamp.stampData,
+            contentType: 'image',
             contentData: {
-              type: 'stamp_selection',
-              availableStamps: activeStamps,
-              requiresSelection: true,
-              note: 'Select a stamp and configure notarization details'
+              type: 'stamp',
+              value: firstStamp.stampData,
+              stampType: firstStamp.stampType,
+              stampId: firstStamp.id,
+              availableStamps: activeStamps // Include other available stamps for future selection
             },
             source: 'profile_auto_fill',
-            message: `Found ${activeStamps.length} available stamps - please select one`
+            message: `Auto-applied notary stamp: ${firstStamp.stampType} (${activeStamps.length} available)`
           };
         } else {
           return {
@@ -511,6 +644,22 @@ export class ProfileAutoFillService {
             message: 'No notary stamps found in profile - please upload stamps'
           };
         }
+      
+      case 'W': // Whiteout - Instant completion with white background
+        return {
+          success: true,
+          content: 'WHITEOUT',
+          contentType: 'whiteout',
+          contentData: {
+            type: 'whiteout',
+            value: 'WHITEOUT',
+            backgroundColor: '#FFFFFF',
+            isInstant: true,
+            note: 'Solid white rectangle to cover content'
+          },
+          source: 'instant_completion',
+          message: 'Whiteout applied instantly'
+        };
       
       default:
         return {
@@ -563,8 +712,13 @@ export class ProfileAutoFillService {
    * Check if tag type supports auto-fill
    */
   static isAutoFillTag(tagType: string): boolean {
-    const autoFillTags = ['S', 'A', 'I', 'N', 'X', 'D', 'O'];
+    const autoFillTags = ['S', 'A', 'I', 'N', 'X', 'D', 'O', 'E'];
     return autoFillTags.includes(tagType);
+  }
+  
+  static isInstantTag(tagType: string): boolean {
+    const instantTags = ['W']; // Whiteout tags complete instantly
+    return instantTags.includes(tagType);
   }
   
   /**

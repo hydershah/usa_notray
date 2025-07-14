@@ -48,6 +48,22 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
     const centerX = viewer.zoomLevel * 400; // Approximate center X
     const centerY = viewer.zoomLevel * 300; // Approximate center Y
 
+    // Get appropriate dimensions based on tag type
+    const getTagDimensions = (type: TagType) => {
+      if (type === 'S' || type === 'E') {
+        // Signatures and stamps need bigger dimensions for image content
+        return { width: 200, height: 60 };
+      } else if (type === 'I') {
+        // Initials need medium size
+        return { width: 120, height: 40 };
+      } else {
+        // Other tags use standard size
+        return { width: 150, height: 30 };
+      }
+    };
+
+    const dimensions = getTagDimensions(tagType);
+
     try {
       await placeTag({
         documentId: currentDocument.id,
@@ -55,8 +71,8 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
         coordinates: {
           x: centerX / viewer.zoomLevel,
           y: centerY / viewer.zoomLevel,
-          width: 150,
-          height: 26, // Reduced from 40 by 35%
+          width: dimensions.width,
+          height: dimensions.height,
           pageNumber: viewer.currentPage
         },
         assignedUserId: selectedUser.userId

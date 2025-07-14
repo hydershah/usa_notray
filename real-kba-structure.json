@@ -1,0 +1,142 @@
+{
+  "extractedPersonData": {
+    "firstName": "Ray",
+    "lastName": "Unknown",
+    "dateOfBirth": "1985-01-01",
+    "street": "123 Test Street",
+    "city": "Louisville",
+    "state": "KY",
+    "zipCode": "40202"
+  },
+  "kbaQuestions": {
+    "questions": []
+  },
+  "fullResponse": {
+    "meta": {
+      "transactionId": 97273459,
+      "transactionDate": "2025-07-14T07:53:26.137",
+      "productName": "AssureID",
+      "productVersion": "3.0.0",
+      "customerReference": "REAL_KBA_TEST_1752479605622",
+      "dataProviderDuration": "0.797",
+      "totalDuration": "1.0312098"
+    },
+    "data": {
+      "workflowOutcome": {
+        "code": "",
+        "description": "Workflow Disabled"
+      },
+      "assureId": {
+        "primaryResult": {
+          "code": "00"
+        },
+        "addressVerificationResult": {
+          "code": "ZZ",
+          "description": "Invalid/No match – Legacy"
+        },
+        "addressTypeResult": {
+          "code": "N",
+          "description": "No information available for address type for submitted address."
+        },
+        "addressHighRiskResult": {
+          "code": "N",
+          "description": "No address high risk information found for submitted address."
+        },
+        "phoneVerificationResult": {
+          "code": "MX",
+          "description": "Phone number is missing"
+        },
+        "phoneHighRiskResult": {
+          "code": "N",
+          "description": "No phone high risk information found."
+        },
+        "changeOfAddressResult": {
+          "code": "N",
+          "description": "No change of address information was found."
+        },
+        "driverLicenseResult": {
+          "code": "M",
+          "description": "DL number not submitted."
+        },
+        "socialSecurityNumberResult": {
+          "code": "M",
+          "description": "Social Security Number was not supplied on search request Header file searched by name and address with no match found."
+        },
+        "dateOfBirthResult": {
+          "code": "5",
+          "description": "Consumer not on file – no record."
+        },
+        "minorResult": {
+          "code": "N",
+          "description": "The matched consumer is an adult."
+        },
+        "reportedFraudResult": {
+          "code": "N",
+          "description": "No fraud has been reported for the matched consumer"
+        },
+        "ssnValidation": {
+          "stateIssued": "",
+          "issueStartRange": "",
+          "issueEndRange": ""
+        },
+        "fraudShieldResults": {
+          "fraudShield01": {
+            "code": "N"
+          },
+          "fraudShield02": {
+            "code": "N"
+          },
+          "fraudShield03": {
+            "code": "N"
+          },
+          "fraudShield04": {
+            "code": "N"
+          },
+          "fraudShield05": {
+            "code": "N"
+          },
+          "fraudShield06": {
+            "code": "N"
+          },
+          "fraudShield10": {
+            "code": "N"
+          },
+          "fraudShield11": {
+            "code": "N"
+          },
+          "fraudShield13": {
+            "code": "N"
+          },
+          "fraudShield14": {
+            "code": "N"
+          },
+          "fraudShield15": {
+            "code": "N"
+          },
+          "fraudShield16": {
+            "code": "N"
+          },
+          "fraudShield17": {
+            "code": "N"
+          },
+          "fraudShield18": {
+            "code": "N"
+          },
+          "fraudShield21": {
+            "code": "N"
+          },
+          "fraudShield25": {
+            "code": "N"
+          },
+          "fraudShield26": {
+            "code": "N"
+          }
+        },
+        "sharedApplicationResults": {}
+      },
+      "kbaQuestions": {
+        "questions": []
+      }
+    }
+  }
+}

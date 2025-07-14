@@ -1,230 +1,321 @@
-import React, { useState, useEffect } from 'react';
-import { WebRTCVideoConference } from './WebRTCVideoConference';
-import { VideoDebugInfo } from './VideoDebugInfo';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import WherebyVideoConference from './WherebyVideoConference';
+import SimpleVideoConference from './SimpleVideoConference';
+import { VideoIntegration } from './VideoIntegration';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { useToast } from '@/hooks/use-toast';
-import { Users, Video, VideoOff, Bug } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+
+// Example mock data for demonstration
+const mockParticipants = [
+  {
+    userId: '1',
+    displayName: 'John Doe',
+    email: 'john@example.com',
+    userType: 'notary' as const
+  },
+  {
+    userId: '2',
+    displayName: 'Jane Smith',
+    email: 'jane@example.com',
+    userType: 'signer' as const
+  },
+  {
+    userId: '3',
+    displayName: 'Bob Wilson',
+    email: 'bob@example.com',
+    userType: 'witness' as const
+  }
+];
+
+const mockCurrentUser = {
+  id: '1',
+  name: 'John Doe',
+  email: 'john@example.com',
+  role: 'notary' as const
+};
 
 interface VideoConferenceExampleProps {
-  sessionId: string;
-  jobId: number;
-  currentUser: {
-    id: string;
-    name: string;
-    email: string;
-    role: 'notary' | 'signer' | 'witness';
-  };
-  participants: Array<{
-    userId: string;
-    displayName: string;
-    email: string;
-    userType: 'notary' | 'signer' | 'witness';
-  }>;
+  sessionId?: string;
+  jobId?: number;
+  mode?: 'demo' | 'development' | 'test';
 }
 
-export const VideoConferenceExample: React.FC<VideoConferenceExampleProps> = ({
-  sessionId,
-  jobId,
-  currentUser,
-  participants
+const VideoConferenceExample: React.FC<VideoConferenceExampleProps> = ({
+  sessionId = 'demo-session-123',
+  jobId = 123,
+  mode = 'demo'
 }) => {
-  const { toast } = useToast();
-  const [isVideoEnabled, setIsVideoEnabled] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [showDebug, setShowDebug] = useState(false);
-  const [hasConnectionIssues, setHasConnectionIssues] = useState(false);
+  const [activeDemo, setActiveDemo] = useState<string>('simple');
+  const [demoSettings, setDemoSettings] = useState({
+    autoStart: false,
+    showControls: true,
+    participantCount: 3,
+    currentUserRole: 'notary' as 'notary' | 'signer' | 'witness'
+  });
 
-  const handleStartVideo = async () => {
-    setIsLoading(true);
-    try {
-      // Create video session via API
-      const response = await fetch(`/api/jobs/${jobId}/video-session`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          participants: participants.map(p => ({
-            userId: p.userId,
-            name: p.displayName,
-            email: p.email,
-            role: p.userType
-          }))
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to create video session');
-      }
-
-      const data = await response.json();
-      console.log('Video session created:', data);
-
-      setIsVideoEnabled(true);
-      toast({
-        title: "Video Conference Started",
-        description: "WebRTC video conference is now active",
-      });
-    } catch (error) {
-      console.error('Failed to start video:', error);
-      setHasConnectionIssues(true);
-      setShowDebug(true);
-      toast({
-        title: "Video Conference Failed",
-        description: "Failed to start video conference. Check the diagnostics below for details.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleStopVideo = async () => {
-    try {
-      await fetch(`/api/jobs/${jobId}/video-session`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          sessionId
-        })
-      });
-
-      setIsVideoEnabled(false);
-      toast({
-        title: "Video Conference Ended",
-        description: "Video conference has been terminated",
-      });
-    } catch (error) {
-      console.error('Failed to stop video:', error);
-    }
-  };
-
-  const handleParticipantJoined = (participant: any) => {
-    console.log('Participant joined:', participant);
-    toast({
-      title: "Participant Joined",
-      description: `${participant.name} joined the video conference`,
-    });
-  };
-
-  const handleParticipantLeft = (participantId: string) => {
-    console.log('Participant left:', participantId);
-    const participant = participants.find(p => p.userId === participantId);
-    if (participant) {
-      toast({
-        title: "Participant Left",
-        description: `${participant.displayName} left the video conference`,
-      });
-    }
+  // Generate dynamic participants based on settings
+  const dynamicParticipants = mockParticipants.slice(0, demoSettings.participantCount);
+  const dynamicCurrentUser = {
+    ...mockCurrentUser,
+    role: demoSettings.currentUserRole
   };
 
   return (
-    <div className="space-y-4">
-      {!isVideoEnabled ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Video className="h-5 w-5" />
-              Video Conference
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">
-                  Start a video conference for this signing session
-                </p>
-                <div className="flex items-center gap-2 mt-2">
-                  <Users className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm text-gray-500">
-                    {participants.length + 1} participant{participants.length !== 0 ? 's' : ''}
-                  </span>
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
+      <div className="text-center">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          Whereby Video Conference Integration
+        </h1>
+        <p className="text-gray-600">
+          Demonstration of our new Whereby-powered video conferencing system
+        </p>
+        <div className="flex justify-center gap-2 mt-4">
+          <Badge variant="secondary">Whereby.com Integration</Badge>
+          <Badge variant="outline">Cloud Recording</Badge>
+          <Badge variant="outline">Professional Grade</Badge>
+        </div>
+      </div>
+
+      {/* Demo Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Demo Settings</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <label className="text-sm font-medium">Auto Start</label>
+              <div className="flex items-center space-x-2 mt-1">
+                <input
+                  type="checkbox"
+                  checked={demoSettings.autoStart}
+                  onChange={(e) => setDemoSettings(prev => ({ ...prev, autoStart: e.target.checked }))}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm text-gray-600">Start video automatically</span>
+              </div>
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium">User Role</label>
+              <select
+                value={demoSettings.currentUserRole}
+                onChange={(e) => setDemoSettings(prev => ({ ...prev, currentUserRole: e.target.value as any }))}
+                className="w-full mt-1 rounded border-gray-300 text-sm"
+              >
+                <option value="notary">Notary (Host)</option>
+                <option value="signer">Signer</option>
+                <option value="witness">Witness</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium">Participants</label>
+              <input
+                type="range"
+                min="1"
+                max="3"
+                value={demoSettings.participantCount}
+                onChange={(e) => setDemoSettings(prev => ({ ...prev, participantCount: parseInt(e.target.value) }))}
+                className="w-full mt-1"
+              />
+              <span className="text-xs text-gray-500">{demoSettings.participantCount} participants</span>
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium">Session Info</label>
+              <div className="text-xs text-gray-600 mt-1">
+                <div>Session: {sessionId}</div>
+                <div>Job ID: {jobId}</div>
+                <div>Mode: {mode}</div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Demo Components */}
+      <Tabs value={activeDemo} onValueChange={setActiveDemo}>
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="simple">Simple Video</TabsTrigger>
+          <TabsTrigger value="full">Full Conference</TabsTrigger>
+          <TabsTrigger value="integration">Video Integration</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="simple" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Simple Video Conference</CardTitle>
+              <p className="text-sm text-gray-600">
+                Compact video interface perfect for sidebar integration
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="bg-gray-100 p-4 rounded-lg">
+                <div className="h-64 bg-white rounded border-2 border-dashed border-gray-300">
+                  <SimpleVideoConference
+                    sessionId={sessionId}
+                    currentUser={dynamicCurrentUser}
+                    participants={dynamicParticipants}
+                    className="h-full"
+                    compact={true}
+                  />
                 </div>
               </div>
-              
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleStartVideo}
-                  disabled={isLoading}
-                  className="flex items-center gap-2"
-                >
-                  <Video className="h-4 w-4" />
-                  {isLoading ? 'Starting...' : 'Start Video'}
-                </Button>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowDebug(!showDebug)}
-                  className="flex items-center gap-2"
-                >
-                  <Bug className="h-4 w-4" />
-                  Debug
-                </Button>
-              </div>
-            </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-            <div className="space-y-2">
-              <h4 className="text-sm font-medium">Participants:</h4>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="secondary" className="bg-purple-100 text-purple-800">
-                  {currentUser.name} (You - {currentUser.role})
-                </Badge>
-                {participants.map(participant => (
-                  <Badge 
-                    key={participant.userId} 
-                    variant="outline"
-                    className={
-                      participant.userType === 'notary' ? 'border-purple-300' :
-                      participant.userType === 'signer' ? 'border-blue-300' :
-                      'border-green-300'
-                    }
-                  >
-                    {participant.displayName} ({participant.userType})
-                  </Badge>
-                ))}
+        <TabsContent value="full" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Full Whereby Conference</CardTitle>
+              <p className="text-sm text-gray-600">
+                Complete video conferencing interface with all features
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="bg-gray-100 p-4 rounded-lg">
+                <div className="h-96 bg-white rounded border-2 border-dashed border-gray-300">
+                  <WherebyVideoConference
+                    sessionId={sessionId}
+                    jobId={jobId}
+                    currentUser={dynamicCurrentUser}
+                    participants={dynamicParticipants}
+                    autoStart={demoSettings.autoStart}
+                    className="h-full"
+                    onConnectionStatusChange={(status) => {
+                      console.log('Connection status changed:', status);
+                    }}
+                    onParticipantJoined={(participant) => {
+                      console.log('Participant joined:', participant);
+                    }}
+                    onParticipantLeft={(participantId) => {
+                      console.log('Participant left:', participantId);
+                    }}
+                  />
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="relative">
-          <div className="absolute top-4 right-4 z-10">
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleStopVideo}
-              className="flex items-center gap-2"
-            >
-              <VideoOff className="h-4 w-4" />
-              End Video
-            </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="integration" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Video Integration Component</CardTitle>
+              <p className="text-sm text-gray-600">
+                Smart video integration that adapts to different contexts
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="bg-gray-100 p-4 rounded-lg">
+                <div className="h-80 bg-white rounded border-2 border-dashed border-gray-300">
+                  <VideoIntegration
+                    sessionId={sessionId}
+                    participants={dynamicParticipants}
+                    currentUserId={dynamicCurrentUser.id}
+                    mode={mode === 'demo' ? 'signing' : 'tagging'}
+                    autoStart={demoSettings.autoStart}
+                    className="h-full"
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Feature Comparison */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Whereby vs WebRTC Comparison</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left py-2">Feature</th>
+                  <th className="text-left py-2">WebRTC (Old)</th>
+                  <th className="text-left py-2">Whereby (New)</th>
+                </tr>
+              </thead>
+              <tbody className="text-sm">
+                <tr className="border-b">
+                  <td className="py-2 font-medium">Setup Complexity</td>
+                  <td className="py-2 text-red-600">Complex signaling server required</td>
+                  <td className="py-2 text-green-600">Simple iframe integration</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="py-2 font-medium">Recording</td>
+                  <td className="py-2 text-orange-600">Custom implementation needed</td>
+                  <td className="py-2 text-green-600">Built-in cloud recording</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="py-2 font-medium">Mobile Support</td>
+                  <td className="py-2 text-orange-600">Limited browser support</td>
+                  <td className="py-2 text-green-600">Full mobile browser support</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="py-2 font-medium">Maintenance</td>
+                  <td className="py-2 text-red-600">High maintenance overhead</td>
+                  <td className="py-2 text-green-600">Managed service</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="py-2 font-medium">Compliance</td>
+                  <td className="py-2 text-orange-600">Self-managed</td>
+                  <td className="py-2 text-green-600">HIPAA & SOC2 compliant</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="py-2 font-medium">Reliability</td>
+                  <td className="py-2 text-orange-600">Depends on implementation</td>
+                  <td className="py-2 text-green-600">Enterprise-grade infrastructure</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-          
-          <WebRTCVideoConference
-            sessionId={sessionId}
-            currentUser={currentUser}
-            participants={participants}
-            onParticipantJoined={handleParticipantJoined}
-            onParticipantLeft={handleParticipantLeft}
-            className="h-[600px] rounded-lg overflow-hidden"
-          />
-        </div>
-      )}
-      
-      {/* Debug Information Panel */}
-      {showDebug && (
-        <VideoDebugInfo 
-          sessionId={sessionId}
-          className="mt-4"
-        />
-      )}
+        </CardContent>
+      </Card>
+
+      {/* Integration Notes */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Integration Notes</CardTitle>
+        </CardHeader>
+        <CardContent className="prose prose-sm max-w-none">
+          <div className="grid md:grid-cols-2 gap-6">
+            <div>
+              <h4 className="font-semibold text-green-800 mb-2">✅ Implemented Features</h4>
+              <ul className="space-y-1 text-sm">
+                <li>• Whereby iframe integration</li>
+                <li>• Host/participant role management</li>
+                <li>• Cloud recording controls</li>
+                <li>• Participant join/leave events</li>
+                <li>• Connection status monitoring</li>
+                <li>• Mobile-responsive design</li>
+                <li>• Secure token-based authentication</li>
+                <li>• Auto-minimize/maximize controls</li>
+              </ul>
+            </div>
+            
+            <div>
+              <h4 className="font-semibold text-blue-800 mb-2">🔄 API Integration</h4>
+              <ul className="space-y-1 text-sm">
+                <li>• <code>POST /api/jobs/{jobId}/video-session</code></li>
+                <li>• <code>DELETE /api/jobs/{jobId}/video-session</code></li>
+                <li>• <code>POST /api/jobs/{jobId}/video-session/recording/start</code></li>
+                <li>• <code>POST /api/jobs/{jobId}/video-session/recording/stop</code></li>
+                <li>• <code>GET /api/jobs/{jobId}/recordings</code></li>
+              </ul>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
-}; 
+};
+
+export default VideoConferenceExample; 

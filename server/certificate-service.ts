@@ -136,6 +136,141 @@ class CertificateService {
   }
 
   /**
+   * Generate certificate for a verified signer/witness user
+   */
+  async generateSignerCertificate(userId: number): Promise<{
+    success: boolean;
+    certificateId?: number;
+    p12Path?: string;
+    p12Password?: string;
+    error?: string;
+  }> {
+    try {
+      if (!this.initialized) {
+        await this.initialize();
+      }
+
+      // Get user details from database
+      const user = await storage.getUserById(userId);
+      if (!user) {
+        return { success: false, error: 'User not found' };
+      }
+
+      // Validate user is a signer or witness
+      if (!['signer', 'witness'].includes(user.role)) {
+        return { success: false, error: 'User must be a signer or witness' };
+      }
+
+      // CRITICAL: Only generate certificates for verified users
+      if (!user.isVerified && !user.isVerificationBypassed) {
+        return { 
+          success: false, 
+          error: 'User must complete ID verification before certificate generation' 
+        };
+      }
+
+      // Check if user already has an active certificate
+      const existingCert = await this.getActiveCertificate(userId);
+      if (existingCert) {
+        return { 
+          success: false, 
+          error: 'User already has an active certificate' 
+        };
+      }
+
+      // Build user certificate configuration for signer/witness
+      const userConfig: UserCertConfig = {
+        fullName: user.fullName || `${user.firstName} ${user.lastName}`.trim() || user.email,
+        email: user.email,
+        state: user.state || 'Unknown',
+        notaryCommission: `Verified ${user.role.charAt(0).toUpperCase() + user.role.slice(1)}`, // "Verified Signer" or "Verified Witness"
+        organizationUnit: `Document ${user.role.charAt(0).toUpperCase() + user.role.slice(1)}s`, // "Document Signers" or "Document Witnesses"
+        keySize: 2048, // Standard key size
+        validityDays: 365 // 1 year validity for signers/witnesses
+      };
+
+      console.log(`🔧 Generating ${user.role} certificate for user ${userId}: ${userConfig.fullName}`);
+
+      // Generate the certificate using existing CA infrastructure
+      const certResult = await this.ca.generateUserCertificate(userConfig);
+
+      // Store certificate record in database
+      const certificateId = await this.storeCertificateRecord({
+        userId,
+        serialNumber: certResult.serialNumber,
+        certificatePath: certResult.certificatePath,
+        privateKeyPath: certResult.privateKeyPath,
+        p12Path: certResult.p12Path,
+        issueDate: new Date().toISOString(),
+        expiryDate: new Date(Date.now() + userConfig.validityDays * 24 * 60 * 60 * 1000).toISOString(),
+        status: 'active',
+        p12Password: await this.getP12Password(certResult.p12Path)
+      });
+
+      // Update user record with certificate information
+      await this.updateUserCertificateInfo(userId, {
+        digitalCertificateFile: certResult.p12Path,
+        digitalCertificateExpiration: new Date(Date.now() + userConfig.validityDays * 24 * 60 * 60 * 1000).toISOString()
+      });
+
+      console.log(`✅ ${user.role} certificate generated successfully for user ${userId}`);
+
+      return {
+        success: true,
+        certificateId,
+        p12Path: certResult.p12Path,
+        p12Password: await this.getP12Password(certResult.p12Path)
+      };
+
+    } catch (error) {
+      console.error(`❌ Failed to generate ${user?.role || 'user'} certificate for user ${userId}:`, error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Universal certificate generation - supports all user types
+   */
+  async generateUserCertificate(userId: number): Promise<{
+    success: boolean;
+    certificateId?: number;
+    p12Path?: string;
+    p12Password?: string;
+    error?: string;
+  }> {
+    try {
+      // Get user details to determine certificate type
+      const user = await storage.getUserById(userId);
+      if (!user) {
+        return { success: false, error: 'User not found' };
+      }
+
+      // Route to appropriate certificate generation method
+      switch (user.role) {
+        case 'notary':
+          return await this.generateNotaryCertificate(userId);
+        case 'signer':
+        case 'witness':
+          return await this.generateSignerCertificate(userId);
+        default:
+          return { 
+            success: false, 
+            error: `Certificate generation not supported for role: ${user.role}` 
+          };
+      }
+    } catch (error) {
+      console.error(`❌ Failed to generate certificate for user ${userId}:`, error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
    * Validate a user's certificate
    */
   async validateUserCertificate(userId: number): Promise<{

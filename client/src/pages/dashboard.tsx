@@ -35,6 +35,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { EVSVerification } from '@/components/verification/evs-verification';
+import { KBAVerification } from '@/components/verification/kba-verification';
 
 // Import role-specific dashboard components
 import { AdminDashboard } from '@/components/admin/AdminDashboard';
@@ -223,6 +224,7 @@ function SignerDashboard() {
   const [invitedJobs, setInvitedJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showVerification, setShowVerification] = useState(false);
+  const [showKBAVerification, setShowKBAVerification] = useState(false);
 
   const fetchSignerProfile = async () => {
     if (!user?.id) return;
@@ -308,6 +310,24 @@ function SignerDashboard() {
 
   const handleVerificationFailed = (error: string) => {
     console.error('Verification failed:', error);
+  };
+
+  const handleKBAVerificationComplete = (result: any) => {
+    fetchSignerProfile(); // Refresh profile to get updated KBA status
+    setShowKBAVerification(false);
+    toast({
+      title: "KBA Verification Complete",
+      description: `You scored ${result.score}% - verification successful!`,
+    });
+  };
+
+  const handleKBAVerificationFailed = (error: string) => {
+    console.error('KBA verification failed:', error);
+    toast({
+      variant: "destructive",
+      title: "KBA Verification Failed",
+      description: error,
+    });
   };
 
   useEffect(() => {
@@ -552,15 +572,33 @@ function SignerDashboard() {
                           Join Session
                         </Button>
                       )}
-                      {job.signingStatus === 'pending' && !profile?.isVerified && (
-                        <Button 
-                          size="sm" 
-                          variant="outline" 
-                          onClick={() => setShowVerification(true)}
-                        >
-                          <Shield className="h-4 w-4 mr-2" />
-                          Verify ID First
-                        </Button>
+                      {job.signingStatus === 'pending' && (
+                        // Show appropriate verification button based on job requirements
+                        job.kbaRequired ? (
+                          // KBA Required Jobs
+                          !profile?.kbaVerified && (
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              onClick={() => setShowKBAVerification(true)}
+                            >
+                              <Shield className="h-4 w-4 mr-2" />
+                              Complete KBA Verification
+                            </Button>
+                          )
+                        ) : (
+                          // Regular ID Verification Jobs
+                          !profile?.isVerified && (
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              onClick={() => setShowVerification(true)}
+                            >
+                              <Shield className="h-4 w-4 mr-2" />
+                              Verify ID First
+                            </Button>
+                          )
+                        )
                       )}
                       {job.signingStatus === 'completed' && (
                         <Button 
@@ -698,6 +736,43 @@ function SignerDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* KBA Verification Modal */}
+      {showKBAVerification && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-auto">
+            <KBAVerification
+              userId={user?.id!}
+              userInfo={{
+                firstName: profile?.firstName || '',
+                lastName: profile?.lastName || '',
+                dateOfBirth: profile?.dateOfBirth || '',
+                address: {
+                  street: profile?.address1 || '',
+                  city: profile?.city || '',
+                  state: profile?.state || '',
+                  zipCode: profile?.zipCode || ''
+                },
+                ssn: profile?.ssn || '',
+                phone: profile?.phoneNumber || '',
+                email: profile?.email || user?.email || ''
+              }}
+              onVerificationComplete={handleKBAVerificationComplete}
+              onVerificationFailed={handleKBAVerificationFailed}
+              requireKBA={true}
+            />
+            <div className="p-6 border-t">
+              <Button 
+                onClick={() => setShowKBAVerification(false)}
+                variant="outline"
+                className="w-full"
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

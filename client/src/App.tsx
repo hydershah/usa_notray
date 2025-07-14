@@ -90,6 +90,7 @@ const NotaryProfileCompletion = React.lazy(() =>
     })
 );
 const SetPasswordPage = React.lazy(() => import("@/pages/set-password"));
+const ResetPasswordPage = React.lazy(() => import("@/pages/reset-password"));
 const JobDetailsPage = React.lazy(() => import("@/pages/job-details"));
 const ProfilePage = React.lazy(() => import("@/pages/profile"));
 
@@ -176,7 +177,7 @@ function Router() {
         {(isAuthenticated && !isLoggingOut) ? <Redirect to="/dashboard" /> : 
           <ErrorBoundary fallback={<LoadingFallback />}>
             <React.Suspense fallback={<LoadingFallback />}>
-              <SetPasswordPage />
+              <ResetPasswordPage />
             </React.Suspense>
           </ErrorBoundary>
         }

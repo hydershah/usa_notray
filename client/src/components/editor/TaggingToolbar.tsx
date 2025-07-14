@@ -1,14 +1,15 @@
 import React, { useCallback, useState } from 'react';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
-import type { TagType, SessionParticipant } from '../../types/editor';
+import type { TagType, SessionParticipant, SessionDocument } from '../../types/editor';
 import { TAG_TYPE_INFO, USER_COLORS } from '../../types/editor';
 import { Badge } from '../ui/badge';
+import { FileText, ChevronDown } from 'lucide-react';
 
 interface TaggingToolbarProps {
   participants?: SessionParticipant[];
   sessionId?: string;
   mode?: 'tagging' | 'notary' | 'signing';
-  onDocumentSwitch?: (document: any) => void;
+  onDocumentSwitch?: (document: SessionDocument) => void;
   onSessionComplete?: () => void;
   className?: string;
 }
@@ -138,10 +139,116 @@ const UserSelector: React.FC<UserSelectorProps> = ({
   );
 };
 
+interface DocumentSelectorProps {
+  documents: SessionDocument[];
+  currentDocument: SessionDocument | null;
+  onDocumentSwitch: (document: SessionDocument) => void;
+  tags: any[];
+}
+
+const DocumentSelector: React.FC<DocumentSelectorProps> = ({
+  documents,
+  currentDocument,
+  onDocumentSwitch,
+  tags
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (documents.length <= 1) {
+    // Don't show selector if only one document
+    return null;
+  }
+
+  // Calculate tags per document
+  const getDocumentTagStats = (documentId: string) => {
+    const docTags = tags.filter(tag => tag.documentId === documentId);
+    const completed = docTags.filter(tag => tag.isCompleted).length;
+    return { total: docTags.length, completed };
+  };
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-medium text-gray-900">Documents ({documents.length})</h3>
+      
+      <div className="relative">
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="w-full flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 transition-all duration-200"
+        >
+          <FileText className="h-4 w-4 text-gray-500" />
+          <div className="flex-1 text-left">
+            <div className="font-medium text-sm truncate">
+              {currentDocument?.fileName || 'Select Document'}
+            </div>
+            {currentDocument && (
+              <div className="text-xs text-gray-500">
+                {(() => {
+                  const stats = getDocumentTagStats(currentDocument.id);
+                  return `${stats.total} tags • ${stats.completed} completed`;
+                })()}
+              </div>
+            )}
+          </div>
+          <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
+
+        {isOpen && (
+          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
+            {documents.map((document) => {
+              const isSelected = currentDocument?.id === document.id;
+              const stats = getDocumentTagStats(document.id);
+              
+              return (
+                <button
+                  key={document.id}
+                  onClick={() => {
+                    onDocumentSwitch(document);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 p-3 text-left hover:bg-gray-50 transition-colors ${
+                    isSelected ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
+                  } ${
+                    document !== documents[documents.length - 1] ? 'border-b border-gray-100' : ''
+                  }`}
+                >
+                  <FileText className={`h-4 w-4 ${isSelected ? 'text-blue-500' : 'text-gray-400'}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className={`font-medium text-sm truncate ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>
+                      {document.fileName}
+                    </div>
+                    <div className="text-xs text-gray-500 flex items-center gap-2">
+                      <span>{stats.total} tags</span>
+                      {stats.completed > 0 && (
+                        <>
+                          <span>•</span>
+                          <span className="text-green-600">{stats.completed} completed</span>
+                        </>
+                      )}
+                      {stats.total > 0 && stats.completed === stats.total && (
+                        <Badge variant="default" className="bg-green-100 text-green-800 text-xs ml-1">
+                          ✓ Done
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  {isSelected && (
+                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({ 
   className = '',
   sessionId,
   onSessionComplete,
+  onDocumentSwitch,
   mode: propMode
 }) => {
   const {
@@ -153,7 +260,9 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
     currentUser,
     setSelectedUser,
     switchUser,
-    tags
+    tags,
+    documents,
+    currentDocument
   } = useEditorStore();
 
   const [isCompleting, setIsCompleting] = useState(false);
@@ -164,6 +273,9 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
   const isNotary = currentUser?.userType === 'notary';
   const isAdmin = currentUser?.role === 'admin';
   const canPlaceTags = mode.mode === 'tagging' || (propMode === 'signing' && (isNotary || isAdmin));
+
+  // Filter tags for current document only
+  const currentDocumentTags = tags.filter(tag => tag.documentId === currentDocument?.id);
 
   // Define available tag types based on user role - SIMPLIFIED RESTRICTIONS
   const getAvailableTagTypes = useCallback((user: SessionParticipant | null): TagType[] => {
@@ -202,6 +314,14 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
     // Don't clear selected tag type when switching users - let user keep their selection
     // setSelectedTagType(null); // ❌ REMOVED - was causing tag type to be cleared
   }, [setSelectedUser, selectedUser, propMode, isSigner, getAvailableTagTypes]);
+
+  // Handle document switching
+  const handleDocumentSwitch = useCallback((document: SessionDocument) => {
+    console.log('📄 Document switched:', document.fileName);
+    if (onDocumentSwitch) {
+      onDocumentSwitch(document);
+    }
+  }, [onDocumentSwitch]);
 
   // Handle completion
   const handleComplete = useCallback(async () => {
@@ -267,19 +387,40 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
 
   return (
     <div className={`tagging-toolbar bg-white flex flex-col h-full ${className}`}>
-      {/* Simplified Header */}
+      {/* Enhanced Header with Multi-Document Progress */}
       <div className="p-4 border-b border-gray-200">
         <h2 className="text-lg font-medium text-gray-900">
           {propMode === 'signing' ? 'Signing Tools' : 'Tagging Tools'}
         </h2>
-        <p className="text-sm text-gray-600 mt-1">
-          {tags.length} tags placed • {tags.filter(t => t.isCompleted).length} completed
-        </p>
+        {documents.length > 1 ? (
+          <div className="mt-2 space-y-1">
+            <p className="text-sm text-gray-600">
+              Current Document: {currentDocumentTags.length} tags • {currentDocumentTags.filter(t => t.isCompleted).length} completed
+            </p>
+            <p className="text-xs text-gray-500">
+              All Documents: {tags.length} total tags • {tags.filter(t => t.isCompleted).length} completed across {documents.length} documents
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-600 mt-1">
+            {currentDocumentTags.length} tags placed • {currentDocumentTags.filter(t => t.isCompleted).length} completed
+          </p>
+        )}
       </div>
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 pb-0 space-y-4">
+          {/* Document Selection */}
+          {documents.length > 1 && onDocumentSwitch && (
+            <DocumentSelector
+              documents={documents}
+              currentDocument={currentDocument}
+              onDocumentSwitch={handleDocumentSwitch}
+              tags={tags}
+            />
+          )}
+
           {/* User Selection */}
           {(propMode !== 'signing' || !isSigner) && (
             <div className="space-y-3">
@@ -432,13 +573,13 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
           )}
 
           {/* Placed Tags Summary */}
-          {tags.length > 0 && (
+          {currentDocumentTags.length > 0 && (
             <div className="space-y-2 pb-4">
               <h3 className="text-sm font-medium text-gray-900">
-                Document Tags ({tags.length})
+                Document Tags ({currentDocumentTags.length})
               </h3>
               <div className="space-y-1 max-h-40 overflow-y-auto">
-                {tags.map(tag => {
+                {currentDocumentTags.map(tag => {
                   const userInfo = participants.find(p => p.userId === tag.assignedUserId);
                   const tagInfo = TAG_TYPE_INFO[tag.tagType];
                   const isAssignedToCurrentUser = tag.assignedUserId === currentUser?.userId;

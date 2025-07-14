@@ -343,7 +343,12 @@ export function registerUserManagementRoutes(app: Express) {
         hasCommissionFile: !!user.notaryCommissionFile,
         hasEOInsurance: !!user.eoInsuranceFile,
         hasBond: !!user.bondFile,
-        hasPublicCertificate: !!user.publicCertificateFile
+        hasPublicCertificate: !!user.publicCertificateFile,
+        
+        // Certificate status for signers and witnesses
+        certificateEligible: ['signer', 'witness'].includes(user.role),
+        isVerified: user.isVerified || user.isVerificationBypassed || false,
+        verificationStatus: user.verificationStatus || 'pending'
       })));
     } catch (error) {
       console.error('Get pending users error:', error);
@@ -497,6 +502,44 @@ export function registerUserManagementRoutes(app: Express) {
         companyInfo = await storage.getCompany(user.companyId);
       }
 
+      // Get self-signed certificate information for signers and witnesses
+      let certificateInfo = null;
+      if (['signer', 'witness'].includes(user.role)) {
+        try {
+          const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
+          const certificate = await selfSignedCertificateService.getUserCertificate(userId);
+          
+          if (certificate) {
+            const isExpired = new Date() > new Date(certificate.expires_at);
+            certificateInfo = {
+              hasCertificate: true,
+              certificateId: certificate.certificate_id,
+              commonName: certificate.common_name,
+              issuedAt: certificate.issued_at,
+              expiresAt: certificate.expires_at,
+              status: certificate.status,
+              isExpired,
+              certificateType: 'self-signed',
+              downloadUrl: `/api/admin/users/${userId}/certificate/download`
+            };
+          } else {
+            certificateInfo = {
+              hasCertificate: false,
+              eligibleForGeneration: user.isVerified || user.isVerificationBypassed,
+              reason: (user.isVerified || user.isVerificationBypassed) 
+                ? 'User is verified but no certificate generated yet' 
+                : 'User must complete ID verification first'
+            };
+          }
+        } catch (error) {
+          console.error('Error getting certificate info:', error);
+          certificateInfo = {
+            hasCertificate: false,
+            error: 'Failed to load certificate information'
+          };
+        }
+      }
+
       // Return comprehensive profile
       const profile = {
         // Basic information
@@ -565,6 +608,9 @@ export function registerUserManagementRoutes(app: Express) {
         // Certificates and documents
         publicCertificateExpiration: user.publicCertificateExpiration,
         digitalCertificateExpiration: user.digitalCertificateExpiration,
+        
+        // Self-signed certificate information (NEW)
+        selfSignedCertificate: certificateInfo,
         
         // Document upload status
         documents: {
