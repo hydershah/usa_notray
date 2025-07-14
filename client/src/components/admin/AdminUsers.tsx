@@ -18,7 +18,14 @@ import {
   Phone,
   MapPin,
   Calendar,
-  Activity
+  Activity,
+  Download,
+  Key,
+  Award,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 
 interface UserData {
@@ -38,10 +45,28 @@ interface UserData {
   isNotary?: boolean;
 }
 
+interface CertificateStatus {
+  hasCertificate: boolean;
+  certificate?: {
+    id: string;
+    certificateId: string;
+    commonName: string;
+    userRole: string;
+    issuedAt: string;
+    expiresAt: string;
+    status: string;
+    isExpired: boolean;
+    downloadUrl: string;
+  };
+  error?: string;
+}
+
 export function AdminUsers() {
   const [, setLocation] = useLocation();
   const [allUsers, setAllUsers] = useState<UserData[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
+  const [certificateStatus, setCertificateStatus] = useState<CertificateStatus | null>(null);
+  const [certificateLoading, setCertificateLoading] = useState(false);
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -50,6 +75,14 @@ export function AdminUsers() {
   useEffect(() => {
     fetchUsersData();
   }, []);
+
+  useEffect(() => {
+    if (selectedUser) {
+      fetchCertificateStatus(selectedUser.id);
+    } else {
+      setCertificateStatus(null);
+    }
+  }, [selectedUser]);
 
   const fetchUsersData = async () => {
     try {
@@ -96,6 +129,85 @@ export function AdminUsers() {
     }
   };
 
+  const fetchCertificateStatus = async (userId: number) => {
+    // Only fetch certificate status for signers and witnesses
+    const user = allUsers.find(u => u.id === userId);
+    if (!user || !['signer', 'witness'].includes(user.role)) {
+      setCertificateStatus({ hasCertificate: false, error: 'Self-signed certificates are only available for signers and witnesses' });
+      return;
+    }
+
+    try {
+      setCertificateLoading(true);
+      const response = await fetch(`/api/admin/users/${userId}/certificate`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setCertificateStatus(data);
+      } else {
+        const errorData = await response.json();
+        setCertificateStatus({ hasCertificate: false, error: errorData.error || 'Failed to fetch certificate status' });
+      }
+    } catch (error) {
+      console.error('Error fetching certificate status:', error);
+      setCertificateStatus({ hasCertificate: false, error: 'Failed to fetch certificate status' });
+    } finally {
+      setCertificateLoading(false);
+    }
+  };
+
+  const downloadCertificate = async (userId: number) => {
+    try {
+      // Check if current user is admin and if they're downloading their own cert
+      const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+      const isAdmin = currentUser.role === 'admin' || (currentUser.privileges && currentUser.privileges.includes('admin'));
+      const isOwnCertificate = currentUser.id === userId;
+      
+      // Use appropriate endpoint based on permissions
+      let downloadUrl;
+      if (isAdmin && !isOwnCertificate) {
+        // Admin downloading another user's certificate
+        downloadUrl = `/api/admin/users/${userId}/certificate/download`;
+      } else {
+        // User downloading their own certificate or admin downloading their own
+        downloadUrl = `/api/user/certificate/download`;
+      }
+      
+      const response = await fetch(downloadUrl, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `user-${userId}-certificate.pem`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      } else {
+        const errorData = await response.json();
+        if (errorData.error === 'Admin access required' && !isAdmin) {
+          alert('You can only download your own certificate. Admin access is required to download other users\' certificates.');
+        } else {
+          alert(`Download failed: ${errorData.error}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error downloading certificate:', error);
+      alert('Failed to download certificate');
+    }
+  };
+
   const filteredUsers = allUsers.filter(user => {
     const matchesSearch = (user.fullName || '').toLowerCase().includes(userSearchTerm.toLowerCase()) ||
                          (user.email || '').toLowerCase().includes(userSearchTerm.toLowerCase());
@@ -118,6 +230,34 @@ export function AdminUsers() {
     if (user.approvalStatus === 'pending') return 'Pending';
     if (!user.isActive) return 'Inactive';
     return 'Active';
+  };
+
+  const getCertificateStatusIcon = () => {
+    if (certificateLoading) {
+      return <RefreshCw className="h-4 w-4 animate-spin text-blue-500" />;
+    }
+    if (!certificateStatus) {
+      return <XCircle className="h-4 w-4 text-gray-400" />;
+    }
+    if (certificateStatus.error) {
+      return <XCircle className="h-4 w-4 text-gray-400" />;
+    }
+    if (!certificateStatus.hasCertificate) {
+      return <XCircle className="h-4 w-4 text-gray-400" />;
+    }
+    if (certificateStatus.certificate?.isExpired) {
+      return <XCircle className="h-4 w-4 text-red-500" />;
+    }
+    return <CheckCircle className="h-4 w-4 text-green-500" />;
+  };
+
+  const getCertificateStatusText = () => {
+    if (certificateLoading) return 'Loading...';
+    if (!certificateStatus) return 'Unknown';
+    if (certificateStatus.error) return 'Not Available';
+    if (!certificateStatus.hasCertificate) return 'No Certificate';
+    if (certificateStatus.certificate?.isExpired) return 'Expired';
+    return 'Valid';
   };
 
   if (loading) {
@@ -331,6 +471,80 @@ export function AdminUsers() {
                       </Badge>
                     </div>
                   </div>
+
+                  {/* Certificate Information - NEW SECTION */}
+                  {selectedUser && ['signer', 'witness'].includes(selectedUser.role) && (
+                    <div className="border-t pt-6">
+                      <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                        <Key className="h-4 w-4" />
+                        Self-Signed Certificate
+                      </h4>
+                      
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 text-sm">
+                          {getCertificateStatusIcon()}
+                          <span className="font-medium">Status:</span>
+                          <span className="text-gray-700">{getCertificateStatusText()}</span>
+                        </div>
+                        
+                        {certificateStatus?.hasCertificate && certificateStatus.certificate && (
+                          <>
+                            <div className="text-sm space-y-2">
+                              <div>
+                                <span className="font-medium text-gray-600">Certificate ID:</span>
+                                <span className="ml-2 text-gray-900 font-mono text-xs">
+                                  {certificateStatus.certificate.certificateId}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="font-medium text-gray-600">Common Name:</span>
+                                <span className="ml-2 text-gray-900">
+                                  {certificateStatus.certificate.commonName}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="font-medium text-gray-600">Issued:</span>
+                                <span className="ml-2 text-gray-900">
+                                  {new Date(certificateStatus.certificate.issuedAt).toLocaleDateString()}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="font-medium text-gray-600">Expires:</span>
+                                <span className="ml-2 text-gray-900">
+                                  {new Date(certificateStatus.certificate.expiresAt).toLocaleDateString()}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => downloadCertificate(selectedUser.id)}
+                              className="w-full"
+                            >
+                              <Download className="h-4 w-4 mr-2" />
+                              Download Certificate (.pem)
+                            </Button>
+                          </>
+                        )}
+                        
+                        {certificateStatus?.error && (
+                          <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
+                            {certificateStatus.error}
+                          </div>
+                        )}
+                        
+                        {!certificateStatus?.hasCertificate && !certificateStatus?.error && !certificateLoading && (
+                          <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
+                            <p className="font-medium text-blue-900 mb-1">Certificate Not Generated</p>
+                            <p className="text-blue-800">
+                              This user needs to complete ID verification to automatically generate their self-signed certificate.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Actions */}
                   <div className="space-y-2">

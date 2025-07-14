@@ -1049,6 +1049,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'User not found' });
       }
 
+      // Get self-signed certificate information for signers and witnesses
+      let certificateInfo = null;
+      if (['signer', 'witness'].includes(user.role)) {
+        try {
+          const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
+          const certificate = await selfSignedCertificateService.getUserCertificate(userId);
+          
+          if (certificate) {
+            const isExpired = new Date() > new Date(certificate.expires_at);
+            certificateInfo = {
+              hasCertificate: true,
+              certificateId: certificate.certificate_id,
+              commonName: certificate.common_name,
+              issuedAt: certificate.issued_at,
+              expiresAt: certificate.expires_at,
+              status: certificate.status,
+              isExpired,
+              certificateType: 'self-signed',
+              downloadUrl: `/api/user/certificate/download`
+            };
+          } else {
+            certificateInfo = {
+              hasCertificate: false,
+              eligibleForGeneration: user.isVerified || user.isVerificationBypassed,
+              reason: (user.isVerified || user.isVerificationBypassed) 
+                ? 'User is verified but no certificate generated yet' 
+                : 'User must complete ID verification first'
+            };
+          }
+        } catch (error) {
+          console.error('Error getting certificate info:', error);
+          certificateInfo = {
+            hasCertificate: false,
+            error: 'Failed to load certificate information'
+          };
+        }
+      }
+
       // Return user profile with notary-specific fields
       const profile = {
         id: user.id,
@@ -1072,6 +1110,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         isNotarySigningAgent: user.isNotarySigningAgent,
         isSpanishSpeaking: user.isSpanishSpeaking,
         notaryType: user.notaryType,
+        // Self-signed certificate information (NEW)
+        selfSignedCertificate: certificateInfo,
       };
 
       res.json(profile);
@@ -3594,12 +3634,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Get document versions from database
-      const versions = await db
+      // First get all documents for this job
+      const jobDocumentsList = await db
         .select()
-        .from(documentVersions)
-        .where(eq(documentVersions.originalDocumentId, jobId))
-        .orderBy(desc(documentVersions.createdAt));
+        .from(jobDocuments)
+        .where(eq(jobDocuments.jobId, jobId));
+      
+      // Get document versions for these documents
+      const documentIds = jobDocumentsList.map(doc => doc.id);
+      let versions: any[] = [];
+      
+      if (documentIds.length > 0) {
+        // Use inArray to get versions for all document IDs at once
+        versions = await db
+          .select()
+          .from(documentVersions)
+          .where(inArray(documentVersions.originalDocumentId, documentIds))
+          .orderBy(desc(documentVersions.createdAt));
+      }
 
       // Add download URLs to each version
       const versionsWithUrls = versions.map(version => ({
@@ -4211,6 +4263,29 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         return res.status(403).json({ error: 'Access denied' });
       }
 
+      // 🔧 CRITICAL FIX: Validate required fields and time format
+      if (!date || !startTime || !endTime) {
+        return res.status(400).json({ 
+          error: 'Missing required fields: date, startTime, and endTime are required' 
+        });
+      }
+
+      // Validate time format (HH:MM)
+      const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+      if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
+        return res.status(400).json({ 
+          error: 'Invalid time format. Please use HH:MM format (e.g., 09:30)' 
+        });
+      }
+
+      // Validate date format (YYYY-MM-DD)
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(date)) {
+        return res.status(400).json({ 
+          error: 'Invalid date format. Please use YYYY-MM-DD format' 
+        });
+      }
+
       const newSlot = await db
         .insert(notaryTimeSlots)
         .values({
@@ -4223,6 +4298,17 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           isManualBlock: status === 'blocked'
         })
         .returning();
+
+      // 🔧 CRITICAL FIX: Invalidate calendar cache after slot creation
+      try {
+        const { redisCache } = await import('./services/redis-cache');
+        await redisCache.delPattern(`user:${notaryId}:*calendar*`);
+        await redisCache.delPattern(`*calendar*`);
+        console.log(`🧹 Invalidated calendar cache for user ${notaryId} after slot creation`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate calendar cache:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
 
       res.json(newSlot[0]);
     } catch (error) {
@@ -4391,6 +4477,17 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         }
       }
 
+      // 🔧 CRITICAL FIX: Invalidate calendar cache after bulk creation
+      try {
+        const { redisCache } = await import('./services/redis-cache');
+        await redisCache.delPattern(`user:${notaryId}:*calendar*`);
+        await redisCache.delPattern(`*calendar*`);
+        console.log(`🧹 Invalidated calendar cache for user ${notaryId} after bulk setup`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate calendar cache:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+
       res.json({ 
         success: true, 
         message: `Created ${totalCreated} time slots across ${daysDiff + 1} days`,
@@ -4436,6 +4533,17 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         .where(eq(notaryTimeSlots.id, slotId))
         .returning();
 
+      // 🔧 CRITICAL FIX: Invalidate calendar cache after slot update
+      try {
+        const { redisCache } = await import('./services/redis-cache');
+        await redisCache.delPattern(`user:${notaryId}:*calendar*`);
+        await redisCache.delPattern(`*calendar*`);
+        console.log(`🧹 Invalidated calendar cache for user ${notaryId} after slot update`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate calendar cache:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+
       res.json(updatedSlot[0]);
     } catch (error) {
       console.error('Error updating time slot:', error);
@@ -4475,6 +4583,18 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       await db
         .delete(notaryTimeSlots)
         .where(eq(notaryTimeSlots.id, slotId));
+
+
+        // 🔧 CRITICAL FIX: Invalidate calendar cache after slot deletion
+      try {
+        const { redisCache } = await import('./services/redis-cache');
+        await redisCache.delPattern(`user:${notaryId}:*calendar*`);
+        await redisCache.delPattern(`*calendar*`);
+        console.log(`🧹 Invalidated calendar cache for user ${notaryId} after slot deletion`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate calendar cache:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
 
       res.json({ success: true });
     } catch (error) {
@@ -4887,6 +5007,138 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     } catch (error) {
       console.error('Error selecting random notary:', error);
       res.status(500).json({ error: 'Failed to select random notary' });
+    }
+  });
+
+  // Get job completion report
+  app.get('/api/jobs/:id/completion-report', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      
+      if (isNaN(jobId)) {
+        return res.status(400).json({ message: 'Invalid job ID' });
+      }
+
+      const job = await storage.getJob(jobId);
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      // Check if user has access to this job
+      if (req.user.role !== 'admin' && job.userId !== req.user.id && job.selectedNotary !== req.user.id.toString()) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { JobCompletionReportService } = await import('./services/job-completion-report-service');
+      const reportInfo = await JobCompletionReportService.getJobCompletionReport(jobId);
+      
+      res.json(reportInfo);
+      
+    } catch (error) {
+      console.error('Get completion report error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Download job completion report
+  app.get('/api/jobs/:id/completion-report/download', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      
+      if (isNaN(jobId)) {
+        return res.status(400).json({ message: 'Invalid job ID' });
+      }
+
+      const job = await storage.getJob(jobId);
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      // Check if user has access to this job
+      if (req.user.role !== 'admin' && job.userId !== req.user.id && job.selectedNotary !== req.user.id.toString()) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { JobCompletionReportService } = await import('./services/job-completion-report-service');
+      const reportInfo = await JobCompletionReportService.getJobCompletionReport(jobId);
+      
+      if (!reportInfo.exists || !reportInfo.reportPath) {
+        return res.status(404).json({ message: 'Completion report not found' });
+      }
+
+      // Check if file exists
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      
+      try {
+        const fullPath = path.resolve(reportInfo.reportPath);
+        const fileStats = await fs.stat(fullPath);
+        
+        if (!fileStats.isFile()) {
+          return res.status(404).json({ message: 'Report file not found' });
+        }
+
+        const fileName = path.basename(fullPath);
+        
+        // Set headers for PDF download
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Length', fileStats.size);
+        
+        // Stream the file
+        const fileBuffer = await fs.readFile(fullPath);
+        res.send(fileBuffer);
+        
+      } catch (fileError) {
+        console.error('Error reading report file:', fileError);
+        return res.status(404).json({ message: 'Report file not accessible' });
+      }
+      
+    } catch (error) {
+      console.error('Download completion report error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Generate completion report manually (admin only)
+  app.post('/api/jobs/:id/generate-completion-report', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      
+      if (isNaN(jobId)) {
+        return res.status(400).json({ message: 'Invalid job ID' });
+      }
+
+      // Only admins and job creators can manually generate reports
+      const job = await storage.getJob(jobId);
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      if (req.user.role !== 'admin' && job.userId !== req.user.id) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { JobCompletionReportService } = await import('./services/job-completion-report-service');
+      const reportResult = await JobCompletionReportService.generateJobCompletionReport(jobId);
+      
+      if (reportResult.success) {
+        res.json({
+          success: true,
+          message: 'Completion report generated successfully',
+          reportPath: reportResult.reportPath
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: 'Failed to generate completion report',
+          error: reportResult.error
+        });
+      }
+      
+    } catch (error) {
+      console.error('Generate completion report error:', error);
+      res.status(500).json({ message: 'Internal server error' });
     }
   });
 
@@ -5615,6 +5867,10 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   registerFeeRoutes(app);
   registerAdminVerificationRoutes(app);
   
+  // Register certificate management routes
+  const certificateRoutes = await import('./certificate-routes');
+  app.use('/api/certificates', certificateRoutes.default);
+  
   // Register enhanced text tag routes
   const { registerTextTagRoutes } = await import('./routes/text-tag-routes');
   registerTextTagRoutes(app);
@@ -5746,7 +6002,49 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         ORDER BY u.created_at DESC
       `);
 
-      res.json(verificationUsers.rows || []);
+      const users = verificationUsers.rows || [];
+      
+      // Add certificate information for each signer and witness
+      const usersWithCertificates = await Promise.all(users.map(async (user: any) => {
+        let certificateInfo = null;
+        
+        if (['signer', 'witness'].includes(user.role)) {
+          try {
+            const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
+            const certificate = await selfSignedCertificateService.getUserCertificate(user.id);
+            
+            if (certificate) {
+              const isExpired = new Date() > new Date(certificate.expires_at);
+              certificateInfo = {
+                hasCertificate: true,
+                certificateId: certificate.certificate_id,
+                status: certificate.status,
+                isExpired,
+                issuedAt: certificate.issued_at,
+                expiresAt: certificate.expires_at
+              };
+            } else {
+              certificateInfo = {
+                hasCertificate: false,
+                eligibleForGeneration: user.is_verified || user.is_verification_bypassed
+              };
+            }
+          } catch (error) {
+            console.error(`Error getting certificate info for user ${user.id}:`, error);
+            certificateInfo = {
+              hasCertificate: false,
+              error: 'Failed to load certificate information'
+            };
+          }
+        }
+        
+        return {
+          ...user,
+          selfSignedCertificate: certificateInfo
+        };
+      }));
+
+      res.json(usersWithCertificates);
     } catch (error) {
       console.error('Error fetching verification users:', error);
       res.status(500).json({ error: 'Failed to fetch verification users' });
@@ -6073,6 +6371,53 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
 
         await db.update(users).set(updateData).where(eq(users.id, parseInt(userId)));
 
+        // 🆕 AUTOMATIC SELF-SIGNED CERTIFICATE GENERATION after successful ID verification
+        let certificateInfo = null;
+        try {
+          // Get the user to check their role
+          const [verifiedUser] = await db
+            .select({ role: users.role, fullName: users.fullName, firstName: users.firstName, lastName: users.lastName })
+            .from(users)
+            .where(eq(users.id, parseInt(userId)))
+            .limit(1);
+
+          // Generate self-signed certificate for verified signers and witnesses
+          if (verifiedUser && ['signer', 'witness'].includes(verifiedUser.role)) {
+            console.log(`🔐 Auto-generating self-signed certificate for verified ${verifiedUser.role}: ${verifiedUser.fullName || verifiedUser.firstName + ' ' + verifiedUser.lastName}`);
+            
+            const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
+            const certResult = await selfSignedCertificateService.generateCertificateForUser(parseInt(userId));
+            
+            if (certResult.success) {
+              certificateInfo = {
+                certificateGenerated: true,
+                certificateId: certResult.certificateId,
+                certificatePath: certResult.certificatePath,
+                expirationDate: certResult.expirationDate,
+                message: `Self-signed digital certificate automatically generated for verified ${verifiedUser.role}`,
+                downloadAvailable: true,
+                certificateType: 'self-signed',
+                note: 'Certificate is locally saved and ready for use in digital signing'
+              };
+              console.log(`✅ Self-signed certificate auto-generated for user ${userId}: ID ${certResult.certificateId}`);
+            } else {
+              console.error(`❌ Failed to auto-generate self-signed certificate for user ${userId}:`, certResult.error);
+              certificateInfo = {
+                certificateGenerated: false,
+                error: certResult.error,
+                message: 'ID verification successful, but self-signed certificate generation failed. Contact support if needed.'
+              };
+            }
+          }
+        } catch (certError) {
+          console.error('❌ Error during automatic self-signed certificate generation:', certError);
+          certificateInfo = {
+            certificateGenerated: false,
+            error: 'Certificate generation error',
+            message: 'ID verification successful, but self-signed certificate generation failed. Contact support if needed.'
+          };
+        }
+
         res.json({
           success: true,
           status: 'approved',
@@ -6083,7 +6428,9 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           extractedData: evsResult.document?.extractedData,
           biometricResults: evsResult.biometric,
           storedImages: uploadedFiles,
-          storageType: 'vultr'
+          storageType: 'vultr',
+          // Include certificate generation results
+          certificate: certificateInfo
         });
       } else {
         // Handle different failure types
@@ -6140,6 +6487,303 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     } catch (error) {
       console.error('EVS verification error:', error);
       res.status(500).json({ message: 'Verification service error' });
+    }
+  });
+
+  // Get certificate status for display in user interface
+  app.get('/api/users/:userId/certificate-status', verifyToken, async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      if (isNaN(userId)) {
+        return res.status(400).json({ error: 'Invalid user ID' });
+      }
+
+      // Check access permissions
+      const canAccess = req.user.role === 'admin' || req.user.id === userId;
+      if (!canAccess) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      // Get user details
+      const [user] = await db
+        .select({
+          id: users.id,
+          role: users.role,
+          fullName: users.fullName,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          isVerified: users.isVerified,
+          isVerificationBypassed: users.isVerificationBypassed,
+          verificationStatus: users.verificationStatus
+        })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      // Get certificate information for signers and witnesses
+      let certificateInfo = null;
+      if (['signer', 'witness'].includes(user.role)) {
+        try {
+          const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
+          const certificate = await selfSignedCertificateService.getUserCertificate(userId);
+          
+          if (certificate) {
+            const isExpired = new Date() > new Date(certificate.expires_at);
+            certificateInfo = {
+              hasCertificate: true,
+              certificateId: certificate.certificate_id,
+              commonName: certificate.common_name,
+              issuedAt: certificate.issued_at,
+              expiresAt: certificate.expires_at,
+              status: certificate.status,
+              isExpired,
+              certificateType: 'self-signed',
+              downloadUrl: req.user.role === 'admin' 
+                ? `/api/admin/users/${userId}/certificate/download`
+                : `/api/user/certificate/download`
+            };
+          } else {
+            const isEligible = user.isVerified || user.isVerificationBypassed;
+            certificateInfo = {
+              hasCertificate: false,
+              eligibleForGeneration: isEligible,
+              reason: isEligible 
+                ? 'User is verified but no certificate generated yet' 
+                : 'User must complete ID verification first',
+              canGenerate: isEligible
+            };
+          }
+        } catch (error) {
+          console.error('Error getting certificate info:', error);
+          certificateInfo = {
+            hasCertificate: false,
+            error: 'Failed to load certificate information'
+          };
+        }
+      } else {
+        certificateInfo = {
+          hasCertificate: false,
+          eligibleForGeneration: false,
+          reason: `Self-signed certificates are only available for signers and witnesses, not ${user.role}s`
+        };
+      }
+
+      res.json({
+        success: true,
+        user: {
+          id: user.id,
+          role: user.role,
+          name: user.fullName || `${user.firstName} ${user.lastName}`.trim(),
+          isVerified: user.isVerified || user.isVerificationBypassed,
+          verificationStatus: user.verificationStatus
+        },
+        certificate: certificateInfo
+      });
+
+    } catch (error) {
+      console.error('Certificate status check error:', error);
+      res.status(500).json({ error: 'Failed to check certificate status' });
+    }
+  });
+
+  // Test endpoint to check certificate generation capability
+  app.get('/api/certificates/test-capability/:userId', verifyToken, async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      if (isNaN(userId)) {
+        return res.status(400).json({ error: 'Invalid user ID' });
+      }
+
+      // Check if user can request certificate generation
+      if (req.user.id !== userId && req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      // Get user details
+      const [user] = await db
+        .select({
+          id: users.id,
+          role: users.role,
+          fullName: users.fullName,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          isVerified: users.isVerified,
+          isVerificationBypassed: users.isVerificationBypassed,
+          notaryVerificationBypassed: users.notaryVerificationBypassed,
+          verificationStatus: users.verificationStatus,
+          digitalCertificateFile: users.digitalCertificateFile,
+          digitalCertificateExpiration: users.digitalCertificateExpiration
+        })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const isVerified = user.isVerified || user.isVerificationBypassed || user.notaryVerificationBypassed;
+      const canGenerateCertificate = ['notary', 'signer', 'witness'].includes(user.role) && isVerified;
+      const hasExistingCertificate = !!(user.digitalCertificateFile);
+
+      res.json({
+        success: true,
+        user: {
+          id: user.id,
+          role: user.role,
+          name: user.fullName || `${user.firstName} ${user.lastName}`.trim(),
+          isVerified,
+          verificationMethod: user.isVerified ? 'evs' : 
+                           user.isVerificationBypassed ? 'admin_bypass' : 
+                           user.notaryVerificationBypassed ? 'notary_bypass' : null
+        },
+        certificate: {
+          canGenerate: canGenerateCertificate,
+          hasExisting: hasExistingCertificate,
+          expirationDate: user.digitalCertificateExpiration,
+          supportedTypes: ['notary', 'signer', 'witness'].includes(user.role) ? [user.role] : [],
+          autoGeneratedAfterVerification: ['signer', 'witness'].includes(user.role),
+          endpoints: {
+            generateSelf: user.role === 'notary' ? '/api/certificates/generate-self' : 
+                         ['signer', 'witness'].includes(user.role) ? '/api/certificates/generate-signer-self' : null,
+            download: hasExistingCertificate ? `/api/certificates/download/${userId}` : null
+          }
+        },
+        requirements: canGenerateCertificate ? [] : [
+          !['notary', 'signer', 'witness'].includes(user.role) ? 'User role must be notary, signer, or witness' : null,
+          !isVerified ? 'User must complete ID verification first' : null
+        ].filter(Boolean)
+      });
+
+    } catch (error) {
+      console.error('Certificate capability check error:', error);
+      res.status(500).json({ error: 'Failed to check certificate capability' });
+    }
+  });
+
+  // ==========================================
+  // CERTIFICATE DOWNLOAD ROUTES
+  // ==========================================
+
+  // Admin download certificate for any user
+  app.get('/api/admin/users/:userId/certificate/download', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const userId = parseInt(req.params.userId);
+      const fileType = (req.query.type as string) || 'cert';
+      
+      if (isNaN(userId)) {
+        return res.status(400).json({ error: 'Invalid user ID' });
+      }
+
+      if (!['cert', 'key', 'pubkey'].includes(fileType)) {
+        return res.status(400).json({ error: 'Invalid file type. Use: cert, key, or pubkey' });
+      }
+
+      console.log(`🔍 Admin ${req.user.id} requesting certificate for user ${userId}, type: ${fileType}`);
+
+      const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
+      
+      // First check if user exists and has the right role
+      const [user] = await db
+        .select({ id: users.id, role: users.role, fullName: users.fullName })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+        
+      if (!user) {
+        console.log(`❌ User ${userId} not found`);
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      if (!['signer', 'witness'].includes(user.role)) {
+        console.log(`❌ User ${userId} has role '${user.role}', not signer/witness`);
+        return res.status(400).json({ 
+          error: `User role '${user.role}' does not have self-signed certificates. Only signers and witnesses have auto-generated certificates.` 
+        });
+      }
+      
+      console.log(`✅ User ${userId} (${user.role}) found, checking certificate...`);
+      
+      const result = await selfSignedCertificateService.getCertificateFile(userId, fileType as any);
+      
+      if (!result.success) {
+        console.log(`❌ Certificate not found for user ${userId}: ${result.error}`);
+        return res.status(404).json({ error: result.error });
+      }
+
+      console.log(`✅ Certificate found for user ${userId}, sending download...`);
+
+      // Set appropriate headers for file download
+      const fileExtension = fileType === 'cert' ? 'pem' : fileType === 'key' ? 'key' : 'pub';
+      const fileName = `${user.fullName || 'user'}_${user.role}_certificate.${fileExtension}`;
+      
+      res.setHeader('Content-Type', 'application/x-pem-file');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.setHeader('X-Certificate-Type', 'self-signed');
+      res.setHeader('X-Downloaded-By', 'admin');
+      
+      res.send(result.content);
+    } catch (error) {
+      console.error('Admin download certificate error:', error);
+      res.status(500).json({ error: 'Failed to download certificate' });
+    }
+  });
+
+  // User download their own certificate
+  app.get('/api/user/certificate/download', verifyToken, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      
+      // Get the user to verify role
+      const [user] = await db
+        .select({ id: users.id, role: users.role, fullName: users.fullName })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+        
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      // Only signers and witnesses have self-signed certificates
+      if (!['signer', 'witness'].includes(user.role)) {
+        return res.status(400).json({ 
+          error: `Your role '${user.role}' does not have self-signed certificates. Only signers and witnesses have auto-generated certificates.` 
+        });
+      }
+      
+      const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
+      const certificate = await selfSignedCertificateService.getUserCertificate(userId);
+      
+      if (!certificate || !certificate.certificate_content) {
+        return res.status(404).json({ 
+          error: 'No certificate found',
+          suggestion: 'Complete ID verification to automatically generate your certificate'
+        });
+      }
+      
+      // Set headers for file download
+      const filename = `${user.fullName || 'my'}_${user.role}_certificate.pem`;
+      res.setHeader('Content-Type', 'application/x-pem-file');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Cache-Control', 'no-cache');
+      
+      // Send the certificate content
+      res.send(certificate.certificate_content);
+      
+    } catch (error) {
+      console.error('User certificate download error:', error);
+      res.status(500).json({ error: 'Failed to download certificate' });
     }
   });
 
@@ -6310,8 +6954,8 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   duration: '${duration}ms',
   statusCode: 200,
   requestId: 'req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}',
-  userId: ${req.user.id}
-}`);
+      userId: ${req.user.id}
+  }`);
       }
       
       res.json({
@@ -6699,7 +7343,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
                 await db
                   .update(jobs)
                   .set({
-                    status: 'completed',
+                    jobStatus: 'completed',
                     completedAt: new Date()
                   })
                   .where(eq(jobs.id, session.jobId));
@@ -6725,6 +7369,25 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       await SessionService.updateSessionStatus(actualSessionId, 'completed', {
         completedAt: new Date()
       });
+
+      // 🆕 GENERATE JOB COMPLETION REPORT
+      if (session.jobId) {
+        try {
+          console.log(`📊 Generating completion report for job ${session.jobId}`);
+          
+          const { JobCompletionReportService } = await import('./services/job-completion-report-service');
+          const reportResult = await JobCompletionReportService.generateJobCompletionReport(session.jobId);
+          
+          if (reportResult.success) {
+            console.log(`✅ Job completion report generated: ${reportResult.reportPath}`);
+          } else {
+            console.error(`❌ Failed to generate completion report: ${reportResult.error}`);
+          }
+        } catch (reportError) {
+          console.error('Error generating completion report:', reportError);
+          // Don't fail the session completion if report generation fails
+        }
+      }
       
       console.log(`✅ Session completed: ${actualSessionId} by user ${req.user.id}`);
       
@@ -7346,11 +8009,109 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       
       const { TagService } = await import('./services/editor/TagService');
       
-      // Update tag with content
-      const tag = await TagService.updateTag(tagId, {
-        content: typeof content === 'string' ? content : JSON.stringify(content),
-        contentType: contentType || 'text',
-        contentData: typeof content === 'object' ? JSON.stringify(content) : content,
+      // Get tag details to determine proper content structure
+      const tags = await TagService.getSessionTags(sessionId);
+      const tag = tags.find(t => t.id === tagId);
+      
+      if (!tag) {
+        return res.status(404).json({ message: 'Tag not found' });
+      }
+      
+      // Structure content data based on tag type and content
+      let structuredContentData: any;
+      let finalContent: string;
+      let finalContentType: string;
+      
+      if (typeof content === 'object' && content !== null) {
+        // Already structured content (from frontend)
+        structuredContentData = content;
+        finalContent = content.value || JSON.stringify(content);
+        finalContentType = content.type || contentType || 'text';
+      } else {
+        // Raw content - need to structure based on tag type
+        finalContent = content.toString();
+        finalContentType = contentType || 'text';
+        
+        // Detect content type and structure appropriately
+        const isImageContent = (
+          finalContent.startsWith('data:image/') ||
+          finalContent.startsWith('http') ||
+          finalContent.includes('vultrobjects.com') ||
+          finalContent.includes('.png') ||
+          finalContent.includes('.jpg') ||
+          finalContent.includes('.jpeg') ||
+          finalContent.includes('.webp')
+        );
+        
+        // Structure based on tag type
+        switch (tag.tagType) {
+          case 'S': // Signature
+            structuredContentData = {
+              type: 'signature',
+              value: finalContent,
+              contentType: isImageContent ? 'image' : 'text',
+              timestamp: new Date().toISOString()
+            };
+            finalContentType = isImageContent ? 'image' : 'text';
+            break;
+            
+          case 'I': // Initials
+            structuredContentData = {
+              type: 'initials',
+              value: finalContent,
+              contentType: isImageContent ? 'image' : 'text',
+              timestamp: new Date().toISOString()
+            };
+            finalContentType = isImageContent ? 'image' : 'text';
+            break;
+            
+          case 'E': // Notary seal/stamp
+            structuredContentData = {
+              type: 'seal',
+              value: finalContent,
+              contentType: isImageContent ? 'image' : 'text',
+              timestamp: new Date().toISOString()
+            };
+            finalContentType = isImageContent ? 'image' : 'text';
+            break;
+            
+          case 'D': // Date
+            structuredContentData = {
+              type: 'date',
+              value: finalContent,
+              timestamp: new Date().toISOString()
+            };
+            finalContentType = 'date';
+            break;
+            
+          default: // Text and other types
+            structuredContentData = {
+              type: 'text',
+              value: finalContent,
+              timestamp: new Date().toISOString()
+            };
+            finalContentType = 'text';
+            break;
+        }
+      }
+      
+      console.log('🏷️ Structuring tag content:', {
+        tagId,
+        tagType: tag.tagType,
+        originalContent: typeof content === 'string' ? content.substring(0, 100) : content,
+        structuredData: {
+          type: structuredContentData.type,
+          contentType: structuredContentData.contentType,
+          hasValue: !!structuredContentData.value,
+          valuePreview: typeof structuredContentData.value === 'string' ? structuredContentData.value.substring(0, 100) : 'non-string'
+        }
+      });
+      
+      // Update tag with properly structured content
+      const updatedTag = await TagService.updateTag(tagId, {
+        content: finalContent,
+        contentType: finalContentType,
+        contentData: JSON.stringify(structuredContentData),
         isCompleted: true,
         completedBy: completedBy || req.user.id,
         completedAt: completedAt ? new Date(completedAt) : new Date(),
@@ -7359,8 +8120,9 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       
       res.json({
         success: true,
-        tag,
-        message: 'Tag content updated successfully'
+        tag: updatedTag,
+        message: 'Tag content updated successfully',
+        contentStructure: structuredContentData
       });
       
     } catch (error) {
@@ -8061,6 +8823,305 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         message: 'Failed to run storage diagnostics',
         error: error instanceof Error ? error.message : 'Unknown error'
       });
+    }
+  });
+
+  // ==========================================
+  // SELF-SIGNED CERTIFICATE ROUTES
+  // ==========================================
+
+  // Get user's certificate information
+  app.get('/api/user/certificate', verifyToken, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      
+      const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
+      const certificate = await selfSignedCertificateService.getUserCertificate(userId);
+      
+      if (!certificate) {
+        return res.json({
+          hasCertificate: false,
+          message: 'No certificate found. Complete ID verification to generate a certificate.'
+        });
+      }
+
+      const isExpired = new Date() > new Date(certificate.expires_at);
+      
+      res.json({
+        hasCertificate: true,
+        certificate: {
+          id: certificate.id,
+          certificateId: certificate.certificate_id,
+          commonName: certificate.common_name,
+          userRole: certificate.user_role,
+          issuedAt: certificate.issued_at,
+          expiresAt: certificate.expires_at,
+          status: certificate.status,
+          isExpired,
+          downloadUrl: `/api/user/certificate/download`
+        }
+      });
+    } catch (error) {
+      console.error('Get user certificate error:', error);
+      res.status(500).json({ error: 'Failed to get certificate information' });
+    }
+  });
+
+  // Download user's certificate
+  app.get('/api/user/certificate/download', verifyToken, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const fileType = (req.query.type as string) || 'cert';
+      
+      if (!['cert', 'key', 'pubkey'].includes(fileType)) {
+        return res.status(400).json({ error: 'Invalid file type. Use: cert, key, or pubkey' });
+      }
+
+      const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
+      const result = await selfSignedCertificateService.getCertificateFile(userId, fileType as any);
+      
+      if (!result.success) {
+        return res.status(404).json({ error: result.error });
+      }
+
+      // Set appropriate headers for file download
+      const fileExtension = fileType === 'cert' ? 'pem' : fileType === 'key' ? 'key' : 'pub';
+      const fileName = `certificate-${userId}-${fileType}.${fileExtension}`;
+      
+      res.setHeader('Content-Type', 'application/x-pem-file');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.setHeader('X-Certificate-Type', 'self-signed');
+      
+      res.send(result.content);
+    } catch (error) {
+      console.error('Download certificate error:', error);
+      res.status(500).json({ error: 'Failed to download certificate' });
+    }
+  });
+
+  // Generate certificate manually (for users who didn't get one automatically)
+  app.post('/api/user/certificate/generate', verifyToken, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      
+      // Check if user is eligible
+      const [user] = await db
+        .select({ role: users.role, isVerified: users.isVerified, isVerificationBypassed: users.isVerificationBypassed })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      if (!['signer', 'witness'].includes(user.role)) {
+        return res.status(403).json({ 
+          error: 'Certificate generation is only available for signers and witnesses' 
+        });
+      }
+
+      const isVerified = user.isVerified || user.isVerificationBypassed;
+      if (!isVerified) {
+        return res.status(403).json({ 
+          error: 'Please complete ID verification before generating a certificate' 
+        });
+      }
+
+      const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
+      const result = await selfSignedCertificateService.generateCertificateForUser(userId);
+      
+      if (result.success) {
+        res.json({
+          success: true,
+          message: 'Self-signed certificate generated successfully',
+          certificate: {
+            certificateId: result.certificateId,
+            expirationDate: result.expirationDate,
+            downloadUrl: '/api/user/certificate/download'
+          }
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          error: result.error
+        });
+      }
+    } catch (error) {
+      console.error('Generate certificate error:', error);
+      res.status(500).json({ error: 'Failed to generate certificate' });
+    }
+  });
+
+  // Admin: Get all certificates
+  app.get('/api/admin/certificates', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
+      const certificates = await selfSignedCertificateService.getAllCertificates();
+      
+      res.json({
+        certificates,
+        count: certificates.length,
+        stats: {
+          active: certificates.filter(c => c.status === 'active' && !c.isExpired).length,
+          expired: certificates.filter(c => c.isExpired).length,
+          revoked: certificates.filter(c => c.status === 'revoked').length
+        }
+      });
+    } catch (error) {
+      console.error('Get all certificates error:', error);
+      res.status(500).json({ error: 'Failed to get certificates' });
+    }
+  });
+
+  // Admin: Get certificate for specific user
+  app.get('/api/admin/users/:userId/certificate', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const userId = parseInt(req.params.userId);
+      if (isNaN(userId)) {
+        return res.status(400).json({ error: 'Invalid user ID' });
+      }
+
+      const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
+      const certificate = await selfSignedCertificateService.getUserCertificate(userId);
+      
+      if (!certificate) {
+        return res.json({
+          hasCertificate: false,
+          message: 'User has no certificate'
+        });
+      }
+
+      const isExpired = new Date() > new Date(certificate.expires_at);
+      
+      res.json({
+        hasCertificate: true,
+        certificate: {
+          id: certificate.id,
+          certificateId: certificate.certificate_id,
+          commonName: certificate.common_name,
+          userRole: certificate.user_role,
+          userEmail: certificate.user_email,
+          issuedAt: certificate.issued_at,
+          expiresAt: certificate.expires_at,
+          status: certificate.status,
+          isExpired,
+          downloadUrl: `/api/admin/users/${userId}/certificate/download`
+        }
+      });
+    } catch (error) {
+      console.error('Get user certificate error:', error);
+      res.status(500).json({ error: 'Failed to get user certificate' });
+    }
+  });
+
+  // Admin: Download certificate for specific user
+  app.get('/api/admin/users/:userId/certificate/download', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const userId = parseInt(req.params.userId);
+      const fileType = (req.query.type as string) || 'cert';
+      
+      if (isNaN(userId)) {
+        return res.status(400).json({ error: 'Invalid user ID' });
+      }
+
+      if (!['cert', 'key', 'pubkey'].includes(fileType)) {
+        return res.status(400).json({ error: 'Invalid file type. Use: cert, key, or pubkey' });
+      }
+
+      console.log(`🔍 Admin ${req.user.id} requesting certificate for user ${userId}, type: ${fileType}`);
+
+      const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
+      
+      // First check if user exists and has the right role
+      const [user] = await db
+        .select({ id: users.id, role: users.role, fullName: users.fullName })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+        
+      if (!user) {
+        console.log(`❌ User ${userId} not found`);
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      if (!['signer', 'witness'].includes(user.role)) {
+        console.log(`❌ User ${userId} has role '${user.role}', not signer/witness`);
+        return res.status(400).json({ 
+          error: `User role '${user.role}' does not have self-signed certificates. Only signers and witnesses have auto-generated certificates.` 
+        });
+      }
+      
+      console.log(`✅ User ${userId} (${user.role}) found, checking certificate...`);
+      
+      const result = await selfSignedCertificateService.getCertificateFile(userId, fileType as any);
+      
+      if (!result.success) {
+        console.log(`❌ Certificate not found for user ${userId}: ${result.error}`);
+        return res.status(404).json({ error: result.error });
+      }
+
+      console.log(`✅ Certificate found for user ${userId}, sending download...`);
+
+      // Set appropriate headers for file download
+      const fileExtension = fileType === 'cert' ? 'pem' : fileType === 'key' ? 'key' : 'pub';
+      const fileName = `${user.fullName || 'user'}_${user.role}_certificate.${fileExtension}`;
+      
+      res.setHeader('Content-Type', 'application/x-pem-file');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.setHeader('X-Certificate-Type', 'self-signed');
+      res.setHeader('X-Downloaded-By', 'admin');
+      
+      res.send(result.content);
+    } catch (error) {
+      console.error('Admin download certificate error:', error);
+      res.status(500).json({ error: 'Failed to download certificate' });
+    }
+  });
+
+  // Admin: Revoke certificate
+  app.post('/api/admin/users/:userId/certificate/revoke', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const userId = parseInt(req.params.userId);
+      const { reason } = req.body;
+      
+      if (isNaN(userId)) {
+        return res.status(400).json({ error: 'Invalid user ID' });
+      }
+
+      const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
+      const result = await selfSignedCertificateService.revokeCertificate(userId, reason);
+      
+      if (result.success) {
+        res.json({
+          success: true,
+          message: 'Certificate revoked successfully'
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          error: result.error
+        });
+      }
+    } catch (error) {
+      console.error('Revoke certificate error:', error);
+      res.status(500).json({ error: 'Failed to revoke certificate' });
     }
   });
 
