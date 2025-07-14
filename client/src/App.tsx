@@ -3,6 +3,7 @@ import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
 import { MainLayout } from "@/components/layout/main-layout";
@@ -18,8 +19,8 @@ import NotaryManagement from "@/pages/notary-management";
 // PDF Editor Demo
 const EditorDemo = React.lazy(() => import("@/pages/EditorDemo"));
 
-// PDF Editor Integration
-const EditorPage = React.lazy(() => import("@/pages/EditorPage"));
+// PDF Editor Integration - Static import for development
+import EditorPage from "@/pages/EditorPage";
 
 // Signer invitation page
 const SignPage = React.lazy(() => import("@/pages/sign-page"));
@@ -161,6 +162,17 @@ function Router() {
 
       {/* Password setup route - public */}
       <Route path="/set-password">
+        {(isAuthenticated && !isLoggingOut) ? <Redirect to="/dashboard" /> : 
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              <SetPasswordPage />
+            </React.Suspense>
+          </ErrorBoundary>
+        }
+      </Route>
+
+      {/* Password reset route - public */}
+      <Route path="/reset-password">
         {(isAuthenticated && !isLoggingOut) ? <Redirect to="/dashboard" /> : 
           <ErrorBoundary fallback={<LoadingFallback />}>
             <React.Suspense fallback={<LoadingFallback />}>
@@ -461,6 +473,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
+        <SonnerToaster />
         <ErrorBoundary fallback={<LoadingFallback />}>
           <Router />
         </ErrorBoundary>
