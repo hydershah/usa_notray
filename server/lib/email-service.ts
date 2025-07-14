@@ -41,6 +41,93 @@ class EmailService {
     this.postmarkClient = null;
   }
 
+  // Helper function to get the client URL dynamically
+  private getClientUrl(): string {
+    // Priority order for determining client URL:
+    // 1. CLIENT_URL environment variable (highest priority)
+    // 2. Detect from common deployment environment variables
+    // 3. Build from HOST and PORT if available
+    // 4. Default to localhost for development
+    
+    if (process.env.CLIENT_URL) {
+      return process.env.CLIENT_URL;
+    }
+    
+    // Enhanced Railway.com detection with multiple domain support
+    if (process.env.RAILWAY_STATIC_URL) {
+      return process.env.RAILWAY_STATIC_URL;
+    }
+    
+    // Railway Public URL (custom domains)
+    if (process.env.RAILWAY_PUBLIC_URL) {
+      return process.env.RAILWAY_PUBLIC_URL;
+    }
+    
+    // Railway Service URL (auto-generated)
+    if (process.env.RAILWAY_SERVICE_URL) {
+      return process.env.RAILWAY_SERVICE_URL;
+    }
+    
+    // Railway Environment-specific URL construction
+    if (process.env.RAILWAY_ENVIRONMENT_NAME && process.env.RAILWAY_PROJECT_NAME) {
+      const envName = process.env.RAILWAY_ENVIRONMENT_NAME;
+      const projectName = process.env.RAILWAY_PROJECT_NAME;
+      
+      // Handle different environment patterns
+      if (envName === 'production') {
+        return `https://${projectName}.up.railway.app`;
+      } else {
+        return `https://${projectName}-${envName}.up.railway.app`;
+      }
+    }
+    
+    // Auto-detect from common deployment platforms
+    if (process.env.VERCEL_URL) {
+      return `https://${process.env.VERCEL_URL}`;
+    }
+    
+    if (process.env.NETLIFY_URL) {
+      return process.env.NETLIFY_URL;
+    }
+    
+    if (process.env.RENDER_EXTERNAL_URL) {
+      return process.env.RENDER_EXTERNAL_URL;
+    }
+    
+    // Heroku detection
+    if (process.env.HEROKU_APP_NAME) {
+      return `https://${process.env.HEROKU_APP_NAME}.herokuapp.com`;
+    }
+    
+    // Generic environment detection
+    if (process.env.APP_URL) {
+      return process.env.APP_URL;
+    }
+    
+    if (process.env.FRONTEND_URL) {
+      return process.env.FRONTEND_URL;
+    }
+    
+    // Build from HOST and PORT if available
+    if (process.env.HOST && process.env.PORT) {
+      const protocol = process.env.HTTPS === 'true' ? 'https' : 'http';
+      return `${protocol}://${process.env.HOST}:${process.env.PORT}`;
+    }
+    
+    // Development fallback
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    
+    if (isProduction) {
+      // Log warning for production without proper URL configuration
+      console.warn('⚠️ CLIENT_URL not configured for production environment. Using localhost fallback.');
+      return 'https://localhost:3000'; // HTTPS for production
+    }
+    
+    // Development default
+    return 'http://localhost:3002'; // Updated to match your Vite dev server
+  }
+
   private async loadSettings(): Promise<EmailSettings> {
     if (this.settings) return this.settings;
 
@@ -301,8 +388,9 @@ class EmailService {
     propertyAddress?: string;
     scheduledDate?: string;
     scheduledTime?: string;
+    notaryName?: string;
   }): Promise<void> {
-    const invitationLink = `${process.env.CLIENT_URL || 'http://localhost:3002'}/sign/${data.invitationToken}`;
+    const invitationLink = `${this.getClientUrl()}/sign/${data.invitationToken}`;
     
     const content = `
         <h2 style="color: #1f2937; margin-bottom: 16px;">You're Invited to a Document Signing Session</h2>
@@ -379,7 +467,7 @@ class EmailService {
     inviteToken: string;
     invitedBy: string;
   }): Promise<void> {
-    const invitationLink = `${process.env.CLIENT_URL || 'http://localhost:3002'}/register?token=${data.inviteToken}`;
+    const invitationLink = `${this.getClientUrl()}/register?token=${data.inviteToken}`;
     
     const content = `
         <h2 style="color: #1e40af; margin-bottom: 20px;">Platform Access Invitation</h2>
@@ -433,7 +521,7 @@ class EmailService {
     scheduledDate?: string;
     scheduledTime?: string;
   }): Promise<void> {
-    const accountSetupLink = `${process.env.CLIENT_URL || 'http://localhost:3002'}/set-password?token=${data.passwordResetToken}`;
+    const accountSetupLink = `${this.getClientUrl()}/set-password?token=${data.passwordResetToken}`;
     
     const content = `
         <h2 style="color: #1e40af; margin-bottom: 20px;">Account Setup Required - Document Signing</h2>
@@ -508,7 +596,7 @@ class EmailService {
     userName: string;
     resetToken: string;
   }): Promise<void> {
-    const resetLink = `${process.env.CLIENT_URL || 'http://localhost:3002'}/reset-password?token=${data.resetToken}`;
+    const resetLink = `${this.getClientUrl()}/reset-password?token=${data.resetToken}`;
     
     const content = `
         <h2 style="color: #1e40af; margin-bottom: 20px;">Password Reset Request</h2>

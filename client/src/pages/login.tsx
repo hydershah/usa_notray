@@ -6,9 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
-import { IdCard, Shield, Smartphone, FileText, NotebookPen, Building, User, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { IdCard, Shield, Smartphone, FileText, NotebookPen, Building, User, ArrowRight, Eye, EyeOff, Mail, CheckCircle } from 'lucide-react';
 import TwoFactorAuth from '@/components/TwoFactorAuth';
 
 export default function Login() {
@@ -21,6 +22,13 @@ export default function Login() {
   const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showSignupOptions, setShowSignupOptions] = useState(false);
+  
+  // Forgot password state
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
+  const [isForgotPasswordLoading, setIsForgotPasswordLoading] = useState(false);
+  const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState(false);
+  
   const { toast } = useToast();
   const { login, isAuthenticated } = useAuth();
 
@@ -112,6 +120,50 @@ export default function Login() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsForgotPasswordLoading(true);
+
+    try {
+      const response = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotPasswordEmail })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setForgotPasswordSuccess(true);
+        toast({
+          title: "Reset Link Sent",
+          description: "If an account with this email exists, a password reset link has been sent.",
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: data.message || "Failed to send reset link. Please try again.",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Connection Error",
+        description: error.message || "Unable to connect. Please try again.",
+      });
+    } finally {
+      setIsForgotPasswordLoading(false);
+    }
+  };
+
+  const handleCloseForgotPassword = () => {
+    setShowForgotPassword(false);
+    setForgotPasswordEmail('');
+    setForgotPasswordSuccess(false);
+    setIsForgotPasswordLoading(false);
   };
 
   const SignupOptions = () => (
@@ -218,7 +270,8 @@ export default function Login() {
   );
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50">
+    <>
+      <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50">
       {/* Left Side - Branding */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-gray-900 via-black to-gray-900 relative overflow-hidden">
         <div className="absolute inset-0 bg-black/20" />
@@ -394,7 +447,7 @@ export default function Login() {
                           Remember me
                         </Label>
                       </div>
-                      <Button variant="link" className="p-0 h-auto text-sm text-blue-600 hover:text-blue-800 font-medium">
+                      <Button variant="link" className="p-0 h-auto text-sm text-blue-600 hover:text-blue-800 font-medium" onClick={() => setShowForgotPassword(true)}>
                         Forgot password?
                       </Button>
                     </div>
@@ -457,5 +510,85 @@ export default function Login() {
         </div>
       </div>
     </div>
+
+      {/* Forgot Password Modal */}
+      <Dialog open={showForgotPassword} onOpenChange={setShowForgotPassword}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Mail className="h-5 w-5" />
+            Reset Password
+          </DialogTitle>
+          <DialogDescription>
+            Enter your email address and we'll send you a link to reset your password.
+          </DialogDescription>
+        </DialogHeader>
+        
+        {forgotPasswordSuccess ? (
+          <div className="space-y-4 text-center">
+            <div className="flex justify-center">
+              <CheckCircle className="h-12 w-12 text-green-500" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-lg mb-2">Check Your Email</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                If an account with this email exists, we've sent a password reset link to:
+              </p>
+              <p className="font-medium text-blue-600">{forgotPasswordEmail}</p>
+              <p className="text-sm text-gray-600 mt-2">
+                The link will expire in 24 hours.
+              </p>
+            </div>
+            <Button 
+              onClick={handleCloseForgotPassword} 
+              className="w-full"
+            >
+              Close
+            </Button>
+          </div>
+        ) : (
+          <form onSubmit={handleForgotPassword} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="forgot-email">Email Address</Label>
+              <Input
+                id="forgot-email"
+                type="email"
+                placeholder="Enter your email address"
+                value={forgotPasswordEmail}
+                onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={handleCloseForgotPassword}
+                disabled={isForgotPasswordLoading}
+              >
+                Cancel
+              </Button>
+              <Button 
+                type="submit"
+                disabled={isForgotPasswordLoading || !forgotPasswordEmail}
+              >
+                {isForgotPasswordLoading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="h-4 w-4 mr-2" />
+                    Send Reset Link
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

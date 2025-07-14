@@ -2442,39 +2442,136 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Session access control for live signing
-  app.get('/api/jobs/:id/session-access', async (req, res) => {
+  app.get('/api/jobs/:id/session-access', verifyToken, async (req: any, res) => {
     try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: 'Unauthorized' });
-      }
-
-      const token = authHeader.substring(7);
-      const decoded = jwt.verify(token, JWT_SECRET) as any;
-      const userId = decoded.id;
       const jobId = parseInt(req.params.id);
-      
-      if (!userId) {
-        return res.status(401).json({ message: 'Unauthorized' });
+      const userId = req.user.id;
+      const user = req.user;
+
+      if (isNaN(jobId)) {
+        return res.status(400).json({ message: 'Invalid job ID' });
       }
 
-      const hasAccess = await storage.verifySessionAccess(jobId, userId);
-      
-      if (!hasAccess) {
-        return res.status(403).json({ 
-          message: 'Access denied. You are not authorized to join this signing session.' 
+      // Get job details including KBA requirement
+      const [job] = await db
+        .select()
+        .from(jobs)
+        .where(eq(jobs.id, jobId))
+        .limit(1);
+
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      let hasAccess = false;
+      let accessReason = '';
+
+      // Admin access - always allowed
+      if (user.role === 'admin' || user.isAdmin) {
+        hasAccess = true;
+        accessReason = 'admin';
+      }
+      // Job creator access
+      else if (job.userId === userId) {
+        hasAccess = true;
+        accessReason = 'job_creator';
+      }
+      // Assigned notary access
+      else if (job.notaryId === userId || job.selectedNotary === userId.toString()) {
+        hasAccess = true;
+        accessReason = 'assigned_notary';
+      }
+      // Signer access - check via signers table
+      else if (user.role === 'signer' || user.role === 'witness') {
+        const [signer] = await db
+          .select()
+          .from(signers)
+          .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, user.email)))
+          .limit(1);
+
+        if (signer) {
+          // Check if account setup is complete
+          if (!user.accountSetupComplete) {
+            return res.json({
+              hasAccess: false,
+              message: 'Please complete your account setup first',
+              errorType: 'account_setup_required',
+              requirements: ['Account setup must be completed']
+            });
+          }
+
+          // **NEW KBA LOGIC** - Check KBA requirement for this job
+          if (job.kbaRequired) {
+            // For KBA-required jobs, check KBA verification instead of regular ID verification
+            const [userWithKBA] = await db
+              .select({
+                kbaVerified: users.kbaVerified,
+                kbaVerificationDate: users.kbaVerificationDate,
+                kbaScore: users.kbaScore,
+                isVerificationBypassed: users.isVerificationBypassed,
+                notaryVerificationBypassed: users.notaryVerificationBypassed
+              })
+              .from(users)
+              .where(eq(users.id, userId))
+              .limit(1);
+
+            if (!userWithKBA) {
+              return res.json({
+                hasAccess: false,
+                message: 'User data not found',
+                errorType: 'user_not_found'
+              });
+            }
+
+            // Check if KBA verification is completed OR bypassed
+            const hasKBAVerification = userWithKBA.kbaVerified || 
+                                     userWithKBA.isVerificationBypassed || 
+                                     userWithKBA.notaryVerificationBypassed;
+
+            if (!hasKBAVerification) {
+              return res.json({
+                hasAccess: false,
+                message: 'KBA (Knowledge-Based Authentication) verification required for this job',
+                errorType: 'kba_verification_required',
+                requirements: ['Complete KBA verification in your dashboard'],
+                kbaRequired: true
+              });
+            }
+
+            console.log(`✅ KBA verification passed for user ${userId} on KBA-required job ${jobId}`);
+          } else {
+            // For non-KBA jobs, use regular ID verification check
+            if (!user.isVerified && !user.isVerificationBypassed && !user.notaryVerificationBypassed) {
+              return res.json({
+                hasAccess: false,
+                message: 'ID verification required before joining sessions',
+                errorType: 'verification_required',
+                requirements: ['Complete ID verification in your dashboard']
+              });
+            }
+          }
+
+          hasAccess = true;
+          accessReason = 'invited_signer';
+        }
+      }
+
+      if (hasAccess) {
+        return res.json({
+          hasAccess: true,
+          accessReason,
+          message: 'Session access granted'
+        });
+      } else {
+        return res.json({
+          hasAccess: false,
+          message: 'You are not authorized to access this session',
+          errorType: 'not_authorized'
         });
       }
 
-      const sessionToken = await storage.generateSessionToken(jobId);
-      
-      res.json({ 
-        hasAccess: true, 
-        sessionToken,
-        message: 'Session access granted'
-      });
     } catch (error) {
-      console.error('Session access verification error:', error);
+      console.error('Session access check error:', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   });
@@ -2822,7 +2919,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Whereby video session routes
+
+
+  // ===== VIDEO CONFERENCING ROUTES - WHEREBY INTEGRATION =====
+  
+  // Create Whereby video session for job
   app.post('/api/jobs/:jobId/video-session', verifyToken, async (req: any, res) => {
     try {
       const jobId = parseInt(req.params.jobId);
@@ -2878,6 +2979,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get video session status
   app.get('/api/jobs/:jobId/video-session', verifyToken, async (req: any, res) => {
     try {
       const jobId = parseInt(req.params.jobId);
@@ -2887,15 +2989,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'Job not found' });
       }
 
-      // Check for active video sessions (in a real implementation, you'd query your database)
-      // For now, return active session info or placeholder
+      // Return active session info
       const sessionInfo = {
         jobId,
         isActive: false,
         participants: [],
         recordings: [],
-        technology: 'webrtc',
-        signalingPath: '/video-signaling',
+        technology: 'whereby',
         message: 'No active video session. Create one by starting a live signing session.'
       };
 
@@ -2906,13 +3006,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Start recording for Whereby session
+  app.post('/api/jobs/:jobId/video-session/recording/start', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.jobId);
+      const { roomName, meetingId } = req.body;
+      
+      const { wherebyService } = await import('./lib/whereby-service');
+      const recording = await wherebyService.startRecording(roomName || meetingId);
+      
+      console.log('Recording started for Whereby session:', {
+        jobId,
+        roomName,
+        recordingId: recording.recordingId
+      });
+
+      res.json({
+        success: true,
+        recordingId: recording.recordingId,
+        message: 'Recording started successfully',
+        technology: 'whereby'
+      });
+    } catch (error) {
+      console.error('Start recording error:', error);
+      res.status(500).json({ message: 'Failed to start recording' });
+    }
+  });
+
+  // Stop recording for Whereby session
+  app.post('/api/jobs/:jobId/video-session/recording/stop', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.jobId);
+      const { recordingId } = req.body;
+      
+      const { wherebyService } = await import('./lib/whereby-service');
+      const result = await wherebyService.stopRecording(recordingId);
+      
+      console.log('Recording stopped for Whereby session:', {
+        jobId,
+        recordingId,
+        status: result.status
+      });
+
+      res.json({
+        success: true,
+        status: result.status,
+        message: 'Recording stopped successfully',
+        technology: 'whereby'
+      });
+    } catch (error) {
+      console.error('Stop recording error:', error);
+      res.status(500).json({ message: 'Failed to stop recording' });
+    }
+  });
+
+  // Save recording metadata
   app.post('/api/jobs/:jobId/video-session/recording', verifyToken, async (req: any, res) => {
     try {
       const jobId = parseInt(req.params.jobId);
       const { recordingUrl, duration, participants, meetingId } = req.body;
       
       // Store recording metadata in your database
-      // In a real implementation, you would save this to your database
       const recordingData = {
         jobId,
         meetingId,
@@ -2922,6 +3076,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdAt: new Date().toISOString(),
         createdBy: req.user.id,
         complianceStatus: 'recorded',
+        technology: 'whereby',
         auditTrail: {
           sessionStart: new Date(Date.now() - duration * 1000).toISOString(),
           sessionEnd: new Date().toISOString(),
@@ -2940,7 +3095,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: true,
         recordingId: `recording-${jobId}-${Date.now()}`,
         message: 'Recording metadata saved successfully',
-        complianceVerified: true
+        complianceVerified: true,
+        technology: 'whereby'
       });
     } catch (error) {
       console.error('Save recording error:', error);
@@ -2948,19 +3104,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // End Whereby video session
   app.delete('/api/jobs/:jobId/video-session', verifyToken, async (req: any, res) => {
     try {
       const jobId = parseInt(req.params.jobId);
-      const { sessionId } = req.body;
+      const { sessionId, meetingId } = req.body;
       
-      if (sessionId) {
-        console.log(`Ending WebRTC video session ${sessionId} for job ${jobId}`);
+      if (sessionId || meetingId) {
+        console.log(`Ending Whereby video session ${sessionId || meetingId} for job ${jobId}`);
         
-        // In a real implementation, you would:
-        // 1. Signal the WebRTC service to end the session
-        // 2. Clean up any recordings
-        // 3. Update the database
-        // For now, we'll just log the action
+        // Clean up Whereby meeting
+        const { wherebyService } = await import('./lib/whereby-service');
+        try {
+          await wherebyService.deleteMeeting(sessionId || meetingId);
+        } catch (deleteError) {
+          console.warn('Failed to delete Whereby meeting:', deleteError);
+          // Non-critical error, continue
+        }
       }
       
       // Update job status to completed if needed
@@ -2973,17 +3133,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      console.log(`WebRTC video session ended for job ${jobId}`);
+      console.log(`Whereby video session ended for job ${jobId}`);
       
       res.json({
         success: true,
-        message: 'WebRTC video session ended successfully',
+        message: 'Whereby video session ended successfully',
         jobStatus: 'completed',
-        technology: 'webrtc'
+        technology: 'whereby'
       });
     } catch (error) {
-      console.error('End WebRTC video session error:', error);
-      res.status(500).json({ message: 'Failed to end WebRTC video session' });
+      console.error('End Whereby video session error:', error);
+      res.status(500).json({ message: 'Failed to end Whereby video session' });
     }
   });
 
@@ -3005,14 +3165,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Getting recordings for job ${jobId}`);
       
       // In a real implementation, you would query the database for actual recordings
-      // For now, return empty recordings list
       const recordings: any[] = [];
       
       res.json({
         success: true,
         jobId,
         recordings,
-        technology: 'webrtc',
+        technology: 'whereby',
         message: recordings.length > 0 ? 'Recordings retrieved successfully' : 'No recordings found for this session'
       });
     } catch (error) {
@@ -5218,131 +5377,6 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     }
   });
 
-  // Check session access for users (especially signers) - simplified version
-  app.get('/api/jobs/:id/session-access', verifyToken, async (req: any, res) => {
-    try {
-      const jobId = parseInt(req.params.id);
-      const userId = req.user.id;
-      
-      if (!jobId || isNaN(jobId)) {
-        return res.status(400).json({ 
-          hasAccess: false, 
-          message: 'Invalid job ID',
-          errorType: 'invalid_request'
-        });
-      }
-
-      // Get job details
-      const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId));
-      if (!job) {
-        return res.status(404).json({ 
-          hasAccess: false, 
-          message: 'Job not found',
-          errorType: 'job_not_found'
-        });
-      }
-
-      // Get user details
-      const [user] = await db.select().from(users).where(eq(users.id, userId));
-      if (!user) {
-        return res.status(404).json({ 
-          hasAccess: false, 
-          message: 'User not found',
-          errorType: 'user_not_found'
-        });
-      }
-
-      // Check access based on user role
-      let hasAccess = false;
-      let accessReason = '';
-      let requirements = [];
-
-      // Admin access - always allowed
-      if (user.role === 'admin' || user.isAdmin) {
-        hasAccess = true;
-        accessReason = 'admin';
-      }
-      // Job creator access
-      else if (job.userId === userId) {
-        hasAccess = true;
-        accessReason = 'job_creator';
-      }
-      // Assigned notary access
-      else if (job.notaryId === userId || job.selectedNotary === userId.toString()) {
-        hasAccess = true;
-        accessReason = 'assigned_notary';
-      }
-      // Signer access - check via signers table
-      else if (user.role === 'signer' || user.role === 'witness') {
-        const [signer] = await db
-          .select()
-          .from(signers)
-          .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, user.email)))
-          .limit(1);
-
-        if (signer) {
-          // Check if account setup is complete
-          if (!user.accountSetupComplete) {
-            return res.json({
-              hasAccess: false,
-              message: 'Please complete your account setup first',
-              errorType: 'account_setup_required',
-              requirements: ['Account setup must be completed']
-            });
-          }
-
-          // Check if ID verification is complete (for signers)
-          if (!user.isVerified && !user.isVerificationBypassed && !user.notaryVerificationBypassed) {
-            return res.json({
-              hasAccess: false,
-              message: 'ID verification required before joining sessions',
-              errorType: 'verification_required',
-              requirements: ['Complete ID verification in your dashboard']
-            });
-          }
-
-          hasAccess = true;
-          accessReason = 'invited_signer';
-        }
-      }
-
-      if (hasAccess) {
-        res.json({
-          hasAccess: true,
-          accessReason,
-          user: {
-            id: user.id,
-            email: user.email,
-            role: user.role,
-            isVerified: user.isVerified,
-            accountSetupComplete: user.accountSetupComplete
-          },
-          job: {
-            id: job.id,
-            titleCompany: job.titleCompany,
-            jobStatus: job.jobStatus,
-            notaryApprovalStatus: job.notaryApprovalStatus
-          }
-        });
-      } else {
-        res.json({
-          hasAccess: false,
-          message: 'You do not have permission to access this job session',
-          errorType: 'access_denied',
-          requirements
-        });
-      }
-
-    } catch (error) {
-      console.error('Session access check error:', error);
-      res.status(500).json({ 
-        hasAccess: false, 
-        message: 'Failed to check session access',
-        errorType: 'server_error'
-      });
-    }
-  });
-
   // Get assignment history for a job
   app.get('/api/random-notary/assignment-history/:jobId', verifyToken, async (req: any, res) => {
     try {
@@ -6052,6 +6086,80 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   });
 
   // Password reset and setup routes
+  
+  // Initiate password reset (forgot password)
+  app.post('/api/auth/forgot-password', passwordResetLimiter, async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ message: 'Email is required' });
+      }
+
+      // Find user by email
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        // Don't reveal if user exists for security
+        return res.json({ 
+          message: 'If an account with this email exists, a password reset link has been sent.',
+          success: true 
+        });
+      }
+
+      // Check if user already has an active password reset token
+      const [existingToken] = await db
+        .select()
+        .from(passwordResetTokens)
+        .where(
+          and(
+            eq(passwordResetTokens.userId, user.id),
+            eq(passwordResetTokens.used, false),
+            gte(passwordResetTokens.expiresAt, new Date())
+          )
+        )
+        .limit(1);
+
+      let resetToken;
+      if (existingToken) {
+        resetToken = existingToken.token;
+      } else {
+        // Generate new password reset token
+        resetToken = crypto.randomUUID();
+        const tokenExpiry = new Date();
+        tokenExpiry.setHours(tokenExpiry.getHours() + 24); // 24 hour expiry
+
+        await db.insert(passwordResetTokens).values({
+          userId: user.id,
+          token: resetToken,
+          expiresAt: tokenExpiry,
+          used: false
+        });
+      }
+
+      // Send password reset email
+      try {
+        await emailService.sendPasswordReset({
+          userEmail: user.email,
+          userName: user.firstName || user.username,
+          resetToken: resetToken
+        });
+        
+        console.log(`Password reset email sent to: ${user.email}`);
+      } catch (emailError) {
+        console.error('Failed to send password reset email:', emailError);
+        // Don't fail the request - user doesn't need to know email failed
+      }
+
+      res.json({ 
+        message: 'If an account with this email exists, a password reset link has been sent.',
+        success: true 
+      });
+    } catch (error) {
+      console.error('Forgot password error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
   app.post('/api/auth/validate-password-reset-token', passwordResetLimiter, async (req, res) => {
     try {
       const { token } = req.body;
@@ -8707,9 +8815,14 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     }
   });
 
-  // WebRTC diagnostic endpoint
-  app.get('/api/webrtc/diagnostics', verifyToken, async (req: any, res) => {
+  // Whereby diagnostic endpoint
+  app.get('/api/whereby/diagnostics', verifyToken, async (req: any, res) => {
     try {
+      const { wherebyService } = await import('./lib/whereby-service');
+      
+      // Test Whereby configuration
+      const configValidation = wherebyService.validateConfiguration();
+      
       const diagnostics = {
         server: {
           nodeVersion: process.version,
@@ -8717,39 +8830,42 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           environment: process.env.NODE_ENV,
           timestamp: new Date().toISOString()
         },
-        webrtc: {
-          signalingServerRunning: true,
-          socketIOPath: '/video-signaling/socket.io',
-          corsOrigins: process.env.NODE_ENV === 'production' 
-            ? [process.env.CLIENT_URL || "https://your-domain.com"]
-            : ["http://localhost:3000", "http://localhost:3002", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:3002"],
-          iceServers: [
-            {
-              urls: [
-                'stun:stun.l.google.com:19302',
-                'stun:stun1.l.google.com:19302',
-                'stun:stun2.l.google.com:19302'
-              ]
-            }
-          ]
+        whereby: {
+          apiKeyConfigured: process.env.WHEREBY_API_KEY ? 'configured' : 'missing',
+          apiUrl: 'https://api.whereby.dev/v1',
+          configurationValid: configValidation.valid,
+          configurationErrors: configValidation.errors,
+          serviceStatus: configValidation.valid ? 'ready' : 'misconfigured'
         },
         authentication: {
           jwtSecret: process.env.JWT_SECRET ? 'configured' : 'missing',
           userId: req.user.id,
           userRole: req.user.role
+        },
+        features: {
+          videoConferencing: true,
+          cloudRecording: true,
+          hostControls: true,
+          waitingRoom: false,
+          complianceMode: true
         }
       };
 
-      console.log('WebRTC diagnostics requested by user:', req.user.id);
+      console.log('Whereby diagnostics requested by user:', req.user.id);
       
       res.json({
         success: true,
-        diagnostics
+        diagnostics,
+        recommendations: configValidation.valid ? [] : [
+          'Configure WHEREBY_API_KEY environment variable',
+          'Verify Whereby account credentials',
+          'Check API access permissions'
+        ]
       });
     } catch (error) {
-      console.error('WebRTC diagnostics error:', error);
+      console.error('Whereby diagnostics error:', error);
       res.status(500).json({ 
-        message: 'Failed to get WebRTC diagnostics',
+        message: 'Failed to get Whereby diagnostics',
         error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
