@@ -1027,35 +1027,26 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       return;
     }
     
-    // Ensure coordinates are positive and reasonable
-    const tagX = Math.max(0, Math.round(pdfX - 75)); // Center tag, ensure non-negative
-    const tagY = Math.max(0, Math.round(pdfY - 13)); // Adjusted for smaller height
-    
-    // Get appropriate dimensions based on selected tag type
-    const getTagDimensions = () => {
-      // Get the selected tag type from the editor store
-      const { selectedTagType } = useEditorStore.getState();
+    // Get appropriate dimensions based on selected tag type using store
+    const { selectedTagType, getTagDimensions } = useEditorStore.getState();
       
-      if (selectedTagType === 'S' || selectedTagType === 'E') {
-        // Signatures and stamps need bigger dimensions for image content
-        return { width: 200, height: 60, offsetX: 100, offsetY: 30 };
-      } else if (selectedTagType === 'I') {
-        // Initials need medium size
-        return { width: 120, height: 40, offsetX: 60, offsetY: 20 };
-      } else if (selectedTagType === 'W') {
-        // Whiteout tags need larger dimensions to cover content effectively
-        return { width: 250, height: 40, offsetX: 125, offsetY: 20 };
-      } else {
-        // Other tags use standard size
-        return { width: 150, height: 30, offsetX: 75, offsetY: 15 };
-      }
-    };
+    if (!selectedTagType) {
+      console.error('No tag type selected for placement');
+      return;
+    }
     
-    const dimensions = getTagDimensions();
+    const dimensions = getTagDimensions(selectedTagType);
     
-    // Recalculate position with proper centering based on tag size
-    const finalTagX = Math.max(0, Math.round(pdfX - dimensions.offsetX));
-    const finalTagY = Math.max(0, Math.round(pdfY - dimensions.offsetY));
+    if (!dimensions) {
+      console.error('Could not get dimensions for tag type:', selectedTagType);
+      return;
+    }
+    
+    // Position tag so mouse pointer is at bottom-left corner
+    // X: Left edge starts at click point
+    // Y: Bottom edge is at click point (so subtract full height)
+    const finalTagX = Math.max(0, Math.round(pdfX));
+    const finalTagY = Math.max(0, Math.round(pdfY - dimensions.height));
     
     const coordinates: TagCoordinates = {
       x: finalTagX,
@@ -1279,7 +1270,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                   
                   {/* Text inputs overlay (separate from regular tags) */}
                   {textInputs?.filter(textInput => textInput.coordinates.pageNumber === pageNumber).map(textInput => (
-                    <div key={`text-${textInput.id}-${scaleFactor}`} className="absolute top-0 left-0 w-full h-full pointer-events-none">
+                    <div key={`text-${textInput.id}-${scaleFactor}`} className="absolute top-0 left-0 w-full h-full" style={{ pointerEvents: 'none' }}>
                       <StreamlinedTextInput
                         id={textInput.id}
                         coordinates={textInput.coordinates}
@@ -1303,6 +1294,10 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                           onTextInputSelect?.(textInput.id);
                         }}
                         onMove={() => {}}
+                        onResize={(newCoordinates) => {
+                          // Handle text tag resize - could call parent resize handler or update directly
+                          console.log('Text tag resized:', newCoordinates);
+                        }}
                       />
                     </div>
                   ))}

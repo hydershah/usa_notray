@@ -31,6 +31,9 @@ interface EditorStore {
   selectedTagType: TagType | null;
   draggedTag: DocumentTag | null;
   
+  // Custom tag dimensions (remembers resized dimensions per tag type)
+  customTagDimensions: Partial<Record<TagType, { width: number; height: number }>>;
+  
   // PDF viewer state
   viewer: PDFViewerState;
   
@@ -66,6 +69,11 @@ interface EditorStore {
   selectTag: (tag: DocumentTag | null) => void;
   setSelectedTagType: (tagType: TagType | null) => void;
   setDraggedTag: (tag: DocumentTag | null) => void;
+  
+  // Actions - Custom Dimensions
+  setCustomTagDimensions: (tagType: TagType, dimensions: { width: number; height: number }) => void;
+  getTagDimensions: (tagType: TagType) => { width: number; height: number } | null;
+  clearCustomTagDimensions: () => void;
   
   // Actions - PDF Viewer
   setCurrentPage: (page: number) => void;
@@ -115,10 +123,21 @@ export const useEditorStore = create<EditorStore>()(
       selectedTagType: null,
       draggedTag: null,
       
+      customTagDimensions: (() => {
+        // Load custom dimensions from localStorage on initialization
+        try {
+          const saved = localStorage.getItem('editorCustomTagDimensions');
+          return saved ? JSON.parse(saved) : {};
+        } catch (error) {
+          console.warn('Failed to load custom tag dimensions from localStorage:', error);
+          return {};
+        }
+      })(),
+      
       viewer: {
         currentPage: 1,
         totalPages: 0,
-        zoomLevel: 1.25,
+        zoomLevel: 2.0,
         scrollTop: 0,
         documentId: ''
       },
@@ -232,6 +251,48 @@ export const useEditorStore = create<EditorStore>()(
       setSelectedTagType: (tagType) => set({ selectedTagType: tagType }),
       
       setDraggedTag: (tag) => set({ draggedTag: tag }),
+      
+      // Custom Dimensions Actions
+      setCustomTagDimensions: (tagType, dimensions) => {
+        set(state => {
+          const newCustomDimensions = {
+            ...state.customTagDimensions,
+            [tagType]: dimensions
+          };
+          
+          // Save to localStorage for persistence across sessions
+          try {
+            localStorage.setItem('editorCustomTagDimensions', JSON.stringify(newCustomDimensions));
+          } catch (error) {
+            console.warn('Failed to save custom tag dimensions to localStorage:', error);
+          }
+          
+          return { customTagDimensions: newCustomDimensions };
+        });
+      },
+      
+      getTagDimensions: (tagType) => {
+        const customDimensions = get().customTagDimensions[tagType];
+        if (customDimensions) {
+          return customDimensions;
+        }
+        // Return default dimensions if no custom dimensions are set
+        if (tagType === 'W') {
+          return { width: 250, height: 40 };
+        } else {
+          return { width: 97, height: 26 };
+        }
+      },
+      
+      clearCustomTagDimensions: () => {
+        set({ customTagDimensions: {} });
+        // Clear from localStorage as well
+        try {
+          localStorage.removeItem('editorCustomTagDimensions');
+        } catch (error) {
+          console.warn('Failed to clear custom tag dimensions from localStorage:', error);
+        }
+      },
       
       // PDF Viewer Actions
       setCurrentPage: (page) =>
@@ -396,6 +457,7 @@ export const useEditorStore = create<EditorStore>()(
           selectedTag: null,
           selectedTagType: null,
           draggedTag: null,
+          customTagDimensions: {},
           cursors: [],
           lastSyncTime: null,
           isConnected: false,

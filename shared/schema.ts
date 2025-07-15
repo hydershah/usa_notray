@@ -1509,8 +1509,8 @@ export const documentTags = pgTable("document_tags", {
   pageNumber: integer("page_number").notNull(),
   xPosition: integer("x_position").notNull(),
   yPosition: integer("y_position").notNull(),
-  width: integer("width").default(100).notNull(),
-  height: integer("height").default(30).notNull(),
+  width: integer("width").default(97).notNull(),
+  height: integer("height").default(26).notNull(),
   isCompleted: boolean("is_completed").default(false),
   content: text("content"), // For completed tags
   completedBy: integer("completed_by").references(() => users.id),

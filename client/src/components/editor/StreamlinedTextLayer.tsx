@@ -126,7 +126,6 @@ export const StreamlinedTextLayer: React.FC<StreamlinedTextLayerProps> = ({
           key={textInput.id}
           id={textInput.id}
           coordinates={textInput.coordinates}
-          canvasElement={canvasElement} // Pass canvas element for position calculation
           sessionId={sessionId}
           content={textInput.content}
           fontSize={textInput.fontSize}
@@ -155,6 +154,10 @@ export const StreamlinedTextLayer: React.FC<StreamlinedTextLayerProps> = ({
             }
           }}
           onMove={(newCoordinates) => handleTextInputMove(textInput.id, newCoordinates)}
+          onResize={(newCoordinates) => {
+            console.log(`📐 Text input ${textInput.id} resized:`, newCoordinates);
+            // Handle resize - could update state or call parent handler
+          }}
         />
       ))}
     </div>

@@ -393,6 +393,77 @@ export function registerTextTagRoutes(app: Express) {
     }
   });
 
+  // Update text tag dimensions (position and size)
+  app.put('/api/editor/session/:sessionId/text-tag/:tagId/dimensions', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId, tagId } = req.params;
+      const { x, y, width, height } = req.body;
+      
+      if (x === undefined || y === undefined || width === undefined || height === undefined ||
+          isNaN(x) || isNaN(y) || isNaN(width) || isNaN(height)) {
+        return res.status(400).json({ message: 'Valid x, y, width, and height are required' });
+      }
+
+      const numericTagId = parseInt(tagId);
+      if (isNaN(numericTagId)) {
+        return res.status(400).json({ message: 'Invalid tag ID' });
+      }
+
+      // Validate dimensions
+      if (width <= 0 || height <= 0) {
+        return res.status(400).json({ message: 'Width and height must be positive numbers' });
+      }
+
+      // Update tag dimensions and position
+      const updateData = {
+        xPosition: Math.round(x),
+        yPosition: Math.round(y),
+        width: Math.round(width),
+        height: Math.round(height),
+        updatedBy: req.user.id,
+        updatedAt: new Date()
+      };
+
+      const [updatedTag] = await db
+        .update(documentTags)
+        .set(updateData)
+        .where(and(
+          eq(documentTags.id, numericTagId),
+          eq(documentTags.tagType, 'T') // Ensure it's a text tag
+        ))
+        .returning();
+
+      if (!updatedTag) {
+        return res.status(404).json({ message: 'Text tag not found' });
+      }
+
+      console.log(`✅ Text tag dimensions updated: ${tagId} -> (${x}, ${y}, ${width}x${height})`);
+
+      res.json({
+        success: true,
+        tag: {
+          id: updatedTag.id.toString(),
+          coordinates: {
+            x: updatedTag.xPosition,
+            y: updatedTag.yPosition,
+            width: updatedTag.width,
+            height: updatedTag.height,
+            pageNumber: updatedTag.pageNumber
+          },
+          updatedAt: updatedTag.updatedAt
+        },
+        message: 'Text tag dimensions updated successfully'
+      });
+
+    } catch (error) {
+      console.error('Update text tag dimensions error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to update dimensions',
+        error: 'text_tag_dimensions_update_failed'
+      });
+    }
+  });
+
   // Get text tag details (for editing)
   app.get('/api/editor/session/:sessionId/text-tag/:tagId', verifyToken, async (req: any, res) => {
     try {

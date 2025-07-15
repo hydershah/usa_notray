@@ -67,15 +67,12 @@ const sanitizeCoordinates = (coordinates: Partial<TagCoordinates>, tagType?: str
   
   // Get default dimensions based on tag type
   const getDefaultDimensions = (type?: string) => {
-    if (type === 'S' || type === 'E') {
-      // Signatures and stamps need bigger dimensions for image content
-      return { width: 200, height: 60 };
-    } else if (type === 'I') {
-      // Initials need medium size
-      return { width: 120, height: 40 };
+    if (type === 'W') {
+      // Whiteout tags need larger dimensions to cover content effectively
+      return { width: 250, height: 40 };
     } else {
-      // Other tags use standard size
-      return { width: 150, height: 30 };
+      // All tags use compact size for consistency
+      return { width: 97, height: 26 };
     }
   };
   
@@ -109,7 +106,9 @@ export const useTagOperations = (sessionId: string) => {
     updateTag,
     deleteTag: removeTagFromStore,
     selectedUser,
-    currentDocument
+    currentDocument,
+    setCustomTagDimensions,
+    tags
   } = useEditorStore();
 
   // Debounced individual save to existing single-tag endpoints
@@ -404,7 +403,7 @@ export const useTagOperations = (sessionId: string) => {
     const sanitizedCoordinates = sanitizeCoordinates(coordinates);
     
     // Update store immediately for smooth UX
-    updateTag(tagId, { coordinates: sanitizedCoordinates });
+    updateTag(tagId, { coordinates: sanitizedCoordinates as TagCoordinates });
     
     // Only save to server on mouse up / drag end
     // This will be called by the TagRenderer on dragStop
@@ -421,7 +420,7 @@ export const useTagOperations = (sessionId: string) => {
     const sanitizedCoordinates = sanitizeCoordinates(coordinates);
     
     // Update store immediately for smooth UX
-    updateTag(tagId, { coordinates: sanitizedCoordinates });
+    updateTag(tagId, { coordinates: sanitizedCoordinates as TagCoordinates });
     
     // Only save to server on resize end
     // This will be called by the TagRenderer on resizeStop
@@ -437,16 +436,28 @@ export const useTagOperations = (sessionId: string) => {
     
     const sanitizedCoordinates = sanitizeCoordinates(coordinates);
     
+    // If dimensions are being updated, save them as custom dimensions for this tag type
+    if (coordinates.width !== undefined && coordinates.height !== undefined) {
+      const tag = tags.find(t => t.id === tagId);
+      if (tag) {
+        console.log(`💾 Saving custom dimensions for tag type ${tag.tagType}: ${coordinates.width}x${coordinates.height}`);
+        setCustomTagDimensions(tag.tagType, {
+          width: coordinates.width,
+          height: coordinates.height
+        });
+      }
+    }
+    
     const operation: TagOperation = {
       type: 'update',
       tagId,
-      data: { coordinates: sanitizedCoordinates },
+      data: { coordinates: sanitizedCoordinates as TagCoordinates },
       timestamp: Date.now()
     };
 
     // Save to server with debounce
     debouncedSave(operation);
-  }, []);
+  }, [tags, setCustomTagDimensions]);
 
   // Delete tag with optimistic update
   const deleteTag = useCallback((tagId: string) => {

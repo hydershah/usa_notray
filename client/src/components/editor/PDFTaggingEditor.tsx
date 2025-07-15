@@ -608,14 +608,17 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         console.log('📝 Placing streamlined text input...');
         console.log('Current text inputs before placement:', textInputs);
         
-        const newTextInputId = await placeTextInput({
+        await placeTextInput({
           documentId: currentDocument.id,
           coordinates,
           assignedUserId: selectedUser.userId
         }, selectedUser.colorCode || '#4ECDC4');
         
-        console.log('✅ Streamlined text input placed successfully! ID:', newTextInputId);
+        console.log('✅ Streamlined text input placed successfully!');
         console.log('Text inputs after placement:', textInputs);
+        
+        // Auto-switch back to pointer mode after placing text tag
+        setSelectedTagType(null);
         
         // Force a re-render by updating the canvas
         setTimeout(() => {
@@ -626,7 +629,9 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
             setTimeout(() => setCurrentPageCanvas(canvas), 10);
           }
         }, 100);
-      } else {
+        
+        return;
+      }
         console.log('📍 Placing regular tag...');
         console.log('🔍 DEBUG: Tag placement data:', {
           documentId: currentDocument.id,
@@ -649,6 +654,9 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         
         console.log('✅ Tag placed successfully!');
         
+        // Auto-switch back to pointer mode after placing tag
+        setSelectedTagType(null);
+        
         // Check store state after placement
         setTimeout(() => {
           const newTags = useEditorStore.getState().tags;
@@ -657,7 +665,6 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
             tags: newTags.map(t => ({ id: t.id, type: t.tagType }))
           });
         }, 100);
-      }
     } catch (error) {
       console.error('❌ Failed to place tag:', error);
       
@@ -668,7 +675,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         description: error instanceof Error ? error.message : 'Unknown error occurred'
       });
     }
-  }, [selectedTagType, selectedUser, currentDocument, placeTag, placeTextInput, textInputs, viewer.currentPage, setCurrentPageCanvas, tags, toast]);
+  }, [selectedTagType, selectedUser, currentDocument, placeTag, placeTextInput, textInputs, viewer.currentPage, setCurrentPageCanvas, tags, toast, setSelectedTagType]);
 
   // Handle user switching via hotkeys
   const handleUserSwitch = useCallback((userIndex: number) => {

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Rnd } from 'react-rnd';
 import { useToast } from '@/hooks/use-toast';
 
 interface StreamlinedTextInputProps {
@@ -24,6 +25,7 @@ interface StreamlinedTextInputProps {
   onDelete: () => void;
   onSelect?: () => void;
   onMove?: (newCoordinates: { x: number; y: number }) => void;
+  onResize?: (newCoordinates: { x: number; y: number; width: number; height: number }) => void;
   onFontSizeChange?: (fontSize: number) => void;
 }
 
@@ -44,28 +46,35 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
   onDelete,
   onSelect,
   onMove,
+  onResize,
   onFontSizeChange
 }) => {
   const [inputValue, setInputValue] = useState(content);
   const [isEditing, setIsEditing] = useState(isNew); // Start editing if new
   const [isVisible, setIsVisible] = useState(true);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [isResizing, setIsResizing] = useState(false);
   const [position, setPosition] = useState({ 
     x: coordinates.x, 
     y: coordinates.y 
+  });
+  const [dimensions, setDimensions] = useState({
+    width: coordinates.width,
+    height: coordinates.height
   });
   const [isDeleted, setIsDeleted] = useState(false); // Track deletion state
   
   const inputRef = useRef<HTMLInputElement>(null);
   const spanRef = useRef<HTMLSpanElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+  
+  // Calculate dynamic font size based on container height
+  const dynamicFontSize = Math.max(8, Math.min(dimensions.height * 0.6, 24));
 
-  // Update position when coordinates change
+  // Update position and dimensions when coordinates change
   useEffect(() => {
     setPosition({ x: coordinates.x, y: coordinates.y });
-  }, [coordinates.x, coordinates.y]);
+    setDimensions({ width: coordinates.width, height: coordinates.height });
+  }, [coordinates.x, coordinates.y, coordinates.width, coordinates.height]);
 
   // Auto-focus on new text inputs
   useEffect(() => {
@@ -177,83 +186,26 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     
     // Cancel any ongoing editing
     setIsEditing(false);
-    setIsDragging(false);
     
     // Clean up any pending operations
     onDelete();
   }, [id, onDelete, isDeleted]);
 
-  // Handle click to select or start editing
-  const handleClick = useCallback((e: React.MouseEvent) => {
+  // Handle position and size changes from Rnd
+  const handleDragStop = useCallback((e: any, data: { x: number; y: number }) => {
     if (isDeleted) return;
     
-    e.stopPropagation();
-    if (onSelect) {
-      onSelect();
+    const newX = data.x / scaleFactor;
+    const newY = data.y / scaleFactor;
+    
+    setPosition({ x: newX, y: newY });
+    
+    if (onMove) {
+      onMove({ x: newX, y: newY });
     }
-    // Only start editing on double click or if it's a new input
-    if (e.detail === 2 || isNew) {
-      setIsEditing(true);
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
-  }, [isNew, onSelect, isDeleted]);
-
-  // Handle drag start
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (isEditing || isDeleted) return;
     
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    
-    setIsDragging(true);
-    setDragStart({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
-    });
-    
-    if (onSelect) {
-      onSelect();
-    }
-  }, [isEditing, onSelect, isDeleted]);
-
-  // Handle drag
-  useEffect(() => {
-    if (!isDragging || isDeleted) return;
-    
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isDeleted) return; // Stop processing if deleted
-      
-      const parentRect = containerRef.current?.parentElement?.getBoundingClientRect();
-      if (!parentRect) return;
-      
-      // Calculate new position relative to canvas
-      const newX = (e.clientX - parentRect.left - dragStart.x) / scaleFactor;
-      const newY = (e.clientY - parentRect.top - dragStart.y) / scaleFactor;
-      
-      setPosition({
-        x: Math.max(0, newX),
-        y: Math.max(0, newY)
-      });
-    };
-    
-    const handleMouseUp = async () => {
-      setIsDragging(false);
-      
-      // Don't save position if deleted
-      if (isDeleted) {
-        console.log('Text input was deleted, skipping position save');
-        return;
-      }
-      
-      // Save new position
-      if (onMove) {
-        onMove(position);
-      }
-      
-      // Also save to backend
+    // Save position to backend
+    const savePosition = async () => {
       try {
         const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${id}/position`, {
           method: 'PUT',
@@ -262,17 +214,12 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
             'Authorization': `Bearer ${localStorage.getItem('token')}`
           },
           body: JSON.stringify({
-            x: position.x,
-            y: position.y
+            x: newX,
+            y: newY
           })
         });
         
-        if (!response.ok) {
-          // Don't show error if it's deleted (404)
-          if (response.status === 404) {
-            console.log('Text input was deleted, position save skipped');
-            return;
-          }
+        if (!response.ok && response.status !== 404) {
           throw new Error('Failed to save position');
         }
       } catch (error) {
@@ -280,14 +227,136 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       }
     };
     
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    savePosition();
+  }, [scaleFactor, sessionId, id, onMove, isDeleted]);
+
+  const handleResize = useCallback((
+    e: any,
+    direction: any,
+    ref: HTMLElement,
+    delta: any,
+    position: { x: number; y: number }
+  ) => {
+    if (isDeleted) return;
     
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+    const newWidth = parseInt(ref.style.width) / scaleFactor;
+    const newHeight = parseInt(ref.style.height) / scaleFactor;
+    const newX = position.x / scaleFactor;
+    const newY = position.y / scaleFactor;
+    
+    // Update dimensions immediately for real-time feedback
+    setPosition({ x: newX, y: newY });
+    setDimensions({ width: newWidth, height: newHeight });
+  }, [scaleFactor, isDeleted]);
+
+  const handleResizeStop = useCallback((
+    e: any,
+    direction: any,
+    ref: HTMLElement,
+    delta: any,
+    position: { x: number; y: number }
+  ) => {
+    if (isDeleted) return;
+    
+    const newWidth = parseInt(ref.style.width) / scaleFactor;
+    const newHeight = parseInt(ref.style.height) / scaleFactor;
+    const newX = position.x / scaleFactor;
+    const newY = position.y / scaleFactor;
+    
+    setPosition({ x: newX, y: newY });
+    setDimensions({ width: newWidth, height: newHeight });
+    
+    // Calculate new font size based on new height
+    const newFontSize = Math.max(8, Math.min(newHeight * 0.6, 24));
+    
+    if (onFontSizeChange) {
+      onFontSizeChange(newFontSize);
+    }
+    
+    if (onResize) {
+      onResize({ x: newX, y: newY, width: newWidth, height: newHeight });
+    }
+    
+    // Save dimensions to backend
+    const saveDimensions = async () => {
+      try {
+        // Calculate new font size based on new height
+        const newFontSize = Math.max(8, Math.min(newHeight * 0.6, 24));
+        
+        // Save dimensions
+        const dimensionsResponse = await fetch(`/api/editor/session/${sessionId}/text-tag/${id}/dimensions`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            x: newX,
+            y: newY,
+            width: newWidth,
+            height: newHeight
+          })
+        });
+        
+        if (!dimensionsResponse.ok && dimensionsResponse.status !== 404) {
+          throw new Error('Failed to save dimensions');
+        }
+        
+        // Save font size
+        const fontSizeResponse = await fetch(`/api/editor/session/${sessionId}/text-tag/${id}/font-size`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            fontSize: newFontSize,
+            fontFamily: fontFamily,
+            textColor: textColor
+          })
+        });
+        
+        if (!fontSizeResponse.ok && fontSizeResponse.status !== 404) {
+          throw new Error('Failed to save font size');
+        }
+        
+        console.log(`✅ Text tag resized: ${newWidth}x${newHeight}, font size: ${newFontSize}px`);
+        
+      } catch (error) {
+        console.error('Failed to save dimensions:', error);
+      }
     };
-  }, [isDragging, dragStart, scaleFactor, sessionId, id, position, onMove, isDeleted]);
+    
+    saveDimensions();
+    setIsResizing(false);
+  }, [scaleFactor, sessionId, id, onResize, isDeleted]);
+
+  // Handle click to select or start editing
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    if (isDeleted || isResizing) return;
+    
+    e.stopPropagation();
+    
+    console.log('🖱️ Text tag clicked:', {
+      id,
+      isSelected,
+      isEditing,
+      clickDetail: e.detail,
+      isNew
+    });
+    
+    if (onSelect) {
+      onSelect();
+      console.log('📍 Text tag selection triggered for:', id);
+    }
+    
+    // Only start editing on double click or if it's a new input
+    if (e.detail === 2 || isNew) {
+      setIsEditing(true);
+      setTimeout(() => inputRef.current?.focus(), 50);
+      console.log('✏️ Text tag editing started for:', id);
+    }
+  }, [isNew, onSelect, isDeleted, isResizing, id, isSelected, isEditing]);
 
   // Handle keyboard in input field
   const handleInputKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -320,13 +389,13 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     position: 'absolute',
     left: `${position.x * scaleFactor}px`,
     top: `${position.y * scaleFactor}px`,
-    width: `${coordinates.width * scaleFactor}px`,
-    minHeight: `${coordinates.height * scaleFactor}px`,
+    width: `${dimensions.width * scaleFactor}px`,
+    minHeight: `${dimensions.height * scaleFactor}px`,
     fontSize: `${fontSize * scaleFactor}px`,
     fontFamily,
     color: textColor,
     lineHeight: '1.2',
-    cursor: isDragging ? 'grabbing' : isEditing ? 'text' : 'grab',
+    cursor: isEditing ? 'text' : 'move',
     zIndex: isSelected ? 1000 : 100,
     pointerEvents: 'auto', // Important: Allow interaction with text inputs
     userSelect: isEditing ? 'text' : 'none'
@@ -340,19 +409,98 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     id,
     coordinates,
     position,
+    dimensions,
     scaleFactor,
     isEditing,
     isSelected,
-    isDragging,
     isNew,
     isVisible,
-    isDeleted
+    isDeleted,
+    enableResizing: isSelected && !isEditing
   });
 
   return (
-    <div
-      ref={containerRef}
-      style={displayStyle}
+    <Rnd
+      size={{
+        width: dimensions.width * scaleFactor,
+        height: dimensions.height * scaleFactor
+      }}
+      position={{
+        x: position.x * scaleFactor,
+        y: position.y * scaleFactor
+      }}
+      onDragStop={handleDragStop}
+      onResize={handleResize}
+      onResizeStop={handleResizeStop}
+      onResizeStart={() => setIsResizing(true)}
+      enableResizing={{
+        top: isSelected && !isEditing,
+        right: isSelected && !isEditing,
+        bottom: isSelected && !isEditing,
+        left: isSelected && !isEditing,
+        topRight: isSelected && !isEditing,
+        bottomRight: isSelected && !isEditing,
+        bottomLeft: isSelected && !isEditing,
+        topLeft: isSelected && !isEditing,
+      }}
+      disableDragging={isEditing}
+      minWidth={30 * scaleFactor}
+      minHeight={15 * scaleFactor}
+      bounds="parent"
+      style={{
+        zIndex: isSelected ? 1000 : 100,
+        pointerEvents: 'auto',
+      }}
+      resizeHandleStyles={{
+        bottomRight: {
+          width: '8px',
+          height: '8px',
+          backgroundColor: '#007bff',
+          border: '1px solid #fff',
+          borderRadius: '2px',
+          zIndex: 1001,
+        },
+        topRight: {
+          width: '8px',
+          height: '8px',
+          backgroundColor: '#007bff',
+          border: '1px solid #fff',
+          borderRadius: '2px',
+          zIndex: 1001,
+        },
+        bottomLeft: {
+          width: '8px',
+          height: '8px',
+          backgroundColor: '#007bff',
+          border: '1px solid #fff',
+          borderRadius: '2px',
+          zIndex: 1001,
+        },
+        topLeft: {
+          width: '8px',
+          height: '8px',
+          backgroundColor: '#007bff',
+          border: '1px solid #fff',
+          borderRadius: '2px',
+          zIndex: 1001,
+        }
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          fontSize: `${dynamicFontSize * scaleFactor}px`,
+          fontFamily,
+          color: textColor,
+          lineHeight: '1.2',
+          cursor: isEditing ? 'text' : 'move',
+          pointerEvents: 'auto',
+          userSelect: isEditing ? 'text' : 'none',
+          border: isSelected ? '2px solid #007bff' : '1px solid transparent',
+          borderRadius: '2px',
+          transition: 'border-color 0.2s ease'
+        }}
       tabIndex={0}
     >
       {isEditing ? (
@@ -368,9 +516,9 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
           style={{
             width: '100%',
             height: '100%',
-            background: 'transparent', // Remove white background
+              background: 'transparent',
             border: 'none',
-            outline: '1px solid rgba(0, 0, 0, 0.3)', // Simple gray outline instead of colored
+              outline: '1px solid rgba(0, 0, 0, 0.3)',
             borderRadius: '2px',
             padding: '2px 4px',
             margin: 0,
@@ -382,30 +530,36 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
           autoFocus
         />
       ) : (
-        // Display mode - show text content with controls
+          // Display mode - show text content
         <div
           style={{
             position: 'relative',
             width: '100%',
-            height: '100%'
+              height: '100%',
+              overflow: 'hidden',
+              wordWrap: 'break-word',
+              wordBreak: 'break-word'
           }}
         >
           <span
             ref={spanRef}
             onClick={handleClick}
-            onMouseDown={handleMouseDown}
             style={{
-              display: 'inline-block',
+                display: 'block',
               padding: '2px 4px',
-              background: 'transparent', // Remove white background
-              border: 'none', // Remove border entirely
+                background: 'transparent',
+                border: 'none',
               borderRadius: '2px',
               minWidth: '20px',
-              minHeight: '13px', // Reduced proportionally with tag height (20px -> 13px)
-              boxShadow: 'none', // Remove any shadow
+                minHeight: '13px',
+                boxShadow: 'none',
               transition: 'all 0.15s ease',
-              width: '100%'
-              // Completely clean - no selection indicators
+                width: '100%',
+                height: '100%',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'pre-wrap',
+                wordWrap: 'break-word'
             }}
             title="Double-click to edit, Delete key to delete"
           >
@@ -413,19 +567,16 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
               <span style={{ 
                 color: '#ccc', 
                 fontStyle: 'italic',
-                fontSize: '0.9em'
+                  fontSize: '0.9em',
+                  whiteSpace: 'nowrap'
               }}>
                 Double-click to add text
               </span>
             )}
           </span>
-          
-          {/* Control buttons removed for clean text appearance - use keyboard shortcuts instead:
-              - Double-click to edit
-              - Delete key to delete
-          */}
         </div>
       )}
     </div>
+    </Rnd>
   );
 }; 
