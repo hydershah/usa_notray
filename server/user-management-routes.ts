@@ -20,14 +20,8 @@ import { redisCache } from './services/redis-cache';
 
 export function registerUserManagementRoutes(app: Express) {
   
-  // ============================================================================
-  // QUICK UPDATE ROUTES (for partial updates)
-  // ============================================================================
-
-  /**
-   * PATCH /api/users/:id/quick-update
-   * Update specific user fields without requiring all data
-   */
+  
+  
   app.patch('/api/users/:id/quick-update', verifyToken, async (req: any, res) => {
     try {
       const userId = parseInt(req.params.id);
