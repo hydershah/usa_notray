@@ -111,19 +111,64 @@ export const SignatureSelectionModal: React.FC<SignatureSelectionModalProps> = (
   const loadSignatures = async () => {
     try {
       setLoading(true);
+      console.log('🔄 Loading signatures for user:', userId);
+      
       const token = localStorage.getItem('token');
+      if (!token) {
+        console.error('❌ No authentication token found');
+        setSignatures([]);
+        return;
+      }
+      
       const response = await fetch(`/api/users/${userId}/signatures`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
+
+      console.log('📡 Signatures API response status:', response.status);
 
       if (response.ok) {
         const data = await response.json();
+        console.log('✅ Signatures loaded:', {
+          count: data.length,
+          signatures: data.map((sig: any) => ({
+            id: sig.id,
+            name: sig.name,
+            type: sig.type,
+            hasImageUrl: !!sig.imageUrl,
+            imageUrlLength: sig.imageUrl?.length || 0
+          }))
+        });
         setSignatures(data);
       } else {
+        const errorText = await response.text();
+        console.error('❌ Failed to load signatures:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText
+        });
+        
+        // Show error message to user
+        toast({
+          title: "Failed to Load Signatures",
+          description: `Server returned ${response.status}: ${response.statusText}`,
+          variant: "destructive"
+        });
+        
         setSignatures([]);
       }
     } catch (error) {
-      console.error('Error loading signatures:', error);
+      console.error('❌ Error loading signatures:', error);
+      
+      // Show error message to user
+      toast({
+        title: "Network Error",
+        description: "Failed to connect to the server. Please check your connection.",
+        variant: "destructive"
+      });
+      
       setSignatures([]);
     } finally {
       setLoading(false);
@@ -217,6 +262,13 @@ export const SignatureSelectionModal: React.FC<SignatureSelectionModalProps> = (
     }
 
     setIsProcessing(true);
+    console.log('📤 Uploading signature:', {
+      fileName: uploadFile.name,
+      fileSize: uploadFile.size,
+      fileType: uploadFile.type,
+      signatureName: uploadName
+    });
+
     try {
       const formData = new FormData();
       formData.append('signature', uploadFile);
@@ -224,33 +276,62 @@ export const SignatureSelectionModal: React.FC<SignatureSelectionModalProps> = (
       formData.append('type', 'uploaded');
 
       const token = localStorage.getItem('token');
+      console.log('📡 Sending signature upload request...');
+      
       const response = await fetch(`/api/users/${userId}/signatures`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: formData
       });
 
+      console.log('📡 Upload response status:', response.status);
+
       if (response.ok) {
         const newSignature = await response.json();
+        console.log('✅ Signature uploaded successfully:', newSignature);
+        
         setSignatures(prev => [...prev, newSignature]);
         setUploadFile(null);
         setUploadPreview('');
         setUploadName('');
+        
         toast({
           title: "Signature Saved",
           description: "Your uploaded signature has been saved successfully",
         });
+        
         // Auto-select the new signature
+        console.log('🎯 Auto-selecting uploaded signature:', newSignature.imageUrl);
         onSelect(newSignature.imageUrl);
         onClose();
       } else {
-        throw new Error('Save failed');
+        const errorText = await response.text();
+        console.error('❌ Upload failed:', {
+          status: response.status,
+          error: errorText
+        });
+        
+        let errorMessage = 'Failed to save signature. Please try again.';
+        
+        if (response.status === 413) {
+          errorMessage = 'File too large. Please choose a smaller image.';
+        } else if (response.status === 400) {
+          errorMessage = 'Invalid file format. Please use PNG, JPG, or GIF.';
+        } else if (response.status === 403) {
+          errorMessage = 'Access denied. Please refresh the page and try again.';
+        }
+        
+        toast({
+          title: "Upload Failed",
+          description: errorMessage,
+          variant: "destructive",
+        });
       }
     } catch (error) {
-      console.error('Save error:', error);
+      console.error('❌ Upload error:', error);
       toast({
-        title: "Save Failed",
-        description: "Failed to save signature. Please try again.",
+        title: "Upload Failed",
+        description: "Network error occurred. Please check your connection and try again.",
         variant: "destructive",
       });
     } finally {
@@ -469,6 +550,7 @@ export const SignatureSelectionModal: React.FC<SignatureSelectionModalProps> = (
                       onClick={(e) => {
                         e.stopPropagation();
                         e.preventDefault();
+                        console.log('🎯 Signature selected from modal:', signature.id, signature.imageUrl);
                         onSelect(signature.imageUrl);
                         onClose();
                       }}
@@ -481,7 +563,8 @@ export const SignatureSelectionModal: React.FC<SignatureSelectionModalProps> = (
                             alt={signature.name}
                             className="max-h-20 max-w-full object-contain"
                             onError={(e) => {
-                              (e.target as HTMLImageElement).src = '/placeholder-signature.png';
+                              console.error('Failed to load signature image:', signature.imageUrl);
+                              (e.target as HTMLImageElement).src = '/api/placeholder/signature';
                             }}
                           />
                         </div>
@@ -502,7 +585,14 @@ export const SignatureSelectionModal: React.FC<SignatureSelectionModalProps> = (
                 <div className="text-center py-16 text-gray-500">
                   <Pencil className="h-16 w-16 mx-auto mb-6 text-gray-300" />
                   <p className="text-xl font-medium mb-2">No signatures found</p>
-                  <p className="text-gray-400">Create your first signature using the tabs above</p>
+                  <p className="text-gray-400 mb-6">Create your first signature using the tabs above</p>
+                  <Button
+                    onClick={() => setActiveTab('upload')}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Upload Signature
+                  </Button>
                 </div>
               )}
             </TabsContent>

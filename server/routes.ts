@@ -2930,13 +2930,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const job = await storage.getJob(jobId);
       
       if (!job) {
-        return res.status(404).json({ message: 'Job not found' });
+        return res.status(404).json({ 
+          message: 'Job not found',
+          error: 'JOB_NOT_FOUND'
+        });
       }
 
       console.log('Creating Whereby video session for job:', jobId);
       
       // Import Whereby service
       const { wherebyService } = await import('./lib/whereby-service');
+      
+      // Check service configuration
+      const configStatus = wherebyService.getConfigStatus();
+      console.log('Whereby service configuration status:', configStatus);
       
       // Calculate end time (2 hours from now for notary sessions)
       const endDate = new Date();
@@ -2950,12 +2957,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fields: ['hostRoomUrl']
       };
 
+      console.log('Creating meeting with options:', meetingOptions);
       const meeting = await wherebyService.createMeeting(meetingOptions);
       
       console.log('Whereby video session created:', {
         meetingId: meeting.meetingId,
         roomUrl: meeting.roomUrl,
-        endDate: meeting.endDate
+        endDate: meeting.endDate,
+        configured: configStatus.configured
       });
       
       res.json({
@@ -2968,13 +2977,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sessionToken: meeting.meetingId,
         endDate: meeting.endDate,
         technology: 'whereby',
+        configured: configStatus.configured,
+        mode: configStatus.configured ? 'api' : 'fallback',
         jobId
       });
     } catch (error) {
       console.error('Create Whereby video session error:', error);
-      res.status(500).json({ 
-        message: 'Failed to create Whereby video session',
-        error: error instanceof Error ? error.message : 'Unknown error'
+      
+      // Provide more specific error information
+      let errorCode = 'VIDEO_SESSION_ERROR';
+      let statusCode = 500;
+      let message = 'Failed to create video session';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('API key')) {
+          errorCode = 'API_KEY_MISSING';
+          message = 'Video service not configured properly';
+          statusCode = 503; // Service Unavailable
+        } else if (error.message.includes('401')) {
+          errorCode = 'API_UNAUTHORIZED';
+          message = 'Video service authentication failed';
+          statusCode = 503;
+        } else if (error.message.includes('403')) {
+          errorCode = 'API_FORBIDDEN';
+          message = 'Video service access denied';
+          statusCode = 503;
+        } else if (error.message.includes('429')) {
+          errorCode = 'API_RATE_LIMITED';
+          message = 'Video service rate limit exceeded';
+          statusCode = 429;
+        }
+      }
+      
+      res.status(statusCode).json({ 
+        message,
+        error: errorCode,
+        details: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
       });
     }
   });
@@ -8992,6 +9031,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       
       // Test Whereby configuration
       const configValidation = wherebyService.validateConfiguration();
+      const configStatus = wherebyService.getConfigStatus();
       
       const diagnostics = {
         server: {
@@ -9001,11 +9041,13 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           timestamp: new Date().toISOString()
         },
         whereby: {
-          apiKeyConfigured: process.env.WHEREBY_API_KEY ? 'configured' : 'missing',
-          apiUrl: 'https://api.whereby.dev/v1',
+          apiKeyConfigured: configStatus.hasApiKey ? 'configured' : 'missing',
+          apiUrl: configStatus.apiUrl,
+          serviceConfigured: configStatus.configured,
           configurationValid: configValidation.valid,
           configurationErrors: configValidation.errors,
-          serviceStatus: configValidation.valid ? 'ready' : 'misconfigured'
+          configurationWarnings: configValidation.warnings,
+          serviceStatus: configValidation.valid ? 'ready' : (process.env.NODE_ENV === 'production' ? 'misconfigured' : 'fallback-mode')
         },
         authentication: {
           jwtSecret: process.env.JWT_SECRET ? 'configured' : 'missing',
@@ -9014,23 +9056,35 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         },
         features: {
           videoConferencing: true,
-          cloudRecording: true,
-          hostControls: true,
+          cloudRecording: configStatus.configured,
+          hostControls: configStatus.configured,
           waitingRoom: false,
-          complianceMode: true
+          complianceMode: true,
+          fallbackMode: !configStatus.configured
         }
       };
 
       console.log('Whereby diagnostics requested by user:', req.user.id);
+      console.log('Whereby service status:', configStatus);
+      
+      const recommendations = [];
+      if (configValidation.errors.length > 0) {
+        recommendations.push(...configValidation.errors.map(error => `❌ ${error}`));
+      }
+      if (configValidation.warnings.length > 0) {
+        recommendations.push(...configValidation.warnings.map(warning => `⚠️ ${warning}`));
+      }
+      if (!configStatus.configured) {
+        recommendations.push('📝 Set WHEREBY_API_KEY environment variable for full video functionality');
+        if (process.env.NODE_ENV === 'development') {
+          recommendations.push('💡 Development mode: Video will use fallback implementation');
+        }
+      }
       
       res.json({
         success: true,
         diagnostics,
-        recommendations: configValidation.valid ? [] : [
-          'Configure WHEREBY_API_KEY environment variable',
-          'Verify Whereby account credentials',
-          'Check API access permissions'
-        ]
+        recommendations
       });
     } catch (error) {
       console.error('Whereby diagnostics error:', error);

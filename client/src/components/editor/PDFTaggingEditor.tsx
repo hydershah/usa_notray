@@ -301,9 +301,63 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       if (mode !== 'signing') return;
       
       try {
-        // Note: User profiles are loaded on the backend when needed for content generation
-        // We don't need to pre-load them here to avoid permission issues
-        console.log('✅ User profiles will be loaded on-demand during content generation');
+        console.log('🔄 Loading user profiles for signature functionality...');
+        const profilePromises = participants.map(async (participant) => {
+          try {
+            const response = await fetch(`/api/users/${participant.userId}/profile/comprehensive`, {
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+              }
+            });
+            
+            if (response.ok) {
+              const profile = await response.json();
+              console.log(`✅ Loaded profile for ${participant.displayName}:`, {
+                hasSignatureData: !!profile.signatureData,
+                hasSignatureImage: !!profile.signatureImage,
+                hasInitialData: !!profile.initialData
+              });
+              
+              // Transform profile to expected format for InteractiveTagInput
+              return {
+                userId: participant.userId,
+                profile: {
+                  name: profile.fullName || `${profile.firstName || ''} ${profile.lastName || ''}`.trim(),
+                  signatures: profile.signatureImage ? [profile.signatureImage] : (profile.signatureData ? [profile.signatureData] : []),
+                  initials: profile.initialsImage ? [profile.initialsImage] : (profile.initialData ? [profile.initialData] : []),
+                  commissionNumber: profile.commissionNumber || '',
+                  commissionExpiration: profile.commissionExpiration || '',
+                  disclosure: profile.disclosure || '',
+                  // Include all profile data for backward compatibility
+                  signatureData: profile.signatureData,
+                  signatureImage: profile.signatureImage,
+                  initialsImage: profile.initialsImage,
+                  initialData: profile.initialData,
+                  signatureTyped: profile.signatureTyped,
+                  initialsTyped: profile.initialsTyped
+                }
+              };
+            } else {
+              console.warn(`⚠️ Failed to load profile for ${participant.displayName}`);
+              return null;
+            }
+          } catch (error) {
+            console.error(`❌ Error loading profile for ${participant.displayName}:`, error);
+            return null;
+          }
+        });
+        
+        const profiles = await Promise.all(profilePromises);
+        const profileMap: Record<string, any> = {};
+        
+        profiles.forEach((result) => {
+          if (result) {
+            profileMap[result.userId] = result.profile;
+          }
+        });
+        
+        setUserProfiles(profileMap);
+        console.log('✅ All user profiles loaded:', Object.keys(profileMap).length, 'profiles');
         
       } catch (error) {
         console.error('Failed to load user profiles:', error);
@@ -655,7 +709,38 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       setShowSealDialog(true);
     } else if (modalTags.includes(tag.tagType)) {
       // 🎯 MODAL: Open selection modal (e.g., for signatures)
-      console.log('🎯 Opening selection modal for tag:', tag.tagType);
+      console.log('🎯 Opening selection modal for tag:', tag.tagType, 'User ID:', currentUserId);
+      
+      // For signature tags, ensure we have the user profile loaded
+      if (tag.tagType === 'S') {
+        const userProfile = userProfiles[tag.assignedUserId || currentUserId];
+        console.log('📋 User profile for signature:', {
+          userId: tag.assignedUserId || currentUserId,
+          hasProfile: !!userProfile,
+          hasSignatures: !!userProfile?.signatures?.length,
+          hasSignatureData: !!userProfile?.signatureData,
+          hasSignatureImage: !!userProfile?.signatureImage
+        });
+        
+        // If no profile loaded, show a helpful message
+        if (!userProfile) {
+          toast({
+            title: "Loading Profile",
+            description: "Loading user profile for signature selection...",
+          });
+          
+          // Try to reload profiles if they're missing
+          setTimeout(() => {
+            const profileMap = { ...userProfiles };
+            if (!profileMap[tag.assignedUserId || currentUserId]) {
+              console.log('🔄 Profile missing, reloading profiles...');
+              // Trigger profile reload
+              window.location.reload();
+            }
+          }, 1000);
+        }
+      }
+      
       setSelectedTagForInput(tag);
       setTagModalPosition(position);
     } else if (autoFillTags.includes(tag.tagType)) {
@@ -688,7 +773,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       setSelectedTagForInput(tag);
       setTagModalPosition(position);
     }
-  }, [mode, participants, currentUserId, liveSessionState, toast, handleAutoFillTag]);
+  }, [mode, participants, currentUserId, liveSessionState, toast, handleAutoFillTag, userProfiles]);
 
   // Handle tag content save
   const handleTagContentSave = useCallback(async (content: any) => {

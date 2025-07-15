@@ -649,6 +649,13 @@ export function registerUserManagementRoutes(app: Express) {
         // Signatures and seals
         hasSignatureData: !!user.signatureData,
         hasInitialData: !!user.initialData,
+        signatureData: user.signatureData,
+        signatureImage: user.signatureImage,
+        initialsImage: user.initialsImage,
+        initialData: user.initialData,
+        signatureTyped: user.signatureTyped,
+        initialsTyped: user.initialsTyped,
+        defaultSignatureType: user.defaultSignatureType || 'draw',
         
         // Settings
         isNotificationsEnabled: user.isNotificationsEnabled,

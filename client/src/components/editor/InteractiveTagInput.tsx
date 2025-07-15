@@ -256,109 +256,196 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
 
   // Handle signature selection modal
   const handleOpenSignatureModal = useCallback(() => {
+    console.log('🎯 Opening signature modal for tag:', tag.id);
     setShowSignatureModal(true);
-  }, []);
+  }, [tag.id]);
 
   const handleSelectSignature = useCallback((signatureUrl: string) => {
-    handleContentChange(signatureUrl);
+    console.log('✅ Signature selected:', signatureUrl.substring(0, 50) + '...');
+    
+    // Update content with the selected signature
+    const newContent = {
+      type: 'signature' as const,
+      value: signatureUrl,
+      isRequired: config?.required || false
+    };
+    
+    setContent(newContent);
+    
+    // Close modal immediately
     setShowSignatureModal(false);
-    handleSave();
-  }, [handleContentChange, handleSave]);
+    
+    // Complete the tag with a small delay to ensure state is updated
+    setTimeout(() => {
+      console.log('💾 Completing signature tag with content:', newContent);
+      onComplete(newContent);
+      setIsEditing(false);
+    }, 100);
+    
+  }, [config?.required, onComplete]);
 
   // Auto-apply content for certain tag types (except signatures which use modal)
   useEffect(() => {
+    console.log('🔄 InteractiveTagInput effect triggered:', {
+      isActive,
+      canEdit,
+      isEditing,
+      tagType: tag.tagType,
+      hasContent: !!content.value,
+      showSignatureModal
+    });
+
     if (isActive && canEdit && !isEditing) {
-      if (['A', 'N', 'X', 'O'].includes(tag.tagType) && content.value) {
+      if (tag.tagType === 'S') {
+        // ✅ SIGNATURE TAG: Always open modal for selection (but only if not already open)
+        if (!showSignatureModal) {
+          console.log('🎯 Signature tag activated, opening selection modal');
+          setShowSignatureModal(true);
+        } else {
+          console.log('⚠️ Signature modal already open, skipping auto-open');
+        }
+      } else if (['A', 'N', 'X', 'O'].includes(tag.tagType) && content.value) {
         // Auto-complete if we have content
         setTimeout(() => handleSave(), 100);
-      } else if (tag.tagType !== 'S') {
-        // Start editing for empty fields (except signatures)
+      } else if (!['S', 'I'].includes(tag.tagType)) {
+        // Start editing for empty fields (except signatures and initials which use modals)
         setIsEditing(true);
+      } else if (tag.tagType === 'I') {
+        // ✅ INITIALS TAG: Could also use modal in future, for now auto-fill
+        if (content.value) {
+          setTimeout(() => handleSave(), 100);
+        } else {
+          setIsEditing(true);
+        }
       }
-      // Signature tags ('S') don't auto-apply - they open the selection modal instead
     }
-  }, [isActive, canEdit, tag.tagType, userProfile, content.value, isEditing, handleContentChange, handleSave]);
+  }, [isActive, canEdit, tag.tagType, userProfile, content.value, isEditing, showSignatureModal, handleSave]);
 
   // Render signature preview
   const renderSignaturePreview = () => {
     if (tag.tagType !== 'S' || !content.value) return null;
 
+    const signatureUrl = content.value as string;
+    
+    // Validate signature URL
+    if (!signatureUrl || signatureUrl.length === 0) return null;
+
     return (
       <div className="flex items-center justify-center p-2 bg-blue-50 border border-blue-200 rounded">
         <img 
-          src={content.value as string} 
+          src={signatureUrl} 
           alt="Signature" 
           className="max-h-8 max-w-full object-contain"
           style={{ filter: 'invert(0) sepia(0) saturate(0) hue-rotate(220deg) brightness(0) contrast(1)' }} // Make signature blue
+          onError={(e) => {
+            console.error('Failed to load signature image:', signatureUrl);
+            // Hide the image if it fails to load
+            (e.target as HTMLImageElement).style.display = 'none';
+          }}
         />
+        <div className="ml-2 flex items-center gap-1">
+          <Button
+            onClick={handleOpenSignatureModal}
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-xs"
+          >
+            Change
+          </Button>
+        </div>
       </div>
     );
   };
 
-  // Render date picker
-  const renderDatePicker = () => {
-    if (config?.type !== 'date') return null;
+  // Render content based on tag type
+  const renderTagContent = () => {
+    if (tag.tagType === 'S' && !isEditing) {
+      // Signature tag handling
+      if (content.value && typeof content.value === 'string' && content.value.length > 0) {
+        // Show signature preview
+        return renderSignaturePreview();
+      } else {
+        // Show signature selection button
+        return (
+          <div className="flex flex-col items-center justify-center p-3 space-y-2">
+            <Button
+              onClick={handleOpenSignatureModal}
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2 text-sm"
+            >
+              <Signature className="h-4 w-4" />
+              Select Signature
+            </Button>
+            <p className="text-xs text-gray-500 text-center">
+              Click to choose from your signatures
+            </p>
+          </div>
+        );
+      }
+    }
 
-    return (
-      <Popover open={showDatePicker} onOpenChange={setShowDatePicker}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            className={cn(
-              "w-full justify-start text-left font-normal",
-              !content.value && "text-muted-foreground"
-            )}
-          >
-            <CalendarIcon className="mr-2 h-4 w-4" />
-            {content.value instanceof Date ? format(content.value, "PPP") : <span>Pick a date</span>}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0">
-          <Calendar
-            mode="single"
-            selected={content.value instanceof Date ? content.value : undefined}
-            onSelect={(date) => {
-              if (date) {
-                handleContentChange(date);
-                setShowDatePicker(false);
-              }
-            }}
-            initialFocus
-          />
-        </PopoverContent>
-      </Popover>
-    );
-  };
+    if (config?.type === 'date') {
+      // Date picker
+      return (
+        <Popover open={showDatePicker} onOpenChange={setShowDatePicker}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              className={cn(
+                "justify-start text-left font-normal h-8 text-sm",
+                !content.value && "text-muted-foreground"
+              )}
+            >
+              <CalendarIcon className="mr-2 h-3 w-3" />
+              {content.value instanceof Date ? format(content.value, "PPP") : <span>Pick a date</span>}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="single"
+              selected={content.value instanceof Date ? content.value : undefined}
+              onSelect={(date) => {
+                if (date) {
+                  handleContentChange(date);
+                  setShowDatePicker(false);
+                }
+              }}
+              initialFocus
+            />
+          </PopoverContent>
+        </Popover>
+      );
+    }
 
-  // Render text input
-  const renderTextInput = () => {
-    if (config?.type !== 'text') return null;
-
-    const isLongText = 'maxLength' in config && config.maxLength && config.maxLength > 100;
-
+    // Check if this is a long text field (like disclosure)
+    const isLongText = tag.tagType === 'O' || (config && 'maxLength' in config && config.maxLength && config.maxLength > 100);
+    
     if (isLongText) {
+      // Multi-line text area
       return (
         <Textarea
           ref={textareaRef}
-          value={content.value as string}
+          value={content.value as string || ''}
           onChange={(e) => handleContentChange(e.target.value)}
-          placeholder={config.placeholder}
-          maxLength={'maxLength' in config ? config.maxLength : undefined}
+          placeholder={config?.placeholder}
+          className="min-h-[60px] text-sm resize-none"
           rows={3}
-          className="w-full resize-none"
+          autoFocus={isEditing}
         />
       );
     }
 
+    // Single-line input
     return (
       <Input
         ref={inputRef}
         type="text"
-        value={content.value as string}
+        value={content.value as string || ''}
         onChange={(e) => handleContentChange(e.target.value)}
-        placeholder={config.placeholder}
-        maxLength={'maxLength' in config ? config.maxLength : undefined}
-        className="w-full"
+        placeholder={config?.placeholder}
+        className="h-8 text-sm"
+        autoFocus={isEditing}
       />
     );
   };
@@ -408,22 +495,7 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
 
         {/* Input Field */}
         <div className="mb-3">
-          {tag.tagType === 'S' ? (
-            <div className="space-y-2">
-              <Button 
-                onClick={handleOpenSignatureModal}
-                className="w-full bg-blue-600 hover:bg-blue-700"
-              >
-                <Signature className="h-4 w-4 mr-2" />
-                {content.value ? 'Change Signature' : 'Select Signature'}
-              </Button>
-              {content.value && renderSignaturePreview()}
-            </div>
-          ) : config.type === 'date' ? (
-            renderDatePicker()
-          ) : (
-            renderTextInput()
-          )}
+          {renderTagContent()}
         </div>
 
         {/* Validation Error */}

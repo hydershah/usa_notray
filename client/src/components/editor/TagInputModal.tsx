@@ -125,8 +125,22 @@ export const TagInputModal: React.FC<TagInputModalProps> = ({
 
   // Handle save
   const handleSave = (content: any) => {
-    onSave(content);
-    onClose();
+    console.log('💾 TagInputModal saving content:', {
+      tagId: tag.id,
+      tagType: tag.tagType,
+      contentType: content.type,
+      hasValue: !!content.value,
+      valueLength: content.value?.length || 0
+    });
+    
+    try {
+      onSave(content);
+      console.log('✅ Content saved successfully, closing modal');
+      onClose();
+    } catch (error) {
+      console.error('❌ Error saving content:', error);
+      // Don't close the modal if there's an error
+    }
   };
 
   if (!isOpen) return null;
