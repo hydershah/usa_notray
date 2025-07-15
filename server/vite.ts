@@ -5,7 +5,23 @@ import { fileURLToPath } from 'url';
 import { type Server } from "http";
 import { nanoid } from "nanoid";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Get current directory in a way that works for both ESM and CommonJS
+function getCurrentDir() {
+  // Check if we're in CommonJS environment
+  if (typeof __dirname !== 'undefined') {
+    return __dirname;
+  }
+  
+  // ESM environment - but only if import.meta.url exists
+  if (typeof import.meta !== 'undefined' && import.meta.url) {
+    return path.dirname(fileURLToPath(import.meta.url));
+  }
+  
+  // Fallback to process.cwd() if neither works
+  return process.cwd();
+}
+
+const currentDir = getCurrentDir();
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -32,7 +48,7 @@ export async function setupVite(app: Express, server: Server) {
     };
 
     const vite = await createViteServer({
-      root: path.resolve(__dirname, "..", "client"),
+      root: path.resolve(currentDir, "client"),
       plugins: [
         (await import("@vitejs/plugin-react")).default({
           jsxRuntime: 'automatic'
@@ -40,8 +56,8 @@ export async function setupVite(app: Express, server: Server) {
       ],
       resolve: {
         alias: {
-          "@": path.resolve(__dirname, "..", "client", "src"),
-          "@shared": path.resolve(__dirname, "..", "shared"),
+          "@": path.resolve(currentDir, "client", "src"),
+          "@shared": path.resolve(currentDir, "shared"),
         },
       },
       optimizeDeps: {
@@ -65,8 +81,7 @@ export async function setupVite(app: Express, server: Server) {
 
       try {
         const clientTemplate = path.resolve(
-          __dirname,
-          "..",
+          currentDir,
           "client",
           "index.html",
         );
@@ -96,7 +111,17 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  const distPath = path.resolve(__dirname, "..", "dist", "public");
+  // In production, when running from dist/index.cjs, we need to handle paths differently
+  let distPath: string;
+  
+  if (process.env.NODE_ENV === 'production') {
+    // In production, the server is run from project root with "node dist/index.cjs"
+    // So we need dist/public from the project root
+    distPath = path.resolve(process.cwd(), "dist", "public");
+  } else {
+    // In development, client files are in client/dist
+    distPath = path.resolve(process.cwd(), "client", "dist");
+  }
 
   if (!fs.existsSync(distPath)) {
     throw new Error(
