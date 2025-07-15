@@ -12,6 +12,41 @@ export default defineConfig({
   build: {
     outDir: './client/dist',
     rollupOptions: {
+      external: [
+        // Server-side dependencies that should not be bundled in client
+        'canvas',
+        'sharp',
+        'lightningcss',
+        '@babel/preset-typescript',
+        'bcrypt',
+        'nodemailer',
+        'speakeasy',
+        'qrcode',
+        'drizzle-orm',
+        'postgres',
+        'node-fetch',
+        'multer',
+        'express',
+        'passport',
+        'jsonwebtoken',
+        'fsevents',
+        'crypto',
+        'fs',
+        'path',
+        'util',
+        'stream',
+        'buffer',
+        'os',
+        'child_process',
+        'net',
+        'tls',
+        'http',
+        'https',
+        'events',
+        'url',
+        'querystring',
+        'zlib'
+      ],
       output: {
         // Ensure PDF.js worker is treated as a separate chunk
         manualChunks: {
@@ -87,7 +122,27 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['socket.io-client', 'pdfjs-dist'],
-    exclude: ['pdfjs-dist/build/pdf.worker.min.mjs', 'pdfjs-dist/build/pdf.worker.mjs'],
+    exclude: [
+      'pdfjs-dist/build/pdf.worker.min.mjs', 
+      'pdfjs-dist/build/pdf.worker.mjs',
+      // Exclude server-side dependencies from optimization
+      'canvas',
+      'sharp',
+      'lightningcss',
+      '@babel/preset-typescript',
+      'bcrypt',
+      'nodemailer',
+      'speakeasy',
+      'qrcode',
+      'drizzle-orm',
+      'postgres',
+      'node-fetch',
+      'multer',
+      'express',
+      'passport',
+      'jsonwebtoken',
+      'fsevents'
+    ],
     force: true, // Force optimization to ensure consistency
     esbuildOptions: {
       loader: {
