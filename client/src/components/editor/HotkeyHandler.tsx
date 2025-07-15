@@ -310,60 +310,8 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
 
   // Display current shortcuts info
   const renderShortcutInfo = () => {
-    // Show in all environments - this is useful for users
-    // if (process.env.NODE_ENV !== 'development') return null;
-
-    return (
-      <div className={`fixed bottom-4 left-4 bg-black bg-opacity-85 text-white text-xs rounded-lg shadow-lg border border-gray-600 transition-all duration-200 ${isCollapsed ? 'w-auto' : 'max-w-xs'}`}>
-        {/* Header with toggle button */}
-        <div 
-          className={`flex items-center justify-between p-3 cursor-pointer hover:bg-gray-800 hover:bg-opacity-50 ${isCollapsed ? 'rounded-lg' : 'rounded-t-lg'} select-none`}
-          onClick={() => {
-            const newCollapsed = !isCollapsed;
-            setIsCollapsed(newCollapsed);
-            localStorage.setItem('hotkey-shortcuts-collapsed', newCollapsed.toString());
-          }}
-          title={isCollapsed ? 'Expand shortcuts' : 'Collapse shortcuts'}
-        >
-          <div className="flex items-center gap-2">
-            <Keyboard className="h-4 w-4 text-blue-300" />
-            <span className="font-bold text-blue-300">Active Shortcuts</span>
-          </div>
-          <div className="flex items-center gap-2">
-            {isCollapsed && selectedUser && (
-              <span className="text-yellow-300 mr-2">
-                {selectedUser.displayName} {selectedTagType === null ? '| Pointer' : selectedTagType && `| ${selectedTagType}`}
-              </span>
-            )}
-            {isCollapsed ? (
-              <ChevronUp className="h-4 w-4 text-gray-400 hover:text-white transition-colors" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-gray-400 hover:text-white transition-colors" />
-            )}
-          </div>
-        </div>
-        
-        {/* Collapsible content */}
-        {!isCollapsed && (
-          <div className="px-3 pb-3">
-            <div className="space-y-1">
-              <div>• ` → Notary, 1-8 → Signers</div>
-              <div>• A,S,I,N,X,O,E,W,T,D → Tag types</div>
-              <div>• Esc → Pointer mode / Deselect</div>
-              <div>• Del → Delete tag</div>
-              <div>• Arrows → Move tag, PgUp/PgDn → Pages</div>
-              <div>• Ctrl+Z/Y → Undo/Redo</div>
-            </div>
-            {selectedUser && (
-              <div className="mt-2 pt-2 border-t border-gray-600 text-yellow-300">
-                Selected: {selectedUser?.displayName || 'None'} ({selectedUser?.userType || 'None'})
-                {selectedTagType === null ? <span> | Mode: Pointer</span> : selectedTagType && <span> | Tag: {selectedTagType}</span>}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
+    // Completely hide the shortcuts box
+    return null;
   };
 
   return (

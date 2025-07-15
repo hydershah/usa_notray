@@ -4,6 +4,7 @@ import { TaggingToolbar } from './TaggingToolbar';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
 import { HotkeyHandler } from './HotkeyHandler';
 import { TagInputModal } from './TagInputModal';
+import { SealConfigDialog } from './SealConfigDialog';
 import { Badge } from '../ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useTagOperations } from '../../hooks/editor/useTagOperations';
@@ -21,6 +22,8 @@ interface PDFTaggingEditorProps {
   // Live signing specific props
   liveSessionState?: any;
   onSetActiveUser?: (userId: number) => void;
+  onSyncUsers?: () => void;
+  isSyncLoading?: boolean;
 }
 
 export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
@@ -32,7 +35,9 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
   onSessionComplete,
   onTagsChanged,
   liveSessionState,
-  onSetActiveUser
+  onSetActiveUser,
+  onSyncUsers,
+  isSyncLoading = false
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -47,6 +52,11 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
   const [tagModalPosition, setTagModalPosition] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [userProfiles, setUserProfiles] = useState<Record<string, any>>({});
   
+  // Seal configuration dialog state
+  const [showSealDialog, setShowSealDialog] = useState(false);
+  const [selectedSealTag, setSelectedSealTag] = useState<DocumentTag | null>(null);
+  const [sealDialogLoading, setSealDialogLoading] = useState(false);
+  
   const { toast } = useToast();
 
   // Tag operations with batching and debouncing
@@ -56,7 +66,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     updateTagSize,
     saveTagUpdate,
     deleteTag,
-    batchSaveChanges
+    batchSaveChanges,
+    placeWhiteoutOverlay
   } = useTagOperations(sessionId);
 
   // Streamlined text inputs for immediate editing
@@ -88,7 +99,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     setTags,
     setParticipants,
     setCurrentUser,
-    setMode
+    setMode,
+    setZoomLevel
   } = useEditorStore();
 
   // Handle page load from PDFViewer to get canvas element
@@ -228,6 +240,26 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
           // Load text tags into streamlined text input system
           loadTextInputsFromTags(validTags);
           
+          // Load whiteout overlays from completed whiteout tags
+          const whiteoutTags = validTags.filter((tag: DocumentTag) => 
+            tag.tagType === 'W' && tag.isCompleted
+          );
+          const overlays = whiteoutTags.map((tag: DocumentTag) => ({
+            id: `whiteout_${tag.id}`,
+            documentId: tag.documentId.toString(),
+            coordinates: {
+              x: tag.coordinates.x,
+              y: tag.coordinates.y,
+              width: tag.coordinates.width,
+              height: tag.coordinates.height,
+              pageNumber: tag.coordinates.pageNumber
+            },
+            sessionId: sessionId,
+            createdAt: new Date(tag.createdAt)
+          }));
+          useEditorStore.getState().setWhiteoutOverlays(overlays);
+          console.log('✅ Loaded whiteout overlays:', overlays.length);
+          
           if (validTags.length > 0) {
             console.log(`🏷️  Tags loaded successfully - session appears to be a continuation of previous work`);
           } else {
@@ -249,6 +281,19 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       initializeSession();
     }
   }, [sessionId, mode, documents, participants, currentUserId]);
+
+  // Set zoom level to 155% specifically for signing mode (delayed to ensure proper rendering)
+  useEffect(() => {
+    if (mode === 'signing') {
+      // Delay zoom setting to ensure PDF is loaded and container is ready
+      const timer = setTimeout(() => {
+        setZoomLevel(1.5); // 155% zoom for signing mode
+        console.log('🔍 Set zoom level to 155% for signing mode');
+      }, 200); // Small delay to ensure PDF container is ready
+      
+      return () => clearTimeout(timer);
+    }
+  }, [mode, setZoomLevel]);
 
   // Load user profiles for content auto-fill
   useEffect(() => {
@@ -375,11 +420,114 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     }
   }, [sessionId, toast, tags, setTags]);
 
+  // Handle seal configuration
+  const handleSealConfig = useCallback(async (config: { applicableSigners: number[]; notarizationType: string; notaryNote?: string }) => {
+    if (!selectedSealTag) return;
+    
+    try {
+      setSealDialogLoading(true);
+      
+      console.log('🔖 Configuring seal with:', config, 'Tag ID:', selectedSealTag.id);
+      
+      // If tag has temporary ID, wait for it to get a real database ID
+      let tagToUse = selectedSealTag;
+      if (selectedSealTag.id.startsWith('temp_')) {
+        console.log('⏳ Tag has temporary ID, waiting for database save...');
+        
+        // Wait up to 10 seconds for the tag to get a real ID
+        let attempts = 0;
+        const maxAttempts = 20; // 10 seconds (500ms * 20)
+        
+        while (attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms
+          attempts++;
+          
+          // Check if any tags now have real IDs that match our temporary tag
+          const currentTags = tags.filter(t => 
+            t.tagType === 'E' && 
+            !t.id.startsWith('temp_') && 
+            !t.isCompleted &&
+            Math.abs(t.coordinates.x - selectedSealTag.coordinates.x) < 10 &&
+            Math.abs(t.coordinates.y - selectedSealTag.coordinates.y) < 10 &&
+            t.coordinates.pageNumber === selectedSealTag.coordinates.pageNumber
+          );
+          
+          if (currentTags.length > 0) {
+            tagToUse = currentTags[0];
+            console.log('✅ Found tag with real ID:', tagToUse.id);
+            break;
+          }
+        }
+        
+        if (tagToUse.id.startsWith('temp_')) {
+          throw new Error('Tag is still being saved. Please try again in a moment.');
+        }
+      }
+      
+      const response = await fetch(`/api/editor/session/${sessionId}/tag/${tagToUse.id}/seal-config`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(config)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to configure seal');
+      }
+
+      const result = await response.json();
+      
+      // Update local state with the configured seal
+      const updatedTags = tags.map(t =>
+        t.id === tagToUse.id ? { 
+          ...t, 
+          isCompleted: true, 
+          contentData: result.sealData?.contentData,
+          content: result.sealData?.content
+        } : t
+      );
+      setTags(updatedTags);
+      
+      // Close dialog
+      setShowSealDialog(false);
+      setSelectedSealTag(null);
+
+      // Show success message
+      toast({
+        title: "Seal Configured",
+        description: `Seal applied for ${config.applicableSigners.length} signer(s) with ${config.notarizationType} notarization`,
+        variant: "default"
+      });
+
+      console.log('✅ Seal configured successfully:', result);
+      
+    } catch (error) {
+      console.error('❌ Failed to configure seal:', error);
+      toast({
+        title: "Seal Configuration Failed",
+        description: error instanceof Error ? error.message : 'Failed to configure seal',
+        variant: "destructive"
+      });
+    } finally {
+      setSealDialogLoading(false);
+    }
+  }, [sessionId, selectedSealTag, tags, setTags, toast]);
+
+  // Handle seal dialog close
+  const handleSealDialogClose = useCallback(() => {
+    setShowSealDialog(false);
+    setSelectedSealTag(null);
+    setSealDialogLoading(false);
+  }, []);
+
   // 🚀 Auto-trigger auto-fill for newly placed tags once they get real IDs
   useEffect(() => {
     if (mode !== 'signing') return;
     
-    const autoFillTags = ['S', 'A', 'I', 'N', 'X', 'D', 'O', 'E']; // Auto-fill tags
+    const autoFillTags = ['A', 'I', 'N', 'X', 'D', 'O']; // Auto-fill tags (excluding signatures and seals)
     const instantTags = ['W']; // Instant completion tags
     
     // Find tags that are ready for auto-fill
@@ -401,24 +549,30 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     );
     
     // Auto-fill each ready tag
-    tagsReadyForAutoFill.forEach(async (tag) => {
-      try {
-        console.log('🎯 Auto-triggering auto-fill for newly placed tag:', tag.id, tag.tagType);
-        await handleAutoFillTag(tag);
-      } catch (error) {
-        console.warn('Auto-trigger auto-fill failed:', error);
-      }
+    tagsReadyForAutoFill.forEach((tag: DocumentTag) => {
+      (async () => {
+        try {
+          console.log('🎯 Auto-triggering auto-fill for newly placed tag:', tag.id, tag.tagType);
+          await handleAutoFillTag(tag);
+        } catch (error) {
+          console.warn('Auto-trigger auto-fill failed:', error);
+        }
+      })();
     });
     
     // Instantly complete whiteout tags
-    tagsReadyForInstant.forEach(async (tag) => {
-      try {
-        console.log('⚡ Auto-triggering instant completion for newly placed tag:', tag.id, tag.tagType);
-        await handleInstantTagCompletion(tag);
-      } catch (error) {
-        console.warn('Auto-trigger instant completion failed:', error);
-      }
+    tagsReadyForInstant.forEach((tag: DocumentTag) => {
+      (async () => {
+        try {
+          console.log('⚡ Auto-triggering instant completion for newly placed tag:', tag.id, tag.tagType);
+          await handleInstantTagCompletion(tag);
+        } catch (error) {
+          console.warn('Auto-trigger instant completion failed:', error);
+        }
+      })();
     });
+    
+    // Note: Seal dialog is now triggered on click, not auto-triggered
   }, [tags, mode, handleAutoFillTag, handleInstantTagCompletion]);
 
   // Handle tag click in signing mode - FIXED VERSION
@@ -484,7 +638,9 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     console.log('✅ All permission checks passed, determining tag interaction type');
     
     // 🚀 NEW AUTO-FILL LOGIC: Route by tag type
-    const autoFillTags = ['S', 'A', 'I', 'N', 'X', 'D', 'O', 'E']; // Auto-fill from profile (including signatures and stamps)
+    const autoFillTags = ['A', 'I', 'N', 'X', 'D', 'O']; // Auto-fill from profile (excluding signatures and seals)
+    const modalTags = ['S']; // Tags that open selection modal  
+    const sealTags = ['E']; // Seal tags that open configuration dialog
     const inlineEditTags = ['T']; // Inline text editing
     const instantTags = ['W']; // Tags that work instantly without user interaction (whiteout)
     
@@ -492,9 +648,31 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       // ⚡ INSTANT: Complete whiteout tags immediately without user interaction
       console.log('⚡ Instant completion for tag:', tag.tagType);
       await handleInstantTagCompletion(tag);
+    } else if (sealTags.includes(tag.tagType)) {
+      // 🔖 SEAL DIALOG: Open seal configuration dialog
+      console.log('🔖 Opening seal configuration dialog for tag:', tag.tagType, 'ID:', tag.id);
+      setSelectedSealTag(tag);
+      setShowSealDialog(true);
+    } else if (modalTags.includes(tag.tagType)) {
+      // 🎯 MODAL: Open selection modal (e.g., for signatures)
+      console.log('🎯 Opening selection modal for tag:', tag.tagType);
+      setSelectedTagForInput(tag);
+      setTagModalPosition(position);
     } else if (autoFillTags.includes(tag.tagType)) {
       // 🔥 AUTO-FILL: Call API to fill with profile data
       console.log('🎯 Auto-filling tag with profile data:', tag.tagType);
+      
+      // Extra safety check - don't auto-fill seal tags
+      if (tag.tagType === 'E') {
+        console.error('🚫 BLOCKED: Attempted to auto-fill seal tag, should use dialog instead:', tag.id);
+        toast({
+          title: "Seal Configuration Required",
+          description: "Seal tags require configuration dialog, not auto-fill",
+          variant: "destructive"
+        });
+        return;
+      }
+      
       await handleAutoFillTag(tag);
     } else if (inlineEditTags.includes(tag.tagType)) {
       // ✏️ INLINE EDIT: Start inline text editing
@@ -562,47 +740,35 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
 
   // Handle tag placement from PDF click
   const handleTagPlacement = useCallback(async (coordinates: TagCoordinates) => {
-    console.log('🔍 Tag placement triggered with:', {
-      selectedTagType,
-      selectedUser: selectedUser?.displayName,
-      currentDocument: currentDocument?.fileName,
-      coordinates
-    });
-    
-    // In pointer mode (selectedTagType is null), don't place new tags
-    if (selectedTagType === null) {
-      console.log('👆 Pointer mode active - not placing new tag');
-      return;
-    }
-    
     if (!selectedTagType || !selectedUser || !currentDocument) {
-      console.log('❌ Cannot place tag: missing requirements', {
-        selectedTagType: !!selectedTagType,
+      console.error('❌ Missing required data for tag placement:', {
+        selectedTagType,
         selectedUser: !!selectedUser,
         currentDocument: !!currentDocument
       });
-      
-      // Show helpful toast instead of session error
-      let message = '';
-      if (!selectedTagType) {
-        message = 'Please select a tag type first';
-      } else if (!selectedUser) {
-        message = 'Please select a user first';
-      } else if (!currentDocument) {
-        message = 'No document loaded';
-      }
-      
-      toast({
-        title: "Select Tag Type",
-        description: message,
-        variant: "default",
-        duration: 3000
-      });
-      
       return;
     }
 
     try {
+      // Check if this is a whiteout - handle differently
+      if (selectedTagType === 'W') {
+        console.log('⬜ Placing whiteout overlay...');
+        
+        // Create whiteout overlay directly without creating a tag
+        await placeWhiteoutOverlay({
+          documentId: currentDocument.id,
+          coordinates,
+          sessionId: sessionId
+        });
+        
+        console.log('✅ Whiteout overlay placed successfully!');
+        
+        // Auto-switch back to pointer mode after placing whiteout
+        setSelectedTagType(null);
+        
+        return;
+      }
+      
       // Check if this is a text tag - use streamlined text input system
       if (selectedTagType === 'T') {
         console.log('📝 Placing streamlined text input...');
@@ -611,7 +777,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         await placeTextInput({
           documentId: currentDocument.id,
           coordinates,
-          assignedUserId: selectedUser.userId
+          assignedUserId: parseInt(selectedUser.userId.toString())
         }, selectedUser.colorCode || '#4ECDC4');
         
         console.log('✅ Streamlined text input placed successfully!');
@@ -867,13 +1033,13 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       {/* Main content - Two column layout (no video) */}
       <div className="flex-1 flex overflow-hidden">
         {/* Center Column - PDF Viewer (expanded) */}
-        <div className="flex-1 relative bg-white" ref={containerRef}>
+        <div className="flex-1 relative bg-white overflow-hidden min-w-0" ref={containerRef}>
           <PDFViewer
             documentUrl={currentDocument.fileUrl}
             sessionId={sessionId}
             onCoordinateClick={handleTagPlacement}
             onTagClick={mode === 'signing' ? handleTagClick : undefined}
-            tags={tags.filter(tag => tag.documentId === currentDocument.id && tag.tagType !== 'T')}
+            tags={tags.filter(tag => tag.documentId === currentDocument.id && tag.tagType !== 'T' && tag.tagType !== 'W')}
             mode={mode === 'notary' ? 'tagging' : mode as 'tagging' | 'signing'}
             selectedUser={selectedUser}
             onTagUpdate={updateTagPosition}
@@ -887,11 +1053,14 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
             onTextInputSelect={selectTextInput}
             onSaveTextContent={saveTextContent}
             onDeleteTextInput={deleteTextInput}
+            onSyncUsers={onSyncUsers}
+            currentUser={currentUser}
+            isSyncLoading={isSyncLoading}
           />
         </div>
 
         {/* Right Column - Simplified Controls */}
-        <div className="w-80 bg-white border-l border-gray-200">
+        <div className="w-72 bg-white border-l border-gray-200">
           <div className="h-full">
             <TaggingToolbar
               participants={participants}
@@ -916,9 +1085,25 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
           }}
           onSave={handleTagContentSave}
           userProfile={userProfiles[selectedTagForInput.assignedUserId || currentUserId]}
+          currentUserId={currentUserId}
           position={tagModalPosition}
         />
       )}
+
+      {/* Seal Configuration Dialog */}
+      <SealConfigDialog
+        isOpen={showSealDialog}
+        onClose={handleSealDialogClose}
+        onConfirm={handleSealConfig}
+        participants={participants.map(p => ({
+          userId: parseInt(p.userId.toString()),
+          displayName: p.displayName,
+          userType: p.userType,
+          isActive: true, // You might want to get this from live session state
+          canInteract: true
+        }))}
+        isLoading={sealDialogLoading}
+      />
 
       {/* Keyboard shortcuts handler */}
       <HotkeyHandler

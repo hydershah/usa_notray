@@ -380,25 +380,6 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         <div className="flex items-center gap-2">
           {renderSessionControls()}
           
-          {/* Sync Button - Only for notaries */}
-          {isNotary && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSyncUsers}
-              disabled={isLoading}
-              className="px-3 text-xs"
-              title={`Sync all users to page ${viewer.currentPage || 1}${currentDocument ? ` of ${currentDocument.fileName}` : ''}`}
-            >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-              <span className="ml-1">Sync to p.{viewer.currentPage || 1}</span>
-            </Button>
-          )}
-          
           <Button
             variant="outline"
             size="sm"
@@ -440,25 +421,11 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Enhanced Video Panel - Wider for 8 participants */}
+        {/* Enhanced Video Panel - Reduced width */}
         {showVideo && (
-          <div className="w-96 bg-gradient-to-b from-gray-50 to-gray-100 border-r border-gray-200 flex-shrink-0 shadow-sm">
+          <div className="w-64 bg-gradient-to-b from-gray-50 to-gray-100 border-r border-gray-200 flex-shrink-0 shadow-sm">
             <div className="h-full flex flex-col">
-              {/* Video Header */}
-              <div className="bg-white border-b border-gray-200 p-3 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Video className="h-5 w-5 text-blue-600" />
-                    <span className="font-medium text-gray-900">Video Conference</span>
-                  </div>
-                  <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                    Live Session
-                  </Badge>
-                </div>
-                <div className="mt-2 text-sm text-gray-600">
-                  {participants.length + 1} participant{participants.length !== 0 ? 's' : ''} • Max 8 supported
-                </div>
-              </div>
+
               
               {/* Video Content */}
               <div className="flex-1">
@@ -486,7 +453,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         )}
 
         {/* Document Editor */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden min-w-0">
           <PDFTaggingEditor
             sessionId={sessionId}
             mode="signing"
@@ -497,12 +464,14 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
             onTagsChanged={onTagsChanged}
             liveSessionState={liveSession}
             onSetActiveUser={(userId: number) => handleSetActiveUser(userId.toString())}
+            onSyncUsers={handleSyncUsers}
+            isSyncLoading={isLoading}
           />
         </div>
 
         {/* Collapsible Participants Panel */}
         {showParticipants && (
-          <div className="w-60 bg-white border-l flex-shrink-0">
+          <div className="w-48 bg-white border-l flex-shrink-0">
             <ParticipantPanel
               participants={participants}
               liveSession={liveSession}

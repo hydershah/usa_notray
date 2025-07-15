@@ -6,6 +6,8 @@ import { initializePDFWorker, isPDFWorkerReady } from '../../lib/pdf-worker';
 import type { TagCoordinates, DocumentTag, SessionParticipant } from '../../types/editor';
 import { TAG_TYPE_INFO } from '../../types/editor';
 import { StreamlinedTextInput } from './StreamlinedTextInput';
+import { Button } from '@/components/ui/button';
+import { RefreshCw, Loader2 } from 'lucide-react';
 
 // Define TagPosition type
 interface TagPosition {
@@ -56,6 +58,10 @@ interface PDFViewerProps {
   onTextInputSelect?: (textInputId: string | null) => void;
   onSaveTextContent?: (textInputId: string, content: string) => void;
   onDeleteTextInput?: (textInputId: string) => void;
+  // Sync functionality for live signing
+  onSyncUsers?: () => void;
+  currentUser?: SessionParticipant | null;
+  isSyncLoading?: boolean;
 }
 
 interface TagRendererProps {
@@ -470,7 +476,10 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   selectedTextInputId,
   onTextInputSelect,
   onSaveTextContent,
-  onDeleteTextInput
+  onDeleteTextInput,
+  onSyncUsers,
+  currentUser,
+  isSyncLoading = false
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRefs = useRef<HTMLCanvasElement[]>([]);
@@ -486,7 +495,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     setCurrentPage, 
     setZoomLevel,
     setScrollTop,
-    mode: editorMode
+    mode: editorMode,
+    whiteoutOverlays
   } = useEditorStore();
   
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
@@ -799,8 +809,15 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       // Clear any existing content to prevent render conflicts
       context.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Calculate optimal scale based on container width - made smaller for better UX
-      const containerWidth = containerRef.current?.clientWidth || 800;
+      // Calculate optimal scale based on container width - improved with better fallback
+      let containerWidth = containerRef.current?.clientWidth || 800;
+      
+      // Ensure we have a reasonable container width
+      if (containerWidth < 200) {
+        containerWidth = 800; // Better fallback for edge cases
+        console.warn(`⚠️ Container width too small (${containerWidth}), using fallback`);
+      }
+      
       const viewport = page.getViewport({ scale: 1 });
       const baseScale = Math.min((containerWidth - 120) / viewport.width, 1.0); // Reduced to 1.0x max scale for better fit
       const finalScale = baseScale * viewer.zoomLevel;
@@ -893,13 +910,28 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     };
   }, [documentUrl]);
 
-  // Initial page rendering when PDF loads (OPTIMIZED)
+  // Initial page rendering when PDF loads (OPTIMIZED with proper container timing)
   useEffect(() => {
     if (!pdfDoc) return;
     
     console.log('📖 PDF loaded, starting initial page rendering...');
     
     const renderInitialPages = async () => {
+      // Wait for container to have proper dimensions
+      let attempts = 0;
+      const maxAttempts = 10;
+      
+      while (attempts < maxAttempts) {
+        const containerWidth = containerRef.current?.clientWidth;
+        if (containerWidth && containerWidth > 100) {
+          console.log(`✅ Container ready with width: ${containerWidth}px`);
+          break;
+        }
+        attempts++;
+        await new Promise(resolve => setTimeout(resolve, 50));
+        console.log(`⏳ Waiting for container dimensions, attempt ${attempts}`);
+      }
+      
       // OPTIMIZED: Render only first 2 pages initially for faster loading
       const pagesToRender = Math.min(2, pdfDoc.numPages);
       
@@ -1063,22 +1095,34 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
     const container = event.currentTarget;
     const scrollTop = container.scrollTop;
+    const containerHeight = container.clientHeight;
     
     setScrollTop(scrollTop);
 
-    // Track current page based on scroll position
+    // Find which page center is closest to viewport center (most reliable method)
+    const viewportCenter = scrollTop + containerHeight / 2;
     let currentPage = 1;
+    let minDistance = Infinity;
     const pageContainers = pageContainerRefs.current;
     
     for (let i = 0; i < pageContainers.length; i++) {
-      const container = pageContainers[i];
-      if (container && container.offsetTop <= scrollTop + 100) {
+      const pageContainer = pageContainers[i];
+      if (!pageContainer) continue;
+      
+      const pageTop = pageContainer.offsetTop;
+      const pageCenter = pageTop + pageContainer.offsetHeight / 2;
+      const distance = Math.abs(pageCenter - viewportCenter);
+      
+      // Find the page whose center is closest to viewport center
+      if (distance < minDistance) {
+        minDistance = distance;
         currentPage = i + 1;
       }
     }
     
     if (currentPage !== viewer.currentPage) {
       setCurrentPage(currentPage);
+      console.log(`📍 Page updated to: ${currentPage} (distance from center: ${minDistance.toFixed(1)}px)`);
     }
   }, [viewer.currentPage, setCurrentPage, setScrollTop]);
 
@@ -1110,6 +1154,45 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const handleTagSelect = useCallback((tag: DocumentTag) => {
     selectTag(tag.id === selectedTag?.id ? null : tag);
   }, [selectTag, selectedTag]);
+
+  // Handle whiteout overlay updates
+  const handleWhiteoutUpdate = useCallback(async (overlayId: string, coordinates: Partial<{ x: number; y: number; width: number; height: number }>) => {
+    try {
+      // Update local state immediately
+      const { whiteoutOverlays, setWhiteoutOverlays } = useEditorStore.getState();
+      const updatedOverlays = whiteoutOverlays.map(overlay => 
+        overlay.id === overlayId 
+          ? { ...overlay, coordinates: { ...overlay.coordinates, ...coordinates } }
+          : overlay
+      );
+      setWhiteoutOverlays(updatedOverlays);
+      
+      console.log('✅ Whiteout overlay updated locally:', overlayId, coordinates);
+      
+      // TODO: Add backend API call to save whiteout overlay position/size
+      // await fetch(`/api/editor/whiteout-overlay/${overlayId}`, { method: 'PUT', ... });
+      
+    } catch (error) {
+      console.error('❌ Failed to update whiteout overlay:', error);
+    }
+  }, []);
+
+  // Handle whiteout overlay deletion
+  const handleWhiteoutDelete = useCallback(async (overlayId: string) => {
+    try {
+      // Remove from local state immediately
+      const { deleteWhiteoutOverlay } = useEditorStore.getState();
+      deleteWhiteoutOverlay(overlayId);
+      
+      console.log('✅ Whiteout overlay deleted locally:', overlayId);
+      
+      // TODO: Add backend API call to delete whiteout overlay
+      // await fetch(`/api/editor/whiteout-overlay/${overlayId}`, { method: 'DELETE', ... });
+      
+    } catch (error) {
+      console.error('❌ Failed to delete whiteout overlay:', error);
+    }
+  }, []);
 
   // Zoom controls
   const handleZoomIn = () => setZoomLevel(Math.min(viewer.zoomLevel * 1.25, 3.0));
@@ -1151,7 +1234,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   if (!pdfDoc) return null;
 
   return (
-    <div className={`relative h-full flex flex-col ${className}`}>
+    <div className={`relative h-full flex flex-col ${className}`} style={{ maxWidth: '100%', overflow: 'hidden' }}>
       {/* Controls */}
       <div className="flex items-center justify-between px-4 py-3 bg-white border-b shadow-sm">
         <div className="flex items-center gap-3">
@@ -1183,9 +1266,30 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
           </button>
         </div>
         
-        <div className="text-sm text-gray-700 bg-gray-100 px-3 py-2 rounded-lg">
-          📄 Page {viewer.currentPage} of {viewer.totalPages}
-          {tags.length > 0 && <span className="ml-3 text-green-600">• {tags.length} tags</span>}
+        <div className="flex items-center gap-2">
+          <div className="text-sm text-gray-700 bg-gray-100 px-3 py-2 rounded-lg">
+            📄 Page {viewer.currentPage} of {viewer.totalPages}
+            {tags.length > 0 && <span className="ml-3 text-green-600">• {tags.length} tags</span>}
+          </div>
+          
+          {/* Sync Button - Only for notaries in signing mode */}
+          {mode === 'signing' && currentUser?.userType === 'notary' && onSyncUsers && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onSyncUsers}
+              disabled={isSyncLoading}
+              className="px-3 text-xs"
+              title={`Sync all users to page ${viewer.currentPage || 1}`}
+            >
+              {isSyncLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              <span className="ml-1">Sync to p.{viewer.currentPage || 1}</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1194,9 +1298,14 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         ref={containerRef}
         className="flex-1 overflow-auto bg-gray-50 py-6 px-4"
         onScroll={handleScroll}
+        style={{ 
+          maxWidth: '100%',
+          overflowX: 'auto',
+          overflowY: 'auto'
+        }}
       >
         {/* PDF Pages Container */}
-        <div className="w-full flex flex-col items-center space-y-6">
+        <div className="w-full flex flex-col items-center space-y-6" style={{ minWidth: 'min-content' }}>
           {Array.from({ length: pdfDoc.numPages }, (_, index) => {
             const pageNumber = index + 1;
             const pageTags = tags.filter(tag => tag.coordinates.pageNumber === pageNumber);
@@ -1218,7 +1327,11 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                 <div
                   ref={el => { if (el) pageContainerRefs.current[index] = el; }}
                   className="relative bg-white shadow-lg rounded-lg overflow-hidden border border-gray-200"
-                  style={{ display: 'inline-block' }}
+                  style={{ 
+                    display: 'inline-block',
+                    maxWidth: '100%',
+                    margin: '0 auto'
+                  }}
                 >
                   {/* PDF Canvas */}
                   <canvas
@@ -1268,6 +1381,77 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                     );
                   })}
                   
+                  {/* Whiteout overlays (render over content) */}
+                  {whiteoutOverlays?.filter(overlay => 
+                    overlay.coordinates.pageNumber === pageNumber
+                  ).map(overlay => (
+                    <Rnd
+                      key={`whiteout-${overlay.id}`}
+                      size={{
+                        width: overlay.coordinates.width * scaleFactor,
+                        height: overlay.coordinates.height * scaleFactor
+                      }}
+                      position={{
+                        x: overlay.coordinates.x * scaleFactor,
+                        y: overlay.coordinates.y * scaleFactor
+                      }}
+                      onDragStop={(e, data) => {
+                        const newCoordinates = {
+                          x: Math.round(data.x / scaleFactor),
+                          y: Math.round(data.y / scaleFactor)
+                        };
+                        handleWhiteoutUpdate(overlay.id, newCoordinates);
+                      }}
+                      onResizeStop={(e, direction, ref, delta, position) => {
+                        const newCoordinates = {
+                          x: Math.round(position.x / scaleFactor),
+                          y: Math.round(position.y / scaleFactor),
+                          width: Math.round(ref.offsetWidth / scaleFactor),
+                          height: Math.round(ref.offsetHeight / scaleFactor)
+                        };
+                        handleWhiteoutUpdate(overlay.id, newCoordinates);
+                      }}
+                      enableResizing={canEditTags}
+                      disableDragging={!canEditTags}
+                      bounds="parent"
+                      minWidth={20 * scaleFactor}
+                      minHeight={10 * scaleFactor}
+                      style={{
+                        zIndex: 500, // Higher than tags but lower than selected elements
+                      }}
+                      resizeHandleStyles={canEditTags ? {
+                        bottomRight: { 
+                          width: '8px', 
+                          height: '8px', 
+                          backgroundColor: '#6B7280',
+                          border: '2px solid white',
+                          borderRadius: '50%',
+                          right: '-4px',
+                          bottom: '-4px',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                        }
+                      } : undefined}
+                    >
+                      <div
+                        className="w-full h-full"
+                        style={{
+                          backgroundColor: '#FFFFFF',
+                          border: '1px solid #E5E7EB',
+                          borderRadius: '2px',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                          cursor: canEditTags ? 'move' : 'default'
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Delete' || e.key === 'Backspace') {
+                            e.preventDefault();
+                            handleWhiteoutDelete(overlay.id);
+                          }
+                        }}
+                        tabIndex={0}
+                      />
+                    </Rnd>
+                  ))}
+
                   {/* Text inputs overlay (separate from regular tags) */}
                   {textInputs?.filter(textInput => textInput.coordinates.pageNumber === pageNumber).map(textInput => (
                     <div key={`text-${textInput.id}-${scaleFactor}`} className="absolute top-0 left-0 w-full h-full" style={{ pointerEvents: 'none' }}>

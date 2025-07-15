@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { SignatureSelectionModal } from './SignatureSelectionModal';
 import { 
   Check, 
   X, 
@@ -34,6 +35,7 @@ interface InteractiveTagInputProps {
     commissionExpiration?: string;
     disclosure?: string;
   };
+  currentUserId?: string;
   onComplete: (content: TagContent) => void;
   onCancel: () => void;
   onContentChange?: (content: TagContent) => void;
@@ -118,6 +120,7 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
   isActive,
   canEdit,
   userProfile,
+  currentUserId,
   onComplete,
   onCancel,
   onContentChange
@@ -130,6 +133,7 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -197,7 +201,7 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
       }
     }
 
-    if (typeof value === 'string' && config.maxLength && value.length > config.maxLength) {
+    if (typeof value === 'string' && 'maxLength' in config && config.maxLength && value.length > config.maxLength) {
       return { isValid: false, message: `Maximum ${config.maxLength} characters allowed` };
     }
 
@@ -250,29 +254,30 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
     onCancel();
   }, [onCancel]);
 
-  // Handle signature application
-  const handleApplySignature = useCallback(() => {
-    if (userProfile?.signatures?.[0]) {
-      handleContentChange(userProfile.signatures[0]);
-      handleSave();
-    }
-  }, [userProfile, handleContentChange, handleSave]);
+  // Handle signature selection modal
+  const handleOpenSignatureModal = useCallback(() => {
+    setShowSignatureModal(true);
+  }, []);
 
-  // Auto-apply content for certain tag types
+  const handleSelectSignature = useCallback((signatureUrl: string) => {
+    handleContentChange(signatureUrl);
+    setShowSignatureModal(false);
+    handleSave();
+  }, [handleContentChange, handleSave]);
+
+  // Auto-apply content for certain tag types (except signatures which use modal)
   useEffect(() => {
     if (isActive && canEdit && !isEditing) {
-      // Auto-apply signatures and other pre-filled content
-      if (tag.tagType === 'S' && userProfile?.signatures?.[0]) {
-        handleApplySignature();
-      } else if (['A', 'N', 'X', 'O'].includes(tag.tagType) && content.value) {
+      if (['A', 'N', 'X', 'O'].includes(tag.tagType) && content.value) {
         // Auto-complete if we have content
         setTimeout(() => handleSave(), 100);
-      } else {
-        // Start editing for empty fields
+      } else if (tag.tagType !== 'S') {
+        // Start editing for empty fields (except signatures)
         setIsEditing(true);
       }
+      // Signature tags ('S') don't auto-apply - they open the selection modal instead
     }
-  }, [isActive, canEdit, tag.tagType, userProfile, content.value, isEditing, handleApplySignature, handleSave]);
+  }, [isActive, canEdit, tag.tagType, userProfile, content.value, isEditing, handleContentChange, handleSave]);
 
   // Render signature preview
   const renderSignaturePreview = () => {
@@ -329,7 +334,7 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
   const renderTextInput = () => {
     if (config?.type !== 'text') return null;
 
-    const isLongText = config.maxLength && config.maxLength > 100;
+    const isLongText = 'maxLength' in config && config.maxLength && config.maxLength > 100;
 
     if (isLongText) {
       return (
@@ -338,7 +343,7 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
           value={content.value as string}
           onChange={(e) => handleContentChange(e.target.value)}
           placeholder={config.placeholder}
-          maxLength={config.maxLength}
+          maxLength={'maxLength' in config ? config.maxLength : undefined}
           rows={3}
           className="w-full resize-none"
         />
@@ -352,7 +357,7 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
         value={content.value as string}
         onChange={(e) => handleContentChange(e.target.value)}
         placeholder={config.placeholder}
-        maxLength={config.maxLength}
+        maxLength={'maxLength' in config ? config.maxLength : undefined}
         className="w-full"
       />
     );
@@ -403,14 +408,14 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
 
         {/* Input Field */}
         <div className="mb-3">
-          {tag.tagType === 'S' && userProfile?.signatures?.[0] ? (
+          {tag.tagType === 'S' ? (
             <div className="space-y-2">
               <Button 
-                onClick={handleApplySignature}
+                onClick={handleOpenSignatureModal}
                 className="w-full bg-blue-600 hover:bg-blue-700"
               >
                 <Signature className="h-4 w-4 mr-2" />
-                Apply My Signature
+                {content.value ? 'Change Signature' : 'Select Signature'}
               </Button>
               {content.value && renderSignaturePreview()}
             </div>
@@ -430,7 +435,7 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
         )}
 
         {/* Character Count */}
-        {config.type === 'text' && config.maxLength && (
+        {config.type === 'text' && 'maxLength' in config && config.maxLength && (
           <div className="text-xs text-gray-500 mb-3">
             {typeof content.value === 'string' ? content.value.length : 0}/{config.maxLength}
           </div>
@@ -456,6 +461,16 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
           Cancel
         </Button>
       </div>
+
+      {/* Signature Selection Modal */}
+      {tag.tagType === 'S' && (
+        <SignatureSelectionModal
+          isOpen={showSignatureModal}
+          onClose={() => setShowSignatureModal(false)}
+          onSelect={handleSelectSignature}
+          userId={parseInt(currentUserId || '0')}
+        />
+      )}
     </Card>
   );
 }; 

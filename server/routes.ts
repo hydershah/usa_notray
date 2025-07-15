@@ -8159,6 +8159,122 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     }
   });
 
+  // Configure seal/stamp with notarization details
+  app.post('/api/editor/session/:sessionId/tag/:tagId/seal-config', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId, tagId } = req.params;
+      const { applicableSigners, notarizationType, notaryNote } = req.body;
+      
+      console.log('🔖 Seal configuration request:', {
+        sessionId,
+        tagId,
+        applicableSigners,
+        notarizationType,
+        notaryNote,
+        notaryUserId: req.user.id
+      });
+      
+      const { TagService } = await import('./services/editor/TagService');
+      const { ProfileAutoFillService } = await import('./services/ProfileAutoFillService');
+      const { users } = await import('../shared/schema');
+      
+      // Validate that user is a notary
+      const [notary] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, req.user.id))
+        .limit(1);
+      
+      if (!notary || notary.role !== 'notary') {
+        return res.status(403).json({ message: 'Only notaries can configure seals' });
+      }
+      
+      // Get tag details first
+      const tags = await TagService.getSessionTags(sessionId);
+      const tag = tags.find(t => t.id === tagId);
+      
+      if (!tag) {
+        return res.status(404).json({ message: 'Tag not found' });
+      }
+      
+      if (tag.tagType !== 'E') {
+        return res.status(400).json({ message: 'This endpoint is only for seal tags' });
+      }
+      
+      // Get notary's stamp/seal image using ProfileAutoFillService
+      const autoFillResult = await ProfileAutoFillService.getTagAutoFillData(
+        'E', 
+        req.user.id, 
+        sessionId
+      );
+      
+      if (!autoFillResult.success) {
+        return res.status(400).json({ 
+          message: autoFillResult.message || 'No notary seal available',
+          error: 'no_seal_available'
+        });
+      }
+      
+      // Create seal configuration data
+      const sealConfigData = {
+        type: 'seal',
+        stampImageUrl: autoFillResult.content,
+        applicableSigners,
+        notarizationType,
+        notaryNote,
+        notaryId: req.user.id,
+        notaryName: `${notary.firstName} ${notary.lastName}`,
+        configuredAt: new Date().toISOString(),
+        pageNumber: tag.coordinates?.pageNumber || 1,
+        // Include original auto-fill data
+        ...autoFillResult.contentData
+      };
+      
+      // Update tag with seal configuration and mark as completed
+      const updatedTag = await TagService.updateTag(tagId, {
+        content: autoFillResult.content,
+        contentType: 'image',
+        contentData: JSON.stringify(sealConfigData),
+        isCompleted: true,
+        completedBy: req.user.id,
+        completedAt: new Date(),
+        updatedBy: req.user.id
+      });
+      
+      // TODO: Create notary log entries for each applicable signer
+      // TODO: Create audit trail entries
+      
+      console.log('✅ Seal configured successfully:', {
+        tagId,
+        applicableSigners,
+        notarizationType,
+        hasStampImage: !!autoFillResult.content
+      });
+      
+      res.json({
+        success: true,
+        sealData: {
+          content: autoFillResult.content,
+          contentData: sealConfigData
+        },
+        message: `Seal configured for ${applicableSigners.length} signer(s) with ${notarizationType} notarization`,
+        configuration: {
+          applicableSigners,
+          notarizationType,
+          notaryNote,
+          notaryId: req.user.id
+        }
+      });
+      
+    } catch (error) {
+      console.error('Failed to configure seal:', error);
+      res.status(500).json({ 
+        message: 'Failed to configure seal',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // Update tag content (for manual content entry)
   app.put('/api/editor/session/:sessionId/tag/:tagId/content', verifyToken, async (req: any, res) => {
     try {

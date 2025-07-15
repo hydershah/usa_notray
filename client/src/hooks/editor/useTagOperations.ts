@@ -68,8 +68,8 @@ const sanitizeCoordinates = (coordinates: Partial<TagCoordinates>, tagType?: str
   // Get default dimensions based on tag type
   const getDefaultDimensions = (type?: string) => {
     if (type === 'W') {
-      // Whiteout tags need larger dimensions to cover content effectively
-      return { width: 250, height: 40 };
+      // Whiteout tags - smaller default size, user can resize as needed
+      return { width: 100, height: 25 };
     } else {
       // All tags use compact size for consistency
       return { width: 97, height: 26 };
@@ -485,6 +485,69 @@ export const useTagOperations = (sessionId: string) => {
     setIsProcessing(false);
   }, []);
 
+  // Place whiteout overlay (immediate white rectangle, no tag creation)
+  const placeWhiteoutOverlay = useCallback(async (request: {
+    documentId: string;
+    coordinates: TagCoordinates;
+    sessionId: string;
+  }) => {
+    try {
+      console.log('⬜ Creating whiteout overlay:', request);
+      
+      // Validate coordinates
+      if (!validateCoordinates(request.coordinates)) {
+        throw new Error('Invalid coordinates for whiteout overlay');
+      }
+      
+      const sanitizedCoordinates = sanitizeCoordinates(request.coordinates, 'W');
+      
+      // Create overlay object
+      const overlay = {
+        id: `whiteout_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        documentId: request.documentId,
+        coordinates: sanitizedCoordinates as TagCoordinates,
+        sessionId: request.sessionId,
+        createdAt: new Date(),
+      };
+      
+      // Save to backend first
+      const response = await fetch(`/api/editor/session/${sessionId}/whiteout-overlay`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          documentId: request.documentId,
+          coordinates: sanitizedCoordinates,
+          sessionId: request.sessionId
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to save whiteout overlay to server');
+      }
+      
+      const result = await response.json();
+      
+      // Add to store with server response data
+      const serverOverlay = {
+        id: result.overlay.id,
+        documentId: result.overlay.documentId,
+        coordinates: result.overlay.coordinates,
+        sessionId: result.overlay.sessionId,
+        createdAt: new Date(result.overlay.createdAt)
+      };
+      
+      useEditorStore.getState().addWhiteoutOverlay(serverOverlay);
+      console.log('✅ Whiteout overlay saved to server and added to store:', result);
+      
+    } catch (error) {
+      console.error('❌ Failed to place whiteout overlay:', error);
+      throw error;
+    }
+  }, [sessionId]);
+
   return {
     placeTag,
     updateTagPosition,
@@ -492,6 +555,7 @@ export const useTagOperations = (sessionId: string) => {
     saveTagUpdate, // New method for explicit save after drag/resize
     deleteTag,
     batchSaveChanges,
-    isProcessing
+    isProcessing,
+    placeWhiteoutOverlay
   };
 }; 

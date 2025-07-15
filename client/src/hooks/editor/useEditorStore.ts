@@ -31,6 +31,21 @@ interface EditorStore {
   selectedTagType: TagType | null;
   draggedTag: DocumentTag | null;
   
+  // Whiteout overlays (separate from tags)
+  whiteoutOverlays: Array<{
+    id: string;
+    documentId: string;
+    coordinates: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      pageNumber: number;
+    };
+    sessionId: string;
+    createdAt: Date;
+  }>;
+  
   // Custom tag dimensions (remembers resized dimensions per tag type)
   customTagDimensions: Partial<Record<TagType, { width: number; height: number }>>;
   
@@ -69,6 +84,11 @@ interface EditorStore {
   selectTag: (tag: DocumentTag | null) => void;
   setSelectedTagType: (tagType: TagType | null) => void;
   setDraggedTag: (tag: DocumentTag | null) => void;
+  
+  // Actions - Whiteout Overlay Management
+  setWhiteoutOverlays: (overlays: Array<any>) => void;
+  addWhiteoutOverlay: (overlay: any) => void;
+  deleteWhiteoutOverlay: (overlayId: string) => void;
   
   // Actions - Custom Dimensions
   setCustomTagDimensions: (tagType: TagType, dimensions: { width: number; height: number }) => void;
@@ -122,6 +142,8 @@ export const useEditorStore = create<EditorStore>()(
       selectedTag: null,
       selectedTagType: null,
       draggedTag: null,
+      
+      whiteoutOverlays: [],
       
       customTagDimensions: (() => {
         // Load custom dimensions from localStorage on initialization
@@ -251,6 +273,11 @@ export const useEditorStore = create<EditorStore>()(
       setSelectedTagType: (tagType) => set({ selectedTagType: tagType }),
       
       setDraggedTag: (tag) => set({ draggedTag: tag }),
+      
+      // Whiteout Overlay Management Actions
+      setWhiteoutOverlays: (overlays) => set({ whiteoutOverlays: overlays }),
+      addWhiteoutOverlay: (overlay) => set(state => ({ whiteoutOverlays: [...state.whiteoutOverlays, overlay] })),
+      deleteWhiteoutOverlay: (overlayId) => set(state => ({ whiteoutOverlays: state.whiteoutOverlays.filter(o => o.id !== overlayId) })),
       
       // Custom Dimensions Actions
       setCustomTagDimensions: (tagType, dimensions) => {
@@ -457,6 +484,7 @@ export const useEditorStore = create<EditorStore>()(
           selectedTag: null,
           selectedTagType: null,
           draggedTag: null,
+          whiteoutOverlays: [],
           customTagDimensions: {},
           cursors: [],
           lastSyncTime: null,

@@ -464,6 +464,93 @@ export function registerTextTagRoutes(app: Express) {
     }
   });
 
+  // Create whiteout overlay (immediate white rectangle, not a tag)
+  app.post('/api/editor/session/:sessionId/whiteout-overlay', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      const { documentId, coordinates } = req.body;
+      
+      if (!documentId || !coordinates) {
+        return res.status(400).json({ message: 'Missing required fields: documentId, coordinates' });
+      }
+
+      // Validate coordinates
+      const coords = coordinates;
+      if (isNaN(coords.x) || isNaN(coords.y) || isNaN(coords.width) || isNaN(coords.height) || isNaN(coords.pageNumber)) {
+        return res.status(400).json({ message: 'Invalid coordinates: all values must be numbers' });
+      }
+
+      // Get session to verify it exists
+      const [session] = await db
+        .select()
+        .from(editorSessions)
+        .where(eq(editorSessions.sessionId, sessionId))
+        .limit(1);
+      
+      if (!session) {
+        return res.status(404).json({ message: 'Session not found' });
+      }
+
+      // Create whiteout overlay as a special completed tag
+      const whiteoutData = {
+        documentId: parseInt(documentId),
+        sessionId: session.id,
+        tagType: 'W',
+        assignedUserId: req.user.id, // Current user
+        pageNumber: coordinates.pageNumber,
+        xPosition: Math.round(coordinates.x),
+        yPosition: Math.round(coordinates.y),
+        width: Math.round(coordinates.width),
+        height: Math.round(coordinates.height),
+        isCompleted: true, // Whiteout is immediately completed
+        content: 'WHITEOUT',
+        contentType: 'whiteout',
+        contentData: JSON.stringify({
+          type: 'whiteout',
+          value: 'WHITEOUT',
+          timestamp: new Date().toISOString()
+        }),
+        createdBy: req.user.id,
+        completedBy: req.user.id,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        completedAt: new Date()
+      };
+
+      const [createdOverlay] = await db
+        .insert(documentTags)
+        .values(whiteoutData)
+        .returning();
+
+      console.log(`✅ Whiteout overlay created at page ${coordinates.pageNumber}: (${coordinates.x}, ${coordinates.y}, ${coordinates.width}x${coordinates.height})`);
+
+      res.json({
+        success: true,
+        overlay: {
+          id: createdOverlay.id.toString(),
+          documentId: createdOverlay.documentId.toString(),
+          coordinates: {
+            x: createdOverlay.xPosition,
+            y: createdOverlay.yPosition,
+            width: createdOverlay.width,
+            height: createdOverlay.height,
+            pageNumber: createdOverlay.pageNumber
+          },
+          sessionId: sessionId,
+          createdAt: createdOverlay.createdAt
+        },
+        message: 'Whiteout overlay created successfully'
+      });
+
+    } catch (error) {
+      console.error('Create whiteout overlay error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to create whiteout overlay',
+        error: 'whiteout_overlay_creation_failed'
+      });
+    }
+  });
+
   // Get text tag details (for editing)
   app.get('/api/editor/session/:sessionId/text-tag/:tagId', verifyToken, async (req: any, res) => {
     try {

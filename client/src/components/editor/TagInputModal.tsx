@@ -17,6 +17,7 @@ interface TagInputModalProps {
     commissionExpiration?: string;
     disclosure?: string;
   };
+  currentUserId?: string;
   // Position relative to the tag
   position?: {
     x: number;
@@ -32,6 +33,7 @@ export const TagInputModal: React.FC<TagInputModalProps> = ({
   onClose,
   onSave,
   userProfile,
+  currentUserId,
   position
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
@@ -171,6 +173,7 @@ export const TagInputModal: React.FC<TagInputModalProps> = ({
             isActive={true}
             canEdit={true}
             userProfile={userProfile}
+            currentUserId={currentUserId}
             onComplete={handleSave}
             onCancel={onClose}
           />

@@ -637,18 +637,7 @@ const WherebyVideoConference: React.FC<WherebyVideoConferenceProps> = ({
   if (!isVideoActive) {
     return (
       <div className={`${className} flex flex-col h-full bg-gradient-to-br from-blue-50 to-gray-50 border-2 border-dashed border-blue-300 rounded-lg overflow-hidden`}>
-        {/* Enhanced header */}
-        <div className="bg-white/80 backdrop-blur-sm border-b border-blue-200 p-4 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-              <Video className="h-5 w-5 text-blue-600" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-gray-900">Whereby Video Conference</h3>
-              <p className="text-sm text-gray-600">Live signing session video</p>
-            </div>
-          </div>
-        </div>
+
 
         {/* Main content */}
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
@@ -684,14 +673,7 @@ const WherebyVideoConference: React.FC<WherebyVideoConferenceProps> = ({
                 <Video className="h-8 w-8 text-blue-600" />
               </div>
               
-              <div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                  Start Video Conference
-                </h3>
-                <p className="text-gray-600">
-                  Click to join the live signing session with video
-                </p>
-              </div>
+
 
               <div className="bg-blue-50 rounded-lg p-4 text-sm">
                 <div className="flex items-center gap-2 text-blue-800 font-medium mb-2">
@@ -722,12 +704,9 @@ const WherebyVideoConference: React.FC<WherebyVideoConferenceProps> = ({
                 className="w-full px-6 py-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-3 shadow-lg hover:shadow-xl transform hover:scale-105"
               >
                 <Video className="h-5 w-5" />
-                {isLoading ? 'Starting Video...' : 'Start Video Conference'}
+                {isLoading ? 'Starting...' : 'Start Video'}
               </button>
-              
-              <p className="text-xs text-gray-500 mt-2">
-                Video will start automatically in a few seconds, or click above to start manually
-              </p>
+
             </div>
           )}
         </div>
