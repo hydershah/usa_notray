@@ -59,7 +59,7 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './client/src'),
       '@shared': path.resolve(__dirname, './shared'),
-      '@shared/schema': path.resolve(__dirname, './shared/schema.ts'),
+      '@shared/schema': path.resolve(__dirname, './shared/types.ts'),
     },
   },
   server: {

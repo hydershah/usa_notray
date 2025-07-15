@@ -22,7 +22,7 @@ import {
   AlertCircle,
   Building
 } from 'lucide-react';
-import { type Job } from '@shared/schema';
+import { type Job } from '@shared/types';
 
 export default function Jobs() {
   const [, setLocation] = useLocation();

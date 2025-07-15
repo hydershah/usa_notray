@@ -4,7 +4,7 @@ import { useNotaryProfileStatus } from '@/hooks/use-notary-profile-status';
 import { useLocation } from 'wouter';
 import { useState, useEffect } from 'react';
 import { Link } from 'wouter';
-import { type Job } from '@shared/schema';
+import { type Job } from '@shared/types';
 import { getStatusColor } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { 

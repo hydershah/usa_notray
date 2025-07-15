@@ -31,7 +31,7 @@ import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { ArrowLeft, ArrowRight, Plus, Trash2, Upload, FileText, CheckCircle, AlertCircle, User as UserIcon, Clock } from 'lucide-react';
-import { type TitleCompany, type ClosingType, type User } from '@shared/schema';
+import { type TitleCompany, type ClosingType, type User } from '@shared/types';
 import { NotaryAvailabilitySelector } from './notary-availability-selector';
 import { MainLayout } from '@/components/layout/main-layout';
 

@@ -77,7 +77,7 @@ import {
   FileText,
   Users
 } from 'lucide-react';
-import { type Company } from '@shared/schema';
+import { type Company } from '@shared/types';
 
 export default function TitleCompanies() {
   const [isFormOpen, setIsFormOpen] = useState(false);

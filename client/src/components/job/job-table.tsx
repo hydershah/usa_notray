@@ -82,7 +82,7 @@ import {
   Settings,
   Grid3X3
 } from 'lucide-react';
-import { type Job } from '@shared/schema';
+import { type Job } from '@shared/types';
 
 interface JobTableProps {
   onCreateJob: () => void;

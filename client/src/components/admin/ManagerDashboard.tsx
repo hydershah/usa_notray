@@ -28,7 +28,7 @@ import {
   Bell,
   User
 } from 'lucide-react';
-import { type Job } from '@shared/schema';
+import { type Job } from '@shared/types';
 import { getStatusColor } from '@/lib/utils';
 
 interface ManagerStats {

@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
-import { insertUserSchema, type User } from '@shared/schema';
+import { insertUserSchema, type User } from '@shared/types';
 import { Input } from '@/components/ui/input';
 import {
   Dialog,

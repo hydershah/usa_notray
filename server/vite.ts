@@ -7,17 +7,8 @@ import { nanoid } from "nanoid";
 
 // Get current directory in a way that works for both ESM and CommonJS
 function getCurrentDir() {
-  // Check if we're in CommonJS environment
-  if (typeof __dirname !== 'undefined') {
-    return __dirname;
-  }
-  
-  // ESM environment - but only if import.meta.url exists
-  if (typeof import.meta !== 'undefined' && import.meta.url) {
-    return path.dirname(fileURLToPath(import.meta.url));
-  }
-  
-  // Fallback to process.cwd() if neither works
+  // In production builds, we're always running from the project root
+  // Using process.cwd() avoids import.meta warnings in CommonJS builds
   return process.cwd();
 }
 
