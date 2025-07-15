@@ -60,10 +60,10 @@ export const uploadLimiter = rateLimit({
 
 // Password reset rate limiting
 export const passwordResetLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 3, // 3 password reset attempts per hour
+  windowMs: 15 * 60 * 1000, // 15 minutes (reduced from 1 hour)
+  max: 10, // 10 password reset attempts per window (increased from 3)
   message: {
     error: 'Too many password reset attempts',
-    message: 'Please try again in 1 hour'
+    message: 'Please try again in 15 minutes'
   }
 }); 
