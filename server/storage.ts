@@ -676,6 +676,109 @@ export class DatabaseStorage implements IStorage {
           eq(jobs.notaryId, userId) // Also check the modern notaryId field
         )
       ).orderBy(desc(jobs.createdAt));
+    } else if (role === 'signer' || role === 'witness') {
+      // CRITICAL FIX: Include jobs where user is invited as signer/witness
+      // First get jobs created by this user
+      const userCreatedJobs = await db.select().from(jobs).where(eq(jobs.userId, userId)).orderBy(desc(jobs.createdAt));
+      
+      // Then get jobs where this user is invited as a signer by email
+      const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      
+      if (user) {
+        const invitedJobs = await db
+          .select({
+            // Select all job fields
+            id: jobs.id,
+            createdAt: jobs.createdAt,
+            notaryId: jobs.notaryId,
+            titleCompany: jobs.titleCompany,
+            closingType: jobs.closingType,
+            internalReference: jobs.internalReference,
+            kbaRequired: jobs.kbaRequired,
+            propertyAddressOne: jobs.propertyAddressOne,
+            propertyAddressTwo: jobs.propertyAddressTwo,
+            propertyCity: jobs.propertyCity,
+            propertyState: jobs.propertyState,
+            propertyZipCode: jobs.propertyZipCode,
+            selectedDate: jobs.selectedDate,
+            selectedTime: jobs.selectedTime,
+            additionalDetails: jobs.additionalDetails,
+            jobStatus: jobs.jobStatus,
+            userId: jobs.userId,
+            selectedNotary: jobs.selectedNotary,
+            notaryOption: jobs.notaryOption,
+            uploadedFile: jobs.uploadedFile,
+            notarizedFile: jobs.notarizedFile,
+            requiresNSA: jobs.requiresNSA,
+            requiresSpanishSpeaking: jobs.requiresSpanishSpeaking,
+            isRandomAssignment: jobs.isRandomAssignment,
+            assignmentType: jobs.assignmentType,
+            priorityLevel: jobs.priorityLevel,
+            rejectedNotaries: jobs.rejectedNotaries,
+            autoAssignmentAttempts: jobs.autoAssignmentAttempts,
+            notaryApprovalStatus: jobs.notaryApprovalStatus,
+            notaryApprovedAt: jobs.notaryApprovedAt,
+            notaryRejectedAt: jobs.notaryRejectedAt,
+            notaryRejectionReason: jobs.notaryRejectionReason,
+            signerNotificationsSent: jobs.signerNotificationsSent,
+            signerNotificationsSentAt: jobs.signerNotificationsSentAt,
+            participantInvitesSent: jobs.participantInvitesSent,
+            participantInvitesSentAt: jobs.participantInvitesSentAt,
+            actualNotarizationDateTime: jobs.actualNotarizationDateTime,
+            estimatedCompletionTime: jobs.estimatedCompletionTime,
+            actualCompletionTime: jobs.actualCompletionTime,
+            clientSatisfactionRating: jobs.clientSatisfactionRating,
+            notaryPerformanceRating: jobs.notaryPerformanceRating,
+            overallSessionRating: jobs.overallSessionRating,
+            feedbackComments: jobs.feedbackComments,
+            locationLatitude: jobs.locationLatitude,
+            locationLongitude: jobs.locationLongitude,
+            sessionRecordingUrl: jobs.sessionRecordingUrl,
+            recordingFileKey: jobs.recordingFileKey,
+            recordingFileUrl: jobs.recordingFileUrl,
+            recordingFileName: jobs.recordingFileName,
+            recordingDuration: jobs.recordingDuration,
+            recordingStartedAt: jobs.recordingStartedAt,
+            recordingUploadedAt: jobs.recordingUploadedAt,
+            recordingParticipantCount: jobs.recordingParticipantCount,
+            recordingSessionId: jobs.recordingSessionId,
+            recordingLiveSessionId: jobs.recordingLiveSessionId,
+            recordingMetadata: jobs.recordingMetadata,
+            completedAt: jobs.completedAt,
+            completedBy: jobs.completedBy,
+            completionMethod: jobs.completionMethod,
+            finalDocumentUrl: jobs.finalDocumentUrl,
+            auditTrailGenerated: jobs.auditTrailGenerated,
+            complianceReportUrl: jobs.complianceReportUrl,
+            certificateApplied: jobs.certificateApplied,
+            digitalSignatureApplied: jobs.digitalSignatureApplied,
+            completionReportGenerated: jobs.completionReportGenerated,
+            completionReportPath: jobs.completionReportPath,
+            completionReportGeneratedAt: jobs.completionReportGeneratedAt,
+            updatedAt: jobs.updatedAt
+          })
+          .from(signers)
+          .innerJoin(jobs, eq(signers.jobId, jobs.id))
+          .where(eq(signers.signerEmail, user.email))
+          .orderBy(desc(jobs.createdAt));
+        
+        console.log(`📋 Found ${invitedJobs.length} invited jobs for ${role} ${user.email} (user ${userId})`);
+        
+        // Combine and deduplicate jobs by ID
+        const allJobs = [...userCreatedJobs, ...invitedJobs];
+        const uniqueJobsMap = new Map();
+        allJobs.forEach(job => uniqueJobsMap.set(job.id, job));
+        
+        const uniqueJobs = Array.from(uniqueJobsMap.values()).sort((a, b) => 
+          new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        );
+        
+        console.log(`📊 Total unique jobs for ${role} ${user.email}: ${uniqueJobs.length} (${userCreatedJobs.length} created + ${invitedJobs.length} invited)`);
+        return uniqueJobs;
+      }
+      
+      // Fallback to user-created jobs only
+      return userCreatedJobs;
     } else {
       return await this.getJobsByUserId(userId);
     }

@@ -157,25 +157,29 @@ function SetPasswordPage() {
             : "Your account is now ready. Redirecting to your dashboard...",
         });
 
-        // Redirect based on user type and auto-login status
+        // Redirect based on backend guidance and user type
         setTimeout(() => {
           if (data.autoLogin && data.token) {
-            // Auto-login successful - redirect to appropriate dashboard
-            if (userType === 'signer' && signerToken) {
-              // Redirect back to sign page with invitation token
+            // Auto-login successful - use backend redirect guidance if available
+            if (data.redirect && data.redirect.path) {
+              // CRITICAL FIX: Respect backend redirect guidance for signers
+              console.log('Using backend redirect guidance:', data.redirect.path);
+              setLocation(data.redirect.path);
+            } else if (userType === 'signer' && signerToken) {
+              // Fallback: Redirect back to sign page with invitation token
               setLocation(`/sign/${signerToken}`);
             } else if (data.user?.role === 'signer' || data.user?.role === 'witness') {
-              // Redirect signers/witnesses to jobs
-              setLocation('/jobs');
+              // Fallback: Redirect signers/witnesses to dashboard (not jobs)
+              setLocation('/dashboard');
             } else if (data.user?.role === 'notary') {
-              // Redirect notaries to jobs
-              setLocation('/jobs');
+              // Fallback: Redirect notaries to dashboard
+              setLocation('/dashboard');
             } else if (data.user?.isAdmin) {
-              // Redirect admins to admin dashboard
+              // Fallback: Redirect admins to admin dashboard
               setLocation('/admin/dashboard');
             } else {
               // Default redirect
-              setLocation('/jobs');
+              setLocation('/dashboard');
             }
           } else {
             // No auto-login - redirect to login page

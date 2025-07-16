@@ -94,6 +94,26 @@ const ResetPasswordPage = React.lazy(() => import("@/pages/reset-password"));
 const JobDetailsPage = React.lazy(() => import("@/pages/job-details"));
 const ProfilePage = React.lazy(() => import("@/pages/profile"));
 
+// Role-based redirect component
+function RoleBasedRedirect() {
+  const { user, isLoading } = useAuth();
+  
+  if (isLoading) {
+    return <LoadingFallback />;
+  }
+  
+  if (!user) {
+    return <Redirect to="/login" />;
+  }
+  
+  // Signers and witnesses go to dashboard, others go to jobs
+  if (user.role === 'signer' || user.role === 'witness') {
+    return <Redirect to="/dashboard" />;
+  } else {
+    return <Redirect to="/jobs" />;
+  }
+}
+
 // Protected Route wrapper component
 function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles?: string[] }) {
   const { isAuthenticated, user, isLoading } = useAuth();
@@ -149,7 +169,7 @@ function Router() {
     <Switch>
       {/* Public routes */}
       <Route path="/login">
-        {(isAuthenticated && !isLoggingOut) ? <Redirect to="/jobs" /> : <Login />}
+        {(isAuthenticated && !isLoggingOut) ? <RoleBasedRedirect /> : <Login />}
       </Route>
 
       {/* Sign page route - public for signer invitations */}

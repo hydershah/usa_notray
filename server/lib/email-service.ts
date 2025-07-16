@@ -143,9 +143,9 @@ class EmailService {
       return 'https://localhost:3000'; // HTTPS for production
     }
     
-    // Development default
+    // Development default - using port 3002 as specified by user
     console.log(`✅ Using development default: http://localhost:3002`);
-    return 'http://localhost:3002'; // Updated to match your Vite dev server
+    return 'http://localhost:3002'; // Frontend runs on port 3002
   }
 
   private async loadSettings(): Promise<EmailSettings> {
@@ -410,73 +410,226 @@ class EmailService {
     scheduledTime?: string;
     notaryName?: string;
   }): Promise<void> {
-    const invitationLink = `${this.getClientUrl()}/sign/${data.invitationToken}`;
+    // CRITICAL FIX: Check if user already exists to send appropriate email
+    const { db } = await import('../db');
+    const { users } = await import('../../shared/schema');
+    const { eq } = await import('drizzle-orm');
+    
+    // Check if user already exists
+    const [existingUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, data.signerEmail))
+      .limit(1);
+    
+    const isNewUser = !existingUser;
+    console.log(`📧 Sending ${isNewUser ? 'NEW USER' : 'EXISTING USER'} invitation to ${data.signerEmail}`);
+    
+    if (isNewUser) {
+      // NEW USER: Send account setup email
+      await this.sendNewUserSignerInvitation(data);
+    } else {
+      // EXISTING USER: Send job notification email  
+      await this.sendExistingUserJobNotification(data, existingUser);
+    }
+  }
+
+  async sendNewUserSignerInvitation(data: {
+    signerName: string;
+    signerEmail: string;
+    signerRole: string;
+    invitationToken: string;
+    jobTitle?: string;
+    titleCompany: string;
+    closingType: string;
+    propertyAddress?: string;
+    scheduledDate?: string;
+    scheduledTime?: string;
+    notaryName?: string;
+  }): Promise<void> {
+    // NEW USER: Goes to account setup page with invitation token
+    const setupLink = `${this.getClientUrl()}/setup-account/${data.invitationToken}`;
     
     const content = `
-        <h2 style="color: #1f2937; margin-bottom: 16px;">You're Invited to a Document Signing Session</h2>
+        <h2 style="color: #1f2937; margin-bottom: 16px;">Welcome! You're Invited to Sign Documents</h2>
         
         <div style="background-color: #dbeafe; border: 1px solid #60a5fa; border-radius: 8px; padding: 16px; margin: 16px 0;">
-          <p style="margin: 0; color: #1e40af; font-weight: 600;">📋 Important: ID Verification Required</p>
+          <p style="margin: 0; color: #1e40af; font-weight: 600;">👋 New to our platform? Let's get you set up!</p>
           <p style="margin: 8px 0 0 0; color: #1e40af; font-size: 14px;">
-            Before you can join the signing session, you must complete identity verification using a government-issued ID and selfie photo. This is required for all signers and witnesses.
+            We'll guide you through creating your account and completing identity verification in just a few minutes.
           </p>
         </div>
         
         <p style="color: #374151; line-height: 1.6;">
-          Dear <strong>${data.signerName}</strong>, you have been invited to participate as a <strong>${data.signerRole || 'participant'}</strong> in a notarized document signing session.
+          Dear <strong>${data.signerName}</strong>, you have been invited to participate as a <strong>${data.signerRole || 'participant'}</strong> in a notarized document signing session for <strong>${data.titleCompany}</strong>.
         </p>
         
         <div style="background-color: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
-          <h3 style="color: #1f2937; margin: 0 0 12px 0; font-size: 16px;">Session Details:</h3>
+          <h3 style="color: #1f2937; margin: 0 0 12px 0; font-size: 16px;">📋 Session Details:</h3>
           <ul style="color: #4b5563; margin: 0; padding-left: 20px;">
+            <li><strong>Title Company:</strong> ${data.titleCompany}</li>
+            <li><strong>Closing Type:</strong> ${data.closingType || 'Document Signing'}</li>
             <li><strong>Property:</strong> ${data.propertyAddress || 'Not specified'}</li>
-            <li><strong>Closing Type:</strong> ${data.closingType || 'Not specified'}</li>
-            <li><strong>Scheduled:</strong> ${data.scheduledDate || 'To be scheduled'}</li>
+            <li><strong>Scheduled:</strong> ${data.scheduledDate && data.scheduledTime ? `${data.scheduledDate} at ${data.scheduledTime}` : 'To be scheduled'}</li>
             <li><strong>Your Role:</strong> ${data.signerRole || 'Participant'}</li>
-            <li><strong>Notary:</strong> ${data.notaryName || 'To be assigned'}</li>
+            ${data.notaryName ? `<li><strong>Notary:</strong> ${data.notaryName}</li>` : ''}
           </ul>
         </div>
         
         <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 16px; margin: 16px 0;">
-          <h3 style="color: #92400e; margin: 0 0 8px 0; font-size: 16px;">📝 Next Steps:</h3>
+          <h3 style="color: #92400e; margin: 0 0 8px 0; font-size: 16px;">🚀 Get Started - 4 Easy Steps:</h3>
           <ol style="color: #92400e; margin: 0; padding-left: 20px; line-height: 1.6;">
-            <li><strong>Create Account:</strong> Click the link below to set up your account</li>
+            <li><strong>Create Account:</strong> Click the link below to set up your secure account</li>
             <li><strong>Complete ID Verification:</strong> Upload your government ID and take a selfie</li>
             <li><strong>Complete Profile:</strong> Add your address and contact information</li>
-            <li><strong>Wait for Approval:</strong> Your verification will be processed quickly</li>
-            <li><strong>Join Session:</strong> You'll receive a notification when the session begins</li>
+            <li><strong>Wait for Session:</strong> You'll be notified when the notary is ready to begin</li>
           </ol>
         </div>
         
         <div style="text-align: center; margin: 24px 0;">
-          <a href="${invitationLink}" 
-             style="background-color: #2563eb; color: white; padding: 12px 24px; 
-                    text-decoration: none; border-radius: 6px; font-weight: 600; 
-                    display: inline-block; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-            Set Up Account & Verify Identity
+          <a href="${setupLink}" 
+             style="background-color: #2563eb; color: white; padding: 14px 28px; 
+                    text-decoration: none; border-radius: 8px; font-weight: 600; 
+                    display: inline-block; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    font-size: 16px;">
+            🏛️ Set Up Account & Verify Identity
           </a>
         </div>
         
         <div style="background-color: #ecfdf5; border: 1px solid #10b981; border-radius: 8px; padding: 16px; margin: 16px 0;">
-          <h3 style="color: #047857; margin: 0 0 8px 0; font-size: 14px;">💡 What You'll Need for Verification:</h3>
+          <h3 style="color: #047857; margin: 0 0 8px 0; font-size: 14px;">📄 What You'll Need for Verification:</h3>
           <ul style="color: #047857; margin: 0; padding-left: 20px; font-size: 14px;">
             <li>Government-issued photo ID (Driver's License, State ID, or Passport)</li>
             <li>Camera or smartphone to take a clear selfie</li>
             <li>Good lighting for photo quality</li>
+            <li>Valid email address and phone number</li>
           </ul>
         </div>
         
         <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
-          Contact Email: ${data.signerEmail}. ID verification is required before joining sessions. 
-          If you have questions, please contact the notary or title company.
+          Contact Email: ${data.signerEmail}. Identity verification is required before joining sessions. 
+          If you have questions, please contact ${data.titleCompany} or reply to this email.
         </p>
     `;
 
     await this.sendEmail({
       to: data.signerEmail,
-      subject: `🏛️ Secure Document Signing Required - ${data.titleCompany}`,
+      subject: `🏛️ Account Setup Required - Document Signing for ${data.titleCompany}`,
       html: this.getBaseTemplate(content),
-      text: `Dear ${data.signerName}, You have been invited to sign documents for ${data.titleCompany}. Please visit: ${invitationLink}`
+      text: `Welcome ${data.signerName}! You've been invited to sign documents for ${data.titleCompany}. Please set up your account: ${setupLink}`,
+      tag: 'signer-invitation-new-user'
+    });
+  }
+
+  async sendExistingUserJobNotification(data: {
+    signerName: string;
+    signerEmail: string;
+    signerRole: string;
+    invitationToken: string;
+    jobTitle?: string;
+    titleCompany: string;
+    closingType: string;
+    propertyAddress?: string;
+    scheduledDate?: string;
+    scheduledTime?: string;
+    notaryName?: string;
+  }, existingUser: any): Promise<void> {
+    // EXISTING USER: Goes to dashboard to see new job, or job details page
+    const dashboardLink = `${this.getClientUrl()}/dashboard`;
+    const jobDetailsLink = `${this.getClientUrl()}/jobs/invited`; // Shows invited jobs
+    
+    const needsVerification = !existingUser.isVerified && !existingUser.isVerificationBypassed && !existingUser.notaryVerificationBypassed;
+    const needsAccountSetup = !existingUser.accountSetupComplete;
+    
+    let actionRequired = '';
+    let actionButton = '';
+    let primaryLink = dashboardLink;
+    
+    if (needsAccountSetup) {
+      actionRequired = `
+        <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <p style="margin: 0; color: #92400e; font-weight: 600;">⚠️ Action Required: Complete Account Setup</p>
+          <p style="margin: 8px 0 0 0; color: #92400e; font-size: 14px;">
+            Please complete your account setup before joining the signing session.
+          </p>
+        </div>`;
+      actionButton = '🔧 Complete Account Setup';
+      primaryLink = `${this.getClientUrl()}/setup-account/${data.invitationToken}`;
+    } else if (needsVerification) {
+      actionRequired = `
+        <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <p style="margin: 0; color: #92400e; font-weight: 600;">🆔 Action Required: Complete ID Verification</p>
+          <p style="margin: 8px 0 0 0; color: #92400e; font-size: 14px;">
+            Please complete identity verification before joining the signing session.
+          </p>
+        </div>`;
+      actionButton = '🆔 Complete Verification';
+      primaryLink = `${this.getClientUrl()}/verification`;
+    } else {
+      actionRequired = `
+        <div style="background-color: #ecfdf5; border: 1px solid #10b981; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <p style="margin: 0; color: #047857; font-weight: 600;">✅ Ready to Sign</p>
+          <p style="margin: 8px 0 0 0; color: #047857; font-size: 14px;">
+            Your account is ready. You can view the job details and wait for the notary to start the session.
+          </p>
+        </div>`;
+      actionButton = '📋 View Job Details';
+      primaryLink = jobDetailsLink;
+    }
+    
+    const content = `
+        <h2 style="color: #1f2937; margin-bottom: 16px;">New Document Signing Job Assigned</h2>
+        
+        <p style="color: #374151; line-height: 1.6;">
+          Hello <strong>${data.signerName}</strong>, you have been assigned to a new document signing job as a <strong>${data.signerRole || 'participant'}</strong> for <strong>${data.titleCompany}</strong>.
+        </p>
+        
+        ${actionRequired}
+        
+        <div style="background-color: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <h3 style="color: #1f2937; margin: 0 0 12px 0; font-size: 16px;">📋 Job Details:</h3>
+          <ul style="color: #4b5563; margin: 0; padding-left: 20px;">
+            <li><strong>Title Company:</strong> ${data.titleCompany}</li>
+            <li><strong>Closing Type:</strong> ${data.closingType || 'Document Signing'}</li>
+            <li><strong>Property:</strong> ${data.propertyAddress || 'Not specified'}</li>
+            <li><strong>Scheduled:</strong> ${data.scheduledDate && data.scheduledTime ? `${data.scheduledDate} at ${data.scheduledTime}` : 'To be scheduled'}</li>
+            <li><strong>Your Role:</strong> ${data.signerRole || 'Participant'}</li>
+            ${data.notaryName ? `<li><strong>Notary:</strong> ${data.notaryName}</li>` : ''}
+          </ul>
+        </div>
+        
+        <div style="text-align: center; margin: 24px 0;">
+          <a href="${primaryLink}" 
+             style="background-color: #2563eb; color: white; padding: 14px 28px; 
+                    text-decoration: none; border-radius: 8px; font-weight: 600; 
+                    display: inline-block; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    font-size: 16px;">
+            ${actionButton}
+          </a>
+        </div>
+        
+        <div style="background-color: #f0f9ff; border: 1px solid #3b82f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <h3 style="color: #1e40af; margin: 0 0 8px 0; font-size: 14px;">📌 Next Steps:</h3>
+          <ul style="color: #1e40af; margin: 0; padding-left: 20px; font-size: 14px;">
+            <li>Complete any required verification steps</li>
+            <li>Review the job details in your dashboard</li>
+            <li>Wait for the notary to start the live signing session</li>
+            <li>You'll receive a notification when the session begins</li>
+          </ul>
+        </div>
+        
+        <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
+          You can always access your jobs by logging into your <a href="${dashboardLink}" style="color: #2563eb;">dashboard</a>. 
+          If you have questions, please contact ${data.titleCompany} or reply to this email.
+        </p>
+    `;
+
+    await this.sendEmail({
+      to: data.signerEmail,
+      subject: `📋 New Signing Job - ${data.titleCompany} (${data.closingType})`,
+      html: this.getBaseTemplate(content),
+      text: `Hello ${data.signerName}, you have a new document signing job for ${data.titleCompany}. View details: ${primaryLink}`,
+      tag: 'signer-invitation-existing-user'
     });
   }
 

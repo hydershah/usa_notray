@@ -376,7 +376,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         companyId: user.companyId,
         companyName: companyInfo?.companyName || null,
         firstName: user.firstName,
-        lastName: user.lastName
+        lastName: user.lastName,
+        // CRITICAL: Add verification status for signers/witnesses to show proper UI
+        isVerified: user.isVerified || false,
+        isVerificationBypassed: user.isVerificationBypassed || false,
+        notaryVerificationBypassed: user.notaryVerificationBypassed || false,
+        verificationStatus: user.verificationStatus || 'pending',
+        needsVerification: (user.role === 'signer' || user.role === 'witness') && 
+                          !user.isVerified && 
+                          !user.isVerificationBypassed && 
+                          !user.notaryVerificationBypassed,
+        accountSetupComplete: user.accountSetupComplete || false
       });
     } catch (error) {
       console.error('Get user error:', error);
@@ -5790,6 +5800,90 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     }
   });
 
+  // Setup account with signer invitation token - PUBLIC endpoint (no auth required)
+  app.get('/api/signers/setup-account/:token', async (req, res) => {
+    try {
+      const { token } = req.params;
+      
+      if (!token) {
+        return res.status(400).json({ message: 'Invalid invitation token' });
+      }
+
+      // Find signer by invitation token
+      const result = await db
+        .select({
+          signer: signers,
+          job: jobs,
+          user: users
+        })
+        .from(signers)
+        .innerJoin(jobs, eq(signers.jobId, jobs.id))
+        .leftJoin(users, eq(signers.userId, users.id))
+        .where(eq(signers.invitationToken, token))
+        .limit(1);
+
+      if (!result || result.length === 0) {
+        return res.status(404).json({ message: 'Invalid or expired invitation token' });
+      }
+
+      const [data] = result;
+      
+      // Check if the job is still active
+      if (data.job.jobStatus === 'completed' || data.job.jobStatus === 'cancelled') {
+        return res.status(410).json({ 
+          message: 'This signing session has already been completed or cancelled' 
+        });
+      }
+
+      // Check if user account exists for this email
+      const [existingUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, data.signer.signerEmail))
+        .limit(1);
+
+      // Return setup information
+      res.json({
+        valid: true,
+        isNewUser: !existingUser,
+        accountSetupComplete: existingUser?.accountSetupComplete || false,
+        signer: {
+          id: data.signer.id,
+          signerName: data.signer.signerName,
+          signerEmail: data.signer.signerEmail,
+          signerRole: data.signer.signerRole,
+          userId: data.signer.userId,
+          signingStatus: data.signer.signingStatus
+        },
+        job: {
+          id: data.job.id,
+          titleCompany: data.job.titleCompany,
+          closingType: data.job.closingType,
+          propertyAddressOne: data.job.propertyAddressOne,
+          propertyCity: data.job.propertyCity,
+          propertyState: data.job.propertyState,
+          propertyZipCode: data.job.propertyZipCode,
+          selectedDate: data.job.selectedDate,
+          selectedTime: data.job.selectedTime,
+          jobStatus: data.job.jobStatus
+        },
+        user: existingUser ? {
+          id: existingUser.id,
+          email: existingUser.email,
+          firstName: existingUser.firstName,
+          lastName: existingUser.lastName,
+          role: existingUser.role,
+          isVerified: existingUser.isVerified,
+          accountSetupComplete: existingUser.accountSetupComplete,
+          needsVerification: !existingUser.isVerified && !existingUser.isVerificationBypassed && !existingUser.notaryVerificationBypassed
+        } : null
+      });
+    } catch (error) {
+      console.error('Setup account validation error:', error);
+      res.status(500).json({ message: 'Failed to validate setup token' });
+    }
+  });
+
   // Validate signer invitation token - PUBLIC endpoint (no auth required)
   app.get('/api/signers/validate-invitation/:token', async (req, res) => {
     try {
@@ -6354,10 +6448,44 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       const isAdmin = hasAdminPrivileges(updatedUser);
       const isNotary = hasNotaryPrivileges(updatedUser);
 
+      // CRITICAL FIX: Determine proper redirect based on user role
+      let redirectPath = '/dashboard';
+      let nextSteps = [];
+      
+      if (updatedUser.role === 'signer' || updatedUser.role === 'witness') {
+        // Signers/witnesses should go to dashboard first, not directly to signing
+        redirectPath = '/dashboard';
+        
+        // Check if they need ID verification
+        const needsVerification = !updatedUser.isVerified && 
+                                 !updatedUser.isVerificationBypassed && 
+                                 !updatedUser.notaryVerificationBypassed;
+        
+        if (needsVerification) {
+          nextSteps.push('Complete ID verification in your profile');
+          nextSteps.push('View your assigned signing job');
+          nextSteps.push('Join the signing session when ready');
+        } else {
+          nextSteps.push('View your assigned signing job in the dashboard');
+          nextSteps.push('Join the signing session when ready');
+        }
+      } else if (updatedUser.role === 'notary') {
+        redirectPath = '/dashboard';
+        nextSteps.push('Review your notary dashboard');
+      } else {
+        redirectPath = '/dashboard';
+      }
+
       res.json({ 
         message: 'Password set successfully',
         autoLogin: true,
         token: authToken,
+        // CRITICAL: Add redirect guidance for frontend
+        redirect: {
+          path: redirectPath,
+          reason: `Welcome ${updatedUser.firstName || updatedUser.username}! Account setup complete.`
+        },
+        nextSteps,
         user: {
           id: updatedUser.id,
           username: updatedUser.username,
@@ -6368,7 +6496,12 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           lastName: updatedUser.lastName,
           // Include privilege flags for easy frontend checking
           isAdmin,
-          isNotary
+          isNotary,
+          // Add verification status for frontend to show proper UI
+          needsVerification: !updatedUser.isVerified && 
+                           !updatedUser.isVerificationBypassed && 
+                           !updatedUser.notaryVerificationBypassed,
+          accountSetupComplete: true
         }
       });
     } catch (error) {

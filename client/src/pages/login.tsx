@@ -30,7 +30,7 @@ export default function Login() {
   const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState(false);
   
   const { toast } = useToast();
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, user } = useAuth();
 
   // Check for redirect reasons and show appropriate messages
   useEffect(() => {
@@ -77,10 +77,15 @@ export default function Login() {
 
   // Redirect if already authenticated
   useEffect(() => {
-    if (isAuthenticated) {
-      setLocation('/jobs');
+    if (isAuthenticated && user) {
+      // Role-based redirect: signers/witnesses to dashboard, others to jobs
+      if (user.role === 'signer' || user.role === 'witness') {
+        setLocation('/dashboard');
+      } else {
+        setLocation('/jobs');
+      }
     }
-  }, [isAuthenticated, setLocation]);
+  }, [isAuthenticated, user, setLocation]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,7 +119,13 @@ export default function Login() {
             title: "Welcome back!",
             description: "You have been logged in successfully.",
           });
-          setLocation('/jobs');
+          
+          // Role-based redirect: signers/witnesses to dashboard, others to jobs
+          if (data.user?.role === 'signer' || data.user?.role === 'witness') {
+            setLocation('/dashboard');
+          } else {
+            setLocation('/jobs');
+          }
         }
       } else {
         toast({
