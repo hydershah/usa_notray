@@ -306,6 +306,12 @@ export const useEditorStore = create<EditorStore>()(
         // Return default dimensions if no custom dimensions are set
         if (tagType === 'W') {
           return { width: 250, height: 40 };
+        } else if (tagType === 'S') {
+          // Signature tags should be smaller - more rectangular for signature images
+          return { width: 120, height: 35 };
+        } else if (tagType === 'E') {
+          // Seal tags should be more square-like for notary seals
+          return { width: 60, height: 60 };
         } else {
           return { width: 97, height: 26 };
         }

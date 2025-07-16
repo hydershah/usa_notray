@@ -337,10 +337,26 @@ const TagRenderer: React.FC<TagRendererProps> = ({
     return (
       <div 
         className="flex flex-col items-center justify-center w-full h-full p-1 cursor-pointer hover:opacity-80 transition-opacity"
-        onClick={() => {
+        onClick={(e) => {
+          console.log('🏷️ Tag content clicked in TagLayer:', {
+            tagId: tag.id,
+            mode: mode.mode,
+            isCompleted: tag.isCompleted,
+            canInteract,
+            clickDetail: e.detail
+          });
+          
           if (mode.mode === 'signing' && !tag.isCompleted) {
             if (canInteract && onTagClick) {
-              onTagClick(tag);
+              // Check if it's a double-click to open the modal
+              if (e.detail === 2) {
+                console.log('🎯 Double-click detected - triggering tag interaction for tag:', tag.id);
+                onTagClick(tag);
+              } else {
+                // Single-click: just select the tag
+                console.log('🔗 Single-click detected - selecting tag:', tag.id);
+                onSelect();
+              }
             } else {
               onSelect();
             }
@@ -376,7 +392,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         {mode.mode === 'signing' && (
           <div className="mt-0.5">
             <span className="text-xs opacity-70">
-              {interactionMessage || `Click to ${['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter'}`}
+              {interactionMessage || `Double-click to ${['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter'}`}
             </span>
           </div>
         )}
@@ -400,8 +416,23 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       enableResizing={canModifyTag && isSelected}
       onClick={(e) => {
         e.stopPropagation();
+        console.log('🏷️ Tag clicked in TagLayer:', {
+          tagId: tag.id,
+          mode: mode.mode,
+          isCompleted: tag.isCompleted,
+          clickDetail: e.detail
+        });
+        
         if (onTagClick && mode.mode === 'signing' && !tag.isCompleted) {
-          onTagClick(tag);
+          // Check if it's a double-click to open the modal
+          if (e.detail === 2) {
+            console.log('🎯 Double-click detected - triggering tag interaction for tag:', tag.id);
+            onTagClick(tag);
+          } else {
+            // Single-click: just select the tag
+            console.log('🔗 Single-click detected - selecting tag:', tag.id);
+            onSelect();
+          }
         } else {
           onSelect();
         }

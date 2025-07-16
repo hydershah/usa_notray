@@ -118,8 +118,8 @@ export default function JobDetailsPage() {
 
   const handleStartTagging = async () => {
     try {
-      // Navigate directly to editor page - session will be created there
-      setLocation(`/editor/${jobId}?mode=tagging`);
+      // Navigate directly to editor page in new tab - session will be created there
+      window.open(`/editor/${jobId}?mode=tagging`, '_blank');
     } catch (error) {
       console.error('Failed to start tagging:', error);
       toast({
@@ -132,8 +132,8 @@ export default function JobDetailsPage() {
 
   const handleStartLiveSession = async () => {
     try {
-      // Navigate to live signing session
-      setLocation(`/editor/${jobId}?mode=signing`);
+      // Navigate to live signing session in new tab
+      window.open(`/editor/${jobId}?mode=signing`, '_blank');
     } catch (error) {
       console.error('Failed to start live session:', error);
       toast({
@@ -370,7 +370,7 @@ export default function JobDetailsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={handleStartTagging}
+                        onClick={() => window.open(`/editor/${jobId}?mode=tagging`, '_blank')}
                         title="Tag document"
                       >
                         <Tag className="h-4 w-4" />

@@ -903,54 +903,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         metadata = { style: 'handwritten', vultrKey: uploadResult.fileKey };
         
       } else if (type === 'generated') {
-        // Handle generated signature
-        if (!text) {
-          return res.status(400).json({ message: 'Text is required for generated signatures' });
-        }
-        
-        try {
-          let buffer: Buffer;
-          let filename: string;
-          
-          try {
-            // Try to generate signature image using canvas (server-side)
-          const { createCanvas } = await import('canvas');
-          const canvas = createCanvas(400, 100);
-          const ctx = canvas.getContext('2d');
-          
-          ctx.fillStyle = 'white';
-          ctx.fillRect(0, 0, 400, 100);
-          
-          ctx.fillStyle = 'black';
-          ctx.font = `${fontSize || 48}px ${fontFamily || 'serif'}`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(text, 200, 50);
-          
-            buffer = canvas.toBuffer('image/png');
-            filename = `generated_${Date.now()}.png`;
-            
-            console.log(`✅ Successfully generated signature canvas for: ${text}`);
-          
-        } catch (canvasError) {
-            console.warn('Canvas generation failed, using SVG fallback:', canvasError);
-          
-          // Fallback: Create a simple SVG-based signature
-          const svgContent = `
-            <svg width="400" height="100" xmlns="http://www.w3.org/2000/svg">
-              <rect width="400" height="100" fill="white"/>
-              <text x="200" y="55" font-family="${fontFamily || 'serif'}" font-size="${fontSize || 48}" 
-                    text-anchor="middle" fill="black">${text}</text>
-            </svg>
-          `;
-          
-            filename = `generated_${Date.now()}.svg`;
-            buffer = Buffer.from(svgContent, 'utf8');
-          }
-          
+        // Handle generated signature (now sent as image file from client)
+        if (req.file) {
+          // Client-generated signature image (preferred method)
           const uploadResult = await VultrUploadHandler.handleSignatureUpload(
-            buffer,
-            filename,
+            req.file.buffer,
+            req.file.originalname,
             `user-${userId}`,
             userId,
             'signature'
@@ -964,14 +922,99 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           imageUrl = uploadResult.signedUrl || uploadResult.fileKey || '';
-          metadata = { fontFamily, fontSize, text, vultrKey: uploadResult.fileKey };
           
-        } catch (outerError) {
-          console.error('Signature generation failed completely:', outerError);
-          return res.status(500).json({ 
-            message: 'Failed to generate signature',
-            error: 'signature_generation_failed'
-          });
+          // Parse metadata if provided
+          try {
+            const metadataFromBody = req.body.metadata ? JSON.parse(req.body.metadata) : {};
+            metadata = { 
+              type: 'generated',
+              vultrKey: uploadResult.fileKey,
+              ...metadataFromBody
+            };
+          } catch (e) {
+            metadata = { 
+              type: 'generated',
+              vultrKey: uploadResult.fileKey
+            };
+          }
+          
+        } else {
+          // Fallback: Server-side generation (legacy)
+          if (!text) {
+            return res.status(400).json({ message: 'Text is required for generated signatures' });
+          }
+          
+          try {
+            let buffer: Buffer;
+            let filename: string;
+            
+            try {
+              // Try to generate signature image using canvas (server-side)
+            const { createCanvas } = await import('canvas');
+            const canvas = createCanvas(400, 100);
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, 400, 100);
+            
+            ctx.fillStyle = 'black';
+            ctx.font = `${fontSize || 48}px ${fontFamily || 'serif'}`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 200, 50);
+            
+              buffer = canvas.toBuffer('image/png');
+              filename = `generated_${Date.now()}.png`;
+              
+              console.log(`✅ Successfully generated signature canvas for: ${text}`);
+            
+          } catch (canvasError) {
+              console.warn('Canvas generation failed, using SVG fallback:', canvasError);
+            
+            // Fallback: Create a simple SVG-based signature
+            const svgContent = `
+              <svg width="400" height="100" xmlns="http://www.w3.org/2000/svg">
+                <rect width="400" height="100" fill="white"/>
+                <text x="200" y="55" font-family="${fontFamily || 'serif'}" font-size="${fontSize || 48}" 
+                      text-anchor="middle" fill="black">${text}</text>
+              </svg>
+            `;
+            
+              filename = `generated_${Date.now()}.svg`;
+              buffer = Buffer.from(svgContent, 'utf8');
+            }
+            
+            const uploadResult = await VultrUploadHandler.handleSignatureUpload(
+              buffer,
+              filename,
+              `user-${userId}`,
+              userId,
+              'signature'
+            );
+
+            if (!uploadResult.success) {
+              return res.status(500).json({ 
+                message: `Failed to upload generated signature: ${uploadResult.error}`,
+                error: 'vultr_upload_failed'
+              });
+            }
+
+            imageUrl = uploadResult.signedUrl || uploadResult.fileKey || '';
+            metadata = { 
+              type: 'generated', 
+              text, 
+              fontFamily, 
+              fontSize,
+              vultrKey: uploadResult.fileKey 
+            };
+            
+          } catch (error) {
+            console.error('Generate signature error:', error);
+            return res.status(500).json({ 
+              message: 'Failed to generate signature',
+              error: 'signature_generation_failed'
+            });
+          }
         }
       }
 

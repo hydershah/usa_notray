@@ -82,7 +82,12 @@ export const useTagOperations = (sessionId: string) => {
     
     // Get dimensions from store (includes custom dimensions if set by user)
     const storeDimensions = getTagDimensions(tagType as any);
-    const defaultDimensions = storeDimensions || (tagType === 'W' ? { width: 100, height: 25 } : { width: 97, height: 26 });
+    const defaultDimensions = storeDimensions || (
+      tagType === 'W' ? { width: 100, height: 25 } :
+      tagType === 'S' ? { width: 120, height: 35 } :
+      tagType === 'E' ? { width: 60, height: 60 } :
+      { width: 97, height: 26 }
+    );
     
     if (coordinates.x !== undefined) {
       sanitized.x = isFinite(coordinates.x) ? Math.round(coordinates.x) : 0;

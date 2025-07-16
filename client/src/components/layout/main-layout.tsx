@@ -1,5 +1,6 @@
 import { Header } from './header';
 import { Sidebar } from './sidebar';
+import { NotificationBar } from './notification-bar';
 import { useState } from 'react';
 import { Menu, X, ChevronRight, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -57,7 +58,8 @@ export function MainLayout({ children }: MainLayoutProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30">
       <Header />
-      <div className="flex h-[calc(100vh-4rem)]">
+      <NotificationBar />
+      <div className="flex h-[calc(100vh-8rem)]">
         {/* Mobile sidebar backdrop */}
         {sidebarOpen && (
           <div 

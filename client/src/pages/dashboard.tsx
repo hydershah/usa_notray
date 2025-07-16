@@ -551,8 +551,8 @@ function SignerDashboard() {
                                 throw new Error(errorData.message || 'Access denied to session');
                               }
 
-                              // Navigate to editor in signing mode
-                              setLocation(`/editor/${job.id}?mode=signing`);
+                              // Navigate to editor in signing mode in new tab
+                              window.open(`/editor/${job.id}?mode=signing`, '_blank');
                               
                               toast({
                                 title: "Joining Session",

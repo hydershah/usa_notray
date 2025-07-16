@@ -1254,8 +1254,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setLocation(`/editor/${job.id}?mode=tagging`);
-                    onClose();
+                    window.open(`/editor/${job.id}?mode=tagging`, '_blank');
                   }}
                   className="bg-orange-50 text-orange-600 border-orange-300 hover:bg-orange-100"
                 >
@@ -1293,9 +1292,8 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                         description: "Session is now active for signing with existing tags preserved",
                       });
 
-                      // Navigate to editor in signing mode with the correct session ID
-                      setLocation(`/editor/${job.id}?mode=signing&session=${actualSessionId}`);
-                      onClose();
+                      // Navigate to editor in signing mode with the correct session ID in new tab
+                      window.open(`/editor/${job.id}?mode=signing&session=${actualSessionId}`, '_blank');
 
                     } catch (error) {
                       console.error('❌ Failed to start live signing session:', error);
@@ -1312,6 +1310,58 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                   Start Live Signing
                 </Button>
               </>
+            )}
+            {(job.jobStatus === 'open' || job.jobStatus === 'pending') && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setConfirmationDialog({
+                    isOpen: true,
+                    title: 'Cancel Job',
+                    description: `Are you sure you want to cancel Job #${job.id}? This action cannot be undone.`,
+                    onConfirm: async () => {
+                      try {
+                        const response = await fetch(`/api/jobs/${job.id}/status`, {
+                          method: 'PUT',
+                          headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                            'Content-Type': 'application/json'
+                          },
+                          body: JSON.stringify({ status: 'cancelled' })
+                        });
+
+                        if (!response.ok) {
+                          throw new Error('Failed to cancel job');
+                        }
+
+                        toast({
+                          title: "Job Cancelled",
+                          description: `Job #${job.id} has been cancelled successfully.`,
+                        });
+
+                        if (onStatusUpdate) {
+                          onStatusUpdate('cancelled');
+                        }
+
+                        onClose();
+                      } catch (error) {
+                        console.error('Cancel job failed:', error);
+                        toast({
+                          variant: "destructive",
+                          title: "Cancel Failed",
+                          description: "Unable to cancel the job. Please try again.",
+                        });
+                      } finally {
+                        setConfirmationDialog(prev => ({ ...prev, isOpen: false }));
+                      }
+                    }
+                  });
+                }}
+                className="text-red-600 border-red-300 hover:bg-red-50"
+              >
+                <X className="h-4 w-4 mr-2" />
+                Cancel Job
+              </Button>
             )}
             <Button variant="outline" onClick={onClose}>
               Close

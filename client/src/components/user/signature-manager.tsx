@@ -347,6 +347,45 @@ export function SignatureManager({ userId, onSignatureSelect }: SignatureManager
     );
   };
 
+  const generateSignatureImage = (): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      // Create a canvas element to generate the signature image
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) {
+        reject(new Error('Could not get canvas context'));
+        return;
+      }
+
+      // Set canvas size
+      canvas.width = 400;
+      canvas.height = 150;
+
+      // Set white background
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Apply font styling - this will use the Google Fonts loaded in the browser
+      ctx.fillStyle = 'black';
+      ctx.font = `${fontSize}px ${selectedFont.value}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      // Draw the text
+      ctx.fillText(generatedText, canvas.width / 2, canvas.height / 2);
+
+      // Convert to blob
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error('Failed to generate signature image'));
+        }
+      }, 'image/png');
+    });
+  };
+
   const saveGeneratedSignature = async () => {
     if (!generatedText.trim() || !generateName.trim()) {
       toast({
@@ -359,19 +398,26 @@ export function SignatureManager({ userId, onSignatureSelect }: SignatureManager
 
     setIsProcessing(true);
     try {
+      // Generate the signature image on the client side
+      const imageBlob = await generateSignatureImage();
+      
+      // Create form data with the generated image
+      const formData = new FormData();
+      formData.append('signature', imageBlob, `generated_${Date.now()}.png`);
+      formData.append('name', generateName);
+      formData.append('type', 'generated');
+      formData.append('metadata', JSON.stringify({
+        text: generatedText,
+        fontFamily: selectedFont.value,
+        fontSize: fontSize
+      }));
+
       const response = await fetch(`/api/users/${userId}/signatures`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({
-          name: generateName,
-          type: 'generated',
-          text: generatedText,
-          fontFamily: selectedFont.value,
-          fontSize
-        })
+        body: formData
       });
 
       if (response.ok) {

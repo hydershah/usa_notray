@@ -203,19 +203,27 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           isCompleted: tag.isCompleted,
           hasOnTagClick: !!onTagClick,
           canEdit,
-          isSelected
+          isSelected,
+          clickDetail: e.detail
         });
         
         if (mode === 'signing' && onTagClick && !tag.isCompleted) {
-          // In signing mode, trigger interactive input for incomplete tags
-          const rect = e.currentTarget.getBoundingClientRect();
-          console.log('🎯 Triggering interactive input for tag:', tag.id);
-          onTagClick(tag, {
-            x: rect.left,
-            y: rect.top,
-            width: rect.width,
-            height: rect.height
-          });
+          // Check if it's a double-click to open the modal
+          if (e.detail === 2) {
+            // Double-click: trigger interactive input for incomplete tags
+            const rect = e.currentTarget.getBoundingClientRect();
+            console.log('🎯 Double-click detected - triggering interactive input for tag:', tag.id);
+            onTagClick(tag, {
+              x: rect.left,
+              y: rect.top,
+              width: rect.width,
+              height: rect.height
+            });
+          } else {
+            // Single-click: just select the tag
+            console.log('🔗 Single-click detected - selecting tag:', tag.id);
+            onSelect();
+          }
         } else {
           // In tagging mode or for completed tags, just select
           console.log('🔗 Selecting tag:', tag.id, 'onSelect function:', typeof onSelect);
@@ -435,7 +443,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
               {/* Interaction hint for signing mode */}
               <div className="mt-0.5">
                 <span className="text-xs opacity-70">
-                  Click to {['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter'}
+                  Double-click to {['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter'}
                 </span>
               </div>
             </>

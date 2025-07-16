@@ -22,13 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+
 import {
   Tooltip,
   TooltipContent,
@@ -61,7 +55,6 @@ import {
   ArrowDown,
   ChevronLeft,
   ChevronRight,
-  MoreHorizontal,
   FileText,
   Calendar,
   Building,
@@ -74,7 +67,6 @@ import {
   Activity,
   Trash2,
   RefreshCw,
-  Copy,
   ExternalLink,
   Briefcase,
   Zap,
@@ -832,7 +824,11 @@ export function JobTable({ onCreateJob }: JobTableProps) {
             // Grid View
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {paginatedJobs.map((job) => (
-                <Card key={job.id} className="group hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-2 border-gray-100 hover:border-blue-200">
+                <Card key={job.id} className={`group hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-2 ${
+                  job.jobStatus === 'cancelled' 
+                    ? 'bg-red-100 border-red-300 hover:border-red-400' 
+                    : 'border-gray-100 hover:border-blue-200'
+                }`}>
                   <CardHeader className="pb-4">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3">
@@ -841,29 +837,15 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                           onCheckedChange={(checked) => handleSelectJob(job.id, !!checked)}
                         />
                       </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleViewDetails(job)}>
-                            <Eye className="h-4 w-4 mr-2" />
-                            View Details
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => navigator.clipboard.writeText(`Job #${job.id}`)}>
-                            <Copy className="h-4 w-4 mr-2" />
-                            Copy Job ID
-                          </DropdownMenuItem>
-                          {job.uploadedFile && (
-                            <DropdownMenuItem onClick={() => handleDownload(job.id, 'original')}>
-                              <Download className="h-4 w-4 mr-2" />
-                              Download Original
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleViewDetails(job)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <Eye className="h-4 w-4 mr-2" />
+                        Job Details
+                      </Button>
                     </div>
                     <CardTitle className="text-lg font-semibold">
                       {job.internalReference || `Job #${job.id}`}
@@ -985,7 +967,9 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                     <TableRow 
                       key={job.id} 
                       className={`hover:bg-blue-50/50 transition-colors border-b border-gray-100 ${
-                        index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'
+                        job.jobStatus === 'cancelled' 
+                          ? 'bg-red-100 hover:bg-red-150' 
+                          : index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'
                       }`}
                     >
                       <TableCell className="py-4">
@@ -1061,47 +1045,15 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                         </div>
                       </TableCell>
                       <TableCell className="py-4">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              className="h-9 w-9 p-0 hover:bg-blue-50 hover:text-blue-600 transition-colors"
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuItem onClick={() => handleViewDetails(job)}>
-                              <Eye className="h-4 w-4 mr-2" />
-                              View Details
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => navigator.clipboard.writeText(`Job #${job.id}`)}>
-                              <Copy className="h-4 w-4 mr-2" />
-                              Copy Job ID
-                            </DropdownMenuItem>
-                            {job.uploadedFile && (
-                              <DropdownMenuItem onClick={() => handleDownload(job.id, 'original')}>
-                                <Download className="h-4 w-4 mr-2" />
-                                Download Original
-                              </DropdownMenuItem>
-                            )}
-                            {job.notarizedFile && (
-                              <DropdownMenuItem onClick={() => handleDownload(job.id, 'notarized')}>
-                                <Download className="h-4 w-4 mr-2 text-green-600" />
-                                Download Notarized
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem 
-                              onClick={() => updateStatusMutation.mutate({ jobId: job.id, status: 'cancelled' })}
-                              className="text-red-600"
-                            >
-                              <XCircle className="h-4 w-4 mr-2" />
-                              Cancel Job
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleViewDetails(job)}
+                          className="hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                        >
+                          <Eye className="h-4 w-4 mr-2" />
+                          Job Details
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
