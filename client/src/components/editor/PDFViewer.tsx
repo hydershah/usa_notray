@@ -371,15 +371,6 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                     return false;
                   };
                   
-                  console.log('🏷️ Tag content rendering debug:', {
-                    tagId: tag.id,
-                    tagType: tag.tagType,
-                    contentData,
-                    isImageContent: isImageContent(),
-                    valueType: typeof contentData?.value,
-                    valuePreview: typeof contentData?.value === 'string' ? contentData.value.substring(0, 100) : contentData?.value
-                  });
-                  
                   // If image failed to load or invalid, show text fallback
                   if (imageLoadError || !isImageContent()) {
                     return (
@@ -420,17 +411,37 @@ const TagRenderer: React.FC<TagRendererProps> = ({
               </div>
             )
           ) : (
-            // Incomplete tag - show clickable state
-            <div className="text-center">
-              <span className="text-lg mb-1 block">{tagInfo.icon}</span>
-              <span className="text-xs font-medium text-gray-700 block">
-                Click to {['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter'}
-              </span>
-              <span className="text-xs text-gray-500">{tagInfo.label}</span>
-            </div>
+            // Incomplete tag in signing mode - use SAME UI as tagging mode
+            <>
+              {/* Main tag content - SAME as tagging mode */}
+              <div className="flex items-center gap-1">
+                <span className="text-xs opacity-80">{tagInfo.icon}</span>
+                <span className="text-xs font-medium truncate">{tagInfo.label}</span>
+              </div>
+              
+              {/* User identification - extract from displayLabel - SAME as tagging mode */}
+              {tag.displayLabel && tag.displayLabel.includes(' - ') && (
+                <div className="flex items-center gap-1 mt-0.5 px-1 py-0.5 bg-white bg-opacity-70 rounded-full">
+                  <div 
+                    className="w-2 h-2 rounded-full border border-white shadow-sm" 
+                    style={{ backgroundColor: tag.colorCode }}
+                  />
+                  <span className="text-xs font-medium opacity-90 truncate">
+                    {tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
+                  </span>
+                </div>
+              )}
+              
+              {/* Interaction hint for signing mode */}
+              <div className="mt-0.5">
+                <span className="text-xs opacity-70">
+                  Click to {['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter'}
+                </span>
+              </div>
+            </>
           )
         ) : (
-          // Tagging mode: Show tag info
+          // Tagging mode: Show tag info - SAME UI as above
           <>
             {/* Main tag content */}
             <div className="flex items-center gap-1">
@@ -1453,8 +1464,12 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                   ))}
 
                   {/* Text inputs overlay (separate from regular tags) */}
-                  {textInputs?.filter(textInput => textInput.coordinates.pageNumber === pageNumber).map(textInput => (
-                    <div key={`text-${textInput.id}-${scaleFactor}`} className="absolute top-0 left-0 w-full h-full" style={{ pointerEvents: 'none' }}>
+                  {textInputs?.filter(textInput => textInput.coordinates.pageNumber === pageNumber).map((textInput) => {
+                    // Always use coordinate-based stable key to prevent unmount/remount during ID transition
+                    const stableKey = `text-stable-${textInput.coordinates.x}-${textInput.coordinates.y}-${textInput.coordinates.pageNumber}-${scaleFactor}`;
+                    
+                    return (
+                    <div key={stableKey} className="absolute top-0 left-0 w-full h-full" style={{ pointerEvents: 'none' }}>
                       <StreamlinedTextInput
                         id={textInput.id}
                         coordinates={textInput.coordinates}
@@ -1484,7 +1499,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                         }}
                       />
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );

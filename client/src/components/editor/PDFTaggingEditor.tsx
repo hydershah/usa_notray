@@ -82,6 +82,9 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     selectTextInput
   } = useStreamlinedTextInputs(sessionId);
 
+  // Flag to suppress global click handler after placing text input
+  const [justPlacedTextInput, setJustPlacedTextInput] = useState(false);
+
   // Store state - MOVED UP to fix initialization order
   const {
     session,
@@ -146,6 +149,13 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
   // Handle global clicks to deselect text inputs
   useEffect(() => {
     const handleGlobalClick = (e: MouseEvent) => {
+      // Suppress global click handler if text input was just placed
+      if (justPlacedTextInput) {
+        console.log('🎯 Suppressing global click handler - text input just placed');
+        setJustPlacedTextInput(false);
+        return;
+      }
+
       // Check if the click is outside any text input or control
       const target = e.target as HTMLElement;
       
@@ -168,7 +178,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     
     document.addEventListener('click', handleGlobalClick);
     return () => document.removeEventListener('click', handleGlobalClick);
-  }, [selectedTextInputId, selectTextInput]);
+  }, [selectedTextInputId, selectTextInput, justPlacedTextInput]);
 
   // Initialize session on mount
   useEffect(() => {
@@ -858,6 +868,14 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       if (selectedTagType === 'T') {
         console.log('📝 Placing streamlined text input...');
         console.log('Current text inputs before placement:', textInputs);
+        
+        // Set flag to suppress global click handler for the next click
+        setJustPlacedTextInput(true);
+        
+        // Safety timeout to reset flag in case the click handler is never triggered
+        setTimeout(() => {
+          setJustPlacedTextInput(false);
+        }, 2000);
         
         await placeTextInput({
           documentId: currentDocument.id,

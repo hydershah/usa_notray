@@ -121,9 +121,13 @@ export const StreamlinedTextLayer: React.FC<StreamlinedTextLayerProps> = ({
       onClick={handleLayerClick}
       className="streamlined-text-layer"
     >
-      {pageTextInputs.map((textInput) => (
+      {pageTextInputs.map((textInput) => {
+        // Always use coordinate-based stable key to prevent unmount/remount during ID transition
+        const stableKey = `text-stable-${textInput.coordinates.x}-${textInput.coordinates.y}-${textInput.coordinates.pageNumber}-${scaleFactor}`;
+        
+        return (
         <StreamlinedTextInput
-          key={textInput.id}
+          key={stableKey}
           id={textInput.id}
           coordinates={textInput.coordinates}
           sessionId={sessionId}
@@ -159,7 +163,8 @@ export const StreamlinedTextLayer: React.FC<StreamlinedTextLayerProps> = ({
             // Handle resize - could update state or call parent handler
           }}
         />
-      ))}
+        );
+      })}
     </div>
   );
 }; 

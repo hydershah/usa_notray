@@ -93,19 +93,33 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       console.log('📨 Server response for text input:', {
         tempId,
         realId: tag.id,
-        tagData: tag
+        tagData: tag,
+        serverContent: tag.content,
+        currentContent: textInputs.find(t => t.id === tempId)?.content
       });
       
-      // Replace optimistic text input with server response
-      setTextInputs(prev => prev.map(input => 
-        input.id === tempId 
-          ? {
-              ...input,
-              id: tag.id,
-              isNew: false // No longer new after server confirms
-            }
-          : input
-      ));
+      // Replace optimistic text input with server response while preserving user input
+      setTextInputs(prev => prev.map(input => {
+        if (input.id === tempId) {
+          console.log('🔄 Updating text input ID transition:', {
+            tempId,
+            newId: tag.id,
+            preservingContent: input.content,
+            serverContent: tag.content,
+            willPreserveUserContent: input.content !== ''
+          });
+          
+          return {
+            ...input, // Preserve user's current state (including any typed content)
+            id: tag.id, // Update to real server ID
+            // Keep isNew as true to maintain editing state until user finishes typing
+            isNew: input.content === '' ? true : false,
+            // Explicitly preserve content to prevent server overwrite - NEVER use server content if user has typed something
+            content: input.content !== '' ? input.content : tag.content || ''
+          };
+        }
+        return input;
+      }));
 
       setSelectedTextInputId(tag.id);
       pendingCreations.current.delete(tempId);
@@ -135,7 +149,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       // Update local state immediately
       setTextInputs(prev => prev.map(input => 
         input.id === textInputId 
-          ? { ...input, content, isNew: false }
+          ? { ...input, content, isNew: content.trim() === '' }
           : input
       ));
 

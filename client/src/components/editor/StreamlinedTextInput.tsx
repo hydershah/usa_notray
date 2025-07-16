@@ -49,8 +49,45 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
   onResize,
   onFontSizeChange
 }) => {
-  const [inputValue, setInputValue] = useState(content);
+  const [inputValue, setInputValueRaw] = useState(content);
+  
+  // Debug wrapper for setInputValue to track all calls
+  const setInputValue = (value: string) => {
+    console.log('📝 setInputValue called:', {
+      id,
+      from: inputValue,
+      to: value,
+      stack: new Error().stack?.split('\n')[2]?.trim() // Show where it was called from
+    });
+    setInputValueRaw(value);
+  };
   const [isEditing, setIsEditing] = useState(isNew); // Start editing if new
+  const [hasStartedEditing, setHasStartedEditing] = useState(isNew); // Track if user has started editing
+  const [lastSavedContent, setLastSavedContent] = useState(content); // Track last saved content to avoid resets
+  
+  // Debug: Track when inputValue changes
+  const prevInputValue = useRef(inputValue);
+  useEffect(() => {
+    if (prevInputValue.current !== inputValue) {
+      console.log('🎯 InputValue changed:', {
+        id,
+        from: prevInputValue.current,
+        to: inputValue,
+        isEditing,
+        hasStartedEditing,
+        content
+      });
+      prevInputValue.current = inputValue;
+    }
+  }, [inputValue, id, isEditing, hasStartedEditing, content]);
+
+  // Debug: Track component mount/unmount (CRITICAL for debugging text vanishing)
+  useEffect(() => {
+    console.log('🚀 StreamlinedTextInput MOUNTED:', id);
+    return () => {
+      console.log('💀 StreamlinedTextInput UNMOUNTED:', id);
+    };
+  }, [id]);
   const [isVisible, setIsVisible] = useState(true);
   const [isResizing, setIsResizing] = useState(false);
   const [position, setPosition] = useState({ 
@@ -76,14 +113,52 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     setDimensions({ width: coordinates.width, height: coordinates.height });
   }, [coordinates.x, coordinates.y, coordinates.width, coordinates.height]);
 
-  // Auto-focus on new text inputs
+  // Only update inputValue from content prop if user hasn't started editing or if it's a legitimate content update
+  useEffect(() => {
+    console.log('🔄 Content effect triggered:', {
+      id,
+      content,
+      lastSavedContent,
+      inputValue,
+      hasStartedEditing,
+      isEditing,
+      willPreserve: hasStartedEditing && isEditing && inputValue.trim() !== ''
+    });
+
+    // Don't reset inputValue if user is actively editing and has typed something
+    if (hasStartedEditing && isEditing && inputValue.trim() !== '') {
+      console.log('📝 Preserving user input during ID transition:', inputValue);
+      return;
+    }
+    
+    // Only update if the content actually changed (not just ID transition)
+    if (content !== lastSavedContent) {
+      console.log('📄 Content prop updated, syncing inputValue:', { from: lastSavedContent, to: content });
+      setInputValue(content);
+      setLastSavedContent(content);
+    }
+  }, [content, hasStartedEditing, isEditing, inputValue, lastSavedContent, id]);
+
+  // Auto-focus on new text inputs and maintain editing state
   useEffect(() => {
     if (isNew && inputRef.current) {
+      setIsEditing(true);
+      setHasStartedEditing(true);
       setTimeout(() => {
         inputRef.current?.focus();
       }, 100);
     }
   }, [isNew]);
+
+  // Maintain editing state even when isNew becomes false if user was editing
+  useEffect(() => {
+    if (hasStartedEditing && !isEditing && inputValue.trim() === '' && isSelected) {
+      setIsEditing(true);
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
+    }
+  }, [hasStartedEditing, isEditing, inputValue, isSelected]);
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -109,6 +184,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       // Cancel editing and restore original value
       setInputValue(content);
       setIsEditing(false);
+      setHasStartedEditing(false);
     }
   }, [isSelected, isEditing, isDeleted, content]);
 
@@ -160,6 +236,8 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       }
 
       setIsEditing(false);
+      setHasStartedEditing(false); // Reset editing flag after successful save
+      setLastSavedContent(trimmedValue); // Update last saved content to prevent resets
       onSave(trimmedValue);
       
       console.log(`✅ Text saved: "${trimmedValue}"`);
@@ -186,6 +264,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     
     // Cancel any ongoing editing
     setIsEditing(false);
+    setHasStartedEditing(false);
     
     // Clean up any pending operations
     onDelete();
@@ -353,6 +432,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     // Only start editing on double click or if it's a new input
     if (e.detail === 2 || isNew) {
       setIsEditing(true);
+      setHasStartedEditing(true);
       setTimeout(() => inputRef.current?.focus(), 50);
       console.log('✏️ Text tag editing started for:', id);
     }
@@ -370,6 +450,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       // Cancel editing and restore original value
       setInputValue(content);
       setIsEditing(false);
+      setHasStartedEditing(false);
     }
   }, [handleSave, content, isDeleted]);
 
@@ -379,9 +460,12 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     
     if (isEditing && inputValue !== content) {
       handleSave();
-    } else if (isEditing) {
+    } else if (isEditing && inputValue.trim() !== '') {
+      // Only stop editing if we have content, otherwise keep editing mode
       setIsEditing(false);
+      setHasStartedEditing(false);
     }
+    // If inputValue is empty, keep editing mode active for new inputs
   }, [isEditing, inputValue, content, handleSave, isDeleted]);
 
   // Calculate display properties
