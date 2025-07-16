@@ -24,7 +24,13 @@ import {
   CheckCircle,
   Award,
   Zap,
-  BarChart3
+  BarChart3,
+  Bell,
+  HelpCircle,
+  Download,
+  Clipboard,
+  UserCheck,
+  PenTool
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -48,7 +54,7 @@ const menuItems: MenuItem[] = [
     label: 'Dashboard',
     icon: Home,
     path: '/dashboard',
-    roles: ['admin', 'title_company', 'notary', 'client'],
+    roles: ['admin', 'title_company', 'notary', 'client', 'signer', 'witness'],
     section: 'work',
     description: 'Your main workspace'
   },
@@ -60,6 +66,15 @@ const menuItems: MenuItem[] = [
     roles: ['admin', 'title_company', 'notary', 'client'],
     section: 'work',
     description: 'Active & completed jobs'
+  },
+  {
+    id: 'signing-jobs',
+    label: 'My Signing Jobs',
+    icon: PenTool,
+    path: '/signing-jobs',
+    roles: ['signer', 'witness'],
+    section: 'work',
+    description: 'Your signing assignments'
   },
   {
     id: 'create-job',
@@ -86,9 +101,27 @@ const menuItems: MenuItem[] = [
     label: 'My Profile',
     icon: User,
     path: '/profile',
-    roles: ['admin', 'title_company', 'notary', 'client'],
+    roles: ['admin', 'title_company', 'notary', 'client', 'signer', 'witness'],
     section: 'personal',
     description: 'Profile, signatures & stamps'
+  },
+  {
+    id: 'my-documents',
+    label: 'My Documents',
+    icon: Download,
+    path: '/my-documents',
+    roles: ['signer', 'witness', 'client', 'notary'],
+    section: 'personal',
+    description: 'Your signed documents and downloads'
+  },
+  {
+    id: 'id-verification',
+    label: 'ID Verification',
+    icon: UserCheck,
+    path: '/id-verification',
+    roles: ['signer', 'witness', 'client'],
+    section: 'personal',
+    description: 'Identity verification and KYC'
   },
   {
     id: 'payments',
@@ -107,6 +140,26 @@ const menuItems: MenuItem[] = [
     roles: ['admin', 'title_company', 'notary', 'client', 'signer', 'witness'],
     section: 'personal',
     description: 'Your notarization history'
+  },
+  {
+    id: 'notifications',
+    label: 'Notifications',
+    icon: Bell,
+    path: '/notifications',
+    roles: ['signer', 'witness', 'client', 'notary', 'admin'],
+    section: 'personal',
+    description: 'Job updates and alerts'
+  },
+  
+  // Support
+  {
+    id: 'help-support',
+    label: 'Help & Support',
+    icon: HelpCircle,
+    path: '/help-support',
+    roles: ['signer', 'witness', 'client', 'notary', 'admin', 'title_company'],
+    section: 'support',
+    description: 'User guides and support'
   },
   
   // Management (Admin/Title Company)
@@ -234,6 +287,11 @@ const sectionTitles: Record<string, { title: string; icon: any; color: string }>
     title: 'Personal', 
     icon: User, 
     color: 'from-green-500 to-green-600' 
+  },
+  support: {
+    title: 'Support',
+    icon: HelpCircle,
+    color: 'from-amber-500 to-orange-500'
   },
   management: { 
     title: 'Management', 

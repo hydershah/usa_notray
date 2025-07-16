@@ -478,6 +478,46 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      <Route path="/signing-jobs">
+        <ProtectedRoute allowedRoles={['signer', 'witness']}>
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/signing-jobs")))}
+            </React.Suspense>
+          </ErrorBoundary>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/my-documents">
+        <ProtectedRoute allowedRoles={['signer', 'witness', 'client', 'notary']}>
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/my-documents")))}
+            </React.Suspense>
+          </ErrorBoundary>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/id-verification">
+        <ProtectedRoute allowedRoles={['signer', 'witness', 'client']}>
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/id-verification")))}
+            </React.Suspense>
+          </ErrorBoundary>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/notifications">
+        <ProtectedRoute>
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/notifications")))}
+            </React.Suspense>
+          </ErrorBoundary>
+        </ProtectedRoute>
+      </Route>
+
       {/* Default redirect */}
       <Route path="/">
         {(isAuthenticated && !isLoggingOut) ? <Redirect to="/dashboard" /> : <Redirect to="/login" />}

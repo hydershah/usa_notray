@@ -140,12 +140,25 @@ export function useAuth() {
     }
   };
 
+  const refetch = async () => {
+    try {
+      const userData = await authApi.getCurrentUser();
+      setUser(userData);
+      authApi.setStoredUser(userData);
+      return userData;
+    } catch (error) {
+      console.error('Failed to refetch user data:', error);
+      throw error;
+    }
+  };
+
   return {
     user,
     isLoading,
     isAuthenticated,
     isLoggingOut,
     login,
-    logout
+    logout,
+    refetch
   };
 }

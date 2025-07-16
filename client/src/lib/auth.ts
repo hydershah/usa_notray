@@ -17,6 +17,31 @@ export interface User {
   apiKey?: string;
   createdAt?: string;
   updatedAt?: string;
+  // Verification fields
+  isVerified?: boolean;
+  isVerificationBypassed?: boolean;
+  notaryVerificationBypassed?: boolean;
+  verificationStatus?: string;
+  needsVerification?: boolean;
+  accountSetupComplete?: boolean;
+  // EVS verification fields
+  evsVerifiedAt?: string;
+  evsTransactionId?: string;
+  evsVerificationConfidence?: number;
+  verificationImageFrontUrl?: string;
+  verificationImageBackUrl?: string;
+  verificationImageSelfieUrl?: string;
+  // KBA verification fields
+  kbaVerified?: boolean;
+  kbaVerificationDate?: string;
+  kbaScore?: number;
+  // Company fields for title company users
+  companyId?: number;
+  companyName?: string;
+  // Notary fields
+  notaryType?: string;
+  isAdmin?: boolean;
+  isNotary?: boolean;
 }
 
 export interface LoginCredentials {
@@ -123,5 +148,15 @@ export const authApi = {
     const token = localStorage.getItem('token');
     const user = localStorage.getItem('user');
     return !!(token && user);
+  },
+
+  getCurrentUser: async (): Promise<User> => {
+    const response = await apiRequest('GET', '/api/auth/me');
+    const userData = await response.json();
+    return userData;
+  },
+
+  setStoredUser: (user: User): void => {
+    localStorage.setItem('user', JSON.stringify(user));
   }
 };
