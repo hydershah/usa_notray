@@ -50,21 +50,25 @@ class EmailService {
     // 4. Default to localhost for development
     
     if (process.env.CLIENT_URL) {
+      console.log(`✅ Using configured CLIENT_URL: ${process.env.CLIENT_URL}`);
       return process.env.CLIENT_URL;
     }
     
     // Enhanced Railway.com detection with multiple domain support
     if (process.env.RAILWAY_STATIC_URL) {
+      console.log(`✅ Using Railway static URL: ${process.env.RAILWAY_STATIC_URL}`);
       return process.env.RAILWAY_STATIC_URL;
     }
     
     // Railway Public URL (custom domains)
     if (process.env.RAILWAY_PUBLIC_URL) {
+      console.log(`✅ Using Railway public URL: ${process.env.RAILWAY_PUBLIC_URL}`);
       return process.env.RAILWAY_PUBLIC_URL;
     }
     
     // Railway Service URL (auto-generated)
     if (process.env.RAILWAY_SERVICE_URL) {
+      console.log(`✅ Using Railway service URL: ${process.env.RAILWAY_SERVICE_URL}`);
       return process.env.RAILWAY_SERVICE_URL;
     }
     
@@ -74,44 +78,57 @@ class EmailService {
       const projectName = process.env.RAILWAY_PROJECT_NAME;
       
       // Handle different environment patterns
+      let constructedUrl;
       if (envName === 'production') {
-        return `https://${projectName}.up.railway.app`;
+        constructedUrl = `https://${projectName}.up.railway.app`;
       } else {
-        return `https://${projectName}-${envName}.up.railway.app`;
+        constructedUrl = `https://${projectName}-${envName}.up.railway.app`;
       }
+      console.log(`✅ Using constructed Railway URL: ${constructedUrl}`);
+      return constructedUrl;
     }
     
     // Auto-detect from common deployment platforms
     if (process.env.VERCEL_URL) {
-      return `https://${process.env.VERCEL_URL}`;
+      const vercelUrl = `https://${process.env.VERCEL_URL}`;
+      console.log(`✅ Using Vercel URL: ${vercelUrl}`);
+      return vercelUrl;
     }
     
     if (process.env.NETLIFY_URL) {
+      console.log(`✅ Using Netlify URL: ${process.env.NETLIFY_URL}`);
       return process.env.NETLIFY_URL;
     }
     
     if (process.env.RENDER_EXTERNAL_URL) {
+      console.log(`✅ Using Render URL: ${process.env.RENDER_EXTERNAL_URL}`);
       return process.env.RENDER_EXTERNAL_URL;
     }
     
     // Heroku detection
     if (process.env.HEROKU_APP_NAME) {
-      return `https://${process.env.HEROKU_APP_NAME}.herokuapp.com`;
+      const herokuUrl = `https://${process.env.HEROKU_APP_NAME}.herokuapp.com`;
+      console.log(`✅ Using Heroku URL: ${herokuUrl}`);
+      return herokuUrl;
     }
     
     // Generic environment detection
     if (process.env.APP_URL) {
+      console.log(`✅ Using APP_URL: ${process.env.APP_URL}`);
       return process.env.APP_URL;
     }
     
     if (process.env.FRONTEND_URL) {
+      console.log(`✅ Using FRONTEND_URL: ${process.env.FRONTEND_URL}`);
       return process.env.FRONTEND_URL;
     }
     
     // Build from HOST and PORT if available
     if (process.env.HOST && process.env.PORT) {
       const protocol = process.env.HTTPS === 'true' ? 'https' : 'http';
-      return `${protocol}://${process.env.HOST}:${process.env.PORT}`;
+      const hostUrl = `${protocol}://${process.env.HOST}:${process.env.PORT}`;
+      console.log(`✅ Using HOST:PORT URL: ${hostUrl}`);
+      return hostUrl;
     }
     
     // Development fallback
@@ -120,11 +137,14 @@ class EmailService {
     
     if (isProduction) {
       // Log warning for production without proper URL configuration
-      console.warn('⚠️ CLIENT_URL not configured for production environment. Using localhost fallback.');
+      console.warn('⚠️ CRITICAL: CLIENT_URL not configured for production environment!');
+      console.warn('⚠️ Please set CLIENT_URL environment variable to your production domain');
+      console.warn('⚠️ Email links may not work correctly without proper URL configuration');
       return 'https://localhost:3000'; // HTTPS for production
     }
     
     // Development default
+    console.log(`✅ Using development default: http://localhost:3002`);
     return 'http://localhost:3002'; // Updated to match your Vite dev server
   }
 
