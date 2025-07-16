@@ -75,3 +75,13 @@ export function getUserDisplayName(user: any): string {
   // Fall back to username
   return user.username || 'Unknown User';
 }
+
+export function isMobileDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+  
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent
+  ) || (
+    navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
+  );
+}

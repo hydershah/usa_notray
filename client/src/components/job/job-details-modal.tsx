@@ -51,7 +51,7 @@ import { JobCompletionReport } from '@/components/job/JobCompletionReport';
 import { JobStatus } from '@/types/job';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
+import { cn, isMobileDevice } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { SignerVerificationManager } from './SignerVerificationManager';
 
@@ -1292,8 +1292,16 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                         description: "Session is now active for signing with existing tags preserved",
                       });
 
-                      // Navigate to editor in signing mode with the correct session ID in new tab
-                      window.open(`/editor/${job.id}?mode=signing&session=${actualSessionId}`, '_blank');
+                      // Navigate to editor in signing mode with the correct session ID
+                      const signingUrl = `/editor/${job.id}?mode=signing&session=${actualSessionId}`;
+                      
+                      if (isMobileDevice()) {
+                        // For mobile devices, navigate in the same tab
+                        window.location.href = signingUrl;
+                      } else {
+                        // For desktop, open in new tab
+                        window.open(signingUrl, '_blank');
+                      }
 
                     } catch (error) {
                       console.error('❌ Failed to start live signing session:', error);

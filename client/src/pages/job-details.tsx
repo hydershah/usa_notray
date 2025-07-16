@@ -24,7 +24,7 @@ import {
   CheckCircle,
   Edit3
 } from 'lucide-react';
-import { getStatusColor, formatDate } from '@/lib/utils';
+import { getStatusColor, formatDate, isMobileDevice } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { JobCompletionReport } from '@/components/job/JobCompletionReport';
 
@@ -132,8 +132,16 @@ export default function JobDetailsPage() {
 
   const handleStartLiveSession = async () => {
     try {
-      // Navigate to live signing session in new tab
-      window.open(`/editor/${jobId}?mode=signing`, '_blank');
+      const signingUrl = `/editor/${jobId}?mode=signing`;
+      
+      // Navigate based on device type
+      if (isMobileDevice()) {
+        // For mobile devices, navigate in the same tab
+        window.location.href = signingUrl;
+      } else {
+        // For desktop, open in new tab
+        window.open(signingUrl, '_blank');
+      }
     } catch (error) {
       console.error('Failed to start live session:', error);
       toast({

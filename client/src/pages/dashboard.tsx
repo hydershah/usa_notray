@@ -5,7 +5,7 @@ import { useLocation } from 'wouter';
 import { useState, useEffect } from 'react';
 import { Link } from 'wouter';
 import { type Job } from '@shared/types';
-import { getStatusColor } from '@/lib/utils';
+import { getStatusColor, isMobileDevice } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { 
   User,
@@ -540,7 +540,16 @@ function SignerDashboard() {
                           className="bg-blue-600 hover:bg-blue-700"
                           onClick={async () => {
                             try {
-                              // First check if user has access to this job session
+                              // For mobile devices, prepare the window reference before async operations
+                              const isMobile = isMobileDevice();
+                              let newWindow: Window | null = null;
+                              
+                              if (!isMobile) {
+                                // For desktop, prepare the window reference before the async call
+                                newWindow = window.open('about:blank', '_blank');
+                              }
+
+                              // Check if user has access to this job session
                               const token = localStorage.getItem('token');
                               const sessionAccessResponse = await fetch(`/api/jobs/${job.id}/session-access`, {
                                 headers: { 'Authorization': `Bearer ${token}` }
@@ -548,11 +557,28 @@ function SignerDashboard() {
 
                               if (!sessionAccessResponse.ok) {
                                 const errorData = await sessionAccessResponse.json();
+                                // Close the prepared window if it was opened
+                                if (newWindow) {
+                                  newWindow.close();
+                                }
                                 throw new Error(errorData.message || 'Access denied to session');
                               }
 
-                              // Navigate to editor in signing mode in new tab
-                              window.open(`/editor/${job.id}?mode=signing`, '_blank');
+                              const signingUrl = `/editor/${job.id}?mode=signing`;
+                              
+                              // Navigate based on device type
+                              if (isMobile) {
+                                // For mobile devices, navigate in the same tab
+                                window.location.href = signingUrl;
+                              } else {
+                                // For desktop, use the prepared window
+                                if (newWindow) {
+                                  newWindow.location.href = signingUrl;
+                                } else {
+                                  // Fallback if window.open failed
+                                  window.open(signingUrl, '_blank');
+                                }
+                              }
                               
                               toast({
                                 title: "Joining Session",
