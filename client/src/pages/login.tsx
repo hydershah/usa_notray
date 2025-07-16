@@ -78,7 +78,7 @@ export default function Login() {
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      setLocation('/dashboard');
+      setLocation('/jobs');
     }
   }, [isAuthenticated, setLocation]);
 
@@ -114,7 +114,7 @@ export default function Login() {
             title: "Welcome back!",
             description: "You have been logged in successfully.",
           });
-          setLocation('/dashboard');
+          setLocation('/jobs');
         }
       } else {
         toast({

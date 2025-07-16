@@ -1099,16 +1099,11 @@ export class DatabaseStorage implements IStorage {
       return signatures.map(sig => ({
         id: sig.id.toString(),
         userId: sig.userId,
-        name: sig.signatureType, // Use signatureType as name for now
-        type: sig.format,
-        imageUrl: sig.data,
-        metadata: {
-          format: sig.format,
-          signatureType: sig.signatureType,
-          ipAddress: sig.ipAddress,
-          userAgent: sig.userAgent
-        },
-        isDefault: false, // We'll need to track this separately
+        name: sig.name || 'Unnamed Signature',
+        type: sig.type, // 'uploaded', 'drawn', 'generated'
+        imageUrl: sig.imageUrl,
+        metadata: sig.metadata || {},
+        isDefault: sig.isDefault || false,
         createdAt: sig.createdAt
       }));
     } catch (error) {
@@ -1123,13 +1118,12 @@ export class DatabaseStorage implements IStorage {
         .insert(userSignatures)
         .values({
           userId: signature.userId,
-          signatureType: signature.type === 'uploaded' ? 'signature' : 
-                        signature.type === 'drawn' ? 'signature' :
-                        signature.type === 'generated' ? 'signature' : 'signature',
-          format: signature.type === 'uploaded' ? 'upload' :
-                  signature.type === 'drawn' ? 'draw' :
-                  signature.type === 'generated' ? 'type' : 'upload',
-          data: signature.imageUrl || signature.content || '',
+          name: signature.name,
+          signatureType: signature.signatureType || 'signature',
+          type: signature.type, // 'uploaded', 'drawn', 'generated'
+          imageUrl: signature.imageUrl,
+          metadata: signature.metadata || {},
+          isDefault: signature.isDefault || false,
           ipAddress: signature.ipAddress || null,
           userAgent: signature.userAgent || null
         })
@@ -1139,11 +1133,11 @@ export class DatabaseStorage implements IStorage {
       return {
         id: newSignature.id.toString(),
         userId: newSignature.userId,
-        name: signature.name || 'New Signature',
-        type: signature.type,
-        imageUrl: signature.imageUrl,
-        metadata: signature.metadata || {},
-        isDefault: false,
+        name: newSignature.name,
+        type: newSignature.type,
+        imageUrl: newSignature.imageUrl,
+        metadata: newSignature.metadata || {},
+        isDefault: newSignature.isDefault,
         createdAt: newSignature.createdAt
       };
     } catch (error) {
@@ -1153,9 +1147,29 @@ export class DatabaseStorage implements IStorage {
   }
 
   async setDefaultSignature(userId: number, signatureId: string): Promise<void> {
-    // For now, we'll handle default signatures in the user profile
-    // This could be implemented by adding a default_signature_id field to users table
-    console.log(`Setting default signature ${signatureId} for user ${userId}`);
+    try {
+      // First, unset any existing default signatures for this user
+      await db
+        .update(userSignatures)
+        .set({ isDefault: false })
+        .where(eq(userSignatures.userId, userId));
+
+      // Then set the specified signature as default
+      await db
+        .update(userSignatures)
+        .set({ isDefault: true })
+        .where(
+          and(
+            eq(userSignatures.userId, userId),
+            eq(userSignatures.id, parseInt(signatureId))
+          )
+        );
+        
+      console.log(`Set signature ${signatureId} as default for user ${userId}`);
+    } catch (error) {
+      console.error('Error setting default signature:', error);
+      throw error;
+    }
   }
 
   async deleteUserSignature(userId: number, signatureId: string): Promise<void> {
@@ -1168,6 +1182,8 @@ export class DatabaseStorage implements IStorage {
             eq(userSignatures.id, parseInt(signatureId))
           )
         );
+        
+      console.log(`Deleted signature ${signatureId} for user ${userId}`);
     } catch (error) {
       console.error('Error deleting user signature:', error);
       throw error;

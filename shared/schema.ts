@@ -369,9 +369,12 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
 export const userSignatures = pgTable("user_signatures", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id).notNull(),
+  name: text("name").notNull(), // User-provided name for the signature
   signatureType: varchar("signature_type", { length: 20 }).notNull(), // 'signature' or 'initials'
-  format: varchar("format", { length: 20 }).notNull(), // 'draw', 'type', 'upload'
-  data: text("data").notNull(), // base64 image or text
+  type: varchar("type", { length: 20 }).notNull(), // 'uploaded', 'drawn', 'generated'
+  imageUrl: text("image_url").notNull(), // Vultr URL or base64 data
+  metadata: jsonb("metadata"), // Additional metadata (font, style, etc.)
+  isDefault: boolean("is_default").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   ipAddress: varchar("ip_address", { length: 45 }),
   userAgent: text("user_agent"),

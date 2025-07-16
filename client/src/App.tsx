@@ -149,7 +149,7 @@ function Router() {
     <Switch>
       {/* Public routes */}
       <Route path="/login">
-        {(isAuthenticated && !isLoggingOut) ? <Redirect to="/dashboard" /> : <Login />}
+        {(isAuthenticated && !isLoggingOut) ? <Redirect to="/jobs" /> : <Login />}
       </Route>
 
       {/* Sign page route - public for signer invitations */}

@@ -226,193 +226,162 @@ const TagRenderer: React.FC<TagRendererProps> = ({
 
   // Render tag content based on mode and completion status
   const renderTagContent = () => {
-    if (mode.mode === 'tagging' || (!tag.isCompleted && mode.mode !== 'signing')) {
-      // Show placeholder content in tagging mode
-      const tagInfo = TAG_TYPE_INFO[tag.tagType];
-      const userInfo = extractUserFromTag(tag, session);
+    const tagInfo = TAG_TYPE_INFO[tag.tagType];
+    const userInfo = extractUserFromTag(tag, session);
+    
+    // For completed tags in signing mode, show the actual content
+    if (mode.mode === 'signing' && tag.isCompleted && tag.contentData) {
+      // Show completed content as plain text/image without any styling
+      let contentData;
+      try {
+        contentData = typeof tag.contentData === 'string' ? 
+          JSON.parse(tag.contentData) : tag.contentData;
+      } catch (e) {
+        console.error('Failed to parse contentData in TagLayer:', e);
+        contentData = tag.contentData;
+      }
       
+      // Enhanced image detection logic
+      const isImageContent = () => {
+        // Check if tag type is inherently image-based
+        if (['S', 'I', 'E'].includes(tag.tagType)) {
+          return true; // Signature, Initials, Seal are always images
+        }
+        
+        // Check contentData type
+        if (contentData?.type && ['signature', 'initials', 'seal', 'stamp'].includes(contentData.type)) {
+          return true;
+        }
+        
+        // Check if value looks like an image URL/data
+        if (contentData?.value && typeof contentData.value === 'string') {
+          return (
+            contentData.value.startsWith('data:image/') ||
+            contentData.value.startsWith('http') ||
+            contentData.value.includes('vultrobjects.com') ||
+            contentData.value.includes('.png') ||
+            contentData.value.includes('.jpg') ||
+            contentData.value.includes('.jpeg') ||
+            contentData.value.includes('.webp')
+          );
+        }
+        
+        return false;
+      };
+
       return (
-        <div className="flex flex-col items-center justify-center w-full h-full p-1">
-          {/* Main tag content */}
-          <div className="flex items-center gap-1">
-            <span className="text-xs opacity-80">{tagInfo.icon}</span>
-            <span className="text-xs font-medium truncate">{tagInfo.label}</span>
-          </div>
-          
-          {/* User identification */}
-          {userInfo && (
-            <div className="flex items-center gap-1 mt-0.5 px-1 py-0.5 bg-white bg-opacity-70 rounded-full">
-              <div 
-                className="w-2 h-2 rounded-full border border-white shadow-sm" 
-                style={{ backgroundColor: userInfo.colorCode }}
-              />
-              <span className="text-xs font-medium opacity-90 truncate">
-                {userInfo.name}
-              </span>
+        <div className="w-full h-full flex items-center justify-center">
+          {isImageContent() ? (
+            <img 
+              src={contentData.value} 
+              alt={contentData.type === 'signature' ? 'Signature' : 
+                   contentData.type === 'initials' ? 'Initials' : 
+                   contentData.type === 'seal' || contentData.type === 'stamp' ? 'Notary Seal' : 'Image'} 
+              className="max-h-full max-w-full object-contain"
+              style={{ 
+                filter: 'none',
+                maxHeight: '100%',
+                maxWidth: '100%'
+              }}
+              onError={(e) => {
+                console.error('🖼️ Image failed to load in TagLayer:', contentData.value);
+                // Fallback to text if image fails to load
+                e.currentTarget.style.display = 'none';
+                const parent = e.currentTarget.parentElement;
+                if (parent) {
+                  parent.innerHTML = `<div class="text-red-500 text-xs p-1">Image failed to load</div>`;
+                }
+              }}
+            />
+          ) : (
+            <div 
+              className="text-black w-full h-full flex items-center justify-center p-1"
+              style={{ 
+                fontSize: Math.max(10, Math.min(16, tag.coordinates.height * 0.6)),
+                lineHeight: '1.2',
+                wordBreak: 'break-word',
+                fontFamily: 'inherit'
+              }}
+            >
+              {typeof contentData.value === 'string' ? contentData.value : JSON.stringify(contentData.value)}
             </div>
           )}
         </div>
       );
-    } else if (mode.mode === 'signing') {
-      // In live signing mode, show interactive input or completed content
-      if (tag.isCompleted && tag.contentData) {
-        // Show completed content as plain text/image without any styling
-        let contentData;
-        try {
-          contentData = typeof tag.contentData === 'string' ? 
-            JSON.parse(tag.contentData) : tag.contentData;
-        } catch (e) {
-          console.error('Failed to parse contentData in TagLayer:', e);
-          contentData = tag.contentData;
-        }
-        
-        // Enhanced image detection logic
-        const isImageContent = () => {
-          // Check if tag type is inherently image-based
-          if (['S', 'I', 'E'].includes(tag.tagType)) {
-            return true; // Signature, Initials, Seal are always images
-          }
-          
-          // Check contentData type
-          if (contentData?.type && ['signature', 'initials', 'seal', 'stamp'].includes(contentData.type)) {
-            return true;
-          }
-          
-          // Check if value looks like an image URL/data
-          if (contentData?.value && typeof contentData.value === 'string') {
-            return (
-              contentData.value.startsWith('data:image/') ||
-              contentData.value.startsWith('http') ||
-              contentData.value.includes('vultrobjects.com') ||
-              contentData.value.includes('.png') ||
-              contentData.value.includes('.jpg') ||
-              contentData.value.includes('.jpeg') ||
-              contentData.value.includes('.webp')
-            );
-          }
-          
-          return false;
-        };
-
-        return (
-          <div className="w-full h-full flex items-center justify-center">
-            {isImageContent() ? (
-              <img 
-                src={contentData.value} 
-                alt={contentData.type === 'signature' ? 'Signature' : 
-                     contentData.type === 'initials' ? 'Initials' : 
-                     contentData.type === 'seal' || contentData.type === 'stamp' ? 'Notary Seal' : 'Image'} 
-                className="max-h-full max-w-full object-contain"
-                style={{ 
-                  filter: 'none',
-                  maxHeight: '100%',
-                  maxWidth: '100%'
-                }}
-                onError={(e) => {
-                  console.error('🖼️ Image failed to load in TagLayer:', contentData.value);
-                  // Fallback to text if image fails to load
-                  e.currentTarget.style.display = 'none';
-                  const parent = e.currentTarget.parentElement;
-                  if (parent) {
-                    parent.innerHTML = `<div class="text-red-500 text-xs p-1">Image failed to load</div>`;
-                  }
-                }}
-              />
-            ) : (
-              <div 
-                className="text-black w-full h-full flex items-center justify-center p-1"
-                style={{ 
-                  fontSize: Math.max(10, Math.min(16, tag.coordinates.height * 0.6)),
-                  lineHeight: '1.2',
-                  wordBreak: 'break-word',
-                  fontFamily: 'inherit'
-                }}
-              >
-                {typeof contentData.value === 'string' ? contentData.value : JSON.stringify(contentData.value)}
-              </div>
-            )}
-          </div>
-        );
-      } else {
-        // Incomplete tag - show clickable placeholder with proper signer restrictions
-        const tagInfo = TAG_TYPE_INFO[tag.tagType];
-        const isNotary = currentUser && (currentUser.role === 'notary' || currentUser.userType === 'notary');
-        const isSigner = currentUser && (currentUser.role === 'signer' || currentUser.userType === 'signer');
-        const isAssignedToCurrentUser = currentUser && tag.assignedUserId === currentUser.userId;
-        const isUniversalTag = ['T', 'D'].includes(tag.tagType);
-        
-        // Determine tag interaction state for signers
-        let tagState: 'active' | 'inactive' | 'forbidden';
-        let backgroundColor = 'bg-blue-100';
-        let borderColor = 'border-blue-300';
-        let textColor = 'text-blue-700';
-        let hoverEffect = 'hover:bg-blue-200';
-        let cursor = 'cursor-pointer';
-        let clickable = true;
-        
-        if (isSigner) {
-          if (!isAssignedToCurrentUser && !isUniversalTag) {
-            // Tag assigned to someone else
-            tagState = 'forbidden';
-            backgroundColor = 'bg-gray-100';
-            borderColor = 'border-gray-300';
-            textColor = 'text-gray-500';
-            hoverEffect = '';
-            cursor = 'cursor-not-allowed';
-            clickable = false;
-          } else {
-            // Tag assigned to signer, but check if they're active
-            const isActiveUser = canUserInteractWithTags();
-            tagState = isActiveUser ? 'active' : 'inactive';
-            
-            if (!isActiveUser) {
-              backgroundColor = 'bg-yellow-100';
-              borderColor = 'border-yellow-300';
-              textColor = 'text-yellow-700';
-              hoverEffect = 'hover:bg-yellow-200';
-            }
-          }
-        } else if (isNotary) {
-          // Notary can always interact
-          tagState = 'active';
-        }
-        
-        return (
-          <div 
-            className={`w-full h-full flex items-center justify-center ${backgroundColor} border-2 ${borderColor} rounded ${cursor} ${hoverEffect} transition-colors`}
-            onClick={() => clickable && onTagClick ? onTagClick(tag) : onSelect()}
-          >
-            <div className="text-center p-1">
-              <div className="flex items-center gap-1 justify-center mb-1">
-                <span className="text-lg">{tagInfo.icon}</span>
-                {isSigner && tagState === 'inactive' && (
-                  <span className="text-xs">🔒</span>
-                )}
-                {isSigner && tagState === 'forbidden' && (
-                  <span className="text-xs">❌</span>
-                )}
-              </div>
-              <span className={`text-xs font-medium ${textColor} block`}>
-                {isSigner && tagState === 'inactive' 
-                  ? 'Wait for activation'
-                  : isSigner && tagState === 'forbidden'
-                  ? 'Not your tag'
-                  : `Click to ${['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter'}`
-                }
-              </span>
-              <span className={`text-xs ${textColor}`}>{tagInfo.label}</span>
-            </div>
-          </div>
-        );
-      }
-    } else {
-      // Fallback
-      return (
-        <div className="w-full h-full flex items-center justify-center">
-          <span className="text-xs text-gray-700">Content</span>
-        </div>
-      );
     }
+    
+    // For incomplete tags (both tagging and signing mode), show the SAME rich UI
+    // But handle click restrictions for signing mode
+    const isNotary = currentUser && (currentUser.role === 'notary' || currentUser.userType === 'notary');
+    const isSigner = currentUser && (currentUser.role === 'signer' || currentUser.userType === 'signer');
+    const isAssignedToCurrentUser = currentUser && tag.assignedUserId === currentUser.userId;
+    const isUniversalTag = ['T', 'D'].includes(tag.tagType);
+    
+    // Determine interaction state for signing mode
+    let canInteract = true;
+    let interactionMessage = '';
+    let statusIcon = '';
+    
+    if (mode.mode === 'signing' && isSigner) {
+      if (!isAssignedToCurrentUser && !isUniversalTag) {
+        canInteract = false;
+        interactionMessage = 'Not your tag';
+        statusIcon = '❌';
+      } else if (!canUserInteractWithTags()) {
+        canInteract = false;
+        interactionMessage = 'Wait for activation';
+        statusIcon = '🔒';
+      }
+    }
+    
+    return (
+      <div 
+        className="flex flex-col items-center justify-center w-full h-full p-1 cursor-pointer hover:opacity-80 transition-opacity"
+        onClick={() => {
+          if (mode.mode === 'signing' && !tag.isCompleted) {
+            if (canInteract && onTagClick) {
+              onTagClick(tag);
+            } else {
+              onSelect();
+            }
+          } else {
+            onSelect();
+          }
+        }}
+      >
+        {/* Main tag content - SAME for both tagging and signing mode */}
+        <div className="flex items-center gap-1">
+          <span className="text-xs opacity-80">{tagInfo.icon}</span>
+          <span className="text-xs font-medium truncate">{tagInfo.label}</span>
+          {/* Show status icon in signing mode for restricted tags */}
+          {mode.mode === 'signing' && statusIcon && (
+            <span className="text-xs">{statusIcon}</span>
+          )}
+        </div>
+        
+        {/* User identification - SAME for both modes */}
+        {userInfo && (
+          <div className="flex items-center gap-1 mt-0.5 px-1 py-0.5 bg-white bg-opacity-70 rounded-full">
+            <div 
+              className="w-2 h-2 rounded-full border border-white shadow-sm" 
+              style={{ backgroundColor: userInfo.colorCode }}
+            />
+            <span className="text-xs font-medium opacity-90 truncate">
+              {userInfo.name}
+            </span>
+          </div>
+        )}
+        
+        {/* Show interaction hint in signing mode */}
+        {mode.mode === 'signing' && (
+          <div className="mt-0.5">
+            <span className="text-xs opacity-70">
+              {interactionMessage || `Click to ${['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter'}`}
+            </span>
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (

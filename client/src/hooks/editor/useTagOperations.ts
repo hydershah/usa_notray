@@ -61,42 +61,6 @@ const validateCoordinates = (coordinates: Partial<TagCoordinates>): boolean => {
   return true;
 };
 
-// Sanitize coordinates to ensure valid values
-const sanitizeCoordinates = (coordinates: Partial<TagCoordinates>, tagType?: string): Partial<TagCoordinates> => {
-  const sanitized: Partial<TagCoordinates> = {};
-  
-  // Get default dimensions based on tag type
-  const getDefaultDimensions = (type?: string) => {
-    if (type === 'W') {
-      // Whiteout tags - smaller default size, user can resize as needed
-      return { width: 100, height: 25 };
-    } else {
-      // All tags use compact size for consistency
-      return { width: 97, height: 26 };
-    }
-  };
-  
-  const defaultDimensions = getDefaultDimensions(tagType);
-  
-  if (coordinates.x !== undefined) {
-    sanitized.x = isFinite(coordinates.x) ? Math.round(coordinates.x) : 0;
-  }
-  if (coordinates.y !== undefined) {
-    sanitized.y = isFinite(coordinates.y) ? Math.round(coordinates.y) : 0;
-  }
-  if (coordinates.width !== undefined) {
-    sanitized.width = isFinite(coordinates.width) && coordinates.width > 0 ? Math.round(coordinates.width) : defaultDimensions.width;
-  }
-  if (coordinates.height !== undefined) {
-    sanitized.height = isFinite(coordinates.height) && coordinates.height > 0 ? Math.round(coordinates.height) : defaultDimensions.height;
-  }
-  if (coordinates.pageNumber !== undefined) {
-    sanitized.pageNumber = isFinite(coordinates.pageNumber) ? Math.round(coordinates.pageNumber) : 1;
-  }
-  
-  return sanitized;
-};
-
 export const useTagOperations = (sessionId: string) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const pendingOperations = useRef<TagOperation[]>([]);
@@ -108,8 +72,36 @@ export const useTagOperations = (sessionId: string) => {
     selectedUser,
     currentDocument,
     setCustomTagDimensions,
+    getTagDimensions,
     tags
   } = useEditorStore();
+
+  // Sanitize coordinates to ensure valid values
+  const sanitizeCoordinates = (coordinates: Partial<TagCoordinates>, tagType?: string): Partial<TagCoordinates> => {
+    const sanitized: Partial<TagCoordinates> = {};
+    
+    // Get dimensions from store (includes custom dimensions if set by user)
+    const storeDimensions = getTagDimensions(tagType as any);
+    const defaultDimensions = storeDimensions || (tagType === 'W' ? { width: 100, height: 25 } : { width: 97, height: 26 });
+    
+    if (coordinates.x !== undefined) {
+      sanitized.x = isFinite(coordinates.x) ? Math.round(coordinates.x) : 0;
+    }
+    if (coordinates.y !== undefined) {
+      sanitized.y = isFinite(coordinates.y) ? Math.round(coordinates.y) : 0;
+    }
+    if (coordinates.width !== undefined) {
+      sanitized.width = isFinite(coordinates.width) && coordinates.width > 0 ? Math.round(coordinates.width) : defaultDimensions.width;
+    }
+    if (coordinates.height !== undefined) {
+      sanitized.height = isFinite(coordinates.height) && coordinates.height > 0 ? Math.round(coordinates.height) : defaultDimensions.height;
+    }
+    if (coordinates.pageNumber !== undefined) {
+      sanitized.pageNumber = isFinite(coordinates.pageNumber) ? Math.round(coordinates.pageNumber) : 1;
+    }
+    
+    return sanitized;
+  };
 
   // Debounced individual save to existing single-tag endpoints
   const debouncedSave = useRef(

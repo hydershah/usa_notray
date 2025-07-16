@@ -305,13 +305,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userData = insertUserSchema.parse(req.body);
       
       // Check if user already exists
-      const existingUser = await storage.getUserByEmail(userData.email as string);
+      const existingUser = await storage.getUserByEmail(userData.email);
       if (existingUser) {
         return res.status(400).json({ message: 'User already exists' });
       }
 
       // Hash password
-      const hashedPassword = await bcrypt.hash(userData.password as string, 10);
+      const hashedPassword = await bcrypt.hash(userData.password, 10);
       
       const user = await storage.createUser({
         ...userData,
@@ -6409,12 +6409,16 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
 
       try {
         // Upload front image
-        const frontResult = await VultrUploadHandler.handleSignatureUpload(
+        const frontResult = await VultrUploadHandler.handleJobDocumentUpload(
           files.frontImage[0].buffer,
           `front-id-${userId}-${Date.now()}.jpg`,
-          sessionId,
+          999999, // Special job ID for verification images
           parseInt(userId),
-          'id_verification'
+          {
+            documentType: 'id_verification_front',
+            userRole: 'verification',
+            verificationSessionId: sessionId
+          }
         );
         
         if (frontResult.success) {
@@ -6423,12 +6427,16 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
 
         // Upload back image if provided
         if (files.backImage && files.backImage[0]) {
-          const backResult = await VultrUploadHandler.handleSignatureUpload(
+          const backResult = await VultrUploadHandler.handleJobDocumentUpload(
             files.backImage[0].buffer,
             `back-id-${userId}-${Date.now()}.jpg`,
-            sessionId,
+            999999, // Special job ID for verification images
             parseInt(userId),
-            'id_verification'
+            {
+              documentType: 'id_verification_back',
+              userRole: 'verification',
+              verificationSessionId: sessionId
+            }
           );
           
           if (backResult.success) {
@@ -6437,12 +6445,16 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         }
 
         // Upload selfie image
-        const selfieResult = await VultrUploadHandler.handleSignatureUpload(
+        const selfieResult = await VultrUploadHandler.handleJobDocumentUpload(
           files.selfieImage[0].buffer,
           `selfie-${userId}-${Date.now()}.jpg`,
-          sessionId,
+          999999, // Special job ID for verification images
           parseInt(userId),
-          'id_verification'
+          {
+            documentType: 'id_verification_selfie',
+            userRole: 'verification',
+            verificationSessionId: sessionId
+          }
         );
         
         if (selfieResult.success) {

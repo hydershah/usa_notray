@@ -165,17 +165,17 @@ function SetPasswordPage() {
               // Redirect back to sign page with invitation token
               setLocation(`/sign/${signerToken}`);
             } else if (data.user?.role === 'signer' || data.user?.role === 'witness') {
-              // Redirect signers/witnesses to dashboard
-              setLocation('/dashboard');
+              // Redirect signers/witnesses to jobs
+              setLocation('/jobs');
             } else if (data.user?.role === 'notary') {
-              // Redirect notaries to dashboard
-              setLocation('/dashboard');
+              // Redirect notaries to jobs
+              setLocation('/jobs');
             } else if (data.user?.isAdmin) {
               // Redirect admins to admin dashboard
               setLocation('/admin/dashboard');
             } else {
               // Default redirect
-              setLocation('/dashboard');
+              setLocation('/jobs');
             }
           } else {
             // No auto-login - redirect to login page
