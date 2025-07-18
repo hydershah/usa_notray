@@ -130,18 +130,24 @@ export class JobCompletionReportService {
       .where(eq(jobDocuments.jobId, jobId))
       .orderBy(desc(jobDocuments.createdAt));
     
-    // Get notary log entries
+    // Get notary log entries (via sessions for this job)
     const notaryLogs = await db
-      .select()
+      .select({
+        notaryLogEntry: notaryLogEntries
+      })
       .from(notaryLogEntries)
-      .where(eq(notaryLogEntries.jobId, jobId))
+      .innerJoin(editorSessions, eq(notaryLogEntries.sessionId, editorSessions.id))
+      .where(eq(editorSessions.jobId, jobId))
       .orderBy(desc(notaryLogEntries.timestamp));
     
-    // Get audit trail entries
+    // Get audit trail entries (via sessions for this job)
     const auditEntries = await db
-      .select()
+      .select({
+        auditEntry: auditTrail
+      })
       .from(auditTrail)
-      .where(eq(auditTrail.jobId, jobId))
+      .innerJoin(editorSessions, eq(auditTrail.sessionId, editorSessions.id))
+      .where(eq(editorSessions.jobId, jobId))
       .orderBy(desc(auditTrail.timestamp));
     
     // Get system activity logs
@@ -199,12 +205,18 @@ export class JobCompletionReportService {
     const documentIds = documents.map(doc => doc.id);
     let docVersions: any[] = [];
     if (documentIds.length > 0) {
-      // Use inArray for better performance
-      docVersions = await db
-        .select()
-        .from(documentVersions)
-        .where(inArray(documentVersions.originalDocumentId, documentIds))
-        .orderBy(desc(documentVersions.createdAt));
+      try {
+        // Use inArray for better performance, but ensure documentIds is not empty
+        docVersions = await db
+          .select()
+          .from(documentVersions)
+          .where(inArray(documentVersions.originalDocumentId, documentIds))
+          .orderBy(desc(documentVersions.createdAt));
+      } catch (error) {
+        console.warn('Failed to fetch document versions:', error);
+        // Continue without document versions if query fails
+        docVersions = [];
+      }
     }
     
     // Calculate compliance metrics
@@ -221,8 +233,8 @@ export class JobCompletionReportService {
       notary,
       signers: jobSigners,
       documents,
-      notaryLogEntries: notaryLogs,
-      auditTrail: auditEntries,
+      notaryLogEntries: notaryLogs.map(log => log.notaryLogEntry),
+      auditTrail: auditEntries.map(entry => entry.auditEntry),
       systemLogs,
       sessions,
       tags,
@@ -408,12 +420,12 @@ export class JobCompletionReportService {
     
     // Compliance Summary
     drawSectionHeader('COMPLIANCE SUMMARY');
-    drawText('✓ Digital notarization completed', 12);
-    drawText('✓ All participants verified', 12);
-    drawText('✓ Session recorded and archived', 12);
-    drawText('✓ Audit trail maintained', 12);
-    drawText('✓ Documents digitally signed', 12);
-    drawText('✓ Notary log entries created', 12);
+    drawText('[X] Digital notarization completed', 12);
+    drawText('[X] All participants verified', 12);
+    drawText('[X] Session recorded and archived', 12);
+    drawText('[X] Audit trail maintained', 12);
+    drawText('[X] Documents digitally signed', 12);
+    drawText('[X] Notary log entries created', 12);
     
     // Footer with timestamp and compliance note
     checkPageSpace(60);
