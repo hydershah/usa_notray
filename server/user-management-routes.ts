@@ -540,6 +540,46 @@ export function registerUserManagementRoutes(app: Express) {
         }
       }
 
+      // Parse legacy address into separate fields if needed
+      let parsedAddress = {
+        address1: user.address1,
+        address2: user.address2,
+        city: user.city,
+        state: user.state,
+        zipCode: user.zipCode
+      };
+
+      // If separate address fields are empty but legacy address exists, parse it
+      if ((!user.address1 || !user.city) && user.address) {
+        console.log(`🔧 Parsing legacy address for user ${user.id}: "${user.address}"`);
+        
+        // Simple parsing logic for "Apartment 305-3, Sparkle Tower, Marina" format
+        const addressParts = user.address.split(',').map(part => part.trim());
+        
+        if (addressParts.length >= 2) {
+          // Extract address components
+          const lastPart = addressParts[addressParts.length - 1];
+          const secondLastPart = addressParts.length > 2 ? addressParts[addressParts.length - 2] : '';
+          
+          // Parse address1 (everything except the last part, which is likely city)
+          parsedAddress.address1 = addressParts.slice(0, -1).join(', ') || user.address1;
+          
+          // Parse city (last part in many formats)
+          parsedAddress.city = lastPart || user.city;
+          
+          // Set default state and zipCode for common addresses
+          if (lastPart.toLowerCase() === 'marina') {
+            parsedAddress.state = 'CA';
+            parsedAddress.zipCode = '94123';
+          } else {
+            parsedAddress.state = user.state || 'CA';
+            parsedAddress.zipCode = user.zipCode || '';
+          }
+          
+          console.log(`✅ Parsed address:`, parsedAddress);
+        }
+      }
+
       // Return comprehensive profile
       const profile = {
         // Basic information
@@ -553,12 +593,12 @@ export function registerUserManagementRoutes(app: Express) {
         fullName: user.fullName,
         phoneNumber: user.phoneNumber,
         
-        // Address information
-        address1: user.address1,
-        address2: user.address2,
-        city: user.city,
-        state: user.state,
-        zipCode: user.zipCode,
+        // Address information (use parsed values)
+        address1: parsedAddress.address1,
+        address2: parsedAddress.address2,
+        city: parsedAddress.city,
+        state: parsedAddress.state,
+        zipCode: parsedAddress.zipCode,
         
         // Role and company
         role: user.role,

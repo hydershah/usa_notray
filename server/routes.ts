@@ -1197,7 +1197,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         county: profileData.county,
         disclosure: profileData.disclosure,
         phoneNumber: profileData.phoneNumber,
-        address: profileData.address,
+        address: profileData.address, // Legacy single address field
+        // 🔧 FIX: Add separate address fields for compatibility
+        address1: profileData.address1,
+        address2: profileData.address2,
+        city: profileData.city,
+        zipCode: profileData.zipCode,
         isActive: profileData.isActive,
         isNotarySigningAgent: profileData.isNotarySigningAgent,
         isSpanishSpeaking: profileData.isSpanishSpeaking,
@@ -1210,6 +1215,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (fullName) {
           updateData.fullName = fullName;
         }
+      }
+
+      // 🔧 FIX: Automatically set accountSetupComplete if all required fields are present
+      const hasBasicInfo = updateData.firstName && updateData.lastName && updateData.phoneNumber;
+      const hasAddress = (updateData.address1 && updateData.city && updateData.state && updateData.zipCode) || updateData.address;
+      if (hasBasicInfo && hasAddress) {
+        updateData.accountSetupComplete = true;
+        console.log(`✅ Account setup marked complete for user ${userId}`);
       }
 
       const updatedUser = await storage.updateUser(userId, updateData);
@@ -2543,43 +2556,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .limit(1);
 
         if (signer) {
-          // Check if account setup is complete
-          if (!user.accountSetupComplete) {
+          // 🔧 FIX: Get fresh user data from database instead of stale JWT token data
+          const [freshUser] = await db
+            .select()
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+
+          if (!freshUser) {
+            return res.json({
+              hasAccess: false,
+              message: 'User data not found',
+              errorType: 'user_not_found'
+            });
+          }
+
+          // Check if account setup is complete using fresh data - be flexible with address formats
+          const hasBasicInfo = freshUser.firstName && freshUser.lastName && freshUser.phoneNumber;
+          const hasAddress = (freshUser.address1 && freshUser.city && freshUser.state && freshUser.zipCode) || freshUser.address;
+          const isAccountSetupComplete = hasBasicInfo && hasAddress;
+          
+          if (!isAccountSetupComplete) {
             return res.json({
               hasAccess: false,
               message: 'Please complete your account setup first',
               errorType: 'account_setup_required',
-              requirements: ['Account setup must be completed']
+              requirements: [
+                ...(!hasBasicInfo ? ['Complete personal information (name, phone)'] : []),
+                ...(!hasAddress ? ['Complete address information'] : [])
+              ]
             });
           }
 
           // **NEW KBA LOGIC** - Check KBA requirement for this job
           if (job.kbaRequired) {
-            // For KBA-required jobs, check KBA verification instead of regular ID verification
-            const [userWithKBA] = await db
-              .select({
-                kbaVerified: users.kbaVerified,
-                kbaVerificationDate: users.kbaVerificationDate,
-                kbaScore: users.kbaScore,
-                isVerificationBypassed: users.isVerificationBypassed,
-                notaryVerificationBypassed: users.notaryVerificationBypassed
-              })
-              .from(users)
-              .where(eq(users.id, userId))
-              .limit(1);
-
-            if (!userWithKBA) {
-              return res.json({
-                hasAccess: false,
-                message: 'User data not found',
-                errorType: 'user_not_found'
-              });
-            }
-
-            // Check if KBA verification is completed OR bypassed
-            const hasKBAVerification = userWithKBA.kbaVerified || 
-                                     userWithKBA.isVerificationBypassed || 
-                                     userWithKBA.notaryVerificationBypassed;
+            // Check if KBA verification is completed OR bypassed using fresh user data
+            const hasKBAVerification = freshUser.kbaVerified || 
+                                     freshUser.isVerificationBypassed || 
+                                     freshUser.notaryVerificationBypassed;
 
             if (!hasKBAVerification) {
               return res.json({
@@ -2593,8 +2607,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             console.log(`✅ KBA verification passed for user ${userId} on KBA-required job ${jobId}`);
           } else {
-            // For non-KBA jobs, use regular ID verification check
-            if (!user.isVerified && !user.isVerificationBypassed && !user.notaryVerificationBypassed) {
+            // For non-KBA jobs, use regular ID verification check with fresh user data
+            if (!freshUser.isVerified && !freshUser.isVerificationBypassed && !freshUser.notaryVerificationBypassed) {
               return res.json({
                 hasAccess: false,
                 message: 'ID verification required before joining sessions',
@@ -2606,16 +2620,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           hasAccess = true;
           accessReason = 'invited_signer';
+          console.log(`🎉 ACCESS GRANTED for user ${userId} as invited signer`);
+        } else {
+          console.log(`❌ User ${userId} not found in signers table for job ${jobId}`);
         }
+      } else {
+        console.log(`❌ User ${userId} role check failed:`, {
+          userRole: user.role,
+          expectedRoles: ['signer', 'witness']
+        });
       }
 
       if (hasAccess) {
+        console.log(`✅ FINAL ACCESS GRANTED:`, {
+          hasAccess: true,
+          accessReason,
+          userId,
+          jobId
+        });
         return res.json({
           hasAccess: true,
           accessReason,
           message: 'Session access granted'
         });
       } else {
+        console.log(`❌ FINAL ACCESS DENIED:`, {
+          hasAccess: false,
+          userId,
+          jobId,
+          userRole: user.role
+        });
         return res.json({
           hasAccess: false,
           message: 'You are not authorized to access this session',

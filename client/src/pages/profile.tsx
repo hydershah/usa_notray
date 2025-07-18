@@ -693,6 +693,69 @@ export default function Profile() {
                       </div>
                     </div>
 
+                    {/* Personal Address Section - Available to ALL users */}
+                    <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-8 border border-green-100">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center">
+                          <MapPin className="w-5 h-5 text-white" />
+                        </div>
+                        <h3 className="text-2xl font-bold text-gray-900">Personal Address</h3>
+                        <Badge className="bg-green-100 text-green-800">Residential</Badge>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Address Line 1</label>
+                          <Input
+                            value={formData.address1}
+                            onChange={(e) => setFormData(prev => ({ ...prev, address1: e.target.value }))}
+                            disabled={!isEditing}
+                            placeholder="123 Main Street"
+                            className="h-12 bg-white border-2 border-gray-200 focus:border-green-500 rounded-xl transition-all duration-200"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Address Line 2</label>
+                          <Input
+                            value={formData.address2}
+                            onChange={(e) => setFormData(prev => ({ ...prev, address2: e.target.value }))}
+                            disabled={!isEditing}
+                            placeholder="Apt 4B, Suite 100, etc."
+                            className="h-12 bg-white border-2 border-gray-200 focus:border-green-500 rounded-xl transition-all duration-200"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">City</label>
+                          <Input
+                            value={formData.city}
+                            onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
+                            disabled={!isEditing}
+                            placeholder="Los Angeles"
+                            className="h-12 bg-white border-2 border-gray-200 focus:border-green-500 rounded-xl transition-all duration-200"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">State</label>
+                          <Input
+                            value={formData.state}
+                            onChange={(e) => setFormData(prev => ({ ...prev, state: e.target.value }))}
+                            disabled={!isEditing}
+                            placeholder="CA"
+                            className="h-12 bg-white border-2 border-gray-200 focus:border-green-500 rounded-xl transition-all duration-200"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">ZIP Code</label>
+                          <Input
+                            value={formData.zipCode}
+                            onChange={(e) => setFormData(prev => ({ ...prev, zipCode: e.target.value }))}
+                            disabled={!isEditing}
+                            placeholder="90210"
+                            className="h-12 bg-white border-2 border-gray-200 focus:border-green-500 rounded-xl transition-all duration-200"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Enhanced Notary Information Section */}
                     {(currentUser?.role === 'notary' || currentUser?.role === 'admin') && (
                       <>
@@ -799,59 +862,6 @@ export default function Profile() {
                               <p className="text-xs text-gray-500 mt-2">
                                 This text will be used when you add a disclosure to documents
                               </p>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Personal Address Section */}
-                        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-8 border border-green-100">
-                          <div className="flex items-center gap-3 mb-6">
-                            <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center">
-                              <MapPin className="w-5 h-5 text-white" />
-                            </div>
-                            <h3 className="text-2xl font-bold text-gray-900">Personal Address</h3>
-                            <Badge className="bg-green-100 text-green-800">Residential</Badge>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-2">
-                              <label className="block text-sm font-semibold text-gray-700 mb-2">Address Line 1</label>
-                              <Input
-                                value={formData.address1}
-                                onChange={(e) => setFormData(prev => ({ ...prev, address1: e.target.value }))}
-                                disabled={!isEditing}
-                                placeholder="123 Main Street"
-                                className="h-12 bg-white border-2 border-gray-200 focus:border-green-500 rounded-xl transition-all duration-200"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <label className="block text-sm font-semibold text-gray-700 mb-2">Address Line 2</label>
-                              <Input
-                                value={formData.address2}
-                                onChange={(e) => setFormData(prev => ({ ...prev, address2: e.target.value }))}
-                                disabled={!isEditing}
-                                placeholder="Apt 4B, Suite 100, etc."
-                                className="h-12 bg-white border-2 border-gray-200 focus:border-green-500 rounded-xl transition-all duration-200"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <label className="block text-sm font-semibold text-gray-700 mb-2">City</label>
-                              <Input
-                                value={formData.city}
-                                onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
-                                disabled={!isEditing}
-                                placeholder="Los Angeles"
-                                className="h-12 bg-white border-2 border-gray-200 focus:border-green-500 rounded-xl transition-all duration-200"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <label className="block text-sm font-semibold text-gray-700 mb-2">ZIP Code</label>
-                              <Input
-                                value={formData.zipCode}
-                                onChange={(e) => setFormData(prev => ({ ...prev, zipCode: e.target.value }))}
-                                disabled={!isEditing}
-                                placeholder="90210"
-                                className="h-12 bg-white border-2 border-gray-200 focus:border-green-500 rounded-xl transition-all duration-200"
-                              />
                             </div>
                           </div>
                         </div>
