@@ -26,12 +26,12 @@ export const supabase = createClient(
 // 🔒 SECURITY: Improved SSL configuration for Supabase
 const getSSLConfig = () => {
   // For local development with local postgres
-  if (process.env.NODE_ENV === 'development' && !DATABASE_URL.includes('supabase.co')) {
+  if (process.env.NODE_ENV === 'development' && !DATABASE_URL.includes('supabase.co') && !DATABASE_URL.includes('supabase.com')) {
     return false; // No SSL for local postgres
   }
   
-  // For Supabase (development and production)
-  if (DATABASE_URL.includes('supabase.co')) {
+  // For Supabase (development and production) - covers both supabase.co and pooler.supabase.com
+  if (DATABASE_URL.includes('supabase.co') || DATABASE_URL.includes('supabase.com')) {
     return {
       rejectUnauthorized: false, // Supabase uses pooler which may have cert chain issues
     };
@@ -67,16 +67,25 @@ export const pool = new Pool({
   statement_timeout: 30000, // 30 seconds - balanced timeout
   query_timeout: 30000, // 30 seconds - balanced timeout
   // 🔒 SECURITY: Proper SSL configuration
-  ssl: getSSLConfig()
+  ssl: getSSLConfig(),
+  // 🔧 FIX: Ensure all pool connections use correct schema
+  options: '-c search_path=public'
 });
 
 // Reduced logging - only log important events, not normal connection activity
 let initialConnectionLogged = false;
 
-pool.on('connect', (client) => {
-  if (!initialConnectionLogged) {
-    console.log(`✅ Database connected. Pool size: ${pool.totalCount}`);
-    initialConnectionLogged = true;
+pool.on('connect', async (client) => {
+  try {
+    // Ensure each connection uses the correct schema
+    await client.query('SET search_path TO public');
+    
+    if (!initialConnectionLogged) {
+      console.log(`✅ Database connected. Pool size: ${pool.totalCount}`);
+      initialConnectionLogged = true;
+    }
+  } catch (error) {
+    console.error('❌ Failed to initialize database connection:', error);
   }
 });
 
