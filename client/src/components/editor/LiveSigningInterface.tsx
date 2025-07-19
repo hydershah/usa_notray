@@ -469,18 +469,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
           />
         </div>
 
-        {/* Collapsible Participants Panel */}
-        {showParticipants && (
-          <div className="w-48 bg-white border-l flex-shrink-0">
-            <ParticipantPanel
-              participants={participants}
-              liveSession={liveSession}
-              currentUserId={currentUserId}
-              onSetActiveUser={(userId: number) => handleSetActiveUser(userId.toString())}
-              canControlSession={canControlSession}
-            />
-          </div>
-        )}
+
       </div>
     </div>
   );

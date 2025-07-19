@@ -317,7 +317,7 @@ export default function JobDetailsPage() {
                       
                       <div className="mt-2">
                         <Badge className={signer.invitationSentAt ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}>
-                          {signer.invitationSentAt ? "✅ Invitation Sent" : "⏳ Pending"}
+                          {signer.invitationSentAt ? "Invitation Sent" : "Pending"}
                         </Badge>
                       </div>
                     </div>

@@ -233,7 +233,7 @@ const SimpleVideoConference: React.FC<SimpleVideoConferenceProps> = ({
     return (
       <div className={`${className} flex items-center justify-center bg-red-50 text-red-800`}>
         <div className="text-center max-w-md">
-          <div className="text-red-500 text-4xl mb-4">⚠️</div>
+          <div className="text-red-500 text-4xl mb-4 font-bold">!</div>
           <h3 className="text-lg font-semibold mb-2">Video Connection Error</h3>
           <p className="text-sm mb-4">{error}</p>
           <div className="space-x-3">

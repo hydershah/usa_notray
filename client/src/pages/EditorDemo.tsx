@@ -104,7 +104,7 @@ const EditorDemo: React.FC = () => {
       <div className="bg-blue-600 text-white p-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold">📝 PDF Tagging Editor - Demo</h1>
+            <h1 className="text-xl font-bold">PDF Tagging Editor - Demo</h1>
             <p className="text-blue-100 text-sm">
               Interactive demo of the Digital Notary PDF tagging system
             </p>

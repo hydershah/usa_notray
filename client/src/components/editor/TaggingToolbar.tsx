@@ -3,6 +3,7 @@ import { useEditorStore } from '../../hooks/editor/useEditorStore';
 import type { TagType, SessionParticipant, SessionDocument } from '../../types/editor';
 import { TAG_TYPE_INFO, USER_COLORS } from '../../types/editor';
 import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
 import { FileText, ChevronDown } from 'lucide-react';
 
 interface TaggingToolbarProps {
@@ -12,10 +13,14 @@ interface TaggingToolbarProps {
   onDocumentSwitch?: (document: SessionDocument) => void;
   onSessionComplete?: () => void;
   className?: string;
+  liveSessionState?: any;
+  onSetActiveUser?: (userId: number) => void;
+  canControlSession?: boolean;
 }
 
 interface TagTypeButtonProps {
   tagType: TagType;
+  user: SessionParticipant;
   isSelected: boolean;
   isDisabled: boolean;
   onClick: () => void;
@@ -24,6 +29,7 @@ interface TagTypeButtonProps {
 
 const TagTypeButton: React.FC<TagTypeButtonProps> = ({
   tagType,
+  user,
   isSelected,
   isDisabled,
   onClick,
@@ -36,7 +42,7 @@ const TagTypeButton: React.FC<TagTypeButtonProps> = ({
       onClick={onClick}
       disabled={isDisabled}
       className={`
-        relative flex flex-col items-center gap-1 p-3 rounded-lg border transition-all duration-200
+        relative flex flex-col items-center gap-1 p-2 rounded-lg border transition-all duration-200 min-h-[60px]
         ${isSelected 
           ? 'border-blue-500 bg-blue-50 text-blue-700' 
           : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
@@ -46,13 +52,13 @@ const TagTypeButton: React.FC<TagTypeButtonProps> = ({
           : 'cursor-pointer'
         }
       `}
-      title={`${tagInfo.description} (${shortcut})`}
+      title={`${tagInfo.description} (${shortcut}) - ${user.displayName}`}
     >
       {/* Tag Icon */}
-      <span className="text-xl">{tagInfo.icon}</span>
+      <span className="text-lg font-bold">{tagInfo.icon}</span>
       
       {/* Tag Label */}
-      <span className="text-xs font-medium text-center">{tagInfo.label}</span>
+      <span className="text-xs font-medium text-center leading-tight">{tagInfo.label}</span>
       
       {/* Shortcut Key */}
       <div className="absolute top-1 right-1 w-4 h-4 bg-gray-600 text-white text-xs rounded flex items-center justify-center font-mono">
@@ -62,76 +68,113 @@ const TagTypeButton: React.FC<TagTypeButtonProps> = ({
   );
 };
 
-interface UserSelectorProps {
-  participants: SessionParticipant[];
+interface UserTagSectionProps {
+  user: SessionParticipant;
+  tags: TagType[];
+  selectedTagType: TagType | null;
   selectedUser: SessionParticipant | null;
   currentUser: SessionParticipant | null;
-  onUserSelect: (user: SessionParticipant) => void;
+  isDisabled: boolean;
+  onTagSelect: (tagType: TagType, user: SessionParticipant) => void;
+  liveSessionState?: any;
+  onSetActiveUser?: (userId: number) => void;
+  canControlSession?: boolean;
 }
 
-const UserSelector: React.FC<UserSelectorProps> = ({
-  participants,
+const UserTagSection: React.FC<UserTagSectionProps> = ({
+  user,
+  tags,
+  selectedTagType,
   selectedUser,
   currentUser,
-  onUserSelect
+  isDisabled,
+  onTagSelect,
+  liveSessionState,
+  onSetActiveUser,
+  canControlSession
 }) => {
+  const isCurrentUser = currentUser?.userId === user.userId;
+  const userColor = USER_COLORS[user.userType] || '#6B7280';
+  
+  // Check if user is currently active in live session
+  const isActiveUser = liveSessionState?.activeUserId === parseInt(user.userId);
+  const canMakeActive = canControlSession && 
+                        liveSessionState?.state === 'active' && 
+                        !isActiveUser && 
+                        (user.userType === 'signer' || user.userType === 'witness');
+  
+  // Get tag completion stats for this user
+  const { tags: allTags } = useEditorStore();
+  const userTags = allTags.filter(tag => tag.assignedUserId === user.userId);
+  const completedTags = userTags.filter(tag => tag.isCompleted);
+  
   return (
-    <div className="space-y-3">
-      <h3 className="text-sm font-medium text-gray-900">Select User</h3>
+    <div className="space-y-2">
+      {/* User Header */}
+      <div className="flex items-center gap-2 p-2 rounded-lg bg-gray-50">
+        <div 
+          className="w-3 h-3 rounded-full border border-white shadow-sm" 
+          style={{ backgroundColor: userColor }}
+        />
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-gray-900">
+              {user.displayName}
+            </span>
+            {isCurrentUser && (
+              <Badge variant="secondary" className="text-xs px-1.5 py-0.5">You</Badge>
+            )}
+            <Badge variant="outline" className="text-xs px-1.5 py-0.5 capitalize">
+              {user.userType}
+            </Badge>
+          </div>
+          {userTags.length > 0 && (
+            <div className="text-xs text-gray-500">
+              {completedTags.length}/{userTags.length} completed
+            </div>
+          )}
+          
+          {/* Live session status */}
+          {liveSessionState && (
+            <div className="text-xs">
+              {isActiveUser ? (
+                <span className="text-blue-600 font-medium">Active - Can interact</span>
+              ) : (
+                <span className="text-gray-500">Waiting</span>
+              )}
+            </div>
+          )}
+        </div>
+        
+        {/* Make Active Button */}
+        {canMakeActive && onSetActiveUser && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onSetActiveUser(parseInt(user.userId))}
+            className="text-xs h-6 px-2"
+          >
+            Make Active
+          </Button>
+        )}
+      </div>
       
-      <div className="grid grid-cols-1 gap-2">
-        {participants.map((participant) => {
-          const isSelected = selectedUser?.userId === participant.userId;
-          const isCurrentUser = currentUser?.userId === participant.userId;
+      {/* User's Tags */}
+      <div className="grid grid-cols-4 gap-1.5">
+        {tags.map((tagType) => {
+          const isSelected = selectedTagType === tagType && selectedUser?.userId === user.userId;
+          const shortcut = tagType; // Use tag type as shortcut
           
           return (
-            <button
-              key={participant.userId}
-              onClick={() => onUserSelect(participant)}
-              className={`
-                w-full p-3 rounded-lg border text-left transition-all duration-200
-                ${isSelected 
-                  ? 'border-blue-500 bg-blue-50 shadow-sm' 
-                  : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                }
-              `}
-            >
-              <div className="flex items-center gap-3">
-                {/* User Avatar/Initial */}
-                <div 
-                  className={`
-                    w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium text-white
-                    ${participant.userType === 'notary' ? 'bg-red-500' : 'bg-blue-500'}
-                  `}
-                >
-                  {participant.displayName.charAt(0).toUpperCase()}
-                </div>
-                
-                {/* User Info */}
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-900">
-                      {participant.displayName}
-                    </span>
-                    {isCurrentUser && (
-                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                        You
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-gray-500 capitalize">
-                    {participant.userType}
-                  </div>
-                </div>
-                
-                {/* Selection indicator */}
-                {isSelected && (
-                  <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
-                    <div className="w-2 h-2 bg-white rounded-full"></div>
-                  </div>
-                )}
-              </div>
-            </button>
+            <TagTypeButton
+              key={`${user.userId}-${tagType}`}
+              tagType={tagType}
+              user={user}
+              isSelected={isSelected}
+              isDisabled={isDisabled}
+              onClick={() => onTagSelect(tagType, user)}
+              shortcut={shortcut}
+            />
           );
         })}
       </div>
@@ -139,117 +182,15 @@ const UserSelector: React.FC<UserSelectorProps> = ({
   );
 };
 
-interface DocumentSelectorProps {
-  documents: SessionDocument[];
-  currentDocument: SessionDocument | null;
-  onDocumentSwitch: (document: SessionDocument) => void;
-  tags: any[];
-}
-
-const DocumentSelector: React.FC<DocumentSelectorProps> = ({
-  documents,
-  currentDocument,
-  onDocumentSwitch,
-  tags
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
-
-  if (documents.length <= 1) {
-    // Don't show selector if only one document
-    return null;
-  }
-
-  // Calculate tags per document
-  const getDocumentTagStats = (documentId: string) => {
-    const docTags = tags.filter(tag => tag.documentId === documentId);
-    const completed = docTags.filter(tag => tag.isCompleted).length;
-    return { total: docTags.length, completed };
-  };
-
-  return (
-    <div className="space-y-3">
-      <h3 className="text-sm font-medium text-gray-900">Documents ({documents.length})</h3>
-      
-      <div className="relative">
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="w-full flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 transition-all duration-200"
-        >
-          <FileText className="h-4 w-4 text-gray-500" />
-          <div className="flex-1 text-left">
-            <div className="font-medium text-sm truncate">
-              {currentDocument?.fileName || 'Select Document'}
-            </div>
-            {currentDocument && (
-              <div className="text-xs text-gray-500">
-                {(() => {
-                  const stats = getDocumentTagStats(currentDocument.id);
-                  return `${stats.total} tags • ${stats.completed} completed`;
-                })()}
-              </div>
-            )}
-          </div>
-          <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-        </button>
-
-        {isOpen && (
-          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
-            {documents.map((document) => {
-              const isSelected = currentDocument?.id === document.id;
-              const stats = getDocumentTagStats(document.id);
-              
-              return (
-                <button
-                  key={document.id}
-                  onClick={() => {
-                    onDocumentSwitch(document);
-                    setIsOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 p-3 text-left hover:bg-gray-50 transition-colors ${
-                    isSelected ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
-                  } ${
-                    document !== documents[documents.length - 1] ? 'border-b border-gray-100' : ''
-                  }`}
-                >
-                  <FileText className={`h-4 w-4 ${isSelected ? 'text-blue-500' : 'text-gray-400'}`} />
-                  <div className="flex-1 min-w-0">
-                    <div className={`font-medium text-sm truncate ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>
-                      {document.fileName}
-                    </div>
-                    <div className="text-xs text-gray-500 flex items-center gap-2">
-                      <span>{stats.total} tags</span>
-                      {stats.completed > 0 && (
-                        <>
-                          <span>•</span>
-                          <span className="text-green-600">{stats.completed} completed</span>
-                        </>
-                      )}
-                      {stats.total > 0 && stats.completed === stats.total && (
-                        <Badge variant="default" className="bg-green-100 text-green-800 text-xs ml-1">
-                          ✓ Done
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                  {isSelected && (
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
 export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({ 
-  className = '',
   sessionId,
+  className = '',
   onSessionComplete,
   onDocumentSwitch,
-  mode: propMode
+  mode: propMode,
+  liveSessionState,
+  onSetActiveUser,
+  canControlSession
 }) => {
   const {
     mode,
@@ -259,7 +200,6 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
     selectedUser,
     currentUser,
     setSelectedUser,
-    switchUser,
     tags,
     documents,
     currentDocument
@@ -268,7 +208,7 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
   const [isCompleting, setIsCompleting] = useState(false);
   const [completionError, setCompletionError] = useState<string | null>(null);
 
-  // ✅ ENHANCED USER ROLE DETECTION FOR UI RESTRICTIONS
+  // Enhanced user role detection
   const isSigner = currentUser?.userType === 'signer';
   const isNotary = currentUser?.userType === 'notary';
   const isAdmin = currentUser?.role === 'admin';
@@ -277,47 +217,32 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
   // Filter tags for current document only
   const currentDocumentTags = tags.filter(tag => tag.documentId === currentDocument?.id);
 
-  // Define available tag types based on user role - SIMPLIFIED RESTRICTIONS
-  const getAvailableTagTypes = useCallback((user: SessionParticipant | null): TagType[] => {
-    if (!user) return [];
-    
-    // Tag types for different user roles
-    const textAndBasicTags: TagType[] = ['T', 'A', 'S', 'I']; // Text, Name, Sign, Initial
+  // Define available tag types based on user role
+  const getAvailableTagTypes = useCallback((user: SessionParticipant): TagType[] => {
+    const signerTags: TagType[] = ['T', 'A', 'S', 'I']; // Text, Name, Signature, Initials
     const notaryTags: TagType[] = ['T', 'A', 'S', 'I', 'D', 'N', 'X', 'O', 'E', 'W']; // All tags
     
     switch (user.userType) {
       case 'notary':
-        return notaryTags; // Notary gets all tag types
+        return notaryTags;
       case 'signer':
       case 'witness':
-        return textAndBasicTags; // Signers and witnesses get basic tags only
+        return signerTags;
       default:
         return [];
     }
   }, []);
 
-  const availableTagTypes = getAvailableTagTypes(selectedUser);
-
-  // Handle tag type selection - FIXED: Prevent accidental deselection
-  const handleTagTypeSelect = useCallback((tagType: TagType) => {
-    console.log('🏷️  Tag type selected:', tagType, 'was:', selectedTagType);
-    console.log('🔍 Current state:', { selectedUser: selectedUser?.displayName, propMode, isSigner, availableTagTypes: availableTagTypes.length });
-    // Always select the tag type, don't toggle off
+  // Handle tag selection with user context
+  const handleTagSelect = useCallback((tagType: TagType, user: SessionParticipant) => {
+    console.log('Tag selected:', tagType, 'for user:', user.displayName);
     setSelectedTagType(tagType);
-  }, [selectedTagType, setSelectedTagType, selectedUser, propMode, isSigner, availableTagTypes.length]);
-
-  // Handle user selection - FIXED: Don't clear tag type when switching users
-  const handleUserSelect = useCallback((user: SessionParticipant) => {
-    console.log('👤 User selected:', user.displayName, 'was:', selectedUser?.displayName);
-    console.log('🔍 User selection state:', { propMode, isSigner, userType: user.userType, availableTagTypes: getAvailableTagTypes(user).length });
     setSelectedUser(user);
-    // Don't clear selected tag type when switching users - let user keep their selection
-    // setSelectedTagType(null); // ❌ REMOVED - was causing tag type to be cleared
-  }, [setSelectedUser, selectedUser, propMode, isSigner, getAvailableTagTypes]);
+  }, [setSelectedTagType, setSelectedUser]);
 
   // Handle document switching
   const handleDocumentSwitch = useCallback((document: SessionDocument) => {
-    console.log('📄 Document switched:', document.fileName);
+    console.log('Document switched:', document.fileName);
     if (onDocumentSwitch) {
       onDocumentSwitch(document);
     }
@@ -348,9 +273,10 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
       
       if (!response.ok) {
         if (result.canForce) {
-          // Allow user to force completion if they want
-          const forceComplete = window.confirm(result.message + '\n\nDo you want to complete anyway?');
-          if (forceComplete) {
+          // Show force completion option
+          if (window.confirm(
+            `${result.message}\n\nWould you like to complete the session anyway? This will mark all incomplete tags as "Not Required".`
+          )) {
             const forceResponse = await fetch(`/api/editor/session/${sessionId}/complete`, {
               method: 'POST',
               headers: {
@@ -360,288 +286,172 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
               body: JSON.stringify({ force: true })
             });
             
+            const forceResult = await forceResponse.json();
+            
             if (forceResponse.ok) {
-              console.log('✅ Session force completed successfully');
+              console.log('Session force completed successfully');
               if (onSessionComplete) {
                 onSessionComplete();
               }
+            } else {
+              throw new Error(forceResult.error || 'Failed to force complete session');
             }
           }
         } else {
-          throw new Error(result.message || 'Failed to complete session');
+          throw new Error(result.error || 'Failed to complete session');
         }
       } else {
-        console.log('✅ Session completed successfully');
+        console.log('Session completed successfully');
         if (onSessionComplete) {
           onSessionComplete();
         }
       }
-      
     } catch (error) {
-      console.error('❌ Failed to complete session:', error);
+      console.error('Session completion error:', error);
       setCompletionError(error instanceof Error ? error.message : 'Failed to complete session');
     } finally {
       setIsCompleting(false);
     }
-  }, [sessionId, onSessionComplete, isCompleting]);
+  }, [isCompleting, sessionId, onSessionComplete]);
 
+  // Show simplified interface for signers in signing mode
+  if (isSigner && propMode === 'signing') {
+    return (
+      <div className={`space-y-4 ${className}`}>
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h3 className="text-sm font-medium text-blue-900 mb-2">
+            Signer View
+          </h3>
+          <p className="text-sm text-blue-700">
+            Click on tags assigned to you to fill them out. Wait for the notary to activate you if needed.
+          </p>
+        </div>
+        
+        {/* Selection Mode Button */}
+        <button
+          onClick={() => setSelectedTagType(null)}
+          className={`
+            w-full flex items-center gap-3 p-3 rounded-lg border transition-all duration-200
+            ${selectedTagType === null 
+              ? 'border-blue-500 bg-blue-50 text-blue-700' 
+              : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+            }
+          `}
+          title="Selection mode - click to select your assigned tags"
+        >
+          <div className="flex-1 text-left">
+            <div className="font-medium">Selection Mode</div>
+            <div className="text-xs text-gray-600">Click on your assigned tags to fill them</div>
+          </div>
+          {selectedTagType === null && (
+            <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
+              <div className="w-2 h-2 bg-white rounded-full"></div>
+            </div>
+          )}
+        </button>
+      </div>
+    );
+  }
+
+  // Main interface - show all users with their tags
   return (
-    <div className={`tagging-toolbar bg-white flex flex-col h-full ${className}`}>
-      {/* Enhanced Header with Multi-Document Progress */}
-      <div className="p-4 border-b border-gray-200">
-        <h2 className="text-lg font-medium text-gray-900">
+    <div className={`space-y-4 ${className}`}>
+      {/* Header */}
+      <div className="space-y-2">
+        <h2 className="text-lg font-semibold text-gray-900">
           {propMode === 'signing' ? 'Signing Tools' : 'Tagging Tools'}
         </h2>
-        {documents.length > 1 ? (
-          <div className="mt-2 space-y-1">
-            <p className="text-sm text-gray-600">
-              Current Document: {currentDocumentTags.length} tags • {currentDocumentTags.filter(t => t.isCompleted).length} completed
-            </p>
-            <p className="text-xs text-gray-500">
-              All Documents: {tags.length} total tags • {tags.filter(t => t.isCompleted).length} completed across {documents.length} documents
-            </p>
+        
+        {/* Current Selection Status */}
+        {selectedTagType && selectedUser && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="flex items-center gap-2 text-blue-800">
+              <span className="text-sm font-medium">
+                Ready to place {TAG_TYPE_INFO[selectedTagType].label} for {selectedUser.displayName}
+              </span>
+            </div>
           </div>
-        ) : (
-          <p className="text-sm text-gray-600 mt-1">
-            {currentDocumentTags.length} tags placed • {currentDocumentTags.filter(t => t.isCompleted).length} completed
-          </p>
+        )}
+        
+        {!selectedUser && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="flex items-center gap-2 text-blue-800">
+              <span className="text-sm font-medium">Select a tag type below to start placing tags</span>
+            </div>
+          </div>
         )}
       </div>
 
-      {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-4 pb-0 space-y-4">
-          {/* Document Selection */}
-          {documents.length > 1 && onDocumentSwitch && (
-            <DocumentSelector
-              documents={documents}
-              currentDocument={currentDocument}
-              onDocumentSwitch={handleDocumentSwitch}
-              tags={tags}
-            />
-          )}
-
-          {/* User Selection */}
-          {(propMode !== 'signing' || !isSigner) && (
-            <div className="space-y-3">
-              <UserSelector
-                participants={participants}
+      {/* User Sections with Tags */}
+      {participants && participants.length > 0 && canPlaceTags && (
+        <div className="space-y-4">
+          {participants.map((participant) => {
+            const availableTags = getAvailableTagTypes(participant);
+            if (availableTags.length === 0) return null;
+            
+            return (
+              <UserTagSection
+                key={participant.userId}
+                user={participant}
+                tags={availableTags}
+                selectedTagType={selectedTagType}
                 selectedUser={selectedUser}
                 currentUser={currentUser}
-                onUserSelect={handleUserSelect}
+                isDisabled={!canPlaceTags}
+                onTagSelect={handleTagSelect}
+                liveSessionState={liveSessionState}
+                onSetActiveUser={onSetActiveUser}
+                canControlSession={canControlSession}
               />
-              
-              {!selectedUser && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <div className="flex items-center gap-2 text-blue-800">
-                    <span className="text-sm">👆</span>
-                    <span className="text-sm font-medium">Select a user above to start placing tags</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Signer Message */}
-          {isSigner && propMode === 'signing' && (
-            <div className="space-y-3">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h3 className="text-sm font-medium text-blue-900 mb-2">
-                  👤 Signer View
-                </h3>
-                <p className="text-sm text-blue-700">
-                  Click on tags assigned to you to fill them out. Wait for the notary to activate you if needed.
-                </p>
-              </div>
-              
-              {/* Pointer Mode for Signers */}
-              <button
-                onClick={() => setSelectedTagType(null)}
-                className={`
-                  w-full flex items-center gap-3 p-3 rounded-lg border transition-all duration-200
-                  ${selectedTagType === null 
-                    ? 'border-blue-500 bg-blue-50 text-blue-700' 
-                    : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                  }
-                `}
-                title="Selection mode - click to select your assigned tags"
-              >
-                <span className="text-xl">👆</span>
-                <div className="flex-1 text-left">
-                  <div className="font-medium">Selection Mode</div>
-                  <div className="text-xs text-gray-600">Click on your assigned tags to fill them</div>
-                </div>
-                {selectedTagType === null && (
-                  <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
-                    <div className="w-2 h-2 bg-white rounded-full"></div>
-                  </div>
-                )}
-              </button>
-            </div>
-          )}
-
-          {/* Tag Type Selection - Simplified */}
-          {selectedUser && availableTagTypes.length > 0 && (propMode !== 'signing' || !isSigner) && (
-            <div className="space-y-3">
-              <h3 className="text-sm font-medium text-gray-900">
-                Tag Types for {selectedUser.displayName}
-              </h3>
-              
-              {/* Pointer/Selection Mode */}
-              <button
-                onClick={() => setSelectedTagType(null)}
-                className={`
-                  w-full flex items-center gap-3 p-3 rounded-lg border transition-all duration-200
-                  ${selectedTagType === null 
-                    ? 'border-blue-500 bg-blue-50 text-blue-700' 
-                    : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                  }
-                `}
-                title="Selection mode - click to select existing tags"
-              >
-                <span className="text-xl">👆</span>
-                <div className="flex-1 text-left">
-                  <div className="font-medium">Selection Mode</div>
-                  <div className="text-xs text-gray-600">Click to select and edit existing tags</div>
-                </div>
-                {selectedTagType === null && (
-                  <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
-                    <div className="w-2 h-2 bg-white rounded-full"></div>
-                  </div>
-                )}
-              </button>
-              
-              <div className="border-t pt-3">
-                <div className="text-xs text-gray-500 mb-2">Or select a tag type to place:</div>
-                
-                {!selectedTagType && selectedTagType !== null && (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-3">
-                    <div className="flex items-center gap-2 text-yellow-800">
-                      <span className="text-sm">👆</span>
-                      <span className="text-sm font-medium">Select a tag type below, then click on the document to place it</span>
-                    </div>
-                  </div>
-                )}
-                
-                <div className="grid grid-cols-2 gap-2">
-                  {availableTagTypes.map(tagType => (
-                    <TagTypeButton
-                      key={tagType}
-                      tagType={tagType}
-                      isSelected={selectedTagType === tagType}
-                      isDisabled={false}
-                      onClick={() => handleTagTypeSelect(tagType)}
-                      shortcut={tagType}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Current Selection Display */}
-          {selectedUser && (selectedTagType !== undefined) && (propMode !== 'signing' || !isSigner) && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <div className="flex items-center gap-2">
-                {selectedTagType === null ? (
-                  <>
-                    <span className="text-lg">👆</span>
-                    <div>
-                      <div className="text-sm font-medium text-blue-900">
-                        Selection Mode Active
-                      </div>
-                      <div className="text-xs text-blue-700">
-                        Click on existing tags to select • Click and drag to move
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <span className="text-lg">{TAG_TYPE_INFO[selectedTagType].icon}</span>
-                    <div>
-                      <div className="text-sm font-medium text-blue-900">
-                        Ready to place {TAG_TYPE_INFO[selectedTagType].label}
-                      </div>
-                      <div className="text-xs text-blue-700">
-                        For {selectedUser.displayName} • Click on document to place
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Placed Tags Summary */}
-          {currentDocumentTags.length > 0 && (
-            <div className="space-y-2 pb-4">
-              <h3 className="text-sm font-medium text-gray-900">
-                Document Tags ({currentDocumentTags.length})
-              </h3>
-              <div className="space-y-1 max-h-40 overflow-y-auto">
-                {currentDocumentTags.map(tag => {
-                  const userInfo = participants.find(p => p.userId === tag.assignedUserId);
-                  const tagInfo = TAG_TYPE_INFO[tag.tagType];
-                  const isAssignedToCurrentUser = tag.assignedUserId === currentUser?.userId;
-                  
-                  return (
-                    <div 
-                      key={tag.id} 
-                      className={`flex items-center gap-2 p-2 rounded border text-xs transition-colors ${
-                        isSigner && isAssignedToCurrentUser 
-                          ? 'bg-blue-50 border-blue-200' 
-                          : isSigner && !isAssignedToCurrentUser
-                          ? 'bg-gray-50 border-gray-200 opacity-60'
-                          : 'bg-white border-gray-200'
-                      }`}
-                    >
-                      <span className="text-sm">{tagInfo.icon}</span>
-                      <span className="font-medium">{tagInfo.label}</span>
-                      
-                      {isSigner && isAssignedToCurrentUser && (
-                        <Badge variant="secondary" className="text-xs">
-                          Yours
-                        </Badge>
-                      )}
-                      
-                      {tag.isCompleted && (
-                        <Badge variant="default" className="bg-green-100 text-green-800 text-xs">
-                          ✓ Done
-                        </Badge>
-                      )}
-                      
-                      <div className="flex items-center gap-1 ml-auto">
-                        <span className="text-xs text-gray-500">
-                          {userInfo?.displayName || 'Unknown'}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+            );
+          })}
         </div>
-      </div>
+      )}
 
-      {/* Fixed Footer - Complete Button */}
-      {propMode === 'tagging' && (
-        <div className="p-4 border-t border-gray-200">
+
+
+      {/* Document Switcher */}
+      {documents && documents.length > 1 && (
+        <div className="border-t pt-4 space-y-2">
+          <h3 className="text-sm font-medium text-gray-900">Documents</h3>
+          <div className="space-y-1">
+            {documents.map((document) => (
+              <button
+                key={document.id}
+                onClick={() => handleDocumentSwitch(document)}
+                className={`
+                  w-full p-2 text-left rounded border transition-all duration-200
+                  ${currentDocument?.id === document.id
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                  }
+                `}
+              >
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  <span className="text-sm font-medium truncate">{document.fileName}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Session Completion */}
+      {propMode !== 'signing' && sessionId && (
+        <div className="border-t pt-4 space-y-2">
           <button
             onClick={handleComplete}
             disabled={isCompleting}
-            className={`
-              w-full py-3 px-4 rounded-lg font-medium transition-colors
-              ${isCompleting
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-green-600 text-white hover:bg-green-700'
-              }
-            `}
+            className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
           >
-            {isCompleting ? 'Completing...' : 'Complete Tagging'}
+            {isCompleting ? 'Completing...' : 'Complete Session'}
           </button>
+          
           {completionError && (
-            <p className="text-sm text-red-600 mt-2">{completionError}</p>
+            <div className="text-red-600 text-sm bg-red-50 border border-red-200 rounded p-2">
+              {completionError}
+            </div>
           )}
         </div>
       )}

@@ -6,16 +6,16 @@ import { useToast } from '../../hooks/use-toast';
 import DraggableTag from './DraggableTag';
 
 const TAG_TYPE_INFO = {
-  'A': { label: 'Name', icon: '✍️' },
-  'S': { label: 'Signature', icon: '📝' },
-  'I': { label: 'Initials', icon: '🔤' },
-  'N': { label: 'Commission #', icon: '🆔' },
-  'X': { label: 'Expiration', icon: '📅' },
-  'O': { label: 'Disclosure', icon: '📋' },
-  'E': { label: 'Seal', icon: '🔖' },
-  'W': { label: 'Whiteout', icon: '⬜' },
-  'T': { label: 'Text', icon: '📝' },
-  'D': { label: 'Date', icon: '📆' },
+  'A': { label: 'Name', icon: 'A' },
+  'S': { label: 'Signature', icon: 'S' },
+  'I': { label: 'Initials', icon: 'I' },
+  'N': { label: 'Commission #', icon: 'N' },
+  'X': { label: 'Expiration', icon: 'X' },
+  'O': { label: 'Disclosure', icon: 'O' },
+  'E': { label: 'Seal', icon: 'E' },
+  'W': { label: 'Whiteout', icon: 'W' },
+  'T': { label: 'Text', icon: 'T' },
+  'D': { label: 'Date', icon: 'D' },
 } as const;
 
 const USER_COLORS = {

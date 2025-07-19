@@ -745,7 +745,7 @@ function SignerDashboard() {
               
               {!profile?.isVerified && (
                 <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <p className="text-sm text-yellow-800 font-medium">⚠️ Verification Required</p>
+                  <p className="text-sm text-yellow-800 font-medium">Verification Required</p>
                   <p className="text-xs text-yellow-700 mt-1">
                     Complete ID verification to participate in document signing.
                   </p>
@@ -1225,7 +1225,7 @@ function WitnessDashboard() {
               
               {!profile?.isVerified && (
                 <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <p className="text-sm text-yellow-800 font-medium">⚠️ Verification Required</p>
+                  <p className="text-sm text-yellow-800 font-medium">Verification Required</p>
                   <p className="text-xs text-yellow-700 mt-1">
                     Complete ID verification to participate in witnessing sessions.
                   </p>

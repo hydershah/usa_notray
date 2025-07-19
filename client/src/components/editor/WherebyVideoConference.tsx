@@ -326,7 +326,7 @@ const WherebyVideoConference: React.FC<WherebyVideoConferenceProps> = ({
       {error && (
         <div className="absolute inset-0 flex items-center justify-center bg-red-50 p-4 z-10">
           <div className="text-center max-w-lg">
-            <div className="text-red-500 text-4xl mb-4">⚠️</div>
+            <div className="text-red-500 text-4xl mb-4 font-bold">!</div>
             <h3 className="text-lg font-semibold text-red-800 mb-2">Video Connection Error</h3>
             <p className="text-sm mb-4 text-red-700">{error}</p>
             

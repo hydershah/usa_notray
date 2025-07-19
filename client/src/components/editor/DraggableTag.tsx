@@ -214,14 +214,14 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
         {isInSigningMode && isCompleted ? (
           // Completed tag in signing mode
           <div style={{ textAlign: 'center', color: '#15803d' }}>
-            <div style={{ fontSize: '12px' }}>✓</div>
+            <div style={{ fontSize: '12px' }}>DONE</div>
             <div style={{ fontSize: '8px' }}>Completed</div>
           </div>
         ) : isInSigningMode && isCurrentUserTag && !isCompleted ? (
           // Interactive tag in signing mode
           <div style={{ textAlign: 'center', color: '#1e40af' }}>
             <div style={{ fontSize: '10px', marginBottom: '2px' }}>
-              {['S', 'I'].includes(tag.tagType) ? '✍️' : '📝'}
+              {tag.tagType}
             </div>
             <div style={{ fontSize: '8px' }}>Click to {['S', 'I'].includes(tag.tagType) ? 'apply' : 'enter'}</div>
           </div>

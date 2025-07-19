@@ -573,10 +573,16 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       while (retryCount <= maxRetries) {
         try {
           console.log(`📄 Fetching PDF document... (attempt ${retryCount + 1}/${maxRetries + 1})`);
-          const response = await fetch(url, {
+          
+          // Replace token placeholder if present
+          const token = localStorage.getItem('token');
+          const fetchUrl = url.includes('{{TOKEN}}') ? url.replace('{{TOKEN}}', token || '') : url;
+          console.log('🔗 Final fetch URL:', fetchUrl.substring(0, 100) + '...');
+          
+          const response = await fetch(fetchUrl, {
             method: 'GET',
             headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
+              'Authorization': `Bearer ${token}`
             },
             credentials: 'same-origin'
           });
@@ -1237,7 +1243,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     return (
       <div className={`flex items-center justify-center h-full ${className}`}>
         <div className="text-center max-w-md">
-          <div className="text-red-500 text-xl mb-4">⚠️</div>
+          <div className="text-red-500 text-xl mb-4 font-bold">!</div>
           <p className="text-gray-600 mb-4">{error}</p>
           <button
             onClick={() => window.location.reload()}

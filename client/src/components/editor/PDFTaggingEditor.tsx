@@ -1027,7 +1027,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-center max-w-md">
-          <div className="text-red-500 text-xl mb-4">⚠️</div>
+          <div className="text-red-500 text-xl mb-4 font-bold">!</div>
           <h2 className="text-xl font-semibold text-gray-800 mb-2">Session Error</h2>
           <p className="text-gray-600 mb-4">{error}</p>
           <button
@@ -1171,6 +1171,9 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
               mode={mode}
               onDocumentSwitch={handleDocumentSwitch}
               onSessionComplete={handleSessionComplete}
+              liveSessionState={liveSessionState}
+              onSetActiveUser={onSetActiveUser}
+              canControlSession={mode === 'signing' && (currentUser?.userType === 'notary' || currentUser?.role === 'admin')}
               className="h-full"
             />
           </div>

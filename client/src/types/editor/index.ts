@@ -133,16 +133,16 @@ export const USER_COLORS = {
 
 // Tag type metadata
 export const TAG_TYPE_INFO = {
-  'A': { label: 'Name', icon: '✍️', description: 'Signer name field' },
-  'S': { label: 'Signature', icon: '📝', description: 'Signature placement' },
-  'I': { label: 'Initials', icon: '🔤', description: 'Initial placement' },
-  'N': { label: 'Commission #', icon: '🆔', description: 'Notary commission number' },
-  'X': { label: 'Expiration', icon: '📅', description: 'Commission expiration date' },
-  'O': { label: 'Disclosure', icon: '📋', description: 'Notary disclosure statement' },
-  'E': { label: 'Seal', icon: '🔖', description: 'Notary seal/stamp' },
-  'W': { label: 'Whiteout', icon: '⬜', description: 'Cover original content' },
-  'T': { label: 'Text', icon: '📝', description: 'Free text input' },
-  'D': { label: 'Date', icon: '📆', description: 'Date field' },
+  'A': { label: 'Name', icon: 'A', description: 'Signer name field' },
+  'S': { label: 'Signature', icon: 'S', description: 'Signature placement' },
+  'I': { label: 'Initials', icon: 'I', description: 'Initial placement' },
+  'N': { label: 'Commission #', icon: 'N', description: 'Notary commission number' },
+  'X': { label: 'Expiration', icon: 'X', description: 'Commission expiration date' },
+  'O': { label: 'Disclosure', icon: 'O', description: 'Notary disclosure statement' },
+  'E': { label: 'Seal', icon: 'E', description: 'Notary seal/stamp' },
+  'W': { label: 'Whiteout', icon: 'W', description: 'Cover original content' },
+  'T': { label: 'Text', icon: 'T', description: 'Free text input' },
+  'D': { label: 'Date', icon: 'D', description: 'Date field' },
 } as const;
 
 // Viewport and canvas types
@@ -163,7 +163,7 @@ export interface PDFViewerState {
 }
 
 export interface EditorMode {
-  mode: 'tagging' | 'notary';
+  mode: 'tagging' | 'notary' | 'signing';
   canPlaceTags: boolean;
   canModifyContent: boolean;
   showPlaceholders: boolean;

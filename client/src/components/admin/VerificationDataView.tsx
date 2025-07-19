@@ -549,7 +549,7 @@ export function VerificationDataView({
                           ))}
                           {attempt.warnings?.map((warning, idx) => (
                             <p key={idx} className="text-xs text-yellow-600 bg-yellow-50 p-2 rounded">
-                              ⚠️ {warning}
+                              Warning: {warning}
                             </p>
                           ))}
                         </div>

@@ -355,7 +355,7 @@ const EditorPage: React.FC<EditorPageProps> = () => {
     return (
       <div className="h-screen flex items-center justify-center bg-gray-50">
         <div className="max-w-md text-center">
-          <div className="text-red-500 text-6xl mb-4">⚠️</div>
+          <div className="text-red-500 text-6xl mb-4 font-bold">!</div>
           <h2 className="text-xl font-bold text-gray-800 mb-2">Session Error</h2>
           <p className="text-gray-600 mb-6">
             {error || jobError?.message || 'Failed to load editor session'}

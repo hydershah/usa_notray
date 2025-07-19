@@ -196,7 +196,7 @@ export class SessionService {
         id: doc.id.toString(),
         sessionId: `session_${jobId}`,
         fileName: doc.fileName,
-        fileUrl: this.generateDocumentUrl(doc.filePath),
+        fileUrl: this.generateDocumentPreviewUrl(jobId, doc.id),
         pageCount: 1, // TODO: Extract from PDF metadata
         fileSize: doc.fileSize,
         uploadedAt: doc.createdAt
@@ -404,6 +404,16 @@ export class SessionService {
       console.log('📁 Local document URL:', url);
       return url;
     }
+  }
+  
+  /**
+   * Generate document preview URL using the working preview endpoint with token support
+   */
+  private static generateDocumentPreviewUrl(jobId: number, documentId: number): string {
+    // Include token parameter for authentication compatibility with iframes/PDFViewer
+    const url = `/api/jobs/${jobId}/documents/${documentId}/preview?token={{TOKEN}}`;
+    console.log('🔗 Generated document preview URL template:', url);
+    return url;
   }
   
   private static getSignerColor(signerNumber: number): string {

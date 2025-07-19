@@ -727,7 +727,7 @@ export const WebRTCVideoConference: React.FC<WebRTCVideoConferenceProps> = ({
     return (
       <div className={`${className} flex items-center justify-center bg-red-50 text-red-800 min-h-[400px]`}>
         <div className="text-center max-w-md p-6">
-          <div className="text-red-500 text-4xl mb-4">⚠️</div>
+          <div className="text-red-500 text-4xl mb-4 font-bold">!</div>
           <h3 className="text-lg font-semibold mb-2">Video Connection Error</h3>
           <p className="text-sm mb-4 text-gray-700">{connectionError}</p>
           
@@ -738,11 +738,11 @@ export const WebRTCVideoConference: React.FC<WebRTCVideoConferenceProps> = ({
               <div>Browser: {navigator.userAgent.split(')')[0]})</div>
               <div>Protocol: {window.location.protocol}</div>
               <div>Host: {window.location.host}</div>
-              <div>WebRTC Support: {window.RTCPeerConnection ? '✅' : '❌'}</div>
-              <div>getUserMedia Support: {navigator.mediaDevices?.getUserMedia ? '✅' : '❌'}</div>
+              <div>WebRTC Support: {window.RTCPeerConnection ? 'Yes' : 'No'}</div>
+              <div>getUserMedia Support: {navigator.mediaDevices?.getUserMedia ? 'Yes' : 'No'}</div>
               <div>Session ID: {sessionId}</div>
-              <div>Token Available: {token ? '✅' : '❌'}</div>
-              <div>Authenticated: {isAuthenticated ? '✅' : '❌'}</div>
+              <div>Token Available: {token ? 'Yes' : 'No'}</div>
+              <div>Authenticated: {isAuthenticated ? 'Yes' : 'No'}</div>
             </div>
           </div>
           

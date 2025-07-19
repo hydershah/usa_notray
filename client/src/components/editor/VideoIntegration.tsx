@@ -204,7 +204,7 @@ export const VideoIntegration: React.FC<VideoIntegrationProps> = ({
     return (
       <div className={`${className} p-4 bg-red-50 border border-red-200 rounded-lg`}>
         <div className="text-center">
-          <div className="text-red-500 text-2xl mb-2">⚠️</div>
+          <div className="text-red-500 text-2xl mb-2 font-bold">!</div>
           <h3 className="text-lg font-semibold text-red-800 mb-2">Video Connection Error</h3>
           <p className="text-sm text-red-600 mb-4">{videoError}</p>
           <Button

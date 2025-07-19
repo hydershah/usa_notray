@@ -359,7 +359,7 @@ export function AdminApprovals() {
                                     : 'bg-red-100 text-red-800'
                                 }`}
                               >
-                                {user[key as keyof PendingUser] ? '✓' : '✗'} {label}
+                                {user[key as keyof PendingUser] ? 'Yes' : 'No'} {label}
                               </Badge>
                             ))}
                           </div>

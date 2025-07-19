@@ -335,7 +335,7 @@ export const ReplaceAllButton: React.FC<ReplaceAllButtonProps> = ({
                       <span className="font-medium">{TAG_LABELS[item.tagType as keyof typeof TAG_LABELS]}</span>
                       <span className="text-gray-500">→</span>
                       <span className="text-gray-600 truncate">
-                        {item.contentType === 'signature' ? '📝 Signature' : item.newContent || 'Empty'}
+                        {item.contentType === 'signature' ? 'Signature' : item.newContent || 'Empty'}
                       </span>
                     </div>
                     <div className="text-xs text-gray-500 whitespace-nowrap">
