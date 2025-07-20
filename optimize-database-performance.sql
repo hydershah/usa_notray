@@ -1,43 +1,59 @@
--- Critical Database Performance Optimizations
--- Run these commands to fix timeout issues and slow queries
+-- Ultra-fast session state endpoint optimization indexes
+-- These indexes will make /api/session/:sessionId/state super fast
 
--- 1. CRITICAL INDEXES for tag loading (fixes 15s timeouts)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_document_tags_session_lookup
-ON document_tags(session_id, document_id, page_number);
+-- Critical indexes for editor_sessions table
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_editor_sessions_session_id_optimized 
+ON editor_sessions (session_id) 
+WHERE status = 'active' AND is_live_session = true;
 
--- 2. Session state query optimization  
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_editor_sessions_status_lookup
-ON editor_sessions(session_id, status) WHERE status = 'active';
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_editor_sessions_job_id_live_signing 
+ON editor_sessions (job_id, updated_at DESC) 
+WHERE is_live_session = true;
 
--- 3. User lookup optimization for tag assignments
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_document_tags_user_lookup
-ON document_tags(assigned_user_id) WHERE assigned_user_id IS NOT NULL;
+-- Composite index for session participants status (most critical)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_session_participants_session_user_optimized 
+ON session_participants_status (session_id, user_id, is_active);
 
--- 4. Tag content updates optimization
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_document_tags_updated_at
-ON document_tags(updated_at DESC, session_id);
+-- Covering index for participant data to avoid table lookups
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_session_participants_full_data 
+ON session_participants_status (session_id) 
+INCLUDE (user_id, is_active, can_interact, joined_at, left_at, last_activity);
 
--- 5. Tag type filtering optimization
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_document_tags_type_lookup
-ON document_tags(tag_type, session_id, document_id);
+-- User data index for fast JOINs
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_essential_data 
+ON users (id) 
+INCLUDE (first_name, last_name, username, role);
 
--- 6. Update table statistics for query planner
-ANALYZE document_tags;
+-- Performance monitoring queries
+-- These will help track the optimization impact
+
 ANALYZE editor_sessions;
+ANALYZE session_participants_status;
 ANALYZE users;
 
--- 7. Clean up dead tuples to improve performance
-VACUUM ANALYZE document_tags;
-VACUUM ANALYZE editor_sessions;
+-- Performance test query (should be sub-10ms after optimization)
+-- EXPLAIN (ANALYZE, BUFFERS) 
+-- SELECT es.id, es.session_id, es.signing_state, es.active_user_id, es.is_live_session
+-- FROM editor_sessions es 
+-- WHERE es.session_id = 'live_99_1753002725659' 
+-- LIMIT 1;
 
--- 8. Show current slow queries (for debugging)
-SELECT 
-    query,
-    mean_exec_time,
-    calls,
-    total_exec_time
-FROM pg_stat_statements 
-WHERE query ILIKE '%document_tags%'
-   OR query ILIKE '%editor_sessions%'
-ORDER BY mean_exec_time DESC
-LIMIT 10; 
+-- EXPLAIN (ANALYZE, BUFFERS)
+-- SELECT sps.user_id, sps.is_active, sps.can_interact, u.first_name, u.username, u.role
+-- FROM session_participants_status sps
+-- INNER JOIN users u ON sps.user_id = u.id
+-- WHERE sps.session_id = 123;
+
+-- Add maintenance for optimal performance
+-- Run these periodically to keep performance optimal
+
+-- Vacuum and reindex for optimal performance (run weekly)
+-- VACUUM ANALYZE editor_sessions;
+-- VACUUM ANALYZE session_participants_status;  
+-- VACUUM ANALYZE users;
+
+-- Check index usage stats (run monthly)
+-- SELECT schemaname, tablename, indexname, idx_tup_read, idx_tup_fetch 
+-- FROM pg_stat_user_indexes 
+-- WHERE indexname LIKE '%session%' OR indexname LIKE '%user%'
+-- ORDER BY idx_tup_read DESC; 

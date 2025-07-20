@@ -36,6 +36,22 @@ export class WebSocketService {
   private sessions: Map<string, SessionRoom> = new Map();
   private userConnections: Map<string, ConnectedUser> = new Map();
   
+  // Track recent join/leave events to reduce log spam
+  private recentEvents = new Map();
+  private readonly EVENT_THROTTLE_MS = 5000; // Only log once per 5 seconds per user
+
+  private shouldLogEvent(userId: string, event: 'join' | 'leave'): boolean {
+    const key = `${userId}-${event}`;
+    const lastTime = this.recentEvents.get(key);
+    const now = Date.now();
+    
+    if (!lastTime || now - lastTime > this.EVENT_THROTTLE_MS) {
+      this.recentEvents.set(key, now);
+      return true;
+    }
+    return false;
+  }
+  
   constructor(server: any) {
     this.wss = new WebSocketServer({ 
       server,
@@ -166,7 +182,9 @@ export class WebSocketService {
         timestamp: Date.now()
       }, connectedUser.userId);
       
-      console.log(`✅ User ${connectedUser.displayName} joined session ${sessionId}`);
+      if (this.shouldLogEvent(connectedUser.userId, 'join')) {
+        console.log(`✅ User ${connectedUser.displayName} joined session ${sessionId}`);
+      }
       
     } catch (error) {
       console.error('Failed to handle WebSocket connection:', error);
@@ -451,7 +469,9 @@ export class WebSocketService {
     
     this.userConnections.delete(user.id);
     
-    console.log(`👋 User ${user.displayName} left session ${user.sessionId}`);
+    if (this.shouldLogEvent(user.userId, 'leave')) {
+      console.log(`👋 User ${user.displayName} left session ${user.sessionId}`);
+    }
   }
   
   /**

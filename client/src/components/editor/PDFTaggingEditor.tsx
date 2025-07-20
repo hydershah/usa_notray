@@ -382,6 +382,42 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     loadUserProfiles();
   }, [mode, participants]);
 
+  // 🔧 FIX: Sync text inputs when tags change via WebSocket
+  useEffect(() => {
+    // Only sync text inputs when tags change and we have text tags
+    const textTags = tags.filter(tag => tag.tagType === 'T');
+    if (textTags.length > 0) {
+      console.log('🔄 Syncing text inputs with updated tags:', textTags.length, 'text tags');
+      loadTextInputsFromTags(tags);
+    }
+  }, [tags, loadTextInputsFromTags]);
+
+  // 🔧 FIX: Sync whiteout overlays when tags change via WebSocket
+  useEffect(() => {
+    // Update whiteout overlays when whiteout tags change
+    const whiteoutTags = tags.filter((tag: DocumentTag) => 
+      tag.tagType === 'W' && tag.isCompleted
+    );
+    
+    if (whiteoutTags.length > 0) {
+      console.log('🔄 Syncing whiteout overlays with updated tags:', whiteoutTags.length, 'whiteout tags');
+      const overlays = whiteoutTags.map((tag: DocumentTag) => ({
+        id: `whiteout_${tag.id}`,
+        documentId: tag.documentId.toString(),
+        coordinates: {
+          x: tag.coordinates.x,
+          y: tag.coordinates.y,
+          width: tag.coordinates.width,
+          height: tag.coordinates.height,
+          pageNumber: tag.coordinates.pageNumber
+        },
+        sessionId: sessionId,
+        createdAt: new Date(tag.createdAt)
+      }));
+      useEditorStore.getState().setWhiteoutOverlays(overlays);
+    }
+  }, [tags, sessionId]);
+
   // Handle instant tag completion (whiteout) - Complete immediately without user interaction
   const handleInstantTagCompletion = useCallback(async (tag: DocumentTag) => {
     try {

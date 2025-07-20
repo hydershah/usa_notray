@@ -51,27 +51,41 @@ const getSSLConfig = () => {
   };
 };
 
-// PostgreSQL connection pool with optimized configuration to fix timeout issues
-export const pool = new Pool({ 
-  connectionString: DATABASE_URL,
-  // 🚀 OPTIMIZED: Reduced connection pool size and faster timeouts
-  max: 8, // Reduced max connections to prevent overload
-  min: 2, // Maintain minimum connections
-  idleTimeoutMillis: 30000, // Close idle connections after 30s
-  connectionTimeoutMillis: 10000, // 10s connection timeout (was 15s)
-  acquireTimeoutMillis: 10000,    // 10s acquire timeout (added for fast failure)
-  // 🔧 FIX: Fast-fail timeouts to prevent 15s hangs
-  statement_timeout: 15000, // 15s statement timeout (was 30s)
-  query_timeout: 15000,     // 15s query timeout (was 30s)
-  // Enable connection reuse and health checks
-  allowExitOnIdle: true,
-  keepAlive: true,
-  keepAliveInitialDelayMillis: 5000,
-  // 🔒 SECURITY: Proper SSL configuration
-  ssl: getSSLConfig(),
-  // 🔧 FIX: Ensure all pool connections use correct schema
-  options: '-c search_path=public'
-});
+// Enhanced pool configuration for better performance and stability
+const getPoolConfig = () => {
+  const baseConfig = {
+    connectionString: DATABASE_URL,
+    ssl: getSSLConfig(),
+    // Connection pool settings for optimal performance
+    max: 10,                    // Maximum pool size (was default 10)
+    min: 2,                     // Minimum pool size for faster response
+    idleTimeoutMillis: 30000,   // Close idle connections after 30 seconds
+    connectionTimeoutMillis: 10000, // Connection timeout
+    // Query timeouts for better performance
+    query_timeout: 25000,       // 25 second query timeout
+    statement_timeout: 25000,   // 25 second statement timeout
+    // Keep alive settings for Supabase
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 5000,
+    // Application name for monitoring
+    application_name: 
+    'usa_notary_api'
+  };
+
+  // Optimize for Supabase specifically
+  if (DATABASE_URL.includes('supabase.co') || DATABASE_URL.includes('supabase.com')) {
+    return {
+      ...baseConfig,
+      max: 8,                   // Lower max for Supabase pooler
+      min: 1,                   // Lower min for Supabase
+      idleTimeoutMillis: 20000, // Shorter idle timeout for Supabase
+    };
+  }
+
+  return baseConfig;
+};
+
+export const pool = new Pool(getPoolConfig());
 
 // Reduced logging - only log important events, not normal connection activity
 let initialConnectionLogged = false;

@@ -1,4 +1,4 @@
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import { db } from '../../db';
 import { editorSessions, sessionParticipantsStatus, liveSessionEvents, users, documentTags } from '../../../shared/schema';
 import { redisCache } from '../redis-cache';
@@ -440,6 +440,158 @@ export class LiveSigningSessionService {
     } catch (error) {
       console.error('Failed to resume session:', error);
       throw error;
+    }
+  }
+  
+  /**
+   * Get current session state and participants - ULTRA OPTIMIZED VERSION
+   */
+  static async getSessionStateOptimized(sessionId: string): Promise<LiveSigningSession> {
+    try {
+      // Use circuit breaker protection for database operations
+      const result = await withDatabaseProtection(async () => {
+        // STEP 1: Single optimized query to get session data with fallback logic
+        let sessionQuery = db
+          .select({
+            id: editorSessions.id,
+            sessionId: editorSessions.sessionId,
+            jobId: editorSessions.jobId,
+            signingState: editorSessions.signingState,
+            activeUserId: editorSessions.activeUserId,
+            startedAt: editorSessions.startedAt,
+            pausedAt: editorSessions.pausedAt,
+            resumedAt: editorSessions.resumedAt,
+            completedAt: editorSessions.completedAt,
+            isLiveSession: editorSessions.isLiveSession
+          })
+          .from(editorSessions);
+        
+        // Try by sessionId first, fallback to jobId if needed
+        let [session] = await sessionQuery
+          .where(eq(editorSessions.sessionId, sessionId))
+          .limit(1);
+        
+        if (!session && !isNaN(parseInt(sessionId))) {
+          [session] = await sessionQuery
+            .where(eq(editorSessions.jobId, parseInt(sessionId)))
+            .orderBy(desc(editorSessions.updatedAt))
+            .limit(1);
+        }
+        
+        if (!session) {
+          throw new Error('Session not found');
+        }
+        
+        // STEP 2: Ultra-fast participants query with minimal data
+        const participants = await this.getSessionParticipantsOptimized(session.id);
+        
+        return {
+          id: session.id,
+          sessionId: session.sessionId,
+          state: session.signingState as SigningSessionState,
+          activeUserId: session.activeUserId || undefined,
+          startedAt: session.startedAt || undefined,
+          pausedAt: session.pausedAt || undefined,
+          resumedAt: session.resumedAt || undefined,
+          completedAt: session.completedAt || undefined,
+          isLiveSession: session.isLiveSession || false,
+          participants
+        };
+      }, 'get_session_state_optimized');
+
+      return result;
+      
+    } catch (error) {
+      console.error('Failed to get session state (optimized):', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get session participants - ULTRA OPTIMIZED VERSION V2
+   */
+  static async getSessionParticipantsOptimized(sessionDbId: number): Promise<SessionParticipant[]> {
+    const cacheKey = `participants:${sessionDbId}:v2`;
+    
+    try {
+      // Check cache first
+      const cached = await redisCache.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      // ULTRA OPTIMIZED: Single query with minimal data - no complex JOINs
+      const startTime = Date.now();
+      
+      const participantsData = await db
+        .select({
+          userId: sessionParticipantsStatus.userId,
+          isActive: sessionParticipantsStatus.isActive,
+          canInteract: sessionParticipantsStatus.canInteract,
+        })
+        .from(sessionParticipantsStatus)
+        .where(eq(sessionParticipantsStatus.sessionId, sessionDbId));
+
+      const queryTime = Date.now() - startTime;
+      
+      if (participantsData.length === 0) {
+        console.log(`📭 No participants found for session ${sessionDbId}`);
+        return [];
+      }
+
+      // Get user details in bulk with single query
+      const userIds = participantsData.map(p => p.userId);
+      
+      // Safety check: if no participants, return empty array
+      if (userIds.length === 0) {
+        console.log('⚠️  No participants found for session', sessionDbId);
+        await redisCache.set(cacheKey, [], 300); // Cache empty result for 5 minutes
+        return [];
+      }
+      
+      const usersData = await db
+        .select({
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          username: users.username,
+          role: users.role
+        })
+        .from(users)
+        .where(inArray(users.id, userIds));
+
+      // Create user lookup map for O(1) access
+      const userMap = new Map(usersData.map(u => [u.id, u]));
+
+      // Fast conversion with map lookup
+      const participants = participantsData.map(p => {
+        const user = userMap.get(p.userId);
+        return {
+          userId: p.userId,
+          displayName: user?.firstName || user?.username || 'User',
+          userType: (user?.role === 'notary' ? 'notary' : 'signer') as 'notary' | 'signer' | 'witness',
+          isActive: p.isActive || false,
+          canInteract: p.canInteract || true,
+          joinedAt: undefined, // Skip for performance
+          leftAt: undefined,   // Skip for performance  
+          lastActivity: undefined // Skip for performance
+        };
+      });
+
+      console.log(`⚡ Ultra-fast participants query: ${queryTime}ms for ${participants.length} participants`);
+
+      // Cache for 60 seconds
+      try {
+        await redisCache.set(cacheKey, participants, 60);
+      } catch (cacheError) {
+        console.warn('Failed to cache participants:', cacheError);
+      }
+
+      return participants;
+      
+    } catch (error) {
+      console.warn(`❌ Participants query failed for session ${sessionDbId}:`, error);
+      return [];
     }
   }
   

@@ -75,6 +75,8 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
         secure: false,
+        // Add retry logic for server startup delays
+        timeout: 10000, // 10 second timeout
         configure: (proxy, options) => {
           proxy.on('proxyReq', (proxyReq, req, res) => {
             // Forward all original headers including Authorization
@@ -89,13 +91,60 @@ export default defineConfig({
               proxyReq.setHeader('Content-Type', req.headers['content-type']);
             }
           });
+          
+          // Suppress ECONNREFUSED errors during startup
+          proxy.on('error', (err, req, res) => {
+            if (err.code === 'ECONNREFUSED') {
+              // Server not ready yet - return 503 Service Unavailable instead of crashing
+              if (!res.headersSent) {
+                res.writeHead(503, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ 
+                  error: 'Server starting up, please wait...', 
+                  code: 'SERVER_STARTING' 
+                }));
+              }
+            } else {
+              console.error('Proxy error:', err);
+            }
+          });
         }
       },
       '/ws': {
         target: 'http://localhost:3000',
         changeOrigin: true,
         ws: true,
-        secure: false
+        secure: false,
+        timeout: 10000
+      },
+      '/socket.io': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        ws: true,
+        secure: false,
+        timeout: 10000,
+        // Suppress WebSocket connection errors during startup
+        configure: (proxy, options) => {
+          proxy.on('error', (err) => {
+            if (err.code !== 'ECONNREFUSED') {
+              console.error('Socket.IO proxy error:', err);
+            }
+          });
+        }
+      },
+      '/video-signaling': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        ws: true,
+        secure: false,
+        timeout: 10000,
+        // Suppress WebSocket connection errors during startup  
+        configure: (proxy, options) => {
+          proxy.on('error', (err) => {
+            if (err.code !== 'ECONNREFUSED') {
+              console.error('Video signaling proxy error:', err);
+            }
+          });
+        }
       }
     },
   },
@@ -108,6 +157,7 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
         secure: false,
+        timeout: 10000, // Add timeout for preview mode too
         configure: (proxy, options) => {
           proxy.on('proxyReq', (proxyReq, req, res) => {
             // Forward all original headers including Authorization
@@ -122,13 +172,43 @@ export default defineConfig({
               proxyReq.setHeader('Content-Type', req.headers['content-type']);
             }
           });
+          
+          // Suppress ECONNREFUSED errors during startup
+          proxy.on('error', (err, req, res) => {
+            if (err.code === 'ECONNREFUSED') {
+              if (!res.headersSent) {
+                res.writeHead(503, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ 
+                  error: 'Server starting up, please wait...', 
+                  code: 'SERVER_STARTING' 
+                }));
+              }
+            } else {
+              console.error('Preview proxy error:', err);
+            }
+          });
         }
       },
       '/ws': {
         target: 'http://localhost:3000',
         changeOrigin: true,
         ws: true,
-        secure: false
+        secure: false,
+        timeout: 10000
+      },
+      '/socket.io': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        ws: true,
+        secure: false,
+        timeout: 10000
+      },
+      '/video-signaling': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        ws: true,
+        secure: false,
+        timeout: 10000
       }
     },
   },

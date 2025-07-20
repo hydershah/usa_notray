@@ -7479,22 +7479,59 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     }
   });
 
-  // Get session state and participants - OPTIMIZED VERSION
-  app.get('/api/session/:sessionId/state', verifyToken, cacheJobData(30), async (req: any, res) => {
+  // Get session state and participants - ULTRA OPTIMIZED VERSION  
+  app.get('/api/session/:sessionId/state', verifyToken, async (req: any, res) => {
     const startTime = Date.now();
     
     try {
       const { sessionId } = req.params;
+      
+      // Generate ETag based on sessionId and timestamp to enable 304 responses
+      const etag = `"session-${sessionId}-${Math.floor(Date.now() / 30000)}"`;  // Update every 30s
+      
+      // Check for conditional request headers for ultra-fast 304 responses
+      if (req.headers['if-none-match'] === etag) {
+        console.log(`⚡ ULTRA-FAST 304: session ${sessionId} (${Date.now() - startTime}ms)`);
+        return res.status(304).end();
+      }
 
-      console.log(`📡 Session state request for: ${sessionId} by user ${req.user.id}`);
+      // Try Redis cache first (with shorter duration logging)
+      const cacheKey = `session:${sessionId}:state:v2`;
+      try {
+        const cached = await redisCache.get(cacheKey);
+        if (cached) {
+          res.set('ETag', etag);
+          res.set('Cache-Control', 'max-age=30');
+          console.log(`📦 Cache HIT: session ${sessionId} (${Date.now() - startTime}ms)`);
+          return res.json({
+            success: true,
+            data: cached
+          });
+        }
+      } catch (cacheError) {
+        console.warn('Cache read error:', cacheError);
+      }
+
+      console.log(`📡 Fresh request: session ${sessionId} by user ${req.user.id}`);
 
       const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
       
-      const sessionState = await LiveSigningSessionService.getSessionState(sessionId);
+      const sessionState = await LiveSigningSessionService.getSessionStateOptimized(sessionId);
+      
+      // Cache the result for 30 seconds
+      try {
+        await redisCache.set(cacheKey, sessionState, 30);
+      } catch (cacheError) {
+        console.warn('Cache write error:', cacheError);
+      }
       
       const duration = Date.now() - startTime;
       
-      if (duration > 1000) {
+      // Set proper cache headers
+      res.set('ETag', etag);
+      res.set('Cache-Control', 'max-age=30, must-revalidate');
+      
+      if (duration > 200) {  // Lower threshold for session state
         console.log(`🐌 SLOW REQUEST: {
   method: 'GET',
   url: '/api/session/${sessionId}/state',
@@ -7503,6 +7540,8 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   requestId: 'req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}',
       userId: ${req.user.id}
   }`);
+      } else {
+        console.log(`⚡ FAST: session ${sessionId} (${duration}ms)`);
       }
       
       res.json({

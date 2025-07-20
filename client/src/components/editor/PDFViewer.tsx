@@ -403,11 +403,33 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                   
                   // Enhanced image detection logic
                   const isImageContent = () => {
+                    const getImageUrl = () => {
+                      if (typeof contentData?.value === 'string') return contentData.value;
+                      if (contentData?.value && typeof contentData.value === 'object') {
+                        const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src'];
+                        for (const key of possibleKeys) {
+                          if (typeof (contentData.value as any)[key] === 'string') {
+                            return (contentData.value as any)[key];
+                          }
+                        }
+                      }
+                      if (typeof tag.content === 'string') return tag.content;
+                      if (tag.content && typeof tag.content === 'object') {
+                        const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src'];
+                        for (const key of possibleKeys) {
+                          if (typeof (tag.content as any)[key] === 'string') {
+                            return (tag.content as any)[key];
+                          }
+                        }
+                      }
+                      return '';
+                    };
+
                     // CRITICAL: Whiteout tags should NEVER be treated as images
                     if (tag.tagType === 'W') {
                       return false; // Whiteout is always text/solid color, never an image
                     }
-                    
+
                     console.log('🔍 Image detection for tag', tag.id, ':', {
                       tagType: tag.tagType,
                       hasContentData: !!contentData,
@@ -417,73 +439,29 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                       tagContentPreview: tag.content && typeof tag.content === 'string' ? tag.content.substring(0, 50) + '...' : JSON.stringify(tag.content),
                       contentType: tag.contentType
                     });
-                    
-                    // Check contentData.value first (most reliable)
-                    if (contentData?.value && typeof contentData.value === 'string') {
-                      const value = contentData.value;
+                    const imageUrl = getImageUrl();
+                    if (imageUrl) {
                       const hasImageData = (
-                        value.startsWith('data:image/') ||
-                        value.startsWith('https://') ||
-                        value.includes('vultrobjects.com') ||
-                        value.includes('.png') ||
-                        value.includes('.jpg') ||
-                        value.includes('.jpeg') ||
-                        value.includes('.webp') ||
-                        value.includes('.gif') ||
-                        value.includes('.svg')
+                        imageUrl.startsWith('data:image/') ||
+                        imageUrl.startsWith('http') ||
+                        imageUrl.includes('.png') ||
+                        imageUrl.includes('.jpg') ||
+                        imageUrl.includes('.jpeg') ||
+                        imageUrl.includes('.gif') ||
+                        imageUrl.includes('.svg') ||
+                        imageUrl.includes('.webp')
                       );
-                      
                       if (hasImageData) {
-                        console.log('✅ Image detected in contentData.value for tag', tag.id, 'Value type:', typeof value === 'string' ? value.substring(0, 30) + '...' : JSON.stringify(value));
                         return true;
                       }
                     }
-                    
-                    // Check raw content field as fallback (for direct image data)
-                    if (tag.content && typeof tag.content === 'string') {
-                      const hasImageData = (
-                        tag.content.startsWith('data:image/') ||
-                        tag.content.startsWith('https://') ||
-                        tag.content.includes('vultrobjects.com') ||
-                        tag.content.includes('.png') ||
-                        tag.content.includes('.jpg') ||
-                        tag.content.includes('.jpeg') ||
-                        tag.content.includes('.webp')
-                      );
-                      
-                      if (hasImageData) {
-                        console.log('✅ Image detected in raw content for tag', tag.id);
-                        return true;
-                      }
-                    }
-                    
-                    // Check contentType field
+
+                    // Check contentType as fallback
                     if (contentData?.contentType === 'image' || tag.contentType === 'image') {
-                      console.log('✅ Image detected via contentType for tag', tag.id);
                       return true;
                     }
-                    
-                    // Check if it's a signature/initials/seal type with content
-                    if (contentData?.type && ['signature', 'initials', 'seal', 'stamp'].includes(contentData.type)) {
-                      // Only return true if there's actual image-like content
-                      const contentToCheck = contentData.value || tag.content;
-                      const isImageLike = !!(contentToCheck && 
-                              typeof contentToCheck === 'string' && 
-                              contentToCheck.length > 50 && // Must be substantial content
-                              (contentToCheck.startsWith('data:image/') || 
-                               contentToCheck.startsWith('https://') ||
-                               contentToCheck.includes('vultrobjects.com')));
-                      
-                      if (isImageLike) {
-                        console.log('✅ Image detected via signature/seal type for tag', tag.id);
-                      }
-                      
-                      return isImageLike;
-                    }
-                    
-                    const result = false;
-                    console.log('🔍 Image detection result for tag', tag.id, ':', result);
-                    return result;
+
+                    return false;
                   };
                   
                   // If image failed to load or not image content, show text content
@@ -499,15 +477,54 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                         }}
                       >
                         {/* Always show the actual content, never "Applied" messages */}
-                        {typeof contentData?.value === 'string' ? contentData.value : 
-                         contentData?.value ? JSON.stringify(contentData.value) :
-                         tag.content || '[No content]'}
+                        {(() => {
+                          // Only display meaningful content to users, never debug data
+                          if (typeof contentData?.value === 'string') {
+                            const value = contentData.value;
+                            // Check if the value is an image URL (e.g., ends with .png, .jpg, .jpeg, or contains 'data:image')
+                            const isImageUrl = value.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i) || value.startsWith('data:image');
+                            if (isImageUrl) {
+                              return value; // Preserve image URLs for rendering
+                            }
+                            // Filter out technical/debug data for non-image URLs
+                            if (value.includes('Algorithm=') || value.includes('Signature=') || value.includes('Expires=') || value.includes('&X-Amz-') || value.includes('vultrobjects.com')) {
+                              return '[Applied]';
+                            }
+                            return value;
+                          } else if (contentData?.value && typeof contentData.value === 'object') {
+                            return '[Applied]';
+                          } else {
+                            return tag.content && typeof tag.content === 'string' ? tag.content : '[No content]';
+                          }
+                        })()}
                       </div>
                     );
                   }
                   
-                  // Determine the best image source from available data
-                  const imageSource = contentData.value || tag.content || '';
+                  // Determine the best image source from available data, handling nested objects
+                  const getImageUrl = () => {
+                    if (typeof contentData?.value === 'string') return contentData.value;
+                    if (contentData?.value && typeof contentData.value === 'object') {
+                      const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src'];
+                      for (const key of possibleKeys) {
+                        if (typeof (contentData.value as any)[key] === 'string') {
+                          return (contentData.value as any)[key];
+                        }
+                      }
+                    }
+                    if (typeof tag.content === 'string') return tag.content;
+                    if (tag.content && typeof tag.content === 'object') {
+                      const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src'];
+                      for (const key of possibleKeys) {
+                        if (typeof (tag.content as any)[key] === 'string') {
+                          return (tag.content as any)[key];
+                        }
+                      }
+                    }
+                    return '';
+                  };
+
+                  const imageSource = getImageUrl();
                   
                   return (
                     <img 

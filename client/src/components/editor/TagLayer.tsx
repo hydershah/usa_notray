@@ -259,31 +259,48 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         };
       }
       
+      // Helper to extract image URL from contentData or tag.content
+      const getImageUrl = () => {
+        if (typeof contentData?.value === 'string') return contentData.value;
+        if (contentData?.value && typeof contentData.value === 'object') {
+          const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src'];
+          for (const key of possibleKeys) {
+            if (typeof (contentData.value as any)[key] === 'string') {
+              return (contentData.value as any)[key];
+            }
+          }
+        }
+        if (typeof tag.content === 'string') return tag.content;
+        if (tag.content && typeof tag.content === 'object') {
+          const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src'];
+          for (const key of possibleKeys) {
+            if (typeof (tag.content as any)[key] === 'string') {
+              return (tag.content as any)[key];
+            }
+          }
+        }
+        return '';
+      };
+
       // Enhanced image detection logic
       const isImageContent = () => {
+        const imageUrl = getImageUrl();
         // Check if tag type is inherently image-based
         if (['S', 'I', 'E'].includes(tag.tagType)) {
-          return true; // Signature, Initials, Seal are always images
+          return !!imageUrl;
         }
-        
-        // Check contentData type
-        if (contentData?.type && ['signature', 'initials', 'seal', 'stamp'].includes(contentData.type)) {
-          return true;
-        }
-        
-        // Check if value looks like an image URL/data
-        if (contentData?.value && typeof contentData.value === 'string') {
+        if (imageUrl) {
           return (
-            contentData.value.startsWith('data:image/') ||
-            contentData.value.startsWith('http') ||
-            contentData.value.includes('vultrobjects.com') ||
-            contentData.value.includes('.png') ||
-            contentData.value.includes('.jpg') ||
-            contentData.value.includes('.jpeg') ||
-            contentData.value.includes('.webp')
+            imageUrl.startsWith('data:image/') ||
+            imageUrl.startsWith('http') ||
+            imageUrl.includes('.png') ||
+            imageUrl.includes('.jpg') ||
+            imageUrl.includes('.jpeg') ||
+            imageUrl.includes('.gif') ||
+            imageUrl.includes('.svg') ||
+            imageUrl.includes('.webp')
           );
         }
-        
         return false;
       };
 
@@ -291,7 +308,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         <div className="w-full h-full flex items-center justify-center">
           {isImageContent() ? (
             <img 
-              src={contentData.value} 
+              src={getImageUrl()} 
               alt={contentData.type === 'signature' ? 'Signature' : 
                    contentData.type === 'initials' ? 'Initials' : 
                    contentData.type === 'seal' || contentData.type === 'stamp' ? 'Notary Seal' : 'Image'} 
@@ -302,14 +319,72 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                 maxWidth: '100%'
               }}
               onError={(e) => {
-                console.error('🖼️ Image failed to load in TagLayer:', contentData.value);
+                console.error('🖼️ Image failed to load in TagLayer:', getImageUrl());
+                // Try to refresh image if it's an expiring Vultr signed URL
+                const failedUrl = getImageUrl();
+                if (failedUrl.includes('vultrobjects.com') && failedUrl.includes('X-Amz-Expires')) {
+                  fetch(`/api/tags/${tag.id}/refresh-content`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                      'Content-Type': 'application/json'
+                    }
+                  }).then(res => {
+                    if (res.ok) {
+                      console.log('🔄 Refreshed tag content, attempting to reload image');
+                      res.json().then(data => {
+                        if (data?.content) {
+                          const newUrl = typeof data.content === 'string' ? data.content : (data.content?.value || '');
+                          if (newUrl) {
+                            e.currentTarget.style.display = 'block';
+                            e.currentTarget.setAttribute('src', newUrl);
+                            return;
+                          }
+                        }
+                        // Fallback reload
+                        window.location.reload();
+                      }).catch(() => window.location.reload());
+                    }
+                  }).catch(err => {
+                    console.error('❌ Failed to refresh tag content:', err);
+                  });
+                }
                 // Show actual content instead of generic "Applied" message
                 e.currentTarget.style.display = 'none';
                 const parent = e.currentTarget.parentElement;
                 if (parent) {
-                  const actualContent = typeof contentData?.value === 'string' ? contentData.value : 
-                                     contentData?.value ? JSON.stringify(contentData.value) :
-                                     tag.content || '[No content]';
+                  const actualContent = (() => {
+                    // Only display meaningful content to users, never debug data
+                    if (typeof contentData?.value === 'string') {
+                      const value = contentData.value;
+                      
+                      // Check if this is an image URL - don't filter image URLs even with technical parameters
+                      const isImageUrl = value.startsWith('data:image/') || 
+                                       value.startsWith('https://') ||
+                                       value.includes('vultrobjects.com') ||
+                                       value.includes('.png') ||
+                                       value.includes('.jpg') ||
+                                       value.includes('.jpeg') ||
+                                       value.includes('.gif') ||
+                                       value.includes('.svg');
+                      
+                      // If it's an image URL that reached text rendering, it means the image failed to load
+                      // In this case, show a user-friendly message instead of the raw URL
+                      if (isImageUrl) {
+                        return '[Applied]';
+                      }
+                      
+                      // For non-image content, filter out technical/debug data
+                      if (value.includes('Algorithm=') || value.includes('Signature=') || value.includes('Expires=') || value.includes('&X-Amz-')) {
+                        return '[Applied]'; // Show simple applied message for technical data
+                      }
+                      return value;
+                    } else if (contentData?.value && typeof contentData.value === 'object') {
+                      return '[Applied]';
+                    } else {
+                      return tag.content && typeof tag.content === 'string' ? tag.content : '[No content]';
+                    }
+                  })();
                   const displayContent = actualContent.length > 50 ? actualContent.substring(0, 47) + '...' : actualContent;
                   parent.innerHTML = `<div class="w-full h-full flex items-center justify-center bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs font-medium p-1" style="word-break: break-word; line-height: 1.2;">${displayContent}</div>`;
                 }
@@ -325,9 +400,26 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                 fontFamily: 'inherit'
               }}
             >
-              {typeof contentData?.value === 'string' ? contentData.value : 
-               contentData?.value ? JSON.stringify(contentData.value) :
-               tag.content || '[No content]'}
+              {(() => {
+                // Only display meaningful content to users, never debug data
+                if (typeof contentData?.value === 'string') {
+                  const value = contentData.value;
+                  // Check if the value is an image URL (e.g., ends with .png, .jpg, .jpeg, or contains 'data:image')
+                  const isImageUrl = value.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i) || value.startsWith('data:image');
+                  if (isImageUrl) {
+                    return value; // Preserve image URLs for rendering
+                  }
+                  // Filter out technical/debug data for non-image URLs
+                  if (value.includes('Algorithm=') || value.includes('Signature=') || value.includes('Expires=') || value.includes('&X-Amz-') || value.includes('vultrobjects.com')) {
+                    return '[Applied]';
+                  }
+                  return value;
+                } else if (contentData?.value && typeof contentData.value === 'object') {
+                  return '[Applied]';
+                } else {
+                  return tag.content && typeof tag.content === 'string' ? tag.content : '[No content]';
+                }
+              })()}
             </div>
           )}
         </div>

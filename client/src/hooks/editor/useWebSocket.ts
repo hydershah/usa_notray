@@ -153,16 +153,40 @@ export const useWebSocket = (config: WebSocketConfig) => {
             isCompleted: message.payload.isCompleted,
             source: message.payload.source || 'manual'
           });
+          
+          // 🔧 FIX: Serialize contentData for client compatibility
+          let processedContentData = message.payload.contentData;
+          if (processedContentData && typeof processedContentData === 'object') {
+            try {
+              processedContentData = JSON.stringify(processedContentData);
+              console.log('📦 Serialized contentData for tag', message.payload.tagId, ':', {
+                originalType: typeof message.payload.contentData,
+                serializedLength: processedContentData.length
+              });
+            } catch (e) {
+              console.warn('Failed to serialize contentData, using original:', e);
+              processedContentData = message.payload.contentData;
+            }
+          }
+          
           // Update the tag with the new content
           updateTag(message.payload.tagId, {
             content: message.payload.content,
             contentType: message.payload.contentType,
-            contentData: message.payload.contentData,
+            contentData: processedContentData,
             isCompleted: message.payload.isCompleted,
             completedBy: message.payload.completedBy,
             completedAt: message.payload.completedAt,
             updatedBy: message.payload.updatedBy
           });
+          
+          // 🔧 FIX: Update text inputs for text tags (T)
+          if (message.payload.tagType === 'T') {
+            console.log('📝 Updating text input for text tag:', message.payload.tagId);
+            // Notify text input system about the content change
+            // This is handled via the tags state update above, but we could add specific text input sync here
+          }
+          
           break;
 
         case 'tag_deleted':
