@@ -236,25 +236,8 @@ const WherebyVideoConference: React.FC<WherebyVideoConferenceProps> = ({
     }
   }, [wherebyMeeting, jobId, toast]);
 
-  // Auto-start for signing sessions
-  useEffect(() => {
-    if (autoStart) {
-      console.log('🎥 Auto-start triggered for signing session');
-      
-      const startWhenReady = async () => {
-        await new Promise(resolve => setTimeout(resolve, 200));
-        
-        if (iframeRef.current) {
-          console.log('🎬 Iframe ready, starting video');
-          startVideo();
-        } else {
-          console.log('⚠️ Iframe not ready for auto-start');
-        }
-      };
-      
-      startWhenReady();
-    }
-  }, [autoStart, startVideo]);
+  // Auto-start functionality removed to prevent repeated triggers
+  // Users will need to manually start the video conference
 
   // Render video controls
   const renderVideoControls = () => (

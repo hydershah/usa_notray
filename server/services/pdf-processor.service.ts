@@ -281,7 +281,7 @@ export class PDFProcessorService {
         // Check if it's a Vultr URL or regular URL
         if (value.startsWith('http') || value.includes('vultrobjects.com')) {
           console.log('🌐 Downloading image from URL for PDF (structured):', value.substring(0, 100));
-          return await this.downloadImageFromUrl(value);
+          return await PDFProcessorService.downloadImageFromUrl(value);
         }
         
         // Check if it's just base64 without the data: prefix
@@ -296,7 +296,7 @@ export class PDFProcessorService {
         // Check if contentData itself is a URL (legacy format)
         if (contentData.startsWith('http') || contentData.includes('vultrobjects.com')) {
           console.log('🌐 Downloading image from URL for PDF (legacy contentData):', contentData.substring(0, 100));
-          return await this.downloadImageFromUrl(contentData);
+          return await PDFProcessorService.downloadImageFromUrl(contentData);
         }
         
         // Check if it's base64 data
@@ -317,7 +317,7 @@ export class PDFProcessorService {
         
         if (content.startsWith('http') || content.includes('vultrobjects.com')) {
           console.log('🌐 Downloading image from URL for PDF (fallback):', content.substring(0, 100));
-          return await this.downloadImageFromUrl(content);
+          return await PDFProcessorService.downloadImageFromUrl(content);
         }
         
         if (this.isBase64String(content)) {
@@ -346,7 +346,7 @@ export class PDFProcessorService {
   /**
    * Download image from URL and convert to base64
    */
-  private async downloadImageFromUrl(url: string): Promise<string | null> {
+  private static async downloadImageFromUrl(url: string): Promise<string | null> {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
@@ -361,6 +361,11 @@ export class PDFProcessorService {
       clearTimeout(timeoutId);
       
       if (!response.ok) {
+        // Check if this is a 403 error (expired signed URL) from Vultr
+        if (response.status === 403 && url.includes('vultrobjects.com')) {
+          console.warn('🔑 Vultr signed URL expired (403), attempting to regenerate...');
+                     return await PDFProcessorService.regenerateVultrUrl(url);
+        }
         throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
       }
       
@@ -374,6 +379,36 @@ export class PDFProcessorService {
       
     } catch (error) {
       console.error('❌ Failed to download image from URL:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Regenerate expired Vultr signed URL and retry download
+   */
+  private static async regenerateVultrUrl(expiredUrl: string): Promise<string | null> {
+    try {
+      // Extract file key from expired Vultr URL
+      // Format: https://usanotary.ewr1.vultrobjects.com/development/signature/...?X-Amz-...
+      const urlParts = expiredUrl.split('vultrobjects.com/')[1];
+      if (!urlParts) {
+        throw new Error('Cannot extract file key from Vultr URL');
+      }
+      
+      const fileKey = urlParts.split('?')[0]; // Remove query parameters
+      console.log('🔑 Extracted file key from expired URL:', fileKey);
+      
+      // Generate fresh signed URL using cloud storage service
+      const { cloudStorage } = await import('../lib/cloud-storage-service');
+      const freshUrl = await cloudStorage.getSignedUrl(fileKey, 3600); // 1 hour expiry
+      
+      console.log('✨ Generated fresh signed URL for expired image');
+      
+      // Retry download with fresh URL
+      return await PDFProcessorService.downloadImageFromUrl(freshUrl);
+      
+    } catch (error) {
+      console.error('❌ Failed to regenerate Vultr URL:', error);
       return null;
     }
   }

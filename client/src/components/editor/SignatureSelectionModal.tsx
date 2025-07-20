@@ -610,7 +610,17 @@ export const SignatureSelectionModal: React.FC<SignatureSelectionModalProps> = (
                             className="max-h-20 max-w-full object-contain"
                             onError={(e) => {
                               console.error('Failed to load signature image:', signature.imageUrl);
-                              (e.target as HTMLImageElement).src = '/api/placeholder/signature';
+                              // Hide the broken image and show a text fallback instead
+                              const img = e.target as HTMLImageElement;
+                              img.style.display = 'none';
+                              const parent = img.parentElement;
+                              if (parent && !parent.querySelector('.signature-fallback')) {
+                                const fallback = document.createElement('div');
+                                fallback.className = 'signature-fallback text-gray-500 text-sm font-medium text-center';
+                                fallback.textContent = `${signature.name}\n(${signature.type})`;
+                                fallback.style.whiteSpace = 'pre-line';
+                                parent.appendChild(fallback);
+                              }
                             }}
                           />
                         </div>

@@ -1878,12 +1878,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Handle multiple document uploads to Vultr with intelligent organization
+      // 🚀 OPTIMIZED: Handle multiple document uploads to Vultr in PARALLEL
       if (req.files && req.files.length > 0) {
         const { VultrUploadHandler } = await import('./vultr-upload-handler');
         
-        for (let i = 0; i < req.files.length; i++) {
-          const file = req.files[i];
+        // Create all upload promises in parallel
+        const uploadPromises = req.files.map(async (file: any, i: number) => {
           const metadataKey = `documentMetadata_${i}`;
           let metadata = { isRequired: false, documentType: 'original', originalName: file.originalname };
           
@@ -1898,7 +1898,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Upload to Vultr with intelligent organization
           const fileBuffer = Buffer.from(file.buffer || await fs.promises.readFile(file.path));
           
-          const uploadResult = await VultrUploadHandler.handleJobDocumentUpload(
+          return VultrUploadHandler.handleJobDocumentUpload(
             fileBuffer,
             file.originalname,
             job.id,
@@ -1909,50 +1909,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
               titleCompany: jobData.titleCompany
             }
           );
+        });
 
-          if (!uploadResult.success) {
-            console.error(`Failed to upload document to Vultr: ${uploadResult.error}`);
-            return res.status(500).json({ 
-              message: `Failed to upload document: ${uploadResult.error}`,
-              error: 'vultr_upload_failed'
-            });
-          }
-          // If successful, the document record was already created by VultrUploadHandler
+        // Wait for all uploads to complete in parallel
+        const uploadResults = await Promise.all(uploadPromises);
+        
+        // Check if any uploads failed
+        const failedUpload = uploadResults.find(result => !result.success);
+        if (failedUpload) {
+          console.error(`Failed to upload document to Vultr: ${failedUpload.error}`);
+          return res.status(500).json({ 
+            message: `Failed to upload document: ${failedUpload.error}`,
+            error: 'vultr_upload_failed'
+          });
         }
+        
+        console.log(`✅ Successfully uploaded ${uploadResults.length} documents in parallel`);
       }
 
-      // Create signers if provided
+      // 🚀 OPTIMIZED: Create signers in BATCH operations (much faster)
       if (req.body.signers) {
         const signers = JSON.parse(req.body.signers);
+        
+        // 🚀 STEP 1: Check all existing users in one query
+        const signerEmails = signers.map((s: any) => s.signerEmail);
+        const existingUsers = await db.select()
+          .from(users)
+          .where(inArray(users.email, signerEmails));
+        
+        const existingUserMap = new Map(existingUsers.map(u => [u.email, u]));
+        
+        // 🚀 STEP 2: Validate and prepare new users
+        const newUsersToCreate = [];
+        const signerUserMapping = [];
+        
         for (const signerData of signers) {
-          // Check if user already exists
-          const [existingUser] = await db.select()
-            .from(users)
-            .where(eq(users.email, signerData.signerEmail));
-
-          let userId;
+          const existingUser = existingUserMap.get(signerData.signerEmail);
+          
           if (!existingUser) {
-            // Create new user account for the signer
+            // Prepare new user for batch creation
             const hashedPassword = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
-            const [newUser] = await db.insert(users).values({
+            newUsersToCreate.push({
               username: signerData.signerEmail,
               email: signerData.signerEmail,
-              password: hashedPassword, // Temporary password, will be reset
+              password: hashedPassword,
               role: 'signer',
               firstName: signerData.signerName.split(' ')[0] || '',
               lastName: signerData.signerName.split(' ').slice(1).join(' ') || '',
               phoneNumber: signerData.signerPhoneNumber || '',
-              isVerified: false, // Account not verified yet
-              verificationStatus: 'pending', // Pending verification
-              accountSetupComplete: false, // Password needs to be set
-              // Auto-approve signers and witnesses - they don't need admin approval
+              isVerified: false,
+              verificationStatus: 'pending',
+              accountSetupComplete: false,
               approvalStatus: 'approved',
               isActive: true,
               createdAt: new Date()
-            }).returning();
-            userId = newUser.id;
+            });
+            signerUserMapping.push({ signerData, isNew: true, index: newUsersToCreate.length - 1 });
           } else {
-            // Check if existing user is a notary - notaries cannot be signers
+            // Validate existing user
             if (existingUser.role === 'notary') {
               console.error(`❌ Cannot add notary ${existingUser.email} as a signer - conflict of interest`);
               return res.status(400).json({ 
@@ -1960,7 +1974,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
               });
             }
             
-            // Check if existing user is already a signer
             if (existingUser.role !== 'signer' && existingUser.role !== 'witness') {
               console.error(`❌ Cannot add ${existingUser.role} ${existingUser.email} as a signer`);
               return res.status(400).json({ 
@@ -1968,34 +1981,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
               });
             }
             
-            userId = existingUser.id;
+            signerUserMapping.push({ signerData, isNew: false, userId: existingUser.id });
           }
-
-          // Create signer record linked to user
-          await storage.createSigner({
-            ...signerData,
+        }
+        
+        // 🚀 STEP 3: Create new users in batch
+        let newUsers = [];
+        if (newUsersToCreate.length > 0) {
+          newUsers = await db.insert(users).values(newUsersToCreate).returning();
+        }
+        
+        // 🚀 STEP 4: Create signers and password reset tokens in batch
+        const signersToCreate = [];
+        const tokensToCreate = [];
+        
+        for (const mapping of signerUserMapping) {
+          const userId = mapping.isNew ? newUsers[mapping.index].id : mapping.userId;
+          const invitationToken = crypto.randomUUID();
+          
+          signersToCreate.push({
+            ...mapping.signerData,
             jobId: job.id,
             userId: userId,
-            invitationToken: crypto.randomUUID()
+            invitationToken
           });
-
-          // Generate password reset token for account setup
-          const passwordResetToken = crypto.randomUUID();
+          
           const tokenExpiry = new Date();
-          tokenExpiry.setHours(tokenExpiry.getHours() + 24); // 24 hour expiry
-
-          // Store password reset token
-          await db.insert(passwordResetTokens).values({
+          tokenExpiry.setHours(tokenExpiry.getHours() + 24);
+          
+          tokensToCreate.push({
             userId: userId,
-            token: passwordResetToken,
+            token: crypto.randomUUID(),
             expiresAt: tokenExpiry,
             used: false
           });
-
-          // NOTE: Signer notifications will be sent after notary approval
-          // Account setup emails are deferred until notary approves the job
-          console.log(`Signer account created for ${signerData.signerEmail} - notifications will be sent after notary approval`);
         }
+        
+        // 🚀 STEP 5: Insert signers and tokens in parallel
+        await Promise.all([
+          Promise.all(signersToCreate.map(signer => storage.createSigner(signer))),
+          db.insert(passwordResetTokens).values(tokensToCreate)
+        ]);
+        
+        console.log(`✅ Created ${signers.length} signers in batch (${newUsers.length} new users, ${signers.length - newUsers.length} existing)`);
       }
 
       // SEND SIGNER INVITATIONS FOR AUTO-APPROVED JOBS (after signers are created)
@@ -2012,8 +2040,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           console.log(`   Found ${jobSigners.length} signers to invite`);
           
-          // Send invitation to each signer directly (like resend does)
-          for (const signer of jobSigners) {
+          // 🚀 OPTIMIZED: Send all invitations in PARALLEL
+          const invitationPromises = jobSigners.map(async (signer) => {
             try {
               // Generate invitation token if not exists
               let invitationToken = signer.invitationToken;
@@ -2046,27 +2074,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 scheduledTime: updatedJob.selectedTime || undefined
               });
 
-              // Log notification (but don't fail if this fails)
-              try {
-                await db.insert(jobNotifications).values({
-                  jobId: job.id,
-                  recipientId: signer.userId || 0,
-                  recipientEmail: signer.signerEmail,
-                  notificationType: 'signer_invite',
-                  status: 'sent',
-                  subject: `🏛️ Secure Document Signing Required - ${updatedJob.titleCompany}`,
-                  message: `Invitation sent to ${signer.signerName} for ${updatedJob.titleCompany} document signing`,
-                  metadata: { jobId: job.id, signerId: signer.id, invitationToken },
-                  sentAt: new Date()
-                });
-              } catch (logError) {
-                console.warn('Failed to log notification:', logError);
-              }
-
-              console.log(`✅ Invitation sent to ${signer.signerName} (${signer.signerEmail})`);
-            } catch (signerError) {
-              console.error(`❌ Failed to send invitation to ${signer.signerEmail}:`, signerError);
+              return { success: true, signerEmail: signer.signerEmail };
+            } catch (error) {
+              console.error(`Failed to send invitation to ${signer.signerEmail}:`, error);
+              return { success: false, signerEmail: signer.signerEmail, error };
             }
+          });
+
+          // Wait for all invitations to be sent in parallel
+          const invitationResults = await Promise.all(invitationPromises);
+          
+          // Log results
+          const successCount = invitationResults.filter(r => r.success).length;
+          const failCount = invitationResults.filter(r => !r.success).length;
+          
+          if (successCount > 0) {
+            console.log(`✅ Successfully sent ${successCount} invitations in parallel`);
+          }
+          if (failCount > 0) {
+            console.error(`❌ Failed to send ${failCount} invitations`);
+            invitationResults.filter(r => !r.success).forEach(result => {
+              console.error(`   - ${result.signerEmail}: ${result.error}`);
+            });
           }
 
           // Mark job as having notifications sent

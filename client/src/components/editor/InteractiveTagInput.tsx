@@ -256,9 +256,16 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
 
   // Handle signature selection modal
   const handleOpenSignatureModal = useCallback(() => {
-    console.log('🎯 Opening signature modal for tag:', tag.id);
+    const targetUserId = tag.assignedUserId?.toString() || currentUserId || '0';
+    console.log('🎯 Opening signature modal for tag:', {
+      tagId: tag.id,
+      assignedUserId: tag.assignedUserId,
+      currentUserId,
+      targetUserId,
+      tagType: tag.tagType
+    });
     setShowSignatureModal(true);
-  }, [tag.id]);
+  }, [tag.id, tag.assignedUserId, currentUserId]);
 
   const handleSelectSignature = useCallback((signatureUrl: string) => {
     console.log('✅ Signature selected:', signatureUrl.substring(0, 50) + '...');
@@ -295,12 +302,26 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
       showSignatureModal
     });
 
+    console.log('🔄 InteractiveTagInput auto-trigger logic:', {
+      isActive,
+      canEdit,
+      isEditing,
+      tagType: tag.tagType,
+      hasContent: !!content.value,
+      showSignatureModal,
+      shouldTriggerSignatureModal: isActive && canEdit && !isEditing && tag.tagType === 'S' && !showSignatureModal
+    });
+
     if (isActive && canEdit && !isEditing) {
       if (tag.tagType === 'S') {
         // ✅ SIGNATURE TAG: Always open modal for selection (but only if not already open)
         if (!showSignatureModal) {
           console.log('🎯 Signature tag activated, opening selection modal');
-          setShowSignatureModal(true);
+          // Force open the modal even if userProfile is missing
+          setTimeout(() => {
+            console.log('⏰ Auto-opening signature modal after delay');
+            setShowSignatureModal(true);
+          }, 100);
         } else {
           console.log('⚠️ Signature modal already open, skipping auto-open');
         }
@@ -540,7 +561,7 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
           isOpen={showSignatureModal}
           onClose={() => setShowSignatureModal(false)}
           onSelect={handleSelectSignature}
-          userId={parseInt(currentUserId || '0')}
+          userId={parseInt(tag.assignedUserId?.toString() || currentUserId || '0')}
         />
       )}
     </Card>

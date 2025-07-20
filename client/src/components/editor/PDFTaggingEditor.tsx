@@ -458,9 +458,31 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
 
       const result = await response.json();
       
-      // Update local state with the auto-filled tag
+      console.log('✅ Tag auto-filled successfully:', {
+        tagId: tag.id,
+        tagType: tag.tagType,
+        autoFillResult: result.autoFillResult,
+        resultTag: result.tag,
+        contentFromAutoFill: result.autoFillResult?.content,
+        contentFromTag: result.tag?.content,
+        contentDataFromAutoFill: result.autoFillResult?.contentData,
+        contentDataFromTag: result.tag?.contentData,
+        contentTypeFromAutoFill: result.autoFillResult?.contentType,
+        hasImageContent: result.autoFillResult?.contentType === 'image',
+        contentLength: result.autoFillResult?.content?.length || 0
+      });
+      
+      // Update local state with the auto-filled tag - PREFER SERVER RESPONSE
       const updatedTags = tags.map(t =>
-        t.id === tag.id ? { ...t, isCompleted: true, contentData: result.autoFillResult?.contentData } : t
+        t.id === tag.id ? {
+          ...t,
+          // Use server response data (result.tag) first, then fallback to autoFillResult
+          isCompleted: true,
+          content: result.tag?.content || result.autoFillResult?.content,
+          contentData: result.tag?.contentData || (result.autoFillResult?.contentData ? JSON.stringify(result.autoFillResult.contentData) : undefined),
+          contentType: result.tag?.contentType || result.autoFillResult?.contentType,
+          updatedAt: new Date()
+        } : t
       );
       setTags(updatedTags);
 
@@ -471,7 +493,17 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         variant: "default"
       });
 
-      console.log('✅ Tag auto-filled successfully:', result.autoFillResult);
+      console.log('✅ Tag auto-filled successfully:', {
+        autoFillResult: result.autoFillResult,
+        resultTag: result.tag,
+        contentFromAutoFill: result.autoFillResult?.content,
+        contentFromTag: result.tag?.content,
+        contentDataFromAutoFill: result.autoFillResult?.contentData,
+        contentDataFromTag: result.tag?.contentData,
+        contentTypeFromAutoFill: result.autoFillResult?.contentType,
+        hasImageContent: result.autoFillResult?.contentType === 'image',
+        contentLength: result.autoFillResult?.content?.length || 0
+      });
       
     } catch (error) {
       console.error('❌ Failed to auto-fill tag:', error);
@@ -700,9 +732,28 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
 
     console.log('✅ All permission checks passed, determining tag interaction type');
     
-    // 🚀 NEW AUTO-FILL LOGIC: Route by tag type
-    const autoFillTags = ['A', 'I', 'N', 'X', 'D', 'O']; // Auto-fill from profile (excluding signatures and seals)
-    const modalTags = ['S']; // Tags that open selection modal  
+    // 🚀 NEW AUTO-FILL LOGIC: Route by tag type - NOTARY SIGNATURE AUTO-APPLY
+    // Check who the tag is assigned to (not who is clicking it)
+    const assignedParticipant = participants.find(p => p.userId === tag.assignedUserId);
+    const isTagAssignedToNotary = assignedParticipant?.userType === 'notary';
+    
+    // For notary tags, signatures should auto-apply since they always have their signature in profile
+    // For signer/witness tags, signatures should open selection modal
+    const baseAutoFillTags = ['A', 'I', 'N', 'X', 'D', 'O']; // Auto-fill from profile
+    const autoFillTags = isTagAssignedToNotary ? [...baseAutoFillTags, 'S'] : baseAutoFillTags; // Include signatures for notary tags
+    const modalTags = isTagAssignedToNotary ? [] : ['S']; // Only show signature modal for signer/witness tags
+    
+    console.log('🎯 Tag interaction routing:', {
+      tagType: tag.tagType,
+      assignedUserId: tag.assignedUserId,
+      assignedParticipant: assignedParticipant?.displayName,
+      isTagAssignedToNotary,
+      currentUserIsNotary: isNotary,
+      autoFillTags,
+      modalTags,
+      willAutoApply: autoFillTags.includes(tag.tagType),
+      willShowModal: modalTags.includes(tag.tagType)
+    });
     const sealTags = ['E']; // Seal tags that open configuration dialog
     const inlineEditTags = ['T']; // Inline text editing
     const instantTags = ['W']; // Tags that work instantly without user interaction (whiteout)
@@ -717,44 +768,64 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       setSelectedSealTag(tag);
       setShowSealDialog(true);
     } else if (modalTags.includes(tag.tagType)) {
-      // 🎯 MODAL: Open selection modal (e.g., for signatures)
-      console.log('🎯 Opening selection modal for tag:', tag.tagType, 'User ID:', currentUserId);
+      // 🎯 MODAL: Open selection modal for signer/witness signature tags
+      console.log('🎯 Opening selection modal for tag:', tag.tagType, 'assigned to:', assignedParticipant?.displayName, '(signer/witness)', {
+        tagId: tag.id,
+        assignedUserId: tag.assignedUserId,
+        assignedUserType: assignedParticipant?.userType,
+        currentUserId,
+        currentUserIsNotary: isNotary,
+        isTagAssignedToNotary
+      });
       
       // For signature tags, ensure we have the user profile loaded
       if (tag.tagType === 'S') {
-        const userProfile = userProfiles[tag.assignedUserId || currentUserId];
+        const targetUserId = tag.assignedUserId || currentUserId;
+        const userProfile = userProfiles[targetUserId];
         console.log('📋 User profile for signature:', {
-          userId: tag.assignedUserId || currentUserId,
+          targetUserId,
+          targetUserName: assignedParticipant?.displayName,
+          targetUserType: assignedParticipant?.userType,
           hasProfile: !!userProfile,
           hasSignatures: !!userProfile?.signatures?.length,
           hasSignatureData: !!userProfile?.signatureData,
-          hasSignatureImage: !!userProfile?.signatureImage
+          hasSignatureImage: !!userProfile?.signatureImage,
+          userProfilesKeys: Object.keys(userProfiles),
+          userProfilesLength: Object.keys(userProfiles).length,
+          isSignerTag: !isTagAssignedToNotary,
+          currentUserIsNotary: isNotary
         });
         
-        // If no profile loaded, show a helpful message
+        // If no profile loaded, show a helpful message but still open the modal
         if (!userProfile) {
+          console.warn('⚠️ No user profile loaded, but opening modal anyway');
           toast({
             title: "Loading Profile",
-            description: "Loading user profile for signature selection...",
+            description: "Opening signature selection...",
+            variant: "default"
           });
-          
-          // Try to reload profiles if they're missing
-          setTimeout(() => {
-            const profileMap = { ...userProfiles };
-            if (!profileMap[tag.assignedUserId || currentUserId]) {
-              console.log('🔄 Profile missing, reloading profiles...');
-              // Trigger profile reload
-              window.location.reload();
-            }
-          }, 1000);
         }
       }
       
+      console.log('📍 Setting modal state:', {
+        tagId: tag.id,
+        position,
+        willOpenModal: true
+      });
+      
       setSelectedTagForInput(tag);
       setTagModalPosition(position);
+      
+      // Force a small delay to ensure state is set
+      setTimeout(() => {
+        console.log('✅ Modal state should be set:', {
+          selectedTagForInput: !!tag,
+          tagModalPosition: !!position
+        });
+      }, 50);
     } else if (autoFillTags.includes(tag.tagType)) {
-      // 🔥 AUTO-FILL: Call API to fill with profile data
-      console.log('🎯 Auto-filling tag with profile data:', tag.tagType);
+      // 🔥 AUTO-FILL: Call API to fill with profile data (includes notary signatures)
+      console.log('🎯 Auto-filling tag with profile data:', tag.tagType, 'assigned to:', assignedParticipant?.displayName, isTagAssignedToNotary ? '(notary tag)' : '(general tag)');
       
       // Extra safety check - don't auto-fill seal tags
       if (tag.tagType === 'E') {
@@ -1164,19 +1235,40 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       </div>
 
       {/* Interactive Tag Input Modal */}
-      {selectedTagForInput && tagModalPosition && (
-        <TagInputModal
-          tag={selectedTagForInput}
-          isOpen={true}
-          onClose={() => {
-            setSelectedTagForInput(null);
-            setTagModalPosition(null);
-          }}
-          onSave={handleTagContentSave}
-          userProfile={userProfiles[selectedTagForInput.assignedUserId || currentUserId]}
-          currentUserId={currentUserId}
-          position={tagModalPosition}
-        />
+      {selectedTagForInput && tagModalPosition ? (
+        (() => {
+          console.log('🎭 Rendering TagInputModal:', {
+            tagId: selectedTagForInput.id,
+            tagType: selectedTagForInput.tagType,
+            hasPosition: !!tagModalPosition,
+            position: tagModalPosition,
+            targetUserId: selectedTagForInput.assignedUserId || currentUserId,
+            hasUserProfile: !!userProfiles[selectedTagForInput.assignedUserId || currentUserId]
+          });
+          
+          return (
+            <TagInputModal
+              tag={selectedTagForInput}
+              isOpen={true}
+              onClose={() => {
+                console.log('❌ TagInputModal closed');
+                setSelectedTagForInput(null);
+                setTagModalPosition(null);
+              }}
+              onSave={handleTagContentSave}
+              userProfile={userProfiles[selectedTagForInput.assignedUserId || currentUserId]}
+              currentUserId={currentUserId}
+              position={tagModalPosition}
+            />
+          );
+        })()
+      ) : (
+        (() => {
+          if (selectedTagForInput) {
+            console.log('⚠️ Modal NOT rendered - missing position:', { hasTag: true, hasPosition: !!tagModalPosition });
+          }
+          return null;
+        })()
       )}
 
       {/* Seal Configuration Dialog */}

@@ -303,17 +303,43 @@ export class ProfileAutoFillService {
         } 
         
         // Check userSignatures table for uploaded signatures
-        const signatureRecord = userSignatures.find(sig => sig.signatureType === 'signature');
+        console.log('🔍 Checking userSignatures for signature data:', {
+          userSignaturesCount: userSignatures.length,
+          signatures: userSignatures.map(sig => ({
+            id: sig.id,
+            signatureType: sig.signatureType,
+            hasImageUrl: !!sig.imageUrl,
+            imageUrlLength: sig.imageUrl?.length || 0,
+            isDefault: sig.isDefault
+          }))
+        });
         
-        if (signatureRecord && signatureRecord.data) {
+        // Look for default signature first, then any signature
+        let signatureRecord = userSignatures.find(sig => 
+          sig.signatureType === 'signature' && sig.isDefault
+        );
+        
+        if (!signatureRecord) {
+          signatureRecord = userSignatures.find(sig => sig.signatureType === 'signature');
+        }
+        
+        if (signatureRecord && signatureRecord.imageUrl) {
+          console.log('✅ Found signature in userSignatures table:', {
+            id: signatureRecord.id,
+            name: signatureRecord.name,
+            type: signatureRecord.type,
+            hasImageUrl: !!signatureRecord.imageUrl,
+            isDefault: signatureRecord.isDefault
+          });
+          
           return {
             success: true,
-            content: signatureRecord.data,
+            content: signatureRecord.imageUrl,
             contentType: 'image',
             contentData: {
               type: 'signature',
-              value: signatureRecord.data,
-              signatureType: signatureRecord.format || 'uploaded'
+              value: signatureRecord.imageUrl,
+              signatureType: signatureRecord.type || 'uploaded'
             },
             source: 'profile_auto_fill',
             message: `Auto-filled signature for ${profile.fullName} (from signature library)`
@@ -396,17 +422,43 @@ export class ProfileAutoFillService {
         } 
         
         // Check userSignatures table for uploaded initials
-        const initialsRecord = userSignatures.find(sig => sig.signatureType === 'initials');
+        console.log('🔍 Checking userSignatures for initials data:', {
+          userSignaturesCount: userSignatures.length,
+          initials: userSignatures.filter(sig => sig.signatureType === 'initials').map(sig => ({
+            id: sig.id,
+            signatureType: sig.signatureType,
+            hasImageUrl: !!sig.imageUrl,
+            imageUrlLength: sig.imageUrl?.length || 0,
+            isDefault: sig.isDefault
+          }))
+        });
         
-        if (initialsRecord && initialsRecord.data) {
+        // Look for default initials first, then any initials
+        let initialsRecord = userSignatures.find(sig => 
+          sig.signatureType === 'initials' && sig.isDefault
+        );
+        
+        if (!initialsRecord) {
+          initialsRecord = userSignatures.find(sig => sig.signatureType === 'initials');
+        }
+        
+        if (initialsRecord && initialsRecord.imageUrl) {
+          console.log('✅ Found initials in userSignatures table:', {
+            id: initialsRecord.id,
+            name: initialsRecord.name,
+            type: initialsRecord.type,
+            hasImageUrl: !!initialsRecord.imageUrl,
+            isDefault: initialsRecord.isDefault
+          });
+          
           return {
             success: true,
-            content: initialsRecord.data,
+            content: initialsRecord.imageUrl,
             contentType: 'image',
             contentData: {
               type: 'initials',
-              value: initialsRecord.data,
-              signatureType: initialsRecord.format || 'uploaded'
+              value: initialsRecord.imageUrl,
+              signatureType: initialsRecord.type || 'uploaded'
             },
             source: 'profile_auto_fill',
             message: `Auto-filled initials for ${profile.fullName} (from signature library)`

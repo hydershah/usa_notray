@@ -342,16 +342,31 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                   try {
                     if (tag.contentData) {
                       contentData = typeof tag.contentData === 'string' ? JSON.parse(tag.contentData) : tag.contentData;
+                      console.log('📋 Parsed contentData for tag', tag.id, ':', {
+                        tagType: tag.tagType,
+                        contentDataType: contentData.type,
+                        hasValue: !!contentData.value,
+                        valueType: typeof contentData.value,
+                        valuePreview: typeof contentData.value === 'string' ? contentData.value.substring(0, 100) + '...' : contentData.value,
+                        isBase64Image: typeof contentData.value === 'string' && contentData.value.startsWith('data:image/'),
+                        isVultrUrl: typeof contentData.value === 'string' && contentData.value.includes('vultrobjects.com')
+                      });
                     } else if (tag.content) {
                       contentData = {
                         type: 'text',
                         value: tag.content
                       };
+                      console.log('📋 Using raw content for tag', tag.id, ':', {
+                        tagType: tag.tagType,
+                        contentPreview: tag.content.substring(0, 100) + '...',
+                        isBase64Image: tag.content.startsWith('data:image/'),
+                        isVultrUrl: tag.content.includes('vultrobjects.com')
+                      });
                     } else {
                       contentData = { type: 'text', value: '' };
                     }
                   } catch (e) {
-                    console.error('Failed to parse contentData:', e);
+                    console.error('Failed to parse contentData for tag', tag.id, ':', e, 'Raw contentData:', tag.contentData);
                     contentData = {
                       type: 'text',
                       value: tag.content || tag.contentData || ''
@@ -365,33 +380,85 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                       return false; // Whiteout is always text/solid color, never an image
                     }
                     
-                    // Check if tag type is inherently image-based
-                    if (['S', 'I', 'E'].includes(tag.tagType)) {
-                      return true; // Signature, Initials, Seal are always images
+                    console.log('🔍 Image detection for tag', tag.id, ':', {
+                      tagType: tag.tagType,
+                      hasContentData: !!contentData,
+                      contentDataType: contentData?.type,
+                      contentDataValue: contentData?.value ? contentData.value.substring(0, 50) + '...' : null,
+                      hasTagContent: !!tag.content,
+                      tagContentPreview: tag.content ? tag.content.substring(0, 50) + '...' : null,
+                      contentType: tag.contentType
+                    });
+                    
+                    // Check contentData.value first (most reliable)
+                    if (contentData?.value && typeof contentData.value === 'string') {
+                      const value = contentData.value;
+                      const hasImageData = (
+                        value.startsWith('data:image/') ||
+                        value.startsWith('https://') ||
+                        value.includes('vultrobjects.com') ||
+                        value.includes('.png') ||
+                        value.includes('.jpg') ||
+                        value.includes('.jpeg') ||
+                        value.includes('.webp') ||
+                        value.includes('.gif') ||
+                        value.includes('.svg')
+                      );
+                      
+                      if (hasImageData) {
+                        console.log('✅ Image detected in contentData.value for tag', tag.id, 'Value type:', value.substring(0, 30) + '...');
+                        return true;
+                      }
                     }
                     
-                    // Check contentData type
-                    if (contentData?.type && ['signature', 'initials', 'seal', 'stamp'].includes(contentData.type)) {
+                    // Check raw content field as fallback (for direct image data)
+                    if (tag.content && typeof tag.content === 'string') {
+                      const hasImageData = (
+                        tag.content.startsWith('data:image/') ||
+                        tag.content.startsWith('https://') ||
+                        tag.content.includes('vultrobjects.com') ||
+                        tag.content.includes('.png') ||
+                        tag.content.includes('.jpg') ||
+                        tag.content.includes('.jpeg') ||
+                        tag.content.includes('.webp')
+                      );
+                      
+                      if (hasImageData) {
+                        console.log('✅ Image detected in raw content for tag', tag.id);
+                        return true;
+                      }
+                    }
+                    
+                    // Check contentType field
+                    if (contentData?.contentType === 'image' || tag.contentType === 'image') {
+                      console.log('✅ Image detected via contentType for tag', tag.id);
                       return true;
                     }
                     
-                    // Check if value looks like an image URL/data
-                    if (contentData?.value && typeof contentData.value === 'string') {
-                      return (
-                        contentData.value.startsWith('data:image/') ||
-                        contentData.value.startsWith('http') ||
-                        contentData.value.includes('vultrobjects.com') ||
-                        contentData.value.includes('.png') ||
-                        contentData.value.includes('.jpg') ||
-                        contentData.value.includes('.jpeg') ||
-                        contentData.value.includes('.webp')
-                      );
+                    // Check if it's a signature/initials/seal type with content
+                    if (contentData?.type && ['signature', 'initials', 'seal', 'stamp'].includes(contentData.type)) {
+                      // Only return true if there's actual image-like content
+                      const contentToCheck = contentData.value || tag.content;
+                      const isImageLike = !!(contentToCheck && 
+                              typeof contentToCheck === 'string' && 
+                              contentToCheck.length > 50 && // Must be substantial content
+                              (contentToCheck.startsWith('data:image/') || 
+                               contentToCheck.startsWith('https://') ||
+                               contentToCheck.includes('vultrobjects.com')));
+                      
+                      if (isImageLike) {
+                        console.log('✅ Image detected via signature/seal type for tag', tag.id);
+                      }
+                      
+                      return isImageLike;
                     }
                     
-                    return false;
+                    const result = false;
+                    console.log('🔍 Image detection result for tag', tag.id, ':', result);
+                    return result;
                   };
                   
-                  // If image failed to load or invalid, show text fallback
+                  // If image failed to load or not image content, show text content
                   if (imageLoadError || !isImageContent()) {
                     return (
                       <div 
@@ -403,20 +470,20 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                           fontFamily: 'inherit'
                         }}
                       >
-                        {imageLoadError ? 
-                         (tag.tagType === 'S' ? 'Signature Applied' : 
-                          tag.tagType === 'I' ? 'Initials Applied' : 
-                          tag.tagType === 'E' ? 'Seal Applied' : 'Content Applied') : 
-                         (typeof contentData?.value === 'string' ? contentData.value : 
-                          contentData?.value ? JSON.stringify(contentData.value) :
-                          tag.content || '[No content]')}
+                        {/* Always show the actual content, never "Applied" messages */}
+                        {typeof contentData?.value === 'string' ? contentData.value : 
+                         contentData?.value ? JSON.stringify(contentData.value) :
+                         tag.content || '[No content]'}
                       </div>
                     );
                   }
                   
+                  // Determine the best image source from available data
+                  const imageSource = contentData.value || tag.content || '';
+                  
                   return (
                     <img 
-                      src={contentData.value} 
+                      src={imageSource} 
                       alt={contentData.type === 'signature' ? 'Signature' : 
                            contentData.type === 'initials' ? 'Initials' : 
                            contentData.type === 'seal' || contentData.type === 'stamp' ? 'Notary Seal' : 'Image'} 
@@ -427,8 +494,11 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                         maxWidth: '100%'
                       }}
                       onError={(e) => {
-                        console.error('🖼️ Image failed to load:', contentData.value);
+                        console.error('🖼️ Image failed to load for tag:', tag.id, 'Source:', imageSource, 'ContentData:', contentData);
                         setImageLoadError(true);
+                      }}
+                      onLoad={() => {
+                        console.log('✅ Image loaded successfully for tag:', tag.id, 'Type:', tag.tagType);
                       }}
                     />
                   );
@@ -770,7 +840,18 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       
       loadingTaskRef.current = loadingTask;
       console.log('📄 PDF loading task created, waiting for promise...');
-      const pdf = await loadingTask.promise;
+      
+      let pdf;
+      try {
+        pdf = await loadingTask.promise;
+      } catch (loadError) {
+        // If component is unmounted, don't throw error
+        if (!isMountedRef.current) {
+          console.log('📄 PDF loading cancelled - component unmounted');
+          return;
+        }
+        throw loadError;
+      }
       
       if (!isMountedRef.current) return;
       
@@ -814,7 +895,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
   // Render individual page with optimized scaling
   const renderPage = useCallback(async (pageNumber: number, forceRender = false) => {
-    if (!pdfDoc) return;
+    if (!pdfDoc || !isMountedRef.current) return;
     
     // Check if already rendered (unless force render)
     if (!forceRender && renderedPages.has(pageNumber)) return;
@@ -834,6 +915,10 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     try {
       console.log(`🖼️  Rendering page ${pageNumber}...`);
       const page = await pdfDoc.getPage(pageNumber);
+      
+      // Check mount status after async operation
+      if (!isMountedRef.current) return;
+      
       const canvas = canvasRefs.current[pageNumber - 1];
       const pageContainer = pageContainerRefs.current[pageNumber - 1];
       
@@ -890,11 +975,17 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         intent: 'display'
       };
 
+      // Final mount check before rendering
+      if (!isMountedRef.current) return;
+      
       // Create and track render task
       const renderTask = page.render(renderContext);
       renderTasksRef.current.set(pageNumber, renderTask);
       
       await renderTask.promise;
+      
+      // Check mount status after render completes
+      if (!isMountedRef.current) return;
       
       // Remove from tracking after successful render
       renderTasksRef.current.delete(pageNumber);
@@ -929,10 +1020,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       loadPDF(documentUrl);
     }
     return () => {
-      isMountedRef.current = false;
       console.log('🧹 PDFViewer cleanup triggered');
       
-      // Cancel all active render tasks
+      // Cancel all active render tasks FIRST
       renderTasksRef.current.forEach((task, pageNumber) => {
         if (task && typeof task.cancel === 'function') {
           try {
@@ -947,8 +1037,16 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       
       // Destroy PDF loading task
       if (loadingTaskRef.current) {
-        setTimeout(() => loadingTaskRef.current?.destroy(), 100);
+        try {
+          loadingTaskRef.current.destroy();
+          console.log('🗑️ PDF loading task destroyed');
+        } catch (e) {
+          console.warn('⚠️ Error destroying PDF loading task:', e);
+        }
       }
+      
+      // Set unmounted flag AFTER cleanup
+      isMountedRef.current = false;
     };
   }, [documentUrl]);
 
@@ -959,11 +1057,14 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     console.log('📖 PDF loaded, starting initial page rendering...');
     
     const renderInitialPages = async () => {
+      // Check if component is still mounted
+      if (!isMountedRef.current) return;
+      
       // Wait for container to have proper dimensions
       let attempts = 0;
       const maxAttempts = 10;
       
-      while (attempts < maxAttempts) {
+      while (attempts < maxAttempts && isMountedRef.current) {
         const containerWidth = containerRef.current?.clientWidth;
         if (containerWidth && containerWidth > 100) {
           console.log(`✅ Container ready with width: ${containerWidth}px`);
@@ -973,6 +1074,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         await new Promise(resolve => setTimeout(resolve, 50));
         console.log(`⏳ Waiting for container dimensions, attempt ${attempts}`);
       }
+      
+      // Final mount check before rendering
+      if (!isMountedRef.current) return;
       
       // OPTIMIZED: Render only first 2 pages initially for faster loading
       const pagesToRender = Math.min(2, pdfDoc.numPages);
@@ -988,12 +1092,19 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       }
       
       await Promise.all(renderPromises);
+      
+      // Check mount status after parallel rendering
+      if (!isMountedRef.current) return;
+      
       console.log(`✅ Initial ${pagesToRender} pages rendered in parallel`);
       
       // Render remaining pages in background (if any)
-      if (pdfDoc.numPages > pagesToRender) {
+      if (pdfDoc.numPages > pagesToRender && isMountedRef.current) {
         setTimeout(async () => {
           for (let i = pagesToRender + 1; i <= Math.min(5, pdfDoc.numPages); i++) {
+            // Check mount status before each background render
+            if (!isMountedRef.current) break;
+            
             try {
               await renderPage(i, false);
               await new Promise(resolve => setTimeout(resolve, 5)); // Shorter delay

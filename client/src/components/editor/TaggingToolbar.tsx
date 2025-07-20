@@ -107,8 +107,8 @@ const UserTagSection: React.FC<UserTagSectionProps> = ({
   const { tags: allTags } = useEditorStore();
   const userTags = allTags.filter(tag => tag.assignedUserId === user.userId);
   const completedTags = userTags.filter(tag => tag.isCompleted);
-  
-  return (
+          
+          return (
     <div className="space-y-2">
       {/* User Header */}
       <div className="flex items-center gap-2 p-2 rounded-lg bg-gray-50">
@@ -116,22 +116,22 @@ const UserTagSection: React.FC<UserTagSectionProps> = ({
           className="w-3 h-3 rounded-full border border-white shadow-sm" 
           style={{ backgroundColor: userColor }}
         />
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-gray-900">
               {user.displayName}
-            </span>
-            {isCurrentUser && (
+                    </span>
+                    {isCurrentUser && (
               <Badge variant="secondary" className="text-xs px-1.5 py-0.5">You</Badge>
-            )}
+                    )}
             <Badge variant="outline" className="text-xs px-1.5 py-0.5 capitalize">
               {user.userType}
             </Badge>
-          </div>
+                  </div>
           {userTags.length > 0 && (
             <div className="text-xs text-gray-500">
               {completedTags.length}/{userTags.length} completed
-            </div>
+                  </div>
           )}
           
           {/* Live session status */}
@@ -142,9 +142,9 @@ const UserTagSection: React.FC<UserTagSectionProps> = ({
               ) : (
                 <span className="text-gray-500">Waiting</span>
               )}
-            </div>
-          )}
-        </div>
+                  </div>
+                )}
+              </div>
         
         {/* Make Active Button */}
         {canMakeActive && onSetActiveUser && (
@@ -316,39 +316,39 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
 
   // Show simplified interface for signers in signing mode
   if (isSigner && propMode === 'signing') {
-    return (
+  return (
       <div className={`space-y-4 ${className}`}>
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <h3 className="text-sm font-medium text-blue-900 mb-2">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h3 className="text-sm font-medium text-blue-900 mb-2">
             Signer View
-          </h3>
-          <p className="text-sm text-blue-700">
-            Click on tags assigned to you to fill them out. Wait for the notary to activate you if needed.
-          </p>
-        </div>
-        
+                </h3>
+                <p className="text-sm text-blue-700">
+                  Click on tags assigned to you to fill them out. Wait for the notary to activate you if needed.
+                </p>
+              </div>
+              
         {/* Selection Mode Button */}
-        <button
-          onClick={() => setSelectedTagType(null)}
-          className={`
-            w-full flex items-center gap-3 p-3 rounded-lg border transition-all duration-200
-            ${selectedTagType === null 
-              ? 'border-blue-500 bg-blue-50 text-blue-700' 
-              : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-            }
-          `}
-          title="Selection mode - click to select your assigned tags"
-        >
-          <div className="flex-1 text-left">
-            <div className="font-medium">Selection Mode</div>
-            <div className="text-xs text-gray-600">Click on your assigned tags to fill them</div>
-          </div>
-          {selectedTagType === null && (
-            <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
-              <div className="w-2 h-2 bg-white rounded-full"></div>
-            </div>
-          )}
-        </button>
+              <button
+                onClick={() => setSelectedTagType(null)}
+                className={`
+                  w-full flex items-center gap-3 p-3 rounded-lg border transition-all duration-200
+                  ${selectedTagType === null 
+                    ? 'border-blue-500 bg-blue-50 text-blue-700' 
+                    : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                  }
+                `}
+                title="Selection mode - click to select your assigned tags"
+              >
+                <div className="flex-1 text-left">
+                  <div className="font-medium">Selection Mode</div>
+                  <div className="text-xs text-gray-600">Click on your assigned tags to fill them</div>
+                </div>
+                {selectedTagType === null && (
+                  <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
+                    <div className="w-2 h-2 bg-white rounded-full"></div>
+                  </div>
+                )}
+              </button>
       </div>
     );
   }
@@ -370,9 +370,9 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
                 Ready to place {TAG_TYPE_INFO[selectedTagType].label} for {selectedUser.displayName}
               </span>
             </div>
-          </div>
-        )}
-        
+            </div>
+          )}
+
         {!selectedUser && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <div className="flex items-center gap-2 text-blue-800">
@@ -422,7 +422,7 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
                 className={`
                   w-full p-2 text-left rounded border transition-all duration-200
                   ${currentDocument?.id === document.id
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700' 
                     : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
                   }
                 `}
@@ -433,10 +433,10 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
                 </div>
               </button>
             ))}
-          </div>
-        </div>
-      )}
-
+                    </div>
+                  </div>
+                )}
+                
       {/* Session Completion */}
       {propMode !== 'signing' && sessionId && (
         <div className="border-t pt-4 space-y-2">

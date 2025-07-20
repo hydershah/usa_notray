@@ -303,12 +303,15 @@ const TagRenderer: React.FC<TagRendererProps> = ({
               }}
               onError={(e) => {
                 console.error('🖼️ Image failed to load in TagLayer:', contentData.value);
-                // Fallback to text showing tag type and status
+                // Show actual content instead of generic "Applied" message
                 e.currentTarget.style.display = 'none';
                 const parent = e.currentTarget.parentElement;
                 if (parent) {
-                  const tagName = tag.tagType === 'S' ? 'Signature' : tag.tagType === 'I' ? 'Initials' : tag.tagType === 'E' ? 'Seal' : 'Content';
-                  parent.innerHTML = `<div class="w-full h-full flex items-center justify-center bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs font-medium">${tagName} Applied</div>`;
+                  const actualContent = typeof contentData?.value === 'string' ? contentData.value : 
+                                     contentData?.value ? JSON.stringify(contentData.value) :
+                                     tag.content || '[No content]';
+                  const displayContent = actualContent.length > 50 ? actualContent.substring(0, 47) + '...' : actualContent;
+                  parent.innerHTML = `<div class="w-full h-full flex items-center justify-center bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs font-medium p-1" style="word-break: break-word; line-height: 1.2;">${displayContent}</div>`;
                 }
               }}
             />

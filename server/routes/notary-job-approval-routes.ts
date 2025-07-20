@@ -3,6 +3,7 @@ import { db } from '../db';
 import { jobs, users, notaryAssignmentLog, jobNotifications } from '../../shared/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import { verifyToken, hasAdminPrivileges, hasNotaryPrivileges } from '../auth';
+import { cacheUserData } from '../middleware/cache-middleware';
 
 const router = Router();
 
@@ -85,12 +86,14 @@ router.get('/pending-jobs', verifyToken, requireNotaryOrAdmin, async (req: any, 
  * GET /api/notary/job-invitations
  * Get all job invitations for the current notary (same as pending-jobs but clearer name)
  */
-router.get('/job-invitations', verifyToken, requireNotaryOrAdmin, async (req: any, res: Response) => {
+router.get('/job-invitations', verifyToken, requireNotaryOrAdmin, cacheUserData(60), async (req: any, res: Response) => {
   try {
     const notaryId = req.user.id;
 
-    // Get all jobs assigned to this notary that are pending approval
-    const jobInvitations = await db.execute(sql`
+    // OPTIMIZED: Split into smaller, faster queries instead of one complex query
+    
+    // Step 1: Get basic job information (fastest query)
+    const basicJobs = await db.execute(sql`
       SELECT 
         j.id,
         j.title_company,
@@ -109,41 +112,76 @@ router.get('/job-invitations', verifyToken, requireNotaryOrAdmin, async (req: an
         j.created_at,
         j.scheduled_at,
         j.kba_required,
-        -- Count participants
-        COUNT(CASE 
-          WHEN jp.role IN ('signer', 'witness') AND (u.id IS NULL OR u.role NOT IN ('admin', 'notary')) THEN 1 
-          ELSE NULL 
-        END) as total_participants,
-        COUNT(CASE 
-          WHEN jp.user_id IS NOT NULL AND jp.role IN ('signer', 'witness') AND (u.is_verified = true OR u.is_verification_bypassed = true OR u.notary_verification_bypassed = true) AND u.role NOT IN ('admin', 'notary') THEN 1 
-          ELSE NULL 
-        END) as verified_participants,
-        COUNT(CASE 
-          WHEN jp.role = 'signer' AND (u.id IS NULL OR u.role NOT IN ('admin', 'notary')) THEN 1 
-          ELSE NULL 
-        END) as signer_count,
-        COUNT(CASE 
-          WHEN jp.role = 'witness' AND (u.id IS NULL OR u.role NOT IN ('admin', 'notary')) THEN 1 
-          ELSE NULL 
-        END) as witness_count,
-        -- Get creator info
+        -- Get creator info in the same query
         creator.username as created_by_username,
         creator.email as created_by_email,
-        COALESCE(creator.full_name, creator.first_name || ' ' || creator.last_name) as created_by_name,
-        -- Get job documents count
-        (SELECT COUNT(*) FROM job_documents jd WHERE jd.job_id = j.id) as document_count
+        COALESCE(creator.full_name, creator.first_name || ' ' || creator.last_name) as created_by_name
       FROM jobs j
-      LEFT JOIN job_participants jp ON j.id = jp.job_id
-      LEFT JOIN users u ON jp.user_id = u.id
       LEFT JOIN users creator ON j.user_id = creator.id
       WHERE j.notary_id = ${notaryId}
       AND j.notary_approval_status = 'assigned_pending_approval'
       AND j.job_status IN ('open', 'pending')
-      GROUP BY j.id, creator.username, creator.email, creator.full_name, creator.first_name, creator.last_name
       ORDER BY j.created_at DESC
+      LIMIT 50
     `);
 
-    res.json(jobInvitations.rows);
+    if (basicJobs.rows.length === 0) {
+      return res.json([]);
+    }
+
+    const jobIds = basicJobs.rows.map(job => job.id);
+
+    // Step 2: Get participant counts efficiently (single query for all jobs)
+    const participantStats = await db.execute(sql`
+      SELECT 
+        jp.job_id,
+        COUNT(CASE WHEN jp.role IN ('signer', 'witness') THEN 1 END) as total_participants,
+        COUNT(CASE WHEN jp.role = 'signer' THEN 1 END) as signer_count,
+        COUNT(CASE WHEN jp.role = 'witness' THEN 1 END) as witness_count,
+        COUNT(CASE 
+          WHEN jp.user_id IS NOT NULL 
+          AND jp.role IN ('signer', 'witness')
+          AND u.is_verified = true 
+          THEN 1 
+        END) as verified_participants
+      FROM job_participants jp
+      LEFT JOIN users u ON jp.user_id = u.id AND u.role NOT IN ('admin', 'notary')
+      WHERE jp.job_id = ANY(${jobIds})
+      GROUP BY jp.job_id
+    `);
+
+    // Step 3: Get document counts efficiently (single query for all jobs)  
+    const documentCounts = await db.execute(sql`
+      SELECT job_id, COUNT(*) as document_count
+      FROM job_documents
+      WHERE job_id = ANY(${jobIds})
+      GROUP BY job_id
+    `);
+
+    // Step 4: Combine results efficiently
+    const participantMap = new Map(participantStats.rows.map(row => [row.job_id, row]));
+    const documentMap = new Map(documentCounts.rows.map(row => [row.job_id, row]));
+
+    const enrichedJobs = basicJobs.rows.map(job => {
+      const participants = participantMap.get(job.id) || {
+        total_participants: 0,
+        signer_count: 0,
+        witness_count: 0,
+        verified_participants: 0
+      };
+      const documents = documentMap.get(job.id) || { document_count: 0 };
+
+      return {
+        ...job,
+        total_participants: parseInt(participants.total_participants) || 0,
+        verified_participants: parseInt(participants.verified_participants) || 0,
+        signer_count: parseInt(participants.signer_count) || 0,
+        witness_count: parseInt(participants.witness_count) || 0,
+        document_count: parseInt(documents.document_count) || 0
+      };
+    });
+
+    res.json(enrichedJobs);
   } catch (error) {
     console.error('Error fetching job invitations:', error);
     res.status(500).json({ error: 'Failed to fetch job invitations' });
