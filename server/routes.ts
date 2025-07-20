@@ -4198,8 +4198,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if user has access to download documents from this job
-      if (user.role !== 'admin' && job.userId !== user.id && job.selectedNotary !== user.id.toString()) {
-        return res.status(403).json({ message: 'Access denied' });
+      let hasAccess = false;
+      
+      // Admin access
+      if (user.role === 'admin') {
+        hasAccess = true;
+        console.log(`✅ DOCUMENT DOWNLOAD: Admin user ${user.id}`);
+      }
+      // Job creator access
+      else if (job.userId === user.id) {
+        hasAccess = true;
+        console.log(`✅ DOCUMENT DOWNLOAD: Job creator user ${user.id}`);
+      }
+      // Assigned notary access
+      else if (job.selectedNotary === user.id.toString()) {
+        hasAccess = true;
+        console.log(`✅ DOCUMENT DOWNLOAD: Assigned notary user ${user.id}`);
+      }
+      // Signer access - check via signers table (THIS WAS MISSING!)
+      else if (user.role === 'signer' || user.role === 'witness') {
+        const [signer] = await db
+          .select()
+          .from(signers)
+          .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, user.email)))
+          .limit(1);
+        
+        if (signer) {
+          hasAccess = true;
+          console.log(`✅ DOCUMENT DOWNLOAD: Invited signer user ${user.id} (${user.email}) on job ${jobId}`);
+        }
+      }
+      
+      if (!hasAccess) {
+        console.log(`❌ DOCUMENT DOWNLOAD DENIED: User ${user.id} (${user.email}, role: ${user.role}) not authorized for job ${jobId} documents`);
+        return res.status(403).json({ message: 'You do not have permission to download this document.' });
       }
 
       // VULTR ONLY - All documents are stored in Vultr cloud storage
@@ -4292,9 +4324,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if user has access to sign documents in this job
-      if (req.user.role !== 'admin' && job.userId !== req.user.id && job.selectedNotary !== req.user.id.toString()) {
-        console.log('Access denied for user:', req.user.id);
-        return res.status(403).json({ message: 'Access denied' });
+      let hasAccess = false;
+      
+      // Admin access
+      if (req.user.role === 'admin') {
+        hasAccess = true;
+        console.log(`✅ DOCUMENT SIGNING: Admin user ${req.user.id}`);
+      }
+      // Job creator access
+      else if (job.userId === req.user.id) {
+        hasAccess = true;
+        console.log(`✅ DOCUMENT SIGNING: Job creator user ${req.user.id}`);
+      }
+      // Assigned notary access
+      else if (job.selectedNotary === req.user.id.toString()) {
+        hasAccess = true;
+        console.log(`✅ DOCUMENT SIGNING: Assigned notary user ${req.user.id}`);
+      }
+      // Signer access - check via signers table (CRITICAL FOR SIGNING!)
+      else if (req.user.role === 'signer' || req.user.role === 'witness') {
+        const [signer] = await db
+          .select()
+          .from(signers)
+          .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, req.user.email)))
+          .limit(1);
+        
+        if (signer) {
+          hasAccess = true;
+          console.log(`✅ DOCUMENT SIGNING: Invited signer user ${req.user.id} (${req.user.email}) on job ${jobId}`);
+        }
+      }
+      
+      if (!hasAccess) {
+        console.log(`❌ DOCUMENT SIGNING DENIED: User ${req.user.id} (${req.user.email}, role: ${req.user.role}) not authorized for job ${jobId} documents`);
+        return res.status(403).json({ message: 'You do not have permission to sign documents in this job.' });
       }
 
       // Generate signed PDF
@@ -4492,8 +4555,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if user has access to preview documents from this job
-      if (user.role !== 'admin' && job.userId !== user.id && job.selectedNotary !== user.id.toString()) {
-        return res.status(403).json({ message: 'Access denied' });
+      let hasAccess = false;
+      
+      // Admin access
+      if (user.role === 'admin') {
+        hasAccess = true;
+        console.log(`✅ DOCUMENT ACCESS: Admin user ${user.id}`);
+      }
+      // Job creator access
+      else if (job.userId === user.id) {
+        hasAccess = true;
+        console.log(`✅ DOCUMENT ACCESS: Job creator user ${user.id}`);
+      }
+      // Assigned notary access
+      else if (job.selectedNotary === user.id.toString()) {
+        hasAccess = true;
+        console.log(`✅ DOCUMENT ACCESS: Assigned notary user ${user.id}`);
+      }
+      // Signer access - check via signers table (THIS WAS MISSING!)
+      else if (user.role === 'signer' || user.role === 'witness') {
+        const [signer] = await db
+          .select()
+          .from(signers)
+          .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, user.email)))
+          .limit(1);
+        
+        if (signer) {
+          hasAccess = true;
+          console.log(`✅ DOCUMENT ACCESS: Invited signer user ${user.id} (${user.email}) on job ${jobId}`);
+        }
+      }
+      
+      if (!hasAccess) {
+        console.log(`❌ DOCUMENT ACCESS DENIED: User ${user.id} (${user.email}, role: ${user.role}) not authorized for job ${jobId} documents`);
+        return res.status(403).json({ message: 'You do not have permission to view this document.' });
       }
 
       // VULTR ONLY - All documents are stored in Vultr cloud storage
