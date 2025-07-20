@@ -8274,6 +8274,26 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         placedBy: req.user.id
       });
       
+      // 🚀 REAL-TIME SYNC: Broadcast tag placement to all session participants
+      try {
+        const { WebSocketService } = await import('./services/editor/WebSocketService');
+        
+        const syncMessage = {
+          type: 'tag_placed',
+          payload: { tag },
+          userId: req.user.id.toString(),
+          sessionId,
+          timestamp: Date.now()
+        };
+
+        WebSocketService.broadcastToSession(sessionId, syncMessage);
+        console.log(`🔄 Tag placement broadcasted for new tag ${tag.id} in session ${sessionId}`);
+        
+      } catch (wsError) {
+        console.warn('Failed to broadcast tag placement via WebSocket:', wsError);
+        // Don't fail the request if WebSocket broadcast fails
+      }
+      
       res.json({
         success: true,
         tag,
@@ -8335,6 +8355,32 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         updatedBy: req.user.id
       });
       
+      // 🚀 REAL-TIME SYNC: Broadcast tag update to all session participants
+      try {
+        const { WebSocketService } = await import('./services/editor/WebSocketService');
+        
+        const syncMessage = {
+          type: 'tag_updated',
+          payload: {
+            tagId: tag.id,
+            updates: {
+              coordinates: tag.coordinates,
+              ...updates
+            }
+          },
+          userId: req.user.id.toString(),
+          sessionId,
+          timestamp: Date.now()
+        };
+
+        WebSocketService.broadcastToSession(sessionId, syncMessage);
+        console.log(`🔄 Tag update broadcasted for tag ${tagId} in session ${sessionId}`);
+        
+      } catch (wsError) {
+        console.warn('Failed to broadcast tag update via WebSocket:', wsError);
+        // Don't fail the request if WebSocket broadcast fails
+      }
+      
       res.json({
         success: true,
         tag,
@@ -8383,6 +8429,26 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       const { TagService } = await import('./services/editor/TagService');
       
       await TagService.deleteTag(tagId, req.user.id);
+      
+      // 🚀 REAL-TIME SYNC: Broadcast tag deletion to all session participants
+      try {
+        const { WebSocketService } = await import('./services/editor/WebSocketService');
+        
+        const syncMessage = {
+          type: 'tag_deleted',
+          payload: { tagId },
+          userId: req.user.id.toString(),
+          sessionId,
+          timestamp: Date.now()
+        };
+
+        WebSocketService.broadcastToSession(sessionId, syncMessage);
+        console.log(`🔄 Tag deletion broadcasted for tag ${tagId} in session ${sessionId}`);
+        
+      } catch (wsError) {
+        console.warn('Failed to broadcast tag deletion via WebSocket:', wsError);
+        // Don't fail the request if WebSocket broadcast fails
+      }
       
       res.json({
         success: true,
@@ -8526,6 +8592,37 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         completedAt: new Date(),
         updatedBy: req.user.id
       });
+
+      // 🚀 REAL-TIME SYNC: Broadcast auto-fill update to all session participants  
+      try {
+        const { WebSocketService } = await import('./services/editor/WebSocketService');
+        
+        const syncMessage = {
+          type: 'tag_content_updated',
+          payload: {
+            tagId: updatedTag.id,
+            tagType: tag.tagType,
+            content: autoFillResult.content,
+            contentType: autoFillResult.contentType,
+            contentData: autoFillResult.contentData,
+            isCompleted: true,
+            completedBy: req.user.id,
+            completedAt: new Date(),
+            updatedBy: req.user.id,
+            source: 'auto_fill'
+          },
+          userId: req.user.id.toString(),
+          sessionId,
+          timestamp: Date.now()
+        };
+
+        WebSocketService.broadcastToSession(sessionId, syncMessage);
+        console.log(`🔄 Auto-fill update broadcasted for tag ${tagId} in session ${sessionId}`);
+        
+      } catch (wsError) {
+        console.warn('Failed to broadcast auto-fill update via WebSocket:', wsError);
+        // Don't fail the request if WebSocket broadcast fails
+      }
       
       res.json({
         success: true,
@@ -8780,6 +8877,36 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         completedAt: completedAt ? new Date(completedAt) : new Date(),
         updatedBy: req.user.id
       });
+
+      // 🚀 REAL-TIME SYNC: Broadcast tag content update to all session participants
+      try {
+        const { WebSocketService } = await import('./services/editor/WebSocketService');
+        
+        const syncMessage = {
+          type: 'tag_content_updated',
+          payload: {
+            tagId: updatedTag.id,
+            tagType: tag.tagType,
+            content: finalContent,
+            contentType: finalContentType,
+            contentData: structuredContentData,
+            isCompleted: true,
+            completedBy: completedBy || req.user.id,
+            completedAt: completedAt ? new Date(completedAt) : new Date(),
+            updatedBy: req.user.id
+          },
+          userId: req.user.id.toString(),
+          sessionId,
+          timestamp: Date.now()
+        };
+
+        WebSocketService.broadcastToSession(sessionId, syncMessage);
+        console.log(`🔄 Tag content update broadcasted for tag ${tagId} in session ${sessionId}`);
+        
+      } catch (wsError) {
+        console.warn('Failed to broadcast tag content update via WebSocket:', wsError);
+        // Don't fail the request if WebSocket broadcast fails
+      }
       
       res.json({
         success: true,

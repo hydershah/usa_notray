@@ -24,6 +24,7 @@ interface PDFTaggingEditorProps {
   onSetActiveUser?: (userId: number) => void;
   onSyncUsers?: () => void;
   isSyncLoading?: boolean;
+  webSocket?: any; // WebSocket instance for real-time updates
 }
 
 export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
@@ -37,7 +38,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
   liveSessionState,
   onSetActiveUser,
   onSyncUsers,
-  isSyncLoading = false
+  isSyncLoading = false,
+  webSocket
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -67,7 +69,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     saveTagUpdate,
     deleteTag,
     batchSaveChanges
-  } = useTagOperations(sessionId);
+  } = useTagOperations(sessionId, webSocket);
 
   // Streamlined text inputs for immediate editing
   const {
@@ -346,8 +348,12 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
                   initialsTyped: profile.initialsTyped
                 }
               };
+            } else if (response.status === 403) {
+              // This is expected - signers can't access other users' profiles
+              console.log(`ℹ️ Access denied to profile for ${participant.displayName} - this is expected for security`);
+              return null;
             } else {
-              console.warn(`⚠️ Failed to load profile for ${participant.displayName}`);
+              console.warn(`⚠️ Failed to load profile for ${participant.displayName} (${participant.userType}):`, response.status);
               return null;
             }
           } catch (error) {
@@ -485,6 +491,33 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         } : t
       );
       setTags(updatedTags);
+
+      // 🚀 REAL-TIME SYNC: Broadcast auto-fill update to all participants
+      if (webSocket && webSocket.tagContentUpdated) {
+        try {
+          console.log('📡 Broadcasting auto-fill update via WebSocket:', {
+            tagId: tag.id,
+            tagType: tag.tagType,
+            isCompleted: true
+          });
+          
+          const contentToSend = result.tag?.contentData ? 
+            JSON.parse(result.tag.contentData) : 
+            result.autoFillResult?.contentData || result.autoFillResult?.content;
+            
+          webSocket.tagContentUpdated(
+            tag.id.toString(),
+            contentToSend,
+            result.tag?.contentType || result.autoFillResult?.contentType || 'text',
+            true,
+            'auto_fill'
+          );
+          
+          console.log('✅ Auto-fill update broadcasted successfully');
+        } catch (wsError) {
+          console.warn('⚠️ Failed to broadcast auto-fill update via WebSocket:', wsError);
+        }
+      }
 
       // Show success message
       toast({
@@ -885,6 +918,37 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       );
       setTags(updatedTags);
 
+      // 🚀 REAL-TIME SYNC: Broadcast tag content update to all participants
+      if (webSocket && webSocket.tagContentUpdated) {
+        try {
+          console.log('📡 Broadcasting tag content update via WebSocket:', {
+            tagId: selectedTagForInput.id,
+            tagType: selectedTagForInput.tagType,
+            isCompleted: true,
+            hasWebSocket: !!webSocket
+          });
+          
+          // Use the WebSocket instance to broadcast the update
+          webSocket.tagContentUpdated(
+            selectedTagForInput.id.toString(),
+            content,
+            'interactive',
+            true,
+            'manual'
+          );
+          
+          console.log('✅ Tag content update broadcasted successfully');
+        } catch (wsError) {
+          console.warn('⚠️ Failed to broadcast tag update via WebSocket:', wsError);
+          // Don't fail the entire operation if WebSocket fails
+        }
+      } else {
+        console.warn('⚠️ No WebSocket available for broadcasting tag update:', {
+          hasWebSocket: !!webSocket,
+          hasTagContentUpdated: !!(webSocket && webSocket.tagContentUpdated)
+        });
+      }
+
       toast({
         title: "Tag Completed",
         description: "Content saved successfully.",
@@ -1196,7 +1260,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
             sessionId={sessionId}
             onCoordinateClick={handleTagPlacement}
             onTagClick={mode === 'signing' ? handleTagClick : undefined}
-            tags={tags.filter(tag => tag.documentId === currentDocument.id && tag.tagType !== 'T' && tag.tagType !== 'W')}
+            tags={tags.filter(tag => tag.documentId === currentDocument.id)}
             mode={mode === 'notary' ? 'tagging' : mode as 'tagging' | 'signing'}
             selectedUser={selectedUser}
             onTagUpdate={updateTagPosition}

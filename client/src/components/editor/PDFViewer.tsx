@@ -337,19 +337,36 @@ const TagRenderer: React.FC<TagRendererProps> = ({
               // Regular completed tag - show actual content as plain text/image
               <div className="w-full h-full flex items-center justify-center">
                 {(tag.contentData || tag.content) && (() => {
-                  // Parse contentData if it's a string, fallback to content
+                  // Parse contentData if it's a string, fallback to content with enhanced error handling
                   let contentData;
                   try {
                     if (tag.contentData) {
-                      contentData = typeof tag.contentData === 'string' ? JSON.parse(tag.contentData) : tag.contentData;
+                      // Handle different contentData formats safely
+                      if (typeof tag.contentData === 'string') {
+                        try {
+                          contentData = JSON.parse(tag.contentData);
+                        } catch (parseError) {
+                          // If JSON parsing fails, treat as raw string content
+                          console.warn('📋 contentData not JSON, treating as raw string for tag', tag.id);
+                          contentData = {
+                            type: 'text',
+                            value: tag.contentData
+                          };
+                        }
+                      } else {
+                        contentData = tag.contentData;
+                      }
+                      
                       console.log('📋 Parsed contentData for tag', tag.id, ':', {
                         tagType: tag.tagType,
-                        contentDataType: contentData.type,
-                        hasValue: !!contentData.value,
-                        valueType: typeof contentData.value,
-                        valuePreview: typeof contentData.value === 'string' ? contentData.value.substring(0, 100) + '...' : contentData.value,
-                        isBase64Image: typeof contentData.value === 'string' && contentData.value.startsWith('data:image/'),
-                        isVultrUrl: typeof contentData.value === 'string' && contentData.value.includes('vultrobjects.com')
+                        contentDataType: contentData?.type || 'unknown',
+                        hasValue: !!contentData?.value,
+                        valueType: typeof contentData?.value,
+                        valuePreview: contentData?.value && typeof contentData.value === 'string' ? 
+                          contentData.value.substring(0, 100) + '...' : 
+                          JSON.stringify(contentData?.value).substring(0, 100) + '...',
+                        isBase64Image: typeof contentData?.value === 'string' && contentData.value.startsWith('data:image/'),
+                        isVultrUrl: typeof contentData?.value === 'string' && contentData.value.includes('vultrobjects.com')
                       });
                     } else if (tag.content) {
                       contentData = {
@@ -358,18 +375,29 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                       };
                       console.log('📋 Using raw content for tag', tag.id, ':', {
                         tagType: tag.tagType,
-                        contentPreview: tag.content.substring(0, 100) + '...',
-                        isBase64Image: tag.content.startsWith('data:image/'),
-                        isVultrUrl: tag.content.includes('vultrobjects.com')
+                        contentPreview: typeof tag.content === 'string' ? tag.content.substring(0, 100) + '...' : JSON.stringify(tag.content),
+                        isBase64Image: typeof tag.content === 'string' && tag.content.startsWith('data:image/'),
+                        isVultrUrl: typeof tag.content === 'string' && tag.content.includes('vultrobjects.com')
                       });
                     } else {
                       contentData = { type: 'text', value: '' };
                     }
                   } catch (e) {
                     console.error('Failed to parse contentData for tag', tag.id, ':', e, 'Raw contentData:', tag.contentData);
+                    // Safe fallback that won't cause runtime errors
+                    const fallbackValue = (() => {
+                      try {
+                        if (typeof tag.content === 'string') return tag.content;
+                        if (typeof tag.contentData === 'string') return tag.contentData;
+                        return JSON.stringify(tag.content || tag.contentData || '');
+                      } catch {
+                        return '[Content parsing error]';
+                      }
+                    })();
+                    
                     contentData = {
                       type: 'text',
-                      value: tag.content || tag.contentData || ''
+                      value: fallbackValue
                     };
                   }
                   
@@ -384,9 +412,9 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                       tagType: tag.tagType,
                       hasContentData: !!contentData,
                       contentDataType: contentData?.type,
-                      contentDataValue: contentData?.value ? contentData.value.substring(0, 50) + '...' : null,
+                      contentDataValue: contentData?.value && typeof contentData.value === 'string' ? contentData.value.substring(0, 50) + '...' : JSON.stringify(contentData?.value),
                       hasTagContent: !!tag.content,
-                      tagContentPreview: tag.content ? tag.content.substring(0, 50) + '...' : null,
+                      tagContentPreview: tag.content && typeof tag.content === 'string' ? tag.content.substring(0, 50) + '...' : JSON.stringify(tag.content),
                       contentType: tag.contentType
                     });
                     
@@ -406,7 +434,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                       );
                       
                       if (hasImageData) {
-                        console.log('✅ Image detected in contentData.value for tag', tag.id, 'Value type:', value.substring(0, 30) + '...');
+                        console.log('✅ Image detected in contentData.value for tag', tag.id, 'Value type:', typeof value === 'string' ? value.substring(0, 30) + '...' : JSON.stringify(value));
                         return true;
                       }
                     }
@@ -494,11 +522,36 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                         maxWidth: '100%'
                       }}
                       onError={(e) => {
-                        console.error('🖼️ Image failed to load for tag:', tag.id, 'Source:', imageSource, 'ContentData:', contentData);
+                        console.error('🖼️ Image failed to load for tag:', tag.id, 'Source:', typeof imageSource === 'string' ? imageSource.substring(0, 100) + '...' : JSON.stringify(imageSource), 'ContentData:', contentData);
+                        
+                        // IMPROVED ERROR HANDLING: Try different approaches
+                        const img = e.target as HTMLImageElement;
+                        
+                        // If it's a Vultr URL that might be expired, try to refresh it
+                        if (imageSource.includes('vultrobjects.com') && imageSource.includes('X-Amz-Expires')) {
+                          console.log('🔄 Attempting to refresh expired Vultr URL for tag:', tag.id);
+                          // Remove the current error state and try to reload the tag
+                          fetch(`/api/tags/${tag.id}/refresh-content`, {
+                            method: 'POST',
+                            headers: {
+                              'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                              'Content-Type': 'application/json'
+                            }
+                          }).then(response => {
+                            if (response.ok) {
+                              console.log('✅ Tag content refreshed, triggering page reload');
+                              // Could trigger a tag refresh here
+                            }
+                          }).catch(err => {
+                            console.error('❌ Failed to refresh tag content:', err);
+                          });
+                        }
+                        
                         setImageLoadError(true);
                       }}
                       onLoad={() => {
                         console.log('✅ Image loaded successfully for tag:', tag.id, 'Type:', tag.tagType);
+                        setImageLoadError(false); // Reset error state on successful load
                       }}
                     />
                   );
@@ -664,7 +717,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
           // Replace token placeholder if present
           const token = localStorage.getItem('token');
           const fetchUrl = url.includes('{{TOKEN}}') ? url.replace('{{TOKEN}}', token || '') : url;
-          console.log('🔗 Final fetch URL:', fetchUrl.substring(0, 100) + '...');
+          console.log('🔗 Final fetch URL:', typeof fetchUrl === 'string' ? fetchUrl.substring(0, 100) + '...' : JSON.stringify(fetchUrl));
           
           const response = await fetch(fetchUrl, {
             method: 'GET',
@@ -743,7 +796,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
           // Check if response is HTML (likely an error page)
           if (contentType && contentType.includes('text/html')) {
             const htmlText = await response.text();
-            console.error('📄 Server returned HTML instead of PDF. First 500 chars:', htmlText.substring(0, 500));
+            console.error('📄 Server returned HTML instead of PDF. First 500 chars:', typeof htmlText === 'string' ? htmlText.substring(0, 500) : JSON.stringify(htmlText));
             throw new Error('Server returned an HTML page instead of PDF. This usually means authentication failed or the document URL is incorrect.');
           }
           
@@ -1120,36 +1173,57 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     renderInitialPages();
   }, [pdfDoc, renderPage]);
 
-  // Re-render pages on zoom change
+  // Re-render pages on zoom change - FIXED: Cancel existing renders first
   useEffect(() => {
     if (!pdfDoc) return;
     
     console.log('🔄 Zoom changed, re-rendering all pages...');
-    setRenderedPages(new Set());
-    setScaleFactors(new Map());
     
-    const renderAllPages = async () => {
-      // Render pages sequentially to avoid concurrent canvas operations
-      for (let i = 1; i <= pdfDoc.numPages; i++) {
+    // CRITICAL FIX: Cancel ALL existing render tasks before starting new ones
+    renderTasksRef.current.forEach((task, pageNumber) => {
+      if (task && typeof task.cancel === 'function') {
         try {
-          await renderPage(i, true); // Force render on zoom change
-          // Small delay between renders to prevent canvas conflicts
-          await new Promise(resolve => setTimeout(resolve, 5));
-        } catch (error) {
-          console.error(`Failed to render page ${i} during zoom:`, error);
+          task.cancel();
+          console.log(`🚫 Cancelled render task for page ${pageNumber} due to zoom change`);
+        } catch (e) {
+          // Ignore cancellation errors
         }
       }
-      console.log('✅ All pages re-rendered after zoom change');
-    };
+    });
+    renderTasksRef.current.clear();
     
-    renderAllPages();
+    // Wait for cancellations to complete before starting new renders
+    setTimeout(async () => {
+      setRenderedPages(new Set());
+      setScaleFactors(new Map());
+      
+      const renderAllPages = async () => {
+        // Render pages sequentially to avoid concurrent canvas operations
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+          // Double-check mount status
+          if (!isMountedRef.current) break;
+          
+          try {
+            await renderPage(i, true); // Force render on zoom change
+            // Longer delay between renders to prevent canvas conflicts
+            await new Promise(resolve => setTimeout(resolve, 50));
+          } catch (error) {
+            console.error(`Failed to render page ${i} during zoom:`, error);
+          }
+        }
+        console.log('✅ All pages re-rendered after zoom change');
+      };
+      
+      renderAllPages();
+    }, 100); // Wait 100ms for cancellations to complete
+    
   }, [pdfDoc, viewer.zoomLevel, renderPage]);
 
   // Log component state changes (debounced to prevent spam)
   useEffect(() => {
     const timeout = setTimeout(() => {
       console.log('📊 PDFViewer state update:', {
-        documentUrl: documentUrl?.substring(0, 50) + '...',
+        documentUrl: documentUrl && typeof documentUrl === 'string' ? documentUrl.substring(0, 50) + '...' : JSON.stringify(documentUrl),
         pdfDocLoaded: !!pdfDoc,
         numPages: pdfDoc?.numPages,
         loading,

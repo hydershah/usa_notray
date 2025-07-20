@@ -11,7 +11,13 @@
     "*.db",
     "*.sqlite*",
     "**/*.test.ts",
-    "**/*.spec.ts"
+    "**/*.spec.ts",
+    "performance-logs/**/*",
+    "certificates/**/*",
+    "**/.cache/**/*",
+    "**/*.tmp",
+    "**/*.cache",
+    "**/cache-*"
   ],
   "ext": "ts,js,json",
   "env": {

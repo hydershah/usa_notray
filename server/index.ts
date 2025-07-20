@@ -103,6 +103,11 @@ app.use((req, res, next) => {
   // Fix EventEmitter memory leak by setting appropriate max listeners
   httpServer.setMaxListeners(20);
 
+  // Initialize WebSocket service for real-time PDF editor collaboration
+  const { WebSocketService } = await import('./services/editor/WebSocketService');
+  const webSocketService = new WebSocketService(httpServer);
+  console.log('🔗 WebSocket service initialized for PDF Editor');
+  
   // Video conferencing now handled by Whereby service
   console.log('✅ Whereby video conferencing service ready');
 

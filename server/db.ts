@@ -51,21 +51,22 @@ const getSSLConfig = () => {
   };
 };
 
-// PostgreSQL connection pool with optimized production configuration
+// PostgreSQL connection pool with optimized configuration to fix timeout issues
 export const pool = new Pool({ 
   connectionString: DATABASE_URL,
-  // Production-optimized connection pool settings
-  max: process.env.NODE_ENV === 'production' ? 15 : 10, // Reduced max connections for production
-  min: process.env.NODE_ENV === 'production' ? 2 : 1,   // Conservative minimum for production
-  idleTimeoutMillis: 30000, // 30 seconds - shorter for production efficiency
-  connectionTimeoutMillis: 15000, // 15 seconds - reasonable timeout
+  // 🚀 OPTIMIZED: Reduced connection pool size and faster timeouts
+  max: 8, // Reduced max connections to prevent overload
+  min: 2, // Maintain minimum connections
+  idleTimeoutMillis: 30000, // Close idle connections after 30s
+  connectionTimeoutMillis: 10000, // 10s connection timeout (was 15s)
+  acquireTimeoutMillis: 10000,    // 10s acquire timeout (added for fast failure)
+  // 🔧 FIX: Fast-fail timeouts to prevent 15s hangs
+  statement_timeout: 15000, // 15s statement timeout (was 30s)
+  query_timeout: 15000,     // 15s query timeout (was 30s)
   // Enable connection reuse and health checks
-  allowExitOnIdle: true, // Allow process to exit when idle in production
+  allowExitOnIdle: true,
   keepAlive: true,
-  keepAliveInitialDelayMillis: 5000, // 5 seconds - standard delay
-  // Reasonable timeouts for production
-  statement_timeout: 30000, // 30 seconds - balanced timeout
-  query_timeout: 30000, // 30 seconds - balanced timeout
+  keepAliveInitialDelayMillis: 5000,
   // 🔒 SECURITY: Proper SSL configuration
   ssl: getSSLConfig(),
   // 🔧 FIX: Ensure all pool connections use correct schema

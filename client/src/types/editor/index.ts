@@ -98,7 +98,7 @@ export interface UserCursor {
 }
 
 export interface CollaborationUpdate {
-  type: 'tag_placed' | 'tag_updated' | 'tag_deleted' | 'cursor_moved' | 
+  type: 'tag_placed' | 'tag_updated' | 'tag_deleted' | 'tag_content_updated' | 'cursor_moved' | 
         'page_changed' | 'user_joined' | 'user_left' | 'content_replaced' | 'session_sync';
   payload: any;
   userId: string;

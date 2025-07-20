@@ -208,6 +208,37 @@ export function registerTextTagRoutes(app: Express) {
 
       console.log(`✅ Text content updated for tag ${tagId}: "${content}"`);
 
+      // 🚀 REAL-TIME SYNC: Broadcast text content update to all session participants
+      try {
+        const { WebSocketService } = await import('../services/editor/WebSocketService');
+        
+        const syncMessage = {
+          type: 'tag_content_updated',
+          payload: {
+            tagId: updatedTag.id.toString(),
+            tagType: 'T', // Text tag type
+            content: updatedTag.content,
+            contentType: 'text',
+            contentData: responseContentData,
+            isCompleted: updatedTag.isCompleted,
+            completedBy: req.user.id,
+            completedAt: updatedTag.completedAt,
+            updatedBy: req.user.id,
+            source: 'text_input'
+          },
+          userId: req.user.id.toString(),
+          sessionId,
+          timestamp: Date.now()
+        };
+
+        WebSocketService.broadcastToSession(sessionId, syncMessage);
+        console.log(`🔄 Text content update broadcasted for tag ${tagId} in session ${sessionId}`);
+        
+      } catch (wsError) {
+        console.warn('Failed to broadcast text content update via WebSocket:', wsError);
+        // Don't fail the request if WebSocket broadcast fails
+      }
+
       res.json({
         success: true,
         tag: {

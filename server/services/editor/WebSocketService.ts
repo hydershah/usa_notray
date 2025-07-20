@@ -31,6 +31,7 @@ interface SessionRoom {
 }
 
 export class WebSocketService {
+  private static instance: WebSocketService | null = null;
   private wss: WebSocketServer;
   private sessions: Map<string, SessionRoom> = new Map();
   private userConnections: Map<string, ConnectedUser> = new Map();
@@ -47,7 +48,21 @@ export class WebSocketService {
     // Cleanup inactive sessions every 5 minutes
     setInterval(this.cleanupInactiveSessions.bind(this), 5 * 60 * 1000);
     
+    // Set singleton instance
+    WebSocketService.instance = this;
+    
     console.log('🔗 WebSocket service initialized for PDF Editor');
+  }
+
+  static getInstance(): WebSocketService {
+    if (!WebSocketService.instance) {
+      throw new Error('WebSocketService not initialized. Call constructor first.');
+    }
+    return WebSocketService.instance;
+  }
+
+  static broadcastToSession(sessionId: string, message: WSMessage, excludeUserId?: string): void {
+    WebSocketService.getInstance().broadcastToSession(sessionId, message, excludeUserId);
   }
   
   /**
@@ -212,6 +227,21 @@ export class WebSocketService {
         case 'user_typing':
           this.handleUserTyping(user, message);
           break;
+
+        case 'tag_content_updated':
+          this.handleTagContentUpdated(user, message);
+          break;
+
+        case 'ping':
+          // Handle WebSocket ping - respond with pong
+          this.sendToUser(user, {
+            type: 'pong',
+            payload: {},
+            userId: 'system',
+            sessionId: user.sessionId,
+            timestamp: Date.now()
+          });
+          break;
           
         default:
           console.warn(`Unknown message type: ${message.type}`);
@@ -316,6 +346,21 @@ export class WebSocketService {
     this.broadcastToSession(user.sessionId, message, user.userId);
     
     console.log(`🔄 Content replaced by notary ${user.displayName} in session ${user.sessionId}`);
+  }
+
+  /**
+   * Handle tag content updated (when a tag is filled/completed)
+   */
+  private handleTagContentUpdated(user: ConnectedUser, message: WSMessage): void {
+    // Add to message history
+    this.addToMessageHistory(user.sessionId, message);
+    
+    // Broadcast to all users in session (except sender)
+    this.broadcastToSession(user.sessionId, message, user.userId);
+    
+    const tagId = message.payload?.tagId;
+    const tagType = message.payload?.tagType || 'unknown';
+    console.log(`✏️ Tag content updated by ${user.displayName}: ${tagType} tag ${tagId} in session ${user.sessionId}`);
   }
   
   /**

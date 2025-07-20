@@ -146,6 +146,25 @@ export const useWebSocket = (config: WebSocketConfig) => {
           updateTag(message.payload.tagId, message.payload.updates);
           break;
 
+        case 'tag_content_updated':
+          console.log('✏️ Tag content updated by another user:', {
+            tagId: message.payload.tagId,
+            tagType: message.payload.tagType,
+            isCompleted: message.payload.isCompleted,
+            source: message.payload.source || 'manual'
+          });
+          // Update the tag with the new content
+          updateTag(message.payload.tagId, {
+            content: message.payload.content,
+            contentType: message.payload.contentType,
+            contentData: message.payload.contentData,
+            isCompleted: message.payload.isCompleted,
+            completedBy: message.payload.completedBy,
+            completedAt: message.payload.completedAt,
+            updatedBy: message.payload.updatedBy
+          });
+          break;
+
         case 'tag_deleted':
           console.log('🗑️ Tag deleted by another user');
           deleteTag(message.payload.tagId);
@@ -237,10 +256,13 @@ export const useWebSocket = (config: WebSocketConfig) => {
       setConnectionState(prev => ({ ...prev, isConnecting: true }));
       
       const wsUrl = createWebSocketUrl();
+      console.log('🔗 Attempting WebSocket connection to:', wsUrl);
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
-        console.log('🔗 WebSocket connected');
+        console.log('✅ WebSocket connected successfully to:', wsUrl);
+        console.log('🔍 Session ID:', sessionId);
+        console.log('🔍 User ID:', userId);
         wsRef.current = ws;
         setConnectionState(prev => ({
           ...prev,
@@ -301,7 +323,11 @@ export const useWebSocket = (config: WebSocketConfig) => {
       };
 
       ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        console.error('🚨 WebSocket connection error:', error);
+        console.error('🔍 WebSocket URL was:', wsUrl);
+        console.error('🔍 WebSocket readyState:', ws.readyState);
+        console.error('🔍 Token available:', !!getAuthToken());
+        console.error('🔍 Session ID:', sessionId);
         setConnectionState(prev => ({
           ...prev,
           lastError: 'WebSocket connection error'
@@ -372,6 +398,19 @@ export const useWebSocket = (config: WebSocketConfig) => {
       sendMessage({
         type: 'tag_deleted',
         payload: { tagId }
+      });
+    },
+
+    tagContentUpdated: (tagId: string, content: any, contentType: string, isCompleted: boolean, source?: string) => {
+      sendMessage({
+        type: 'tag_content_updated',
+        payload: { 
+          tagId, 
+          content, 
+          contentType, 
+          isCompleted,
+          source: source || 'manual'
+        }
       });
     },
 

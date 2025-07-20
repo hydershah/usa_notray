@@ -61,7 +61,7 @@ const validateCoordinates = (coordinates: Partial<TagCoordinates>): boolean => {
   return true;
 };
 
-export const useTagOperations = (sessionId: string) => {
+export const useTagOperations = (sessionId: string, webSocket?: any) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const pendingOperations = useRef<TagOperation[]>([]);
   
@@ -372,6 +372,23 @@ export const useTagOperations = (sessionId: string) => {
     // Add to store immediately for instant feedback
     addTag(optimisticTag);
 
+    // 🚀 REAL-TIME SYNC: Broadcast tag placement to all participants
+    if (webSocket && webSocket.tagPlaced) {
+      try {
+        console.log('📡 Broadcasting tag placement via WebSocket:', {
+          tagId: tempTagId,
+          tagType: command.tagType,
+          coordinates: sanitizedCoordinates
+        });
+        
+        webSocket.tagPlaced(optimisticTag);
+        
+        console.log('✅ Tag placement broadcasted successfully');
+      } catch (wsError) {
+        console.warn('⚠️ Failed to broadcast tag placement via WebSocket:', wsError);
+      }
+    }
+
     // Queue operation for save
     const operation: TagOperation = {
       type: 'place',
@@ -452,6 +469,22 @@ export const useTagOperations = (sessionId: string) => {
       timestamp: Date.now()
     };
 
+    // 🚀 REAL-TIME SYNC: Broadcast tag update to all participants
+    if (webSocket && webSocket.tagUpdated) {
+      try {
+        console.log('📡 Broadcasting tag update via WebSocket:', {
+          tagId,
+          coordinates: sanitizedCoordinates
+        });
+        
+        webSocket.tagUpdated(tagId, { coordinates: sanitizedCoordinates });
+        
+        console.log('✅ Tag update broadcasted successfully');
+      } catch (wsError) {
+        console.warn('⚠️ Failed to broadcast tag update via WebSocket:', wsError);
+      }
+    }
+
     // Save to server with debounce
     debouncedSave(operation);
   }, [tags, setCustomTagDimensions]);
@@ -460,6 +493,19 @@ export const useTagOperations = (sessionId: string) => {
   const deleteTag = useCallback((tagId: string) => {
     // Remove from store immediately
     removeTagFromStore(tagId);
+
+    // 🚀 REAL-TIME SYNC: Broadcast tag deletion to all participants
+    if (webSocket && webSocket.tagDeleted) {
+      try {
+        console.log('📡 Broadcasting tag deletion via WebSocket:', { tagId });
+        
+        webSocket.tagDeleted(tagId);
+        
+        console.log('✅ Tag deletion broadcasted successfully');
+      } catch (wsError) {
+        console.warn('⚠️ Failed to broadcast tag deletion via WebSocket:', wsError);
+      }
+    }
 
     // Queue operation for save
     const operation: TagOperation = {

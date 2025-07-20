@@ -94,6 +94,11 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     maxReconnectAttempts: 10
   });
 
+  // Log WebSocket connection status
+  useEffect(() => {
+    console.log('🔗 WebSocket connection state:', webSocket.connectionState);
+  }, [webSocket.connectionState]);
+
   // Access editor store to get current page and document
   const { viewer, currentDocument } = useEditorStore();
 
@@ -362,6 +367,19 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
           <Badge variant="secondary" className="text-xs">
             {liveSession.state}
           </Badge>
+
+          {/* WebSocket Connection Status */}
+          <Badge 
+            variant={webSocket.connectionState.isConnected ? 'default' : 'destructive'}
+            className="text-xs"
+          >
+            {webSocket.connectionState.isConnected 
+              ? '🟢 Synced' 
+              : webSocket.connectionState.isConnecting
+              ? '🟡 Connecting...'
+              : '🔴 No Sync'
+            }
+          </Badge>
           
           {isSigner && (
             <Badge variant={liveSession.activeUserId === parseInt(currentUserId) ? "default" : "outline"} className="text-xs">
@@ -466,6 +484,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
             onSetActiveUser={(userId: number) => handleSetActiveUser(userId.toString())}
             onSyncUsers={handleSyncUsers}
             isSyncLoading={isLoading}
+            webSocket={webSocket}
           />
         </div>
 
