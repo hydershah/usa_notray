@@ -66,8 +66,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     updateTagSize,
     saveTagUpdate,
     deleteTag,
-    batchSaveChanges,
-    placeWhiteoutOverlay
+    batchSaveChanges
   } = useTagOperations(sessionId);
 
   // Streamlined text inputs for immediate editing
@@ -845,24 +844,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     }
 
     try {
-      // Check if this is a whiteout - handle differently
-      if (selectedTagType === 'W') {
-        console.log('⬜ Placing whiteout overlay...');
-        
-        // Create whiteout overlay directly without creating a tag
-        await placeWhiteoutOverlay({
-          documentId: currentDocument.id,
-          coordinates,
-          sessionId: sessionId
-        });
-        
-        console.log('✅ Whiteout overlay placed successfully!');
-        
-        // Auto-switch back to pointer mode after placing whiteout
-        setSelectedTagType(null);
-        
-        return;
-      }
+      // All tags (including whiteout) now use the regular tag placement system
+      // Whiteout tags are regular tags that get auto-completed immediately
       
       // Check if this is a text tag - use streamlined text input system
       if (selectedTagType === 'T') {

@@ -230,15 +230,33 @@ const TagRenderer: React.FC<TagRendererProps> = ({
     const userInfo = extractUserFromTag(tag, session);
     
     // For completed tags in signing mode, show the actual content
-    if (mode.mode === 'signing' && tag.isCompleted && tag.contentData) {
+    if (mode.mode === 'signing' && tag.isCompleted && (tag.contentData || tag.content)) {
+      // Special handling for whiteout tags - show as solid white rectangle
+      if (tag.tagType === 'W') {
+        return <div className="w-full h-full bg-white" />;
+      }
       // Show completed content as plain text/image without any styling
       let contentData;
       try {
-        contentData = typeof tag.contentData === 'string' ? 
-          JSON.parse(tag.contentData) : tag.contentData;
+        if (tag.contentData) {
+          contentData = typeof tag.contentData === 'string' ? 
+            JSON.parse(tag.contentData) : tag.contentData;
+        } else if (tag.content) {
+          // Fallback: create contentData from content field
+          contentData = {
+            type: 'text',
+            value: tag.content
+          };
+        } else {
+          contentData = { type: 'text', value: '' };
+        }
       } catch (e) {
         console.error('Failed to parse contentData in TagLayer:', e);
-        contentData = tag.contentData;
+        // Fallback to content field if contentData parsing fails
+        contentData = {
+          type: 'text',
+          value: tag.content || tag.contentData || ''
+        };
       }
       
       // Enhanced image detection logic
@@ -285,11 +303,12 @@ const TagRenderer: React.FC<TagRendererProps> = ({
               }}
               onError={(e) => {
                 console.error('🖼️ Image failed to load in TagLayer:', contentData.value);
-                // Fallback to text if image fails to load
+                // Fallback to text showing tag type and status
                 e.currentTarget.style.display = 'none';
                 const parent = e.currentTarget.parentElement;
                 if (parent) {
-                  parent.innerHTML = `<div class="text-red-500 text-xs p-1">Image failed to load</div>`;
+                  const tagName = tag.tagType === 'S' ? 'Signature' : tag.tagType === 'I' ? 'Initials' : tag.tagType === 'E' ? 'Seal' : 'Content';
+                  parent.innerHTML = `<div class="w-full h-full flex items-center justify-center bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs font-medium">${tagName} Applied</div>`;
                 }
               }}
             />
@@ -303,7 +322,9 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                 fontFamily: 'inherit'
               }}
             >
-              {typeof contentData.value === 'string' ? contentData.value : JSON.stringify(contentData.value)}
+              {typeof contentData?.value === 'string' ? contentData.value : 
+               contentData?.value ? JSON.stringify(contentData.value) :
+               tag.content || '[No content]'}
             </div>
           )}
         </div>
@@ -447,15 +468,15 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       `}
       style={{
         backgroundColor: tag.isCompleted && mode.mode === 'signing' 
-          ? 'transparent' // No background for completed tags in signing mode
+          ? tag.tagType === 'W' ? '#FFFFFF' : 'rgba(255, 255, 255, 0.1)' // Whiteout = solid white, others = very subtle background
           : 'rgba(255, 255, 255, 0.95)',
         border: tag.isCompleted && mode.mode === 'signing' 
-          ? 'none' // No border for completed tags in signing mode
+          ? tag.tagType === 'W' ? '1px solid #E5E7EB' : '1px solid rgba(156, 163, 175, 0.3)' // Very subtle border for completed tags
           : `2px solid ${tag.colorCode || userColor}`,
         borderRadius: tag.isCompleted && mode.mode === 'signing' ? '0' : '6px',
-        zIndex: isSelected ? 1000 : 100,
+        zIndex: tag.tagType === 'W' ? (isSelected ? 1000 : 10) : (isSelected ? 1000 : 100), // Lower z-index for whiteout (background)
         boxShadow: tag.isCompleted && mode.mode === 'signing'
-          ? 'none' // No shadow for completed tags
+          ? '0 1px 2px rgba(0,0,0,0.05)' // Very subtle shadow for completed tags
           : isSelected 
           ? `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${(tag.colorCode || userColor)}20` 
           : '0 2px 4px rgba(0,0,0,0.1)',

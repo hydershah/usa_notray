@@ -252,7 +252,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           
           // Default behavior for other tags
           if (mode === 'signing' && tag.isCompleted) {
-            return 'transparent'; // No background for completed tags
+            return 'rgba(255, 255, 255, 0.1)'; // Very subtle background for completed tags
           } else if (mode === 'signing' && !tag.isCompleted) {
             return 'rgba(59, 130, 246, 0.1)'; // Blue background for incomplete/clickable
           } else {
@@ -273,7 +273,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           
           // Default behavior for other tags
           if (mode === 'signing' && tag.isCompleted) {
-            return 'none'; // No border for completed tags
+            return '1px solid rgba(156, 163, 175, 0.3)'; // Very subtle border for completed tags
           } else if (mode === 'signing' && !tag.isCompleted) {
             return '2px dashed #3b82f6'; // Dashed blue border for clickable
           } else {
@@ -285,7 +285,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         color: mode === 'signing' && tag.isCompleted 
           ? '#000000' // Black text for completed content (plain text appearance)
           : tag.colorCode || '#3B82F6',
-        zIndex: tag.tagType === 'W' ? (isSelected ? 1000 : 200) : (isSelected ? 1000 : 100), // Higher z-index for whiteout
+        zIndex: tag.tagType === 'W' ? (isSelected ? 1000 : 10) : (isSelected ? 1000 : 100), // Lower z-index for whiteout (background)
         pointerEvents: 'auto',
         cursor: mode === 'signing' && !tag.isCompleted ? 'pointer' : 'default',
         boxShadow: (() => {
@@ -302,7 +302,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           
           // Default shadow for other tags
           if (mode === 'signing' && tag.isCompleted) {
-            return 'none'; // No shadow for completed tags
+            return '0 1px 2px rgba(0,0,0,0.05)'; // Very subtle shadow for completed tags
           } else if (isSelected) {
             return `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${(tag.colorCode || '#3B82F6')}20`;
           } else if (mode === 'signing' && !tag.isCompleted) {
@@ -336,14 +336,26 @@ const TagRenderer: React.FC<TagRendererProps> = ({
             ) : (
               // Regular completed tag - show actual content as plain text/image
               <div className="w-full h-full flex items-center justify-center">
-                {tag.contentData && (() => {
-                  // Parse contentData if it's a string
+                {(tag.contentData || tag.content) && (() => {
+                  // Parse contentData if it's a string, fallback to content
                   let contentData;
                   try {
-                    contentData = typeof tag.contentData === 'string' ? JSON.parse(tag.contentData) : tag.contentData;
+                    if (tag.contentData) {
+                      contentData = typeof tag.contentData === 'string' ? JSON.parse(tag.contentData) : tag.contentData;
+                    } else if (tag.content) {
+                      contentData = {
+                        type: 'text',
+                        value: tag.content
+                      };
+                    } else {
+                      contentData = { type: 'text', value: '' };
+                    }
                   } catch (e) {
                     console.error('Failed to parse contentData:', e);
-                    contentData = tag.contentData;
+                    contentData = {
+                      type: 'text',
+                      value: tag.content || tag.contentData || ''
+                    };
                   }
                   
                   // Enhanced image detection logic
@@ -391,8 +403,13 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                           fontFamily: 'inherit'
                         }}
                       >
-                        {imageLoadError ? 'Image failed to load' : 
-                         (typeof contentData?.value === 'string' ? contentData.value : JSON.stringify(contentData?.value || ''))}
+                        {imageLoadError ? 
+                         (tag.tagType === 'S' ? 'Signature Applied' : 
+                          tag.tagType === 'I' ? 'Initials Applied' : 
+                          tag.tagType === 'E' ? 'Seal Applied' : 'Content Applied') : 
+                         (typeof contentData?.value === 'string' ? contentData.value : 
+                          contentData?.value ? JSON.stringify(contentData.value) :
+                          tag.content || '[No content]')}
                       </div>
                     );
                   }

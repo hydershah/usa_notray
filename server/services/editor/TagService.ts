@@ -35,6 +35,8 @@ export interface DocumentTagData {
   colorCode: string;
   isCompleted: boolean;
   content?: string;
+  contentType?: string;
+  contentData?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -712,6 +714,8 @@ export class TagService {
       colorCode,
       isCompleted: tag.isCompleted,
       content: tag.content,
+      contentType: tag.contentType,
+      contentData: tag.contentData,
       createdAt: tag.createdAt,
       updatedAt: tag.updatedAt
     };
@@ -770,12 +774,27 @@ export class TagService {
     try {
       const { redisCache } = await import('../../services/redis-cache');
       
-      // Invalidate session-wide tag cache
-      await redisCache.delPattern(`*:session:${sessionId}:*`);
+      // Fix cache key patterns to match cacheJobData middleware format:
+      // job:${jobId}:session:${sessionId}:doc:${documentId}:${url}:${query}
       
-      // Invalidate document-specific tag cache if documentId provided
+      const patterns = [
+        `*session:${sessionId}*`, // Match any cache key containing this session
+        `job:*:session:${sessionId}*`, // Match job-specific session cache
+        `*:${sessionId}:*`, // Broad pattern for any cache with this session ID
+        `api:*session*${sessionId}*`, // API cache with session context
+      ];
+      
+      // Add document-specific patterns if documentId provided
       if (documentId) {
-        await redisCache.delPattern(`*:session:${sessionId}:doc:${documentId}:*`);
+        patterns.push(`*session:${sessionId}:doc:${documentId}*`);
+        patterns.push(`job:*:session:${sessionId}:doc:${documentId}*`);
+        patterns.push(`*${sessionId}*${documentId}*`); // Even broader pattern
+      }
+      
+      // Invalidate all matching patterns
+      for (const pattern of patterns) {
+        const deleted = await redisCache.delPattern(pattern);
+        console.log(`🗑️ Cache pattern ${pattern} → ${deleted} keys deleted`);
       }
       
       console.log(`🗑️ Cache invalidated for session ${sessionId}${documentId ? ` document ${documentId}` : ''}`);

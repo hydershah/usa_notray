@@ -68,6 +68,8 @@ export interface DocumentTag {
   displayLabel: string;
   colorCode: string;
   isCompleted: boolean;
+  content?: string;
+  contentType?: string;
   contentData?: any; // Actual content when replaced in live session
   createdAt: Date;
   updatedAt: Date;
