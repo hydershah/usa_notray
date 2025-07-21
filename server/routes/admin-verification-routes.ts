@@ -336,6 +336,83 @@ router.post('/remove-bypass/:userId', verifyToken, requireAdmin, async (req: any
   }
 });
 
+// Revoke KYC/EVS verification for a user (admin version)
+router.post('/revoke-kyc/:userId', verifyToken, requireAdmin, async (req: any, res: Response) => {
+  try {
+    const userId = parseInt(req.params.userId);
+    const { reason } = req.body;
+    const adminId = req.user.id;
+
+    if (isNaN(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ error: 'Reason is required for revoking KYC verification' });
+    }
+
+    // Check if user exists
+    const user = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (user.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check if user has KYC verification to revoke
+    if (!user[0].evsTransactionId && !user[0].evsVerifiedAt) {
+      return res.status(400).json({ error: 'User does not have KYC verification to revoke' });
+    }
+
+    const previousStatus = user[0].verificationStatus;
+
+    // Revoke KYC verification (reset EVS fields and verification status)
+    await db
+      .update(users)
+      .set({
+        isVerified: false,
+        verificationStatus: 'pending',
+        // Reset EVS fields
+        evsTransactionId: null,
+        evsVerificationConfidence: null,
+        evsVerifiedAt: null,
+        evsExtractedFirstName: null,
+        evsExtractedLastName: null,
+        evsExtractedDateOfBirth: null,
+        evsFaceMatchResult: null,
+        evsFaceMatchConfidence: null,
+        evsLivenessScore: null,
+        // Reset verification images
+        verificationImageFrontUrl: null,
+        verificationImageBackUrl: null,
+        verificationImageSelfieUrl: null,
+        // Keep admin/notary bypasses if they exist (those are separate from KYC)
+        // Reset verification retry count to allow new attempts
+        verificationRetryCount: 0,
+      })
+      .where(eq(users.id, userId));
+
+    // TODO: Log the KYC revocation action (admin_audit_log table needs to be created)
+    console.log(`Admin ${adminId} revoked KYC verification for user ${userId}:`, {
+      reason: reason.trim(),
+      previousStatus,
+      newStatus: 'pending'
+    });
+
+    res.json({ 
+      success: true, 
+      message: 'KYC verification revoked successfully',
+      userName: user[0].fullName || user[0].username
+    });
+  } catch (error) {
+    console.error('Error revoking KYC verification:', error);
+    res.status(500).json({ error: 'Failed to revoke KYC verification' });
+  }
+});
+
 // Get verification bypass audit log
 router.get('/bypass-log', verifyToken, requireAdmin, async (req: Request, res: Response) => {
   try {

@@ -187,9 +187,16 @@ export function SignerVerificationManager({
 
     try {
       setProcessingBypass(true);
-      const endpoint = bypassDialog.action === 'bypass' 
-        ? `/api/notary/bypass-verification/${signer.userId}/${jobId}`
-        : `/api/notary/remove-bypass/${signer.userId}/${jobId}`;
+      
+      let endpoint;
+      if (bypassDialog.action === 'bypass') {
+        endpoint = `/api/notary/bypass-verification/${signer.userId}/${jobId}`;
+      } else {
+        // For revoke, use the new KYC revoke endpoint if user has EVS verification
+        endpoint = verificationData?.evs_transaction_id || verificationData?.evs_verified_at
+          ? `/api/notary/revoke-kyc/${signer.userId}/${jobId}`
+          : `/api/notary/remove-bypass/${signer.userId}/${jobId}`;
+      }
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -205,7 +212,9 @@ export function SignerVerificationManager({
           title: "Success",
           description: bypassDialog.action === 'bypass' 
             ? "Verification bypassed successfully" 
-            : "Bypass revoked successfully"
+            : (verificationData?.evs_transaction_id || verificationData?.evs_verified_at)
+              ? "KYC verification revoked successfully"
+              : "Bypass removed successfully"
         });
         
         // Refresh verification data
@@ -575,8 +584,8 @@ export function SignerVerificationManager({
         {/* Bypass/Revoke Buttons - Only for Notaries and when user account exists */}
         {canManageVerification && verificationData && (
           <>
-            {/* Bypass Button - Show only if not already bypassed by notary */}
-            {!verificationData.notary_verification_bypassed && !loading && (
+            {/* Bypass Button - Show only if user has NOT completed KYC/EVS verification */}
+            {!verificationData.evs_transaction_id && !verificationData.evs_verified_at && !loading && (
               <Dialog open={bypassDialog.open && bypassDialog.action === 'bypass'} onOpenChange={(open) => setBypassDialog({ open, action: 'bypass' })}>
                 <DialogTrigger asChild>
                   <Button
@@ -642,8 +651,8 @@ export function SignerVerificationManager({
               </Dialog>
             )}
 
-            {/* Revoke Button - Show only if bypassed by notary */}
-            {verificationData.notary_verification_bypassed && !loading && (
+            {/* Revoke Button - Show only if user HAS completed KYC/EVS verification */}
+            {(verificationData.evs_transaction_id || verificationData.evs_verified_at) && !loading && (
               <Dialog open={bypassDialog.open && bypassDialog.action === 'revoke'} onOpenChange={(open) => setBypassDialog({ open, action: 'revoke' })}>
                 <DialogTrigger asChild>
                   <Button
@@ -657,20 +666,20 @@ export function SignerVerificationManager({
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Revoke Verification Bypass</DialogTitle>
+                    <DialogTitle>Revoke KYC Verification</DialogTitle>
                     <DialogDescription>
-                      Are you sure you want to revoke the verification bypass for {signer.signerName}? 
-                      This will mark them as not verified and they will need to complete the standard verification process.
+                      Are you sure you want to revoke the KYC verification for {signer.signerName}? 
+                      This will invalidate their current verification status and they will need to complete verification again.
                     </DialogDescription>
                   </DialogHeader>
                   
                   <div className="space-y-4">
                     <div>
-                      <label className="text-sm font-medium">Reason for revocation:</label>
+                      <label className="text-sm font-medium">Reason for revoking KYC verification:</label>
                       <Textarea
                         value={bypassReason}
                         onChange={(e) => setBypassReason(e.target.value)}
-                        placeholder="Please provide a reason for revoking the bypass..."
+                        placeholder="Please provide a reason for revoking KYC verification..."
                         className="mt-1"
                       />
                     </div>

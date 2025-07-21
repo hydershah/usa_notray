@@ -169,6 +169,30 @@ export function VerificationManagement() {
     },
   });
 
+  // Revoke KYC verification mutation
+  const revokeKycMutation = useMutation({
+    mutationFn: async ({ userId, reason }: { userId: number; reason: string }) => {
+      const response = await apiRequest('POST', `/api/admin/revoke-kyc/${userId}`, { reason });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/verification-users'] });
+      toast({
+        title: "Success",
+        description: "KYC verification revoked successfully.",
+      });
+      setBypassReason('');
+      setSelectedUser(null);
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to revoke KYC verification.",
+      });
+    },
+  });
+
   // Filter users based on search and filters
   const filteredUsers = users.filter((user: VerificationUser) => {
     const displayName = user.full_name || `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username;
@@ -818,8 +842,8 @@ export function VerificationManagement() {
                         </DialogContent>
                       </Dialog>
                       
-                      {/* Quick Bypass Button */}
-                      {!user.is_verification_bypassed && !user.is_verified && (
+                      {/* Quick Bypass Button - Show only if user has NOT completed KYC verification */}
+                      {!user.evs_transaction_id && !user.evs_verified_at && (
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button variant="outline" size="sm" className="border-purple-300 text-purple-600 hover:bg-purple-50">
@@ -883,6 +907,41 @@ export function VerificationManagement() {
                                 className="bg-red-600 hover:bg-red-700"
                               >
                                 Confirm Removal
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                      
+                      {/* Revoke KYC Button - Show only if user HAS completed KYC verification */}
+                      {(user.evs_transaction_id || user.evs_verified_at) && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="outline" size="sm" className="border-orange-300 text-orange-600 hover:bg-orange-50">
+                              <XCircle className="w-4 h-4 mr-2" />
+                              Revoke KYC
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Revoke KYC Verification</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to revoke the KYC verification for {user.full_name || user.username}? 
+                                This will invalidate their current KYC verification and they will need to complete the verification process again.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction 
+                                onClick={() => {
+                                  revokeKycMutation.mutate({
+                                    userId: user.id,
+                                    reason: 'Administrative decision to revoke KYC verification'
+                                  });
+                                }}
+                                className="bg-orange-600 hover:bg-orange-700"
+                              >
+                                Confirm Revoke
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>

@@ -198,9 +198,15 @@ export function ParticipantVerificationManager() {
     }
 
     try {
-      const endpoint = bypassDialog.action === 'bypass' 
-        ? `/api/notary/bypass-verification/${bypassDialog.participant.user_id}/${selectedJob.id}`
-        : `/api/notary/remove-bypass/${bypassDialog.participant.user_id}/${selectedJob.id}`;
+      let endpoint;
+      if (bypassDialog.action === 'bypass') {
+        endpoint = `/api/notary/bypass-verification/${bypassDialog.participant.user_id}/${selectedJob.id}`;
+      } else {
+        // For revoke, use the new KYC revoke endpoint if user has EVS verification
+        endpoint = bypassDialog.participant.evs_transaction_id || bypassDialog.participant.evs_verified_at
+          ? `/api/notary/revoke-kyc/${bypassDialog.participant.user_id}/${selectedJob.id}`
+          : `/api/notary/remove-bypass/${bypassDialog.participant.user_id}/${selectedJob.id}`;
+      }
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -216,7 +222,9 @@ export function ParticipantVerificationManager() {
           title: "Success",
           description: bypassDialog.action === 'bypass' 
             ? "Verification bypassed successfully" 
-            : "Bypass removed successfully"
+            : (bypassDialog.participant.evs_transaction_id || bypassDialog.participant.evs_verified_at)
+              ? "KYC verification revoked successfully"
+              : "Bypass removed successfully"
         });
         
         // Refresh data
@@ -435,7 +443,7 @@ export function ParticipantVerificationManager() {
                             </Button>
                           ) : (
                             <>
-                              {!participant.is_verified && (
+                              {!participant.evs_transaction_id && !participant.evs_verified_at && (
                                 <Button
                                   onClick={() => setBypassDialog({ 
                                     open: true, 
@@ -450,7 +458,7 @@ export function ParticipantVerificationManager() {
                                 </Button>
                               )}
                               
-                              {participant.notary_verification_bypassed && (
+                              {(participant.evs_transaction_id || participant.evs_verified_at) && (
                                 <Button
                                   onClick={() => setBypassDialog({ 
                                     open: true, 
@@ -461,7 +469,7 @@ export function ParticipantVerificationManager() {
                                   className="text-red-600 border-red-300 hover:bg-red-50"
                                 >
                                   <XCircle className="w-4 h-4 mr-2" />
-                                  Remove Bypass
+                                  Revoke KYC
                                 </Button>
                               )}
                             </>

@@ -116,6 +116,149 @@ router.get('/job-participants/:jobId', verifyToken, requireNotaryOrAdmin, async 
 });
 
 /**
+ * POST /api/notary/revoke-kyc/:userId/:jobId
+ * Revoke KYC/EVS verification for a participant (reset their verification status)
+ */
+router.post('/revoke-kyc/:userId/:jobId', verifyToken, requireNotaryOrAdmin, async (req: any, res: Response) => {
+  try {
+    const userId = parseInt(req.params.userId);
+    const jobId = parseInt(req.params.jobId);
+    const { reason } = req.body;
+    const notaryId = req.user.id;
+
+    if (isNaN(userId) || isNaN(jobId)) {
+      return res.status(400).json({ error: 'Invalid user ID or job ID' });
+    }
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ error: 'Reason is required for revoking KYC verification' });
+    }
+
+    // Check if notary can revoke verification for this participant
+    const canRevoke = await db.execute(sql`
+      SELECT can_notary_bypass_verification(${notaryId}, ${userId}, ${jobId}) as can_revoke
+    `);
+
+    if (!canRevoke.rows[0]?.can_revoke && !hasAdminPrivileges(req.user)) {
+      return res.status(403).json({ error: 'You do not have permission to revoke KYC verification for this participant' });
+    }
+
+    // Check if user is a participant in this job (check both job_participants and signers tables)
+    let participant = await db
+      .select()
+      .from(jobParticipants)
+      .where(and(
+        eq(jobParticipants.jobId, jobId),
+        eq(jobParticipants.userId, userId),
+        or(eq(jobParticipants.role, 'signer'), eq(jobParticipants.role, 'witness'))
+      ))
+      .limit(1);
+
+    // If not found in job_participants, check signers table
+    if (participant.length === 0) {
+      const signer = await db
+        .select()
+        .from(signers)
+        .where(and(
+          eq(signers.jobId, jobId),
+          eq(signers.userId, userId)
+        ))
+        .limit(1);
+
+      if (signer.length === 0) {
+        return res.status(404).json({ error: 'Participant not found in this job' });
+      }
+      
+      // Create a participant-like object for compatibility
+      participant = [{
+        id: signer[0].id,
+        jobId: jobId,
+        userId: userId,
+        email: signer[0].signerEmail,
+        role: 'signer',
+        inviteStatus: 'accepted',
+        inviteToken: signer[0].invitationToken,
+        joinedAt: signer[0].createdAt,
+        createdAt: signer[0].createdAt
+      }];
+    }
+
+    // Get user to check current verification status
+    const user = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (user.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check if user has KYC verification to revoke
+    if (!user[0].evsTransactionId && !user[0].evsVerifiedAt) {
+      return res.status(400).json({ error: 'User does not have KYC verification to revoke' });
+    }
+
+    const previousStatus = user[0].verificationStatus;
+
+    // Revoke KYC verification (reset EVS fields and verification status)
+    await db
+      .update(users)
+      .set({
+        isVerified: false,
+        verificationStatus: 'pending',
+        // Reset EVS fields
+        evsTransactionId: null,
+        evsVerificationConfidence: null,
+        evsVerifiedAt: null,
+        evsExtractedFirstName: null,
+        evsExtractedLastName: null,
+        evsExtractedDateOfBirth: null,
+        evsFaceMatchResult: null,
+        evsFaceMatchConfidence: null,
+        evsLivenessScore: null,
+        // Reset verification images
+        verificationImageFrontUrl: null,
+        verificationImageBackUrl: null,
+        verificationImageSelfieUrl: null,
+        // Keep admin/notary bypasses if they exist (those are separate from KYC)
+        // Reset verification retry count to allow new attempts
+        verificationRetryCount: 0,
+      })
+      .where(eq(users.id, userId));
+
+    // Log the KYC revocation
+    await db.execute(sql`
+      INSERT INTO notary_verification_bypass_log (
+        job_id,
+        participant_id,
+        notary_id,
+        action,
+        reason,
+        previous_verification_status
+      ) VALUES (
+        ${jobId},
+        ${userId},
+        ${notaryId},
+        'revoke_kyc',
+        ${reason.trim()},
+        ${previousStatus}
+      )
+    `);
+
+    res.json({ 
+      success: true, 
+      message: 'KYC verification revoked successfully',
+      participantName: user[0].fullName || user[0].username,
+      jobId
+    });
+  } catch (error) {
+    console.error('Error revoking KYC verification:', error);
+    res.status(500).json({ error: 'Failed to revoke KYC verification' });
+  }
+});
+
+/**
  * GET /api/notary/assigned-jobs
  * Get all jobs assigned to notary with participant verification status
  */
