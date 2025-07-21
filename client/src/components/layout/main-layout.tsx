@@ -86,9 +86,9 @@ export function MainLayout({ children }: MainLayoutProps) {
             <div className="absolute bottom-1/4 left-1/3 w-96 h-96 bg-indigo-100/30 rounded-full mix-blend-multiply filter blur-xl animate-pulse" style={{ animationDelay: '4s' }}></div>
           </div>
           
-          <div className="relative z-10 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+          <div className="relative z-10 p-2 sm:p-4 lg:p-6 max-w-7xl mx-auto">
             {/* Top Bar with Mobile Menu + Breadcrumbs */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-4">
                 {/* Mobile menu button */}
                 <Button

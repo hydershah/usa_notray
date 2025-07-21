@@ -218,7 +218,7 @@ class EVSService {
     
     // Create abort controller for timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout for image processing
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout for image processing
     
     try {
       console.log(`📡 Calling BlueAssure AssureCard endpoint: ${endpoint}`);

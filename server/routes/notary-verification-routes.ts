@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db.js';
-import { users, jobs, jobParticipants } from '../../shared/schema.js';
+import { users, jobs, jobParticipants, signers } from '../../shared/schema.js';
 import { eq, and, sql, or } from 'drizzle-orm';
 import { verifyToken, hasAdminPrivileges, hasNotaryPrivileges } from '../auth.js';
 
@@ -196,8 +196,8 @@ router.post('/bypass-verification/:userId/:jobId', verifyToken, requireNotaryOrA
       return res.status(403).json({ error: 'You do not have permission to bypass verification for this participant' });
     }
 
-    // Check if user is a participant in this job
-    const participant = await db
+    // Check if user is a participant in this job (check both job_participants and signers tables)
+    let participant = await db
       .select()
       .from(jobParticipants)
       .where(and(
@@ -207,11 +207,36 @@ router.post('/bypass-verification/:userId/:jobId', verifyToken, requireNotaryOrA
       ))
       .limit(1);
 
+    // If not found in job_participants, check signers table
     if (participant.length === 0) {
-      return res.status(404).json({ error: 'Participant not found in this job' });
+      const signer = await db
+        .select()
+        .from(signers)
+        .where(and(
+          eq(signers.jobId, jobId),
+          eq(signers.userId, userId)
+        ))
+        .limit(1);
+
+      if (signer.length === 0) {
+        return res.status(404).json({ error: 'Participant not found in this job' });
+      }
+      
+      // Create a participant-like object for compatibility
+      participant = [{
+        id: signer[0].id,
+        jobId: jobId,
+        userId: userId,
+        email: signer[0].signerEmail,
+        role: 'signer',
+        inviteStatus: 'accepted',
+        inviteToken: signer[0].invitationToken,
+        joinedAt: signer[0].createdAt,
+        createdAt: signer[0].createdAt
+      }];
     }
 
-    // Check if participant has a user account
+    // Check if participant has a user account (should always have one since we found by userId)
     if (!participant[0].userId) {
       return res.status(400).json({ error: 'Participant must have a user account before verification can be bypassed. Please ensure they have registered and joined the job.' });
     }
@@ -304,8 +329,8 @@ router.post('/remove-bypass/:userId/:jobId', verifyToken, requireNotaryOrAdmin, 
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Also check if this user is a participant in the job
-    const participant = await db
+    // Also check if this user is a participant in the job (check both job_participants and signers tables)
+    let participant = await db
       .select()
       .from(jobParticipants)
       .where(and(
@@ -315,8 +340,33 @@ router.post('/remove-bypass/:userId/:jobId', verifyToken, requireNotaryOrAdmin, 
       ))
       .limit(1);
 
+    // If not found in job_participants, check signers table
     if (participant.length === 0) {
-      return res.status(404).json({ error: 'Participant not found in this job' });
+      const signer = await db
+        .select()
+        .from(signers)
+        .where(and(
+          eq(signers.jobId, jobId),
+          eq(signers.userId, userId)
+        ))
+        .limit(1);
+
+      if (signer.length === 0) {
+        return res.status(404).json({ error: 'Participant not found in this job' });
+      }
+      
+      // Create a participant-like object for compatibility
+      participant = [{
+        id: signer[0].id,
+        jobId: jobId,
+        userId: userId,
+        email: signer[0].signerEmail,
+        role: 'signer',
+        inviteStatus: 'accepted',
+        inviteToken: signer[0].invitationToken,
+        joinedAt: signer[0].createdAt,
+        createdAt: signer[0].createdAt
+      }];
     }
 
     if (!user[0].notaryVerificationBypassed) {
@@ -543,8 +593,8 @@ router.get('/participant/:userId/verification-documents/:jobId', verifyToken, re
       }
     }
 
-    // Check if user is a participant in this job
-    const participant = await db
+    // Check if user is a participant in this job (check both job_participants and signers tables)
+    let participant = await db
       .select()
       .from(jobParticipants)
       .where(and(
@@ -554,8 +604,33 @@ router.get('/participant/:userId/verification-documents/:jobId', verifyToken, re
       ))
       .limit(1);
 
+    // If not found in job_participants, check signers table
     if (participant.length === 0) {
-      return res.status(404).json({ error: 'Participant not found in this job' });
+      const signer = await db
+        .select()
+        .from(signers)
+        .where(and(
+          eq(signers.jobId, jobId),
+          eq(signers.userId, userId)
+        ))
+        .limit(1);
+
+      if (signer.length === 0) {
+        return res.status(404).json({ error: 'Participant not found in this job' });
+      }
+      
+      // Create a participant-like object for compatibility
+      participant = [{
+        id: signer[0].id,
+        jobId: jobId,
+        userId: userId,
+        email: signer[0].signerEmail,
+        role: 'signer',
+        inviteStatus: 'accepted',
+        inviteToken: signer[0].invitationToken,
+        joinedAt: signer[0].createdAt,
+        createdAt: signer[0].createdAt
+      }];
     }
 
     // Get comprehensive verification data
@@ -623,10 +698,15 @@ router.get('/participant/:userId/verification-documents/:jobId', verifyToken, re
         uva.status,
         uva.confidence_score,
         uva.processing_time_ms,
-        uva.error_message,
-        uva.verification_method,
+        uva.errors,
+        uva.warnings,
         uva.ip_address,
-        uva.user_agent
+        uva.user_agent,
+        uva.api_environment,
+        uva.document_type,
+        uva.front_image_uploaded,
+        uva.back_image_uploaded,
+        uva.selfie_uploaded
       FROM user_verification_attempts uva
       WHERE uva.user_id = ${userId}
       ORDER BY uva.attempted_at DESC
@@ -677,8 +757,8 @@ router.get('/participant/:userId/verification-image/:imageType/:jobId', verifyTo
       }
     }
 
-    // Check if user is a participant in this job
-    const participant = await db
+    // Check if user is a participant in this job (check both job_participants and signers tables)
+    let participant = await db
       .select()
       .from(jobParticipants)
       .where(and(
@@ -688,8 +768,33 @@ router.get('/participant/:userId/verification-image/:imageType/:jobId', verifyTo
       ))
       .limit(1);
 
+    // If not found in job_participants, check signers table
     if (participant.length === 0) {
-      return res.status(404).json({ error: 'Participant not found in this job' });
+      const signer = await db
+        .select()
+        .from(signers)
+        .where(and(
+          eq(signers.jobId, jobId),
+          eq(signers.userId, userId)
+        ))
+        .limit(1);
+
+      if (signer.length === 0) {
+        return res.status(404).json({ error: 'Participant not found in this job' });
+      }
+      
+      // Create a participant-like object for compatibility
+      participant = [{
+        id: signer[0].id,
+        jobId: jobId,
+        userId: userId,
+        email: signer[0].signerEmail,
+        role: 'signer',
+        inviteStatus: 'accepted',
+        inviteToken: signer[0].invitationToken,
+        joinedAt: signer[0].createdAt,
+        createdAt: signer[0].createdAt
+      }];
     }
 
     // Get user's verification image URLs

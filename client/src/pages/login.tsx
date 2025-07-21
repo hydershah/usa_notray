@@ -8,8 +8,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { toast as sonnerToast } from 'sonner';
 import { useAuth } from '@/hooks/use-auth';
-import { IdCard, Shield, Smartphone, FileText, NotebookPen, Building, User, ArrowRight, Eye, EyeOff, Mail, CheckCircle } from 'lucide-react';
+import { IdCard, Shield, Smartphone, FileText, NotebookPen, Building, User, ArrowRight, Eye, EyeOff, Mail, CheckCircle, AlertCircle } from 'lucide-react';
 import TwoFactorAuth from '@/components/TwoFactorAuth';
 
 export default function Login() {
@@ -22,6 +23,7 @@ export default function Login() {
   const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showSignupOptions, setShowSignupOptions] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   
   // Forgot password state
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -31,6 +33,8 @@ export default function Login() {
   
   const { toast } = useToast();
   const { login, isAuthenticated, user } = useAuth();
+
+
 
   // Check for redirect reasons and show appropriate messages
   useEffect(() => {
@@ -90,6 +94,9 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setLoginError(null); // Clear any previous errors
+    
+    console.log('Login attempt:', { email, password: '***' });
 
     try {
       const response = await fetch('/api/auth/login', {
@@ -102,11 +109,14 @@ export default function Login() {
         })
       });
 
+      console.log('Response status:', response.status);
       const data = await response.json();
+      console.log('Response data:', data);
 
       if (response.ok) {
         if (data.requiresTwoFactor) {
           setRequiresTwoFactor(true);
+          sonnerToast.info("2FA Required: Please enter your two-factor authentication code.");
           toast({
             title: "2FA Required",
             description: "Please enter your two-factor authentication code.",
@@ -115,6 +125,7 @@ export default function Login() {
           // Complete login
           localStorage.setItem('token', data.token);
           localStorage.setItem('user', JSON.stringify(data.user));
+          sonnerToast.success("Welcome back! You have been logged in successfully.");
           toast({
             title: "Welcome back!",
             description: "You have been logged in successfully.",
@@ -128,17 +139,58 @@ export default function Login() {
           }
         }
       } else {
+        console.log('Login failed, showing error toast');
+        
+        // Get user-friendly error message
+        let errorMessage = "Invalid email or password. Please check your credentials and try again.";
+        
+        if (response.status === 423) {
+          errorMessage = "Account temporarily locked due to too many failed attempts. Please try again later.";
+        } else if (response.status === 401) {
+          if (data.message?.includes('Two-factor')) {
+            errorMessage = "Invalid two-factor authentication code. Please try again.";
+          } else {
+            errorMessage = "Invalid email or password. Please check your credentials and try again.";
+          }
+        } else if (response.status >= 500) {
+          errorMessage = "Server error. Please try again in a few minutes.";
+        } else if (data.message) {
+          errorMessage = data.message;
+        }
+        
+        // Set inline error
+        setLoginError(errorMessage);
+        
+        // Show prominent toast notifications
+        sonnerToast.error(errorMessage, {
+          duration: 6000,
+          position: 'top-center'
+        });
+        
         toast({
           variant: "destructive",
           title: "Login Failed",
-          description: data.message || "Invalid credentials. Please try again.",
+          description: errorMessage,
         });
       }
     } catch (error: any) {
+      console.error('Login error:', error);
+      
+      const errorMessage = "Unable to connect to the server. Please check your internet connection and try again.";
+      
+      // Set inline error
+      setLoginError(errorMessage);
+      
+      // Show prominent toast notifications
+      sonnerToast.error(errorMessage, {
+        duration: 6000,
+        position: 'top-center'
+      });
+      
       toast({
         variant: "destructive",
         title: "Connection Error",
-        description: error.message || "Unable to connect. Please try again.",
+        description: errorMessage,
       });
     } finally {
       setIsLoading(false);
@@ -388,9 +440,14 @@ export default function Login() {
                           type="email"
                           placeholder="Enter your email"
                           value={email}
-                          onChange={(e) => setEmail(e.target.value)}
+                          onChange={(e) => {
+                            setEmail(e.target.value);
+                            if (loginError) setLoginError(null); // Clear error when user types
+                          }}
                           required
-                          className="h-12 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors text-base"
+                          className={`h-12 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors text-base ${
+                            loginError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
+                          }`}
                         />
                       </div>
                       
@@ -404,9 +461,14 @@ export default function Login() {
                             type={showPassword ? "text" : "password"}
                             placeholder="Enter your password"
                             value={password}
-                            onChange={(e) => setPassword(e.target.value)}
+                            onChange={(e) => {
+                              setPassword(e.target.value);
+                              if (loginError) setLoginError(null); // Clear error when user types
+                            }}
                             required
-                            className="h-12 pr-12 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors text-base"
+                            className={`h-12 pr-12 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors text-base ${
+                              loginError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
+                            }`}
                           />
                           <button
                             type="button"
@@ -418,6 +480,21 @@ export default function Login() {
                           </button>
                         </div>
                       </div>
+                      
+                      {/* Error Message Display */}
+                      {loginError && !requiresTwoFactor && (
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mt-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex-shrink-0">
+                              <AlertCircle className="h-5 w-5 text-red-600" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-red-800">Login Failed</p>
+                              <p className="text-sm text-red-700 mt-1">{loginError}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </>
                   )}
 
@@ -437,7 +514,10 @@ export default function Login() {
                           <InputOTP
                             maxLength={6}
                             value={twoFactorCode}
-                            onChange={setTwoFactorCode}
+                            onChange={(value) => {
+                              setTwoFactorCode(value);
+                              if (loginError) setLoginError(null); // Clear error when user types
+                            }}
                           >
                             <InputOTPGroup className="gap-3">
                               <InputOTPSlot index={0} className="h-12 w-12 text-lg" />
@@ -453,6 +533,21 @@ export default function Login() {
                           <Smartphone className="h-4 w-4 text-blue-600" />
                           <span>Check your authenticator app for the current code</span>
                         </div>
+                        
+                        {/* Error Message Display for 2FA */}
+                        {loginError && requiresTwoFactor && (
+                          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mt-4">
+                            <div className="flex items-center gap-3">
+                              <div className="flex-shrink-0">
+                                <AlertCircle className="h-5 w-5 text-red-600" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-red-800">Verification Failed</p>
+                                <p className="text-sm text-red-700 mt-1">{loginError}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

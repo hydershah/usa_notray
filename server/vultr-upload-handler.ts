@@ -134,6 +134,99 @@ export class VultrUploadHandler {
   }
 
   /**
+   * Handle video recording uploads to Vultr
+   */
+  static async handleVideoRecordingUpload(
+    fileBuffer: Buffer,
+    originalFilename: string,
+    jobId: number,
+    recordingMetadata: any = {}
+  ): Promise<VultrUploadResult> {
+    try {
+      const sessionId = `recording-${jobId}`;
+      
+      const uploadResult = await handleCloudFileUpload(
+        fileBuffer,
+        originalFilename,
+        'document', // Use 'document' type for recordings
+        sessionId,
+        undefined, // No specific user for recordings
+        { 
+          fileType: 'video_recording',
+          jobId,
+          ...recordingMetadata 
+        }
+      );
+
+      console.log(`✅ Uploaded video recording to Vultr: ${originalFilename}`);
+
+      return {
+        success: true,
+        fileKey: uploadResult.key,
+        fileUrl: uploadResult.url,
+        signedUrl: uploadResult.signedUrl,
+        size: uploadResult.size
+      };
+
+    } catch (error) {
+      console.error('Video recording upload failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Upload failed'
+      };
+    }
+  }
+
+  /**
+   * Handle verification image uploads to Vultr (for ID verification process)
+   * This method uploads verification images without requiring a job_id
+   */
+  static async handleVerificationImageUpload(
+    fileBuffer: Buffer,
+    originalFilename: string,
+    userId: number,
+    imageType: 'front' | 'back' | 'selfie',
+    verificationSessionId?: string
+  ): Promise<VultrUploadResult> {
+    try {
+      const sessionId = verificationSessionId || `verification-${userId}-${Date.now()}`;
+      
+      const uploadResult = await handleCloudFileUpload(
+        fileBuffer,
+        originalFilename,
+        'document', // Use 'document' type for verification images
+        sessionId,
+        userId,
+        { 
+          fileType: 'verification_image',
+          imageType,
+          userId,
+          verificationSessionId: sessionId,
+          documentType: `id_verification_${imageType}`,
+          userRole: 'verification'
+        }
+      );
+
+      console.log(`✅ Uploaded ${imageType} verification image to Vultr: ${originalFilename}`);
+
+      return {
+        success: true,
+        fileKey: uploadResult.key,
+        fileUrl: uploadResult.url,
+        signedUrl: uploadResult.signedUrl,
+        size: uploadResult.size
+      };
+
+    } catch (error) {
+      console.error(`${imageType} verification image upload failed:`, error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Upload failed'
+      };
+    }
+  }
+
+  /**
    * Handle notary stamp uploads to Vultr
    */
   static async handleNotaryStampUpload(
@@ -205,50 +298,6 @@ export class VultrUploadHandler {
 
     } catch (error) {
       console.error('Signature upload failed:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Upload failed'
-      };
-    }
-  }
-
-  /**
-   * Handle video recording uploads to Vultr
-   */
-  static async handleVideoRecordingUpload(
-    fileBuffer: Buffer,
-    originalFilename: string,
-    jobId: number,
-    recordingMetadata: any = {}
-  ): Promise<VultrUploadResult> {
-    try {
-      const sessionId = `recording-${jobId}`;
-      
-      const uploadResult = await handleCloudFileUpload(
-        fileBuffer,
-        originalFilename,
-        'document', // Use 'document' type for recordings
-        sessionId,
-        undefined, // No specific user for recordings
-        { 
-          fileType: 'video_recording',
-          jobId,
-          ...recordingMetadata 
-        }
-      );
-
-      console.log(`✅ Uploaded video recording to Vultr: ${originalFilename}`);
-
-      return {
-        success: true,
-        fileKey: uploadResult.key,
-        fileUrl: uploadResult.url,
-        signedUrl: uploadResult.signedUrl,
-        size: uploadResult.size
-      };
-
-    } catch (error) {
-      console.error('Video recording upload failed:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Upload failed'

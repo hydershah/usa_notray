@@ -401,67 +401,35 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                     };
                   }
                   
-                  // Enhanced image detection logic
+                  // Helper function to check if contentData contains an image
                   const isImageContent = () => {
-                    const getImageUrl = () => {
-                      if (typeof contentData?.value === 'string') return contentData.value;
-                      if (contentData?.value && typeof contentData.value === 'object') {
-                        const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src'];
-                        for (const key of possibleKeys) {
-                          if (typeof (contentData.value as any)[key] === 'string') {
-                            return (contentData.value as any)[key];
-                          }
-                        }
-                      }
-                      if (typeof tag.content === 'string') return tag.content;
-                      if (tag.content && typeof tag.content === 'object') {
-                        const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src'];
-                        for (const key of possibleKeys) {
-                          if (typeof (tag.content as any)[key] === 'string') {
-                            return (tag.content as any)[key];
-                          }
-                        }
-                      }
-                      return '';
-                    };
-
-                    // CRITICAL: Whiteout tags should NEVER be treated as images
-                    if (tag.tagType === 'W') {
-                      return false; // Whiteout is always text/solid color, never an image
-                    }
-
-                    console.log('🔍 Image detection for tag', tag.id, ':', {
+                    if (!contentData || !contentData.value) return false;
+                    
+                    const value = contentData.value;
+                    const isSignatureType = contentData.type === 'signature' || contentData.type === 'initials' || contentData.type === 'seal';
+                    const isImageUrl = (typeof value === 'string') && (
+                      value.startsWith('data:image/') ||
+                      value.startsWith('https://') ||
+                      value.startsWith('http://') ||
+                      value.includes('vultrobjects.com') ||
+                      value.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i)
+                    );
+                    
+                    console.log('🔍 Image content check for tag', tag.id, ':', {
                       tagType: tag.tagType,
-                      hasContentData: !!contentData,
-                      contentDataType: contentData?.type,
-                      contentDataValue: contentData?.value && typeof contentData.value === 'string' ? contentData.value.substring(0, 50) + '...' : JSON.stringify(contentData?.value),
-                      hasTagContent: !!tag.content,
-                      tagContentPreview: tag.content && typeof tag.content === 'string' ? tag.content.substring(0, 50) + '...' : JSON.stringify(tag.content),
-                      contentType: tag.contentType
+                      contentDataType: contentData.type,
+                      isSignatureType,
+                      valueType: typeof value,
+                      valueLength: typeof value === 'string' ? value.length : 'not string',
+                      startsWithDataImage: typeof value === 'string' && value.startsWith('data:image/'),
+                      startsWithHttps: typeof value === 'string' && value.startsWith('https://'),
+                      includesVultr: typeof value === 'string' && value.includes('vultrobjects.com'),
+                      hasImageExtension: typeof value === 'string' && !!value.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i),
+                      isImageUrl,
+                      result: isSignatureType && isImageUrl
                     });
-                    const imageUrl = getImageUrl();
-                    if (imageUrl) {
-                      const hasImageData = (
-                        imageUrl.startsWith('data:image/') ||
-                        imageUrl.startsWith('http') ||
-                        imageUrl.includes('.png') ||
-                        imageUrl.includes('.jpg') ||
-                        imageUrl.includes('.jpeg') ||
-                        imageUrl.includes('.gif') ||
-                        imageUrl.includes('.svg') ||
-                        imageUrl.includes('.webp')
-                      );
-                      if (hasImageData) {
-                        return true;
-                      }
-                    }
-
-                    // Check contentType as fallback
-                    if (contentData?.contentType === 'image' || tag.contentType === 'image') {
-                      return true;
-                    }
-
-                    return false;
+                    
+                    return isSignatureType && isImageUrl;
                   };
                   
                   // If image failed to load or not image content, show text content
@@ -476,18 +444,41 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                           fontFamily: 'inherit'
                         }}
                       >
-                        {/* Always show the actual content, never "Applied" messages */}
+                        {/* Show actual content for completed tags, prioritizing image display for signature/seal tags */}
                         {(() => {
                           // Only display meaningful content to users, never debug data
                           if (typeof contentData?.value === 'string') {
                             const value = contentData.value;
-                            // Check if the value is an image URL (e.g., ends with .png, .jpg, .jpeg, or contains 'data:image')
-                            const isImageUrl = value.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i) || value.startsWith('data:image');
+                            
+                            // For signature, initials, and seal tags, prioritize showing images even with technical URLs
+                            const isSignatureOrSealTag = ['S', 'I', 'E'].includes(tag.tagType);
+                            const isImageUrl = value.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i) || 
+                                             value.startsWith('data:image') || 
+                                             value.includes('vultrobjects.com') || 
+                                             (value.startsWith('http') && isSignatureOrSealTag);
+                            
                             if (isImageUrl) {
-                              return value; // Preserve image URLs for rendering
+                              // For image content that failed to load, try to display as img element anyway
+                              // This allows the browser's error handling to take over
+                              return (
+                                <img 
+                                  src={value} 
+                                  alt={`${tag.tagType === 'S' ? 'Signature' : tag.tagType === 'I' ? 'Initials' : 'Seal'}`}
+                                  className="max-h-full max-w-full object-contain"
+                                  onError={(e) => {
+                                    // If image still fails, replace with a user-friendly message
+                                    const img = e.target as HTMLImageElement;
+                                    const parent = img.parentElement;
+                                    if (parent) {
+                                      parent.innerHTML = `<div class="text-center text-gray-600 text-xs">[${tag.tagType === 'S' ? 'Signature Applied' : tag.tagType === 'I' ? 'Initials Applied' : 'Seal Applied'}]</div>`;
+                                    }
+                                  }}
+                                />
+                              );
                             }
-                            // Filter out technical/debug data for non-image URLs
-                            if (value.includes('Algorithm=') || value.includes('Signature=') || value.includes('Expires=') || value.includes('&X-Amz-') || value.includes('vultrobjects.com')) {
+                            
+                            // Filter out technical/debug data for non-image URLs only
+                            if (value.includes('Algorithm=') || value.includes('Signature=') || value.includes('Expires=') || value.includes('&X-Amz-')) {
                               return '[Applied]';
                             }
                             return value;
@@ -503,26 +494,44 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                   
                   // Determine the best image source from available data, handling nested objects
                   const getImageUrl = () => {
+                    // First try contentData.value
                     if (typeof contentData?.value === 'string') return contentData.value;
+                    
+                    // Try nested object structure (for complex signature data)
                     if (contentData?.value && typeof contentData.value === 'object') {
-                      const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src'];
+                      const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src', 'value'];
                       for (const key of possibleKeys) {
                         if (typeof (contentData.value as any)[key] === 'string') {
                           return (contentData.value as any)[key];
                         }
                       }
                     }
+                    
+                    // Fallback to tag.content
                     if (typeof tag.content === 'string') return tag.content;
+                    
+                    // Try nested object in tag.content
                     if (tag.content && typeof tag.content === 'object') {
-                      const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src'];
+                      const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src', 'value'];
                       for (const key of possibleKeys) {
                         if (typeof (tag.content as any)[key] === 'string') {
                           return (tag.content as any)[key];
                         }
                       }
                     }
+                    
                     return '';
                   };
+
+                  console.log('🎨 Rendering completed tag', tag.id, ':', {
+                    tagType: tag.tagType,
+                    isImageContent: isImageContent(),
+                    imageUrl: getImageUrl(),
+                    contentDataType: contentData?.type,
+                    contentDataValue: typeof contentData?.value === 'string' 
+                      ? contentData.value.substring(0, 100) + '...' 
+                      : JSON.stringify(contentData?.value)
+                  });
 
                   const imageSource = getImageUrl();
                   

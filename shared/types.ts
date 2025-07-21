@@ -185,6 +185,16 @@ export interface Job {
   feeOverrideReason: string | null;
   feeOverrideApprovedBy: number | null;
   specialInstructions: string | null;
+  
+  // Additional fields for notary assignment
+  selectedNotary?: string | null;
+  assignedNotary?: {
+    id: number;
+    name: string;
+    notaryIdCode?: string | null;
+    email: string;
+    isActive: boolean;
+  } | null;
 }
 
 export interface ClosingType {

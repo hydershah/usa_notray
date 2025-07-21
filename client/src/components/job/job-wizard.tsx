@@ -913,18 +913,18 @@ function JobWizardInternal() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 py-8">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
         
         {/* Enhanced Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Create New Job</h1>
-          <p className="text-lg text-gray-600">Follow the steps below to create your notarization job</p>
+        <div className="text-center mb-3">
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">Create New Job</h1>
+          <p className="text-sm text-gray-600">Follow the steps below to create your notarization job</p>
         </div>
 
         {/* Enhanced Progress Indicator */}
-        <div className="mb-12">
-          <div className="flex items-center justify-between mb-6">
+        <div className="mb-3">
+          <div className="flex items-center justify-between mb-3">
             {steps.map((step, index) => (
               <div key={step.id} className="flex items-center">
                 <div className="flex flex-col items-center">
@@ -949,13 +949,13 @@ function JobWizardInternal() {
                   </div>
                   
                   {/* Step Labels */}
-                  <div className="mt-3 text-center">
+                  <div className="mt-2 text-center">
                     <div className={`text-sm font-medium transition-colors ${
                       currentStep >= step.id ? 'text-blue-600' : 'text-gray-500'
                     }`}>
                       {step.title}
                     </div>
-                    <div className={`text-xs mt-1 ${
+                    <div className={`text-xs mt-0.5 ${
                       currentStep >= step.id ? 'text-gray-600' : 'text-gray-400'
                     }`}>
                       {step.description}
@@ -983,8 +983,8 @@ function JobWizardInternal() {
         </div>
 
         {/* Main Content Card */}
-        <Card className="shadow-2xl border-0 bg-white/80 backdrop-blur-sm">
-          <CardContent className="p-8 md:p-12">
+        <Card className="shadow-lg border-0 bg-white">
+          <CardContent className="p-4 md:p-6">
             <Form {...form}>
               <form onSubmit={form.handleSubmit(handleSubmit)} onKeyDown={(e) => {
                 // Prevent form submission on Enter key press
@@ -992,22 +992,11 @@ function JobWizardInternal() {
                   e.preventDefault();
                   e.stopPropagation();
                 }
-              }} className="space-y-8">
+              }} className="space-y-4">
                 
-                {/* Step 1: Client Information */}
+                {/* Step 1: Job Details */}
                 {currentStep === 1 && (
-                  <div className="space-y-8">
-                    <div className="text-center">
-                      <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <FileText className="w-8 h-8 text-blue-600" />
-                      </div>
-                      <h2 className="text-2xl font-bold text-gray-900 mb-2">Client Information</h2>
-                      {currentUser?.role === 'notary' && currentUser?.notaryType === 'subscriber' ? (
-                        <p className="text-gray-600">Create a new job for your personal clients</p>
-                      ) : (
-                        <p className="text-gray-600">Create a new title company job</p>
-                      )}
-                    </div>
+                  <div className="space-y-4">
 
                     {/* Different messaging based on user type */}
                     {currentUser?.role === 'notary' && currentUser?.notaryType === 'subscriber' && (
@@ -1061,13 +1050,13 @@ function JobWizardInternal() {
                       </div>
                     )}
                     
-                    <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                        <div className="w-2 h-6 bg-blue-500 rounded-full mr-3"></div>
-                        Primary Details
-                      </h3>
+                                          <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                        <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center">
+                          <div className="w-2 h-4 bg-blue-500 rounded-full mr-2"></div>
+                          Primary Details
+                        </h3>
                       
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <FormField
                           control={form.control}
                           name="titleCompany"
@@ -1218,7 +1207,7 @@ function JobWizardInternal() {
                         Property Address
                       </h3>
                       
-                      <div className="space-y-6">
+                      <div className="space-y-4">
                         <FormField
                           control={form.control}
                           name="propertyAddressOne"
@@ -1390,14 +1379,7 @@ function JobWizardInternal() {
 
                 {/* Step 2: Signers */}
                 {currentStep === 2 && (
-                  <div className="space-y-8">
-                    <div className="text-center">
-                      <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <UserIcon className="w-8 h-8 text-green-600" />
-                      </div>
-                      <h2 className="text-2xl font-bold text-gray-900 mb-2">Participants Information</h2>
-                      <p className="text-gray-600">Add all signers and witnesses who will participate in this notarization</p>
-                    </div>
+                  <div className="space-y-4">
 
                     <div className="flex items-center justify-between bg-blue-50 rounded-lg p-4">
                       <div className="flex items-center">
@@ -1667,18 +1649,7 @@ function JobWizardInternal() {
 
                 {/* Step 3: Schedule */}
                 {currentStep === 3 && (
-                  <div className="space-y-8">
-                    <div className="text-center">
-                      <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Clock className="w-8 h-8 text-purple-600" />
-                      </div>
-                      <h2 className="text-2xl font-bold text-gray-900 mb-2">Schedule Appointment</h2>
-                      {currentUser?.role === 'notary' && currentUser?.notaryType === 'subscriber' ? (
-                        <p className="text-gray-600">Set the appointment details for your personal client job</p>
-                      ) : (
-                        <p className="text-gray-600">Choose how you'd like to assign a notary and schedule the appointment</p>
-                      )}
-                    </div>
+                  <div className="space-y-4">
                     
                     {/* Subscriber Notary: Simple date/time selection */}
                     {currentUser?.role === 'notary' && currentUser?.notaryType === 'subscriber' ? (
@@ -1697,9 +1668,9 @@ function JobWizardInternal() {
                           </div>
                         </div>
 
-                        <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
-                          <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                            <div className="w-2 h-6 bg-purple-500 rounded-full mr-3"></div>
+                        <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                          <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center">
+                            <div className="w-2 h-4 bg-purple-500 rounded-full mr-2"></div>
                             Your Available Times
                           </h3>
                           
@@ -2119,14 +2090,7 @@ function JobWizardInternal() {
 
                 {/* Step 4: Documents */}
                 {currentStep === 4 && (
-                  <div className="space-y-8">
-                    <div className="text-center">
-                      <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Upload className="w-8 h-8 text-indigo-600" />
-                      </div>
-                      <h2 className="text-2xl font-bold text-gray-900 mb-2">Upload Documents</h2>
-                      <p className="text-gray-600">Add all the documents that need to be notarized</p>
-                    </div>
+                  <div className="space-y-4">
                     
                     <div className="flex items-center justify-between bg-indigo-50 rounded-lg p-4">
                       <div className="flex items-center">
@@ -2239,14 +2203,7 @@ function JobWizardInternal() {
 
                 {/* Step 5: Review */}
                 {currentStep === 5 && (
-                  <div className="space-y-8">
-                    <div className="text-center">
-                      <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <CheckCircle className="w-8 h-8 text-green-600" />
-                      </div>
-                      <h2 className="text-2xl font-bold text-gray-900 mb-2">Review Job Details</h2>
-                      <p className="text-gray-600">Please review all the information before submitting your job</p>
-                    </div>
+                  <div className="space-y-4">
                     
                     {/* Client Information Summary */}
                     <Card className="border-2 border-gray-100">

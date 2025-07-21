@@ -6742,17 +6742,13 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       const sessionId = `evs-verification-${userId}-${Date.now()}`;
 
       try {
-        // Upload front image
-        const frontResult = await VultrUploadHandler.handleJobDocumentUpload(
+        // Upload front image using the dedicated verification image handler
+        const frontResult = await VultrUploadHandler.handleVerificationImageUpload(
           files.frontImage[0].buffer,
           `front-id-${userId}-${Date.now()}.jpg`,
-          999999, // Special job ID for verification images
           parseInt(userId),
-          {
-            documentType: 'id_verification_front',
-            userRole: 'verification',
-            verificationSessionId: sessionId
-          }
+          'front',
+          sessionId
         );
         
         if (frontResult.success) {
@@ -6761,16 +6757,12 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
 
         // Upload back image if provided
         if (files.backImage && files.backImage[0]) {
-          const backResult = await VultrUploadHandler.handleJobDocumentUpload(
+          const backResult = await VultrUploadHandler.handleVerificationImageUpload(
             files.backImage[0].buffer,
             `back-id-${userId}-${Date.now()}.jpg`,
-            999999, // Special job ID for verification images
             parseInt(userId),
-            {
-              documentType: 'id_verification_back',
-              userRole: 'verification',
-              verificationSessionId: sessionId
-            }
+            'back',
+            sessionId
           );
           
           if (backResult.success) {
@@ -6779,16 +6771,12 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         }
 
         // Upload selfie image
-        const selfieResult = await VultrUploadHandler.handleJobDocumentUpload(
+        const selfieResult = await VultrUploadHandler.handleVerificationImageUpload(
           files.selfieImage[0].buffer,
           `selfie-${userId}-${Date.now()}.jpg`,
-          999999, // Special job ID for verification images
           parseInt(userId),
-          {
-            documentType: 'id_verification_selfie',
-            userRole: 'verification',
-            verificationSessionId: sessionId
-          }
+          'selfie',
+          sessionId
         );
         
         if (selfieResult.success) {

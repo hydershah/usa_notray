@@ -170,30 +170,90 @@ export function EVSVerification({
       formData.append('documentType', state.documentType || 'drivers_license');
 
       const token = localStorage.getItem('token');
+      
+      // Create AbortController for timeout handling
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        console.log('⏰ Verification timeout reached (45 seconds)');
+        controller.abort();
+      }, 45000); // 45 second timeout to handle network delays
+
+      console.log('🔍 Starting ID verification request...');
+      const startTime = Date.now();
+
       const response = await fetch('/api/verification/evs-verify', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
         },
-        body: formData
+        body: formData,
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+      console.log(`📥 ID verification response received after ${duration}ms`);
 
       if (response.ok) {
         const result = await response.json();
-        setState(prev => ({ 
-          ...prev, 
-          step: 'complete', 
-          verificationResult: result 
-        }));
-        onVerificationComplete(result);
+        console.log('📥 HTTP 200 response received:', result);
+        console.log('   result.success:', result.success);
+        console.log('   result.status:', result.status);
+        console.log('   result.confidence:', result.confidence);
         
-        toast({
-          title: "Verification Complete",
-          description: "Your identity has been successfully verified!",
-        });
+        // Check for both HTTP 200 AND result.success === true
+        if (result.success === true || result.status === 'approved') {
+          console.log('✅ Verification completed successfully - updating UI state');
+          setState(prev => ({ 
+            ...prev, 
+            step: 'complete', 
+            verificationResult: result 
+          }));
+          onVerificationComplete(result);
+          
+          toast({
+            title: "Verification Complete",
+            description: "Your identity has been successfully verified!",
+          });
+          console.log('🎉 Success toast displayed and callbacks executed');
+        } else {
+          // HTTP 200 but result.success === false - treat as error
+          console.log('❌ Backend returned HTTP 200 but success=false:', result);
+          console.log('   result.message:', result.message);
+          console.log('   result.reasons:', result.reasons);
+          throw new Error(result.message || result.reasons?.join('; ') || 'Verification failed despite HTTP 200');
+        }
       } else {
-        const errorData = await response.json();
+        console.log(`❌ HTTP Error ${response.status}:`, response.statusText);
+        const errorData = await response.json().catch(() => ({}));
+        console.log('📥 Full error response:', errorData);
+        
         let errorMessage = errorData.message || 'Verification failed';
+        
+        // Handle specific error types
+        if (response.status === 400 && errorData.status === 'review') {
+          errorMessage = 'Your verification has been submitted for manual review due to service configuration issues. This is not a problem with your documents.';
+          setState(prev => ({ 
+            ...prev, 
+            step: 'complete', 
+            verificationResult: { status: 'review', message: errorMessage }
+          }));
+          onVerificationComplete({ status: 'review', message: errorMessage });
+          
+          toast({
+            title: "Manual Review Required",
+            description: errorMessage,
+            variant: "default",
+          });
+          return;
+        }
+        
+        // Handle HTTP 200 with success=false (should not reach here due to above fix)
+        if (response.status === 200 && errorData.success === false) {
+          console.log('⚠️ HTTP 200 with success=false - backend issues');
+          errorMessage = errorData.message || errorData.reasons?.join('; ') || 'Backend processing failed';
+        }
         
         // Provide more specific guidance based on the error
         if (errorMessage.includes('could not be processed') || errorMessage.includes('image quality')) {
@@ -203,8 +263,46 @@ export function EVSVerification({
         throw new Error(errorMessage);
       }
     } catch (error) {
-      console.error('Verification error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Verification failed';
+      console.error('🚨 Verification error caught:', error);
+      console.error('   Error name:', error instanceof Error ? error.name : 'Unknown');
+      console.error('   Error message:', error instanceof Error ? error.message : 'Unknown error');
+      console.error('   Error stack:', error instanceof Error ? error.stack : 'No stack');
+      
+      let errorMessage = 'Verification failed';
+      
+      // Handle specific error types
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          console.log('⏰ Request was aborted due to timeout');
+          errorMessage = 'Verification timed out after 45 seconds. The verification may still be processing on our servers and could complete successfully. Please click "Check Status" below to see if it completed.';
+          
+          // Auto-check status after timeout (give server time to complete)
+          setTimeout(() => {
+            console.log('🔄 Auto-checking verification status after timeout...');
+            checkVerificationStatus();
+          }, 5000); // Check again in 5 seconds (faster check)
+          
+        } else if (error.message === 'Failed to fetch') {
+          console.log('🌐 Network fetch failed - likely due to timeout or network latency');
+          errorMessage = 'Network connection issue or request timed out. The verification may still be processing on our servers and could complete successfully. Please click "Check Status" below to check if it completed.';
+          
+          // Also auto-check for network timeouts (faster since we know backend often succeeds)
+          setTimeout(() => {
+            console.log('🔄 Auto-checking verification status after network error...');
+            checkVerificationStatus();
+          }, 3000); // Check again in 3 seconds (much faster)
+          
+        } else if (error.message.includes('NetworkError') || error.message.includes('fetch')) {
+          console.log('🌐 Network error detected');
+          errorMessage = 'Network error occurred during verification. Please check your internet connection. The verification may still be processing - try "Check Status" in a moment.';
+        } else {
+          console.log('📝 Using error message:', error.message);
+          errorMessage = error.message;
+        }
+      } else {
+        console.log('❓ Non-Error object thrown:', typeof error, error);
+      }
+      
       setState(prev => ({ 
         ...prev, 
         step: 'failed', 
@@ -213,7 +311,7 @@ export function EVSVerification({
       onVerificationFailed(errorMessage);
       
       toast({
-        title: "Verification Failed",
+        title: "Verification Issue",
         description: errorMessage,
         variant: "destructive",
       });
@@ -244,6 +342,71 @@ export function EVSVerification({
     setShowSelfieCapture(false);
   };
 
+  const checkVerificationStatus = async () => {
+    try {
+      setLoading(true);
+      console.log('🔄 Checking verification status for user', userId);
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/users/${userId}/profile`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      console.log('📥 Profile response status:', response.status);
+      
+      if (response.ok) {
+        const userData = await response.json();
+        console.log('👤 User data retrieved:', {
+          isVerified: userData.isVerified,
+          verificationStatus: userData.verificationStatus,
+          evsVerificationConfidence: userData.evsVerificationConfidence
+        });
+        
+        if (userData.isVerified && userData.verificationStatus === 'approved') {
+          // Verification completed in background!
+          console.log('✅ Background verification detected - updating UI');
+          setState(prev => ({ 
+            ...prev, 
+            step: 'complete',
+            verificationResult: { 
+              status: 'approved', 
+              confidence: userData.evsVerificationConfidence,
+              message: 'Verification completed successfully' 
+            }
+          }));
+          onVerificationComplete({ status: 'approved' });
+          
+          toast({
+            title: "Verification Complete!",
+            description: "Your identity verification was completed successfully in the background.",
+            className: "bg-green-50 border-green-200",
+          });
+        } else {
+          console.log('⏳ Verification still in progress');
+          toast({
+            title: "Still Processing",
+            description: "Verification is still in progress. Please wait a bit longer.",
+          });
+        }
+      } else {
+        console.log('❌ Profile fetch failed:', response.status, response.statusText);
+        toast({
+          title: "Status Check Failed",
+          description: "Could not check verification status. Please try again.",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Status check error:', error);
+      toast({
+        title: "Unable to Check Status",
+        description: "Could not check verification status. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (state.step === 'processing') {
     return (
       <Card className="w-full max-w-2xl mx-auto">
@@ -263,9 +426,18 @@ export function EVSVerification({
               Please wait while we verify your documents with EVS Solutions...
             </p>
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <p className="text-sm text-blue-800">
-                This process typically takes 30-60 seconds. Please do not close this window.
+              <p className="text-sm text-blue-800 mb-2">
+                <strong>Expected Processing Time:</strong> 30-60 seconds
               </p>
+              <p className="text-sm text-blue-800 mb-2">
+                Your documents are being analyzed for authenticity, data extraction, and biometric matching.
+              </p>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mt-3">
+                <p className="text-xs text-amber-800">
+                  <strong>Note:</strong> Please do not close this window or navigate away. 
+                  If verification takes longer than expected, it may still complete successfully in the background.
+                </p>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -312,7 +484,7 @@ export function EVSVerification({
         <CardHeader>
           <CardTitle className="flex items-center text-red-600">
             <XCircle className="h-5 w-5 mr-2" />
-            Verification Failed
+            Verification Issue
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -323,20 +495,59 @@ export function EVSVerification({
               {state.error || 'Unable to verify your identity. Please try again with clearer images.'}
             </p>
             
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-              <h4 className="font-medium text-red-900 mb-2">Tips for Better Results</h4>
-              <ul className="text-sm text-red-800 text-left space-y-1">
-                <li>• Ensure good lighting when taking photos</li>
-                <li>• Make sure your ID is clearly visible and not blurry</li>
-                <li>• Keep your face clearly visible in the selfie</li>
-                <li>• Avoid glare or shadows on your documents</li>
-              </ul>
-            </div>
+            {/* Show different UI based on error type */}
+            {(state.error?.includes('timed out') || state.error?.includes('Network connection') || state.error?.includes('Network error')) ? (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <h4 className="font-medium text-blue-900 mb-2">⏰ Processing May Still Be Active</h4>
+                <p className="text-sm text-blue-800 mb-3">
+                  Identity verification typically takes 30-60 seconds. Your request may still be processing on our servers even though the connection timed out.
+                </p>
+                <div className="space-y-3">
+                  <Button onClick={checkVerificationStatus} className="w-full bg-blue-600 hover:bg-blue-700" disabled={loading}>
+                    {loading ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        Checking...
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="h-4 w-4 mr-2" />
+                        Check Status Now
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-xs text-blue-700">
+                    Wait 10-15 seconds before checking if you just submitted
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                <h4 className="font-medium text-red-900 mb-2">Tips for Better Results</h4>
+                <ul className="text-sm text-red-800 text-left space-y-1">
+                  <li>• Ensure good lighting when taking photos</li>
+                  <li>• Make sure your ID is clearly visible and not blurry</li>
+                  <li>• Keep your face clearly visible in the selfie</li>
+                  <li>• Avoid glare or shadows on your documents</li>
+                </ul>
+              </div>
+            )}
             
-            <Button onClick={resetVerification} className="w-full">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Try Again
-            </Button>
+            <div className="space-y-3">
+              {!state.error?.includes('timed out') && !state.error?.includes('Network connection') && (
+                <Button onClick={resetVerification} className="w-full">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Try Again
+                </Button>
+              )}
+              
+              {(state.error?.includes('timed out') || state.error?.includes('Network connection')) && (
+                <Button onClick={resetVerification} variant="outline" className="w-full">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Start New Verification
+                </Button>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>

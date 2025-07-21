@@ -163,6 +163,12 @@ export const users = pgTable("users", {
   kbaProvider: text("kba_provider"), // 'evs', 'lexisnexis', 'transunion'
   kbaSessionsCompleted: integer("kba_sessions_completed").default(0),
   
+  // KBA attempt tracking and lockout system
+  kbaAttemptsUsed: integer("kba_attempts_used").default(0), // Number of KBA attempts used
+  kbaLockedUntil: timestamp("kba_locked_until"), // When KBA lockout expires
+  kbaLockoutReason: text("kba_lockout_reason"), // Reason for lockout
+  kbaLastAttemptDate: timestamp("kba_last_attempt_date"), // Last KBA attempt date
+  
   // Timestamps
   updatedAt: timestamp("updated_at").defaultNow(),
   

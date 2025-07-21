@@ -439,9 +439,11 @@ export function JobTable({ onCreateJob }: JobTableProps) {
   };
 
   const getAssignedNotary = (job: Job): string => {
-    if (job.selectedNotary) {
-      return job.selectedNotary;
+    // Check if we have assignedNotary data with the name
+    if (job.assignedNotary?.name) {
+      return job.assignedNotary.name;
     }
+    
     return 'Unassigned';
   };
 
