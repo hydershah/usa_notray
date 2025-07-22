@@ -30,10 +30,11 @@ export class RedisCache {
                  'redis://localhost:6379';
       console.log('🚁 Detected Fly.io environment for Redis configuration');
     } else if (isRailway) {
-      // Railway Redis configuration (existing logic)
-      redisUrl = process.env.REDIS_PUBLIC_URL || 
-                 process.env.REDIS_URL || 
+      // Railway Redis configuration - prioritize Railway-specific variables
+      redisUrl = process.env.REDIS_URL || 
+                 process.env.REDIS_PUBLIC_URL || 
                  process.env.REDIS_PRIVATE_URL ||
+                 process.env.REDISCLOUD_URL ||
                  'redis://localhost:6379';
       console.log('🚂 Detected Railway environment for Redis configuration');
     } else {
@@ -103,8 +104,16 @@ export class RedisCache {
     // Add Railway-specific connection options
     if (isRailway) {
       redisOptions.enableReadyCheck = false;
-      redisOptions.maxRetriesPerRequest = 5;
-      redisOptions.connectTimeout = 20000;
+      redisOptions.maxRetriesPerRequest = 3; // Reduced from 5
+      redisOptions.connectTimeout = 15000; // Reduced from 20000
+      redisOptions.retryDelayOnFailover = 500;
+      
+      // If Redis URL is localhost in Railway, disable Redis
+      if (redisUrl.includes('localhost') || redisUrl.includes('127.0.0.1')) {
+        console.log('⚠️ Railway Redis not configured - disabling Redis for this deployment');
+        this.disabled = true;
+        return;
+      }
     }
     
     this.redis = new Redis(redisUrl, redisOptions);
@@ -183,13 +192,18 @@ export class RedisCache {
       this.isConnected = false;
       
       // Check for service discovery issues
-      if (err.message.includes('ENOTFOUND') || err.message.includes('getaddrinfo')) {
+      if (err.message.includes('ENOTFOUND') || err.message.includes('getaddrinfo') || err.message.includes('ECONNREFUSED')) {
         console.warn('⚠️ Redis service not available. This might be because:');
         console.warn('   1. Redis service is not configured in your deployment platform');
         console.warn('   2. Redis hostname/URL is incorrect');
         console.warn('   3. Redis service is not running or not accessible');
         console.warn('   App will continue without Redis caching.');
         this.disabled = true;
+        
+        // For Railway specifically, suggest adding Redis
+        if (isRailway) {
+          console.warn('   💡 To add Redis on Railway: run "railway add redis" in your project');
+        }
       }
     });
   }
