@@ -21,6 +21,8 @@ interface ConnectedUser {
   lastActivity: Date;
   currentPage: number;
   currentDocumentId?: string;
+  isTyping: boolean;
+  typingField?: string;
 }
 
 interface SessionRoom {
@@ -28,6 +30,8 @@ interface SessionRoom {
   users: Map<string, ConnectedUser>;
   lastActivity: Date;
   messageHistory: WSMessage[];
+  tags: any[];
+  participants: any[];
 }
 
 export class WebSocketService {
@@ -131,7 +135,8 @@ export class WebSocketService {
         displayName: decoded.name || `User ${userId}`,
         ws,
         lastActivity: new Date(),
-        currentPage: 1
+        currentPage: 1,
+        isTyping: false
       };
       
       // Add user to session
@@ -153,13 +158,14 @@ export class WebSocketService {
         this.removeUserFromSession(connectedUser);
       });
       
-      // Send welcome message
+      // Send welcome message with current session state
       this.sendToUser(connectedUser, {
         type: 'connection_established',
         payload: {
           userId: connectedUser.userId,
           sessionId: connectedUser.sessionId,
-          participants: this.getSessionParticipants(sessionId)
+          participants: this.getSessionParticipants(sessionId),
+          tags: this.getSessionTags(sessionId)
         },
         userId: 'system',
         sessionId,
@@ -174,7 +180,8 @@ export class WebSocketService {
             userId: connectedUser.userId,
             userType: connectedUser.userType,
             displayName: connectedUser.displayName,
-            currentPage: connectedUser.currentPage
+            currentPage: connectedUser.currentPage,
+            currentDocumentId: connectedUser.currentDocumentId
           }
         },
         userId: connectedUser.userId,
@@ -221,6 +228,14 @@ export class WebSocketService {
         case 'tag_deleted':
           this.handleTagDeleted(user, message);
           break;
+
+        case 'tag_moved':
+          this.handleTagMoved(user, message);
+          break;
+
+        case 'tag_resized':
+          this.handleTagResized(user, message);
+          break;
           
         case 'cursor_moved':
           this.handleCursorMoved(user, message);
@@ -246,8 +261,16 @@ export class WebSocketService {
           this.handleUserTyping(user, message);
           break;
 
+        case 'user_stopped_typing':
+          this.handleUserStoppedTyping(user, message);
+          break;
+
         case 'tag_content_updated':
           this.handleTagContentUpdated(user, message);
+          break;
+
+        case 'request_session_state':
+          this.handleRequestSessionState(user, message);
           break;
 
         case 'ping':
@@ -279,8 +302,21 @@ export class WebSocketService {
     // Add to message history
     this.addToMessageHistory(user.sessionId, message);
     
+    // Store tag in session state
+    this.addTagToSession(user.sessionId, message.payload.tag);
+    
     // Broadcast to all users in session
-    this.broadcastToSession(user.sessionId, message, user.userId);
+    this.broadcastToSession(user.sessionId, {
+      ...message,
+      payload: {
+        ...message.payload,
+        user: {
+          userId: user.userId,
+          displayName: user.displayName,
+          userType: user.userType
+        }
+      }
+    }, user.userId);
     
     console.log(`📝 Tag placed by ${user.displayName} in session ${user.sessionId}`);
   }
@@ -292,8 +328,71 @@ export class WebSocketService {
     // Add to message history
     this.addToMessageHistory(user.sessionId, message);
     
+    // Update tag in session state
+    this.updateTagInSession(user.sessionId, message.payload.tagId, message.payload.updates);
+    
     // Broadcast to all users in session
-    this.broadcastToSession(user.sessionId, message, user.userId);
+    this.broadcastToSession(user.sessionId, {
+      ...message,
+      payload: {
+        ...message.payload,
+        user: {
+          userId: user.userId,
+          displayName: user.displayName,
+          userType: user.userType
+        }
+      }
+    }, user.userId);
+  }
+
+  /**
+   * Handle tag movement
+   */
+  private handleTagMoved(user: ConnectedUser, message: WSMessage): void {
+    // Update tag coordinates in session state
+    this.updateTagInSession(user.sessionId, message.payload.tagId, {
+      coordinates: message.payload.coordinates
+    });
+    
+    // Broadcast to all users in session
+    this.broadcastToSession(user.sessionId, {
+      ...message,
+      payload: {
+        ...message.payload,
+        user: {
+          userId: user.userId,
+          displayName: user.displayName,
+          userType: user.userType
+        }
+      }
+    }, user.userId);
+    
+    console.log(`🔄 Tag moved by ${user.displayName} in session ${user.sessionId}`);
+  }
+
+  /**
+   * Handle tag resizing
+   */
+  private handleTagResized(user: ConnectedUser, message: WSMessage): void {
+    // Update tag coordinates in session state
+    this.updateTagInSession(user.sessionId, message.payload.tagId, {
+      coordinates: message.payload.coordinates
+    });
+    
+    // Broadcast to all users in session
+    this.broadcastToSession(user.sessionId, {
+      ...message,
+      payload: {
+        ...message.payload,
+        user: {
+          userId: user.userId,
+          displayName: user.displayName,
+          userType: user.userType
+        }
+      }
+    }, user.userId);
+    
+    console.log(`📏 Tag resized by ${user.displayName} in session ${user.sessionId}`);
   }
   
   /**
@@ -303,8 +402,21 @@ export class WebSocketService {
     // Add to message history
     this.addToMessageHistory(user.sessionId, message);
     
+    // Remove tag from session state
+    this.removeTagFromSession(user.sessionId, message.payload.tagId);
+    
     // Broadcast to all users in session
-    this.broadcastToSession(user.sessionId, message, user.userId);
+    this.broadcastToSession(user.sessionId, {
+      ...message,
+      payload: {
+        ...message.payload,
+        user: {
+          userId: user.userId,
+          displayName: user.displayName,
+          userType: user.userType
+        }
+      }
+    }, user.userId);
   }
   
   /**
@@ -373,8 +485,29 @@ export class WebSocketService {
     // Add to message history
     this.addToMessageHistory(user.sessionId, message);
     
+    // Update tag in session state
+    this.updateTagInSession(user.sessionId, message.payload.tagId, {
+      content: message.payload.content,
+      contentType: message.payload.contentType,
+      contentData: message.payload.contentData,
+      isCompleted: message.payload.isCompleted,
+      completedBy: message.payload.completedBy,
+      completedAt: message.payload.completedAt,
+      updatedBy: message.payload.updatedBy
+    });
+    
     // Broadcast to all users in session (except sender)
-    this.broadcastToSession(user.sessionId, message, user.userId);
+    this.broadcastToSession(user.sessionId, {
+      ...message,
+      payload: {
+        ...message.payload,
+        user: {
+          userId: user.userId,
+          displayName: user.displayName,
+          userType: user.userType
+        }
+      }
+    }, user.userId);
     
     const tagId = message.payload?.tagId;
     const tagType = message.payload?.tagType || 'unknown';
@@ -416,8 +549,62 @@ export class WebSocketService {
    * Handle user typing events
    */
   private handleUserTyping(user: ConnectedUser, message: WSMessage): void {
+    user.isTyping = true;
+    user.typingField = message.payload.fieldId;
+    
     // Broadcast typing indicator to other users
-    this.broadcastToSession(user.sessionId, message, user.userId);
+    this.broadcastToSession(user.sessionId, {
+      ...message,
+      payload: {
+        ...message.payload,
+        user: {
+          userId: user.userId,
+          displayName: user.displayName,
+          userType: user.userType
+        }
+      }
+    }, user.userId);
+  }
+
+  /**
+   * Handle user stopped typing events
+   */
+  private handleUserStoppedTyping(user: ConnectedUser, message: WSMessage): void {
+    user.isTyping = false;
+    user.typingField = undefined;
+    
+    // Broadcast stopped typing indicator to other users
+    this.broadcastToSession(user.sessionId, {
+      ...message,
+      payload: {
+        ...message.payload,
+        user: {
+          userId: user.userId,
+          displayName: user.displayName,
+          userType: user.userType
+        }
+      }
+    }, user.userId);
+  }
+
+  /**
+   * Handle session state request
+   */
+  private handleRequestSessionState(user: ConnectedUser, message: WSMessage): void {
+    const session = this.sessions.get(user.sessionId);
+    if (!session) return;
+
+    // Send current session state to requesting user
+    this.sendToUser(user, {
+      type: 'session_state_sync',
+      payload: {
+        tags: session.tags,
+        participants: this.getSessionParticipants(user.sessionId)
+      },
+      userId: 'system',
+      sessionId: user.sessionId,
+      timestamp: Date.now()
+    });
   }
   
   /**
@@ -429,7 +616,9 @@ export class WebSocketService {
         sessionId: user.sessionId,
         users: new Map(),
         lastActivity: new Date(),
-        messageHistory: []
+        messageHistory: [],
+        tags: [],
+        participants: []
       });
     }
     
@@ -525,8 +714,51 @@ export class WebSocketService {
       displayName: user.displayName,
       currentPage: user.currentPage,
       currentDocumentId: user.currentDocumentId,
-      lastActivity: user.lastActivity
+      lastActivity: user.lastActivity,
+      isTyping: user.isTyping,
+      typingField: user.typingField
     }));
+  }
+
+  /**
+   * Get session tags
+   */
+  private getSessionTags(sessionId: string): any[] {
+    const session = this.sessions.get(sessionId);
+    return session ? session.tags : [];
+  }
+
+  /**
+   * Add tag to session state
+   */
+  private addTagToSession(sessionId: string, tag: any): void {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.tags.push(tag);
+    }
+  }
+
+  /**
+   * Update tag in session state
+   */
+  private updateTagInSession(sessionId: string, tagId: string, updates: any): void {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      const tagIndex = session.tags.findIndex(tag => tag.id === tagId);
+      if (tagIndex !== -1) {
+        session.tags[tagIndex] = { ...session.tags[tagIndex], ...updates };
+      }
+    }
+  }
+
+  /**
+   * Remove tag from session state
+   */
+  private removeTagFromSession(sessionId: string, tagId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.tags = session.tags.filter(tag => tag.id !== tagId);
+    }
   }
   
   /**
@@ -577,7 +809,8 @@ export class WebSocketService {
         sessionId: id,
         userCount: session.users.size,
         lastActivity: session.lastActivity,
-        messageCount: session.messageHistory.length
+        messageCount: session.messageHistory.length,
+        tagCount: session.tags.length
       }))
     };
   }

@@ -1,269 +1,373 @@
-import React, { useState, useRef } from 'react';
-import type { DocumentTag } from '../../types/editor';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { motion, PanInfo } from 'framer-motion';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
+import { useWebSocket } from '../../hooks/editor/useWebSocket';
+import type { DocumentTag, TagCoordinates } from '../../types/editor';
+import { X, Move, Maximize2, User } from 'lucide-react';
 
 interface DraggableTagProps {
   tag: DocumentTag;
-  scaleFactor: number;
-  containerRef: React.RefObject<HTMLDivElement>;
-  onUpdate: (tagId: string, coordinates: any) => void;
+  onDelete: (tagId: string) => void;
+  onSelect: (tag: DocumentTag) => void;
+  isSelected: boolean;
+  zoomLevel: number;
+  pageNumber: number;
+  documentId: string;
 }
 
-const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, containerRef, onUpdate }) => {
-  const { setDraggedTag, selectTag, selectedTag, mode, currentUser } = useEditorStore();
+export const DraggableTag: React.FC<DraggableTagProps> = ({
+  tag,
+  onDelete,
+  onSelect,
+  isSelected,
+  zoomLevel,
+  pageNumber,
+  documentId
+}) => {
   const [isDragging, setIsDragging] = useState(false);
-  const offsetRef = useRef({ x: 0, y: 0 });
-  const dragStartRef = useRef(false);
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    dragStartRef.current = true;
-    setIsDragging(false);
-    
-    const tagRect = e.currentTarget.getBoundingClientRect();
-    offsetRef.current = {
-      x: e.clientX - tagRect.left,
-      y: e.clientY - tagRect.top,
-    };
-    
-    // Start drag after small movement to distinguish from click
-    const startDrag = (moveEvent: MouseEvent) => {
-      if (!dragStartRef.current) return;
-      
-      const moveDistance = Math.sqrt(
-        Math.pow(moveEvent.clientX - e.clientX, 2) + 
-        Math.pow(moveEvent.clientY - e.clientY, 2)
-      );
-      
-      if (moveDistance > 5) {
-        setIsDragging(true);
-        setDraggedTag(tag);
-        window.removeEventListener('mousemove', startDrag);
-      }
-    };
-    
-    window.addEventListener('mousemove', startDrag);
-    window.addEventListener('mouseup', () => {
-      window.removeEventListener('mousemove', startDrag);
-    });
-  };
-
-  const handleClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    
-    // Only handle click if we didn't start dragging
-    if (!isDragging && dragStartRef.current) {
-      console.log('🏷️ Tag clicked:', tag.id, 'Mode:', mode?.mode);
-      
-      if (mode?.mode === 'signing') {
-        // In signing mode, handle interactive tag behavior
-        const isCurrentUserTag = currentUser && (
-          tag.assignedUserId === currentUser.userId || 
-          currentUser.role === 'notary' || 
-          ['T', 'D'].includes(tag.tagType) // Universal tags
-        );
-        
-        if (isCurrentUserTag && !tag.isCompleted) {
-          console.log('🎯 Interactive tag clicked, triggering input');
-          // TODO: Trigger interactive input modal
-          // For now, just select the tag
-          selectTag(tag);
-        }
-      } else {
-        // In other modes, just select the tag
-        selectTag(tag);
-      }
-    }
-  };
-
-  const handleDragMove = (e: MouseEvent) => {
-    if (!isDragging || !containerRef.current) return;
-    
-    e.preventDefault();
-    e.stopPropagation();
-
-    const containerRect = containerRef.current.getBoundingClientRect();
-
-    const newX = (e.clientX - containerRect.left - offsetRef.current.x) / scaleFactor;
-    const newY = (e.clientY - containerRect.top - offsetRef.current.y) / scaleFactor;
-
-    onUpdate(tag.id, {
-      ...tag.coordinates,
-      x: Math.round(newX),
-      y: Math.round(newY),
-    });
-  };
-
-  const handleDragEnd = () => {
-    if (isDragging) {
-      setIsDragging(false);
-      setDraggedTag(null);
-    }
-    dragStartRef.current = false;
-  };
+  const [isResizing, setIsResizing] = useState(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [resizeStart, setResizeStart] = useState<{ width: number; height: number } | null>(null);
   
-  // Attach and detach listeners to the window
-  React.useEffect(() => {
-    if (isDragging) {
-      window.addEventListener('mousemove', handleDragMove);
-      window.addEventListener('mouseup', handleDragEnd);
-    } else {
-      window.removeEventListener('mousemove', handleDragMove);
-      window.removeEventListener('mouseup', handleDragEnd);
-    }
-    
-    return () => {
-      window.removeEventListener('mousemove', handleDragMove);
-      window.removeEventListener('mouseup', handleDragEnd);
-    };
-  }, [isDragging, handleDragMove, handleDragEnd]);
+  const tagRef = useRef<HTMLDivElement>(null);
+  const resizeHandleRef = useRef<HTMLDivElement>(null);
+  
+  const { updateTag, selectedTag } = useEditorStore();
+  const webSocket = useWebSocket({
+    sessionId: tag.sessionId,
+    userId: tag.assignedTo || '',
+    autoReconnect: true
+  });
 
-  // Determine tag appearance based on mode and state
-  const isSelected = selectedTag?.id === tag.id;
-  const isInSigningMode = mode?.mode === 'signing';
-  const isCompleted = tag.isCompleted;
-  const isCurrentUserTag = currentUser && (
-    tag.assignedUserId === currentUser.userId || 
-    currentUser.role === 'notary' || 
-    ['T', 'D'].includes(tag.tagType)
-  );
+  // Throttle WebSocket updates
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastUpdateRef = useRef<{ coordinates: TagCoordinates; timestamp: number } | null>(null);
 
-  // Get tag styling based on mode
-  const getTagStyle = () => {
-    let backgroundColor = 'rgba(255, 255, 255, 0.95)';
-    let borderColor = tag.colorCode || '#3B82F6';
-    let borderStyle = 'solid';
-    let cursor = 'move';
-    
-    if (isInSigningMode) {
-      if (isCompleted) {
-        backgroundColor = 'rgba(34, 197, 94, 0.1)';
-        borderColor = '#22c55e';
-        cursor = 'default';
-      } else if (isCurrentUserTag) {
-        backgroundColor = 'rgba(59, 130, 246, 0.1)';
-        borderColor = '#3b82f6';
-        borderStyle = 'dashed';
-        cursor = 'pointer';
-      } else {
-        backgroundColor = 'rgba(156, 163, 175, 0.1)';
-        borderColor = '#9ca3af';
-        cursor = 'not-allowed';
-      }
-    }
+  // Get tag dimensions based on type
+  const getTagDimensions = useCallback(() => {
+    const baseWidth = tag.coordinates.width || 100;
+    const baseHeight = tag.coordinates.height || 50;
     
     return {
-      backgroundColor,
-      borderColor,
-      borderStyle,
-      cursor
+      width: baseWidth * zoomLevel,
+      height: baseHeight * zoomLevel
     };
-  };
+  }, [tag.coordinates.width, tag.coordinates.height, zoomLevel]);
 
-  const tagStyle = getTagStyle();
-  
+  // Send real-time updates to other users
+  const sendRealTimeUpdate = useCallback((coordinates: TagCoordinates, type: 'move' | 'resize') => {
+    const now = Date.now();
+    
+    // Prevent spam updates
+    if (lastUpdateRef.current && 
+        now - lastUpdateRef.current.timestamp < 100 &&
+        JSON.stringify(lastUpdateRef.current.coordinates) === JSON.stringify(coordinates)) {
+      return;
+    }
+
+    lastUpdateRef.current = { coordinates, timestamp: now };
+
+    // Clear existing timeout
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+    }
+
+    // Throttle updates
+    updateTimeoutRef.current = setTimeout(() => {
+      if (type === 'move') {
+        webSocket.tagMoved(tag.id, coordinates);
+      } else {
+        webSocket.tagResized(tag.id, coordinates);
+      }
+    }, 50); // 20fps update rate
+  }, [tag.id, webSocket]);
+
+  // Handle drag start
+  const handleDragStart = useCallback((event: any, info: PanInfo) => {
+    setIsDragging(true);
+    setDragStart({
+      x: tag.coordinates.x,
+      y: tag.coordinates.y
+    });
+    
+    // Select tag when starting to drag
+    if (!isSelected) {
+      onSelect(tag);
+    }
+  }, [tag.coordinates.x, tag.coordinates.y, isSelected, onSelect, tag]);
+
+  // Handle drag
+  const handleDrag = useCallback((event: any, info: PanInfo) => {
+    if (!dragStart) return;
+
+    const newX = dragStart.x + info.offset.x / zoomLevel;
+    const newY = dragStart.y + info.offset.y / zoomLevel;
+
+    const newCoordinates: TagCoordinates = {
+      ...tag.coordinates,
+      x: Math.max(0, newX),
+      y: Math.max(0, newY)
+    };
+
+    // Update local state immediately for smooth dragging
+    updateTag(tag.id, { coordinates: newCoordinates });
+    
+    // Send real-time update
+    sendRealTimeUpdate(newCoordinates, 'move');
+  }, [dragStart, zoomLevel, tag.coordinates, tag.id, updateTag, sendRealTimeUpdate]);
+
+  // Handle drag end
+  const handleDragEnd = useCallback((event: any, info: PanInfo) => {
+    setIsDragging(false);
+    setDragStart(null);
+    
+    // Final update to ensure consistency
+    if (dragStart) {
+      const newX = dragStart.x + info.offset.x / zoomLevel;
+      const newY = dragStart.y + info.offset.y / zoomLevel;
+
+      const finalCoordinates: TagCoordinates = {
+        ...tag.coordinates,
+        x: Math.max(0, newX),
+        y: Math.max(0, newY)
+      };
+
+      updateTag(tag.id, { coordinates: finalCoordinates });
+      webSocket.tagMoved(tag.id, finalCoordinates);
+    }
+  }, [dragStart, zoomLevel, tag.coordinates, tag.id, updateTag, webSocket]);
+
+  // Handle resize start
+  const handleResizeStart = useCallback((event: React.MouseEvent) => {
+    event.stopPropagation();
+    setIsResizing(true);
+    setResizeStart({
+      width: tag.coordinates.width || 100,
+      height: tag.coordinates.height || 50
+    });
+    
+    if (!isSelected) {
+      onSelect(tag);
+    }
+  }, [tag.coordinates.width, tag.coordinates.height, isSelected, onSelect, tag]);
+
+  // Handle resize
+  const handleResize = useCallback((event: React.MouseEvent) => {
+    if (!isResizing || !resizeStart) return;
+
+    const rect = tagRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const deltaX = event.clientX - rect.right;
+    const deltaY = event.clientY - rect.bottom;
+
+    const newWidth = Math.max(50, resizeStart.width + deltaX / zoomLevel);
+    const newHeight = Math.max(30, resizeStart.height + deltaY / zoomLevel);
+
+    const newCoordinates: TagCoordinates = {
+      ...tag.coordinates,
+      width: newWidth,
+      height: newHeight
+    };
+
+    // Update local state immediately for smooth resizing
+    updateTag(tag.id, { coordinates: newCoordinates });
+    
+    // Send real-time update
+    sendRealTimeUpdate(newCoordinates, 'resize');
+  }, [isResizing, resizeStart, zoomLevel, tag.coordinates, tag.id, updateTag, sendRealTimeUpdate]);
+
+  // Handle resize end
+  const handleResizeEnd = useCallback((event: React.MouseEvent) => {
+    if (!isResizing || !resizeStart) return;
+
+    setIsResizing(false);
+    setResizeStart(null);
+
+    const rect = tagRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const deltaX = event.clientX - rect.right;
+    const deltaY = event.clientY - rect.bottom;
+
+    const finalWidth = Math.max(50, resizeStart.width + deltaX / zoomLevel);
+    const finalHeight = Math.max(30, resizeStart.height + deltaY / zoomLevel);
+
+    const finalCoordinates: TagCoordinates = {
+      ...tag.coordinates,
+      width: finalWidth,
+      height: finalHeight
+    };
+
+    updateTag(tag.id, { coordinates: finalCoordinates });
+    webSocket.tagResized(tag.id, finalCoordinates);
+  }, [isResizing, resizeStart, zoomLevel, tag.coordinates, tag.id, updateTag, webSocket]);
+
+  // Handle mouse events for resize
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      handleResize(event as any);
+    };
+
+    const handleMouseUp = (event: MouseEvent) => {
+      handleResizeEnd(event as any);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, handleResize, handleResizeEnd]);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const dimensions = getTagDimensions();
+  const tagColor = tag.assignedTo ? `hsl(${(tag.assignedTo.charCodeAt(0) * 137.5) % 360}, 70%, 60%)` : '#6B7280';
+
   return (
-    <div
-      onMouseDown={handleMouseDown}
-      onClick={handleClick}
+    <motion.div
+      ref={tagRef}
+      className={`absolute cursor-move select-none ${
+        isSelected ? 'z-50' : 'z-40'
+      }`}
       style={{
-        position: 'absolute',
-        left: `${tag.coordinates.x * scaleFactor}px`,
-        top: `${tag.coordinates.y * scaleFactor}px`,
-        width: `${tag.coordinates.width * scaleFactor}px`,
-        height: `${tag.coordinates.height * scaleFactor}px`,
-        backgroundColor: tagStyle.backgroundColor,
-        border: `2px ${tagStyle.borderStyle} ${isDragging ? '#3B82F6' : tagStyle.borderColor}`,
-        borderRadius: '6px',
-        color: tagStyle.borderColor,
-        cursor: tagStyle.cursor,
-        userSelect: 'none',
-        zIndex: isDragging ? 1000 : isSelected ? 500 : 100,
-        transition: isDragging ? 'none' : 'all 0.2s ease',
-        boxSizing: 'border-box',
-        boxShadow: isDragging 
-          ? `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${(tag.colorCode || '#3B82F6')}20` 
-          : isSelected
-          ? `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${tagStyle.borderColor}40`
-          : isInSigningMode && !isCompleted && isCurrentUserTag
-          ? '0 2px 8px rgba(59, 130, 246, 0.3)'
-          : '0 2px 4px rgba(0,0,0,0.1)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        pointerEvents: 'auto'
+        left: `${tag.coordinates.x * zoomLevel}px`,
+        top: `${tag.coordinates.y * zoomLevel}px`,
+        width: `${dimensions.width}px`,
+        height: `${dimensions.height}px`
+      }}
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={{ 
+        opacity: isDragging ? 0.8 : 1, 
+        scale: isDragging ? 1.05 : 1,
+        boxShadow: isSelected ? '0 0 0 2px #3B82F6' : 'none'
+      }}
+      transition={{ duration: 0.2 }}
+      drag={isSelected}
+      dragMomentum={false}
+      dragElastic={0}
+      onDragStart={handleDragStart}
+      onDrag={handleDrag}
+      onDragEnd={handleDragEnd}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect(tag);
       }}
     >
-      <div style={{ 
-        padding: '2px 6px', 
-        fontSize: '10px', 
-        fontWeight: '500',
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '2px',
-        height: '100%',
-        justifyContent: 'center'
-      }}>
-        {/* Show different content based on mode */}
-        {isInSigningMode && isCompleted ? (
-          // Completed tag in signing mode
-          <div style={{ textAlign: 'center', color: '#15803d' }}>
-            <div style={{ fontSize: '12px' }}>DONE</div>
-            <div style={{ fontSize: '8px' }}>Completed</div>
+      {/* Tag background */}
+      <div
+        className="w-full h-full rounded border-2 border-dashed relative overflow-hidden"
+        style={{
+          backgroundColor: `${tagColor}20`,
+          borderColor: tagColor,
+          backdropFilter: 'blur(1px)'
+        }}
+      >
+        {/* Tag content */}
+        <div className="w-full h-full flex flex-col items-center justify-center p-1">
+          <div className="text-xs font-medium text-center leading-tight">
+            {tag.tagType}
           </div>
-        ) : isInSigningMode && isCurrentUserTag && !isCompleted ? (
-          // Interactive tag in signing mode
-          <div style={{ textAlign: 'center', color: '#1e40af' }}>
-            <div style={{ fontSize: '10px', marginBottom: '2px' }}>
-              {tag.tagType}
+          {tag.assignedTo && (
+            <div className="text-xs opacity-75 flex items-center gap-1 mt-1">
+              <User className="w-3 h-3" />
+              {tag.assignedTo}
             </div>
-            <div style={{ fontSize: '8px' }}>Click to {['S', 'I'].includes(tag.tagType) ? 'apply' : 'enter'}</div>
-          </div>
-        ) : (
-          // Normal tag display
-          <>
-            {/* Main tag content */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-              <span style={{ opacity: 0.8 }}>
-                {tag.displayLabel?.split(' - ')[0] || tag.tagType}
-              </span>
-            </div>
-            
-            {/* User identification */}
-            {tag.displayLabel && tag.displayLabel.includes(' - ') && (
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '3px',
-                fontSize: '9px',
-                fontWeight: '400',
-                padding: '2px 4px',
-                backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                borderRadius: '8px'
-              }}>
-                <div style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  backgroundColor: tag.colorCode || '#3B82F6',
-                  border: '1px solid white',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
-                }} />
-                <span>
-                  {tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
-                </span>
-              </div>
-            )}
-          </>
+          )}
+        </div>
+
+        {/* Selection overlay */}
+        {isSelected && (
+          <motion.div
+            className="absolute inset-0 bg-blue-500 bg-opacity-10 border-2 border-blue-500 rounded"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2 }}
+          />
+        )}
+
+        {/* Drag indicator */}
+        {isSelected && (
+          <motion.div
+            className="absolute top-1 left-1 p-1 bg-white rounded shadow-sm"
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.1 }}
+          >
+            <Move className="w-3 h-3 text-gray-600" />
+          </motion.div>
+        )}
+
+        {/* Delete button */}
+        {isSelected && (
+          <motion.button
+            className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded shadow-sm hover:bg-red-600 transition-colors"
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.1 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(tag.id);
+            }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+          >
+            <X className="w-3 h-3" />
+          </motion.button>
+        )}
+
+        {/* Resize handle */}
+        {isSelected && (
+          <motion.div
+            ref={resizeHandleRef}
+            className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize bg-blue-500 rounded-tl shadow-sm"
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.1 }}
+            onMouseDown={handleResizeStart}
+            whileHover={{ scale: 1.1 }}
+          >
+            <Maximize2 className="w-3 h-3 text-white" />
+          </motion.div>
+        )}
+
+        {/* Real-time movement indicator */}
+        {isDragging && (
+          <motion.div
+            className="absolute -top-6 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-blue-500 text-white text-xs rounded shadow-lg"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+          >
+            Moving...
+          </motion.div>
+        )}
+
+        {/* Real-time resize indicator */}
+        {isResizing && (
+          <motion.div
+            className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-green-500 text-white text-xs rounded shadow-lg"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+          >
+            Resizing...
+          </motion.div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 };
 

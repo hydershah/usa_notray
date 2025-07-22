@@ -27,18 +27,34 @@ interface ConnectionState {
   lastError?: string;
 }
 
+interface UserPresence {
+  userId: string;
+  displayName: string;
+  userType: 'notary' | 'signer' | 'witness';
+  isOnline: boolean;
+  lastSeen: Date;
+  currentPage: number;
+  currentDocumentId?: string;
+  isTyping: boolean;
+  typingField?: string;
+}
+
 export const useWebSocket = (config: WebSocketConfig) => {
   const { toast } = useToast();
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const messageQueueRef = useRef<WSMessage[]>([]);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const cursorThrottleRef = useRef<NodeJS.Timeout | null>(null);
   
   const [connectionState, setConnectionState] = useState<ConnectionState>({
     isConnected: false,
     isConnecting: false,
     reconnectAttempts: 0
   });
+
+  const [userPresence, setUserPresence] = useState<Map<string, UserPresence>>(new Map());
 
   const {
     setConnectionStatus,
@@ -50,7 +66,9 @@ export const useWebSocket = (config: WebSocketConfig) => {
     setCurrentPage,
     setCurrentDocument,
     replaceAllTags,
-    syncToPage
+    syncToPage,
+    setParticipants,
+    setTags
   } = useEditorStore();
 
   const {
@@ -104,6 +122,18 @@ export const useWebSocket = (config: WebSocketConfig) => {
     }
   }, []);
 
+  // Update user presence
+  const updateUserPresence = useCallback((userId: string, updates: Partial<UserPresence>) => {
+    setUserPresence(prev => {
+      const newMap = new Map(prev);
+      const existing = newMap.get(userId);
+      if (existing) {
+        newMap.set(userId, { ...existing, ...updates });
+      }
+      return newMap;
+    });
+  }, []);
+
   // Handle incoming WebSocket messages
   const handleMessage = useCallback((event: MessageEvent) => {
     try {
@@ -124,21 +154,39 @@ export const useWebSocket = (config: WebSocketConfig) => {
           }));
           setConnectionStatus(true);
           processMessageQueue();
+          
+          // Update participants list
+          if (message.payload.participants) {
+            setParticipants(message.payload.participants);
+          }
           break;
 
         case 'user_joined':
           console.log(`👋 User joined: ${message.payload.user.displayName}`);
-          // Update participant list in store
+          updateUserPresence(message.payload.user.userId, {
+            ...message.payload.user,
+            isOnline: true,
+            lastSeen: new Date(),
+            isTyping: false
+          });
           break;
 
         case 'user_left':
           console.log(`👋 User left: ${message.payload.displayName}`);
-          // Update participant list in store
+          updateUserPresence(message.payload.userId, {
+            isOnline: false,
+            lastSeen: new Date(),
+            isTyping: false
+          });
           break;
 
         case 'tag_placed':
           console.log('📝 Tag placed by another user');
           addTag(message.payload.tag);
+          toast({
+            title: "Tag Added",
+            description: `${message.payload.user?.displayName || 'Another user'} added a new tag`,
+          });
           break;
 
         case 'tag_updated':
@@ -180,11 +228,12 @@ export const useWebSocket = (config: WebSocketConfig) => {
             updatedBy: message.payload.updatedBy
           });
           
-          // 🔧 FIX: Update text inputs for text tags (T)
-          if (message.payload.tagType === 'T') {
-            console.log('📝 Updating text input for text tag:', message.payload.tagId);
-            // Notify text input system about the content change
-            // This is handled via the tags state update above, but we could add specific text input sync here
+          // Show notification for content updates
+          if (message.payload.isCompleted) {
+            toast({
+              title: "Tag Completed",
+              description: `${message.payload.user?.displayName || 'Another user'} completed a tag`,
+            });
           }
           
           break;
@@ -192,6 +241,10 @@ export const useWebSocket = (config: WebSocketConfig) => {
         case 'tag_deleted':
           console.log('🗑️ Tag deleted by another user');
           deleteTag(message.payload.tagId);
+          toast({
+            title: "Tag Deleted",
+            description: `${message.payload.user?.displayName || 'Another user'} deleted a tag`,
+          });
           break;
 
         case 'cursor_moved':
@@ -207,17 +260,26 @@ export const useWebSocket = (config: WebSocketConfig) => {
 
         case 'page_changed':
           console.log(`📄 User ${message.payload.user.displayName} moved to page ${message.payload.pageNumber}`);
-          // Update user's current page in participants list
+          updateUserPresence(message.payload.user.userId, {
+            currentPage: message.payload.pageNumber
+          });
           break;
 
         case 'document_switched':
           console.log(`📁 Document switched to: ${message.payload.documentId}`);
-          // Handle document switching
+          updateUserPresence(message.userId, {
+            currentDocumentId: message.payload.documentId,
+            currentPage: 1
+          });
           break;
 
         case 'content_replaced':
           console.log('🔄 Content replaced by notary');
           replaceAllTags();
+          toast({
+            title: "Content Replaced",
+            description: "The notary has replaced all tags with content",
+          });
           break;
 
         case 'sync_to_notary':
@@ -227,8 +289,8 @@ export const useWebSocket = (config: WebSocketConfig) => {
           if (message.payload.notaryName) {
             console.log(`📢 Synced by notary ${message.payload.notaryName} to page ${message.payload.pageNumber}`);
             toast({
-              title: `Synced by ${message.payload.notaryName} to page ${message.payload.pageNumber}`,
-              description: `You are now viewing the notary's view of page ${message.payload.pageNumber}.`,
+              title: `Synced by ${message.payload.notaryName}`,
+              description: `You are now viewing page ${message.payload.pageNumber}.`,
             });
           }
           
@@ -248,6 +310,49 @@ export const useWebSocket = (config: WebSocketConfig) => {
         case 'user_typing':
           // Handle typing indicators
           console.log(`⌨️ User ${message.userId} is typing`);
+          updateUserPresence(message.userId, {
+            isTyping: true,
+            typingField: message.payload.fieldId
+          });
+          
+          // Clear typing indicator after 3 seconds
+          setTimeout(() => {
+            updateUserPresence(message.userId, {
+              isTyping: false,
+              typingField: undefined
+            });
+          }, 3000);
+          break;
+
+        case 'user_stopped_typing':
+          updateUserPresence(message.userId, {
+            isTyping: false,
+            typingField: undefined
+          });
+          break;
+
+        case 'tag_moved':
+          console.log('🔄 Tag moved by another user');
+          updateTag(message.payload.tagId, {
+            coordinates: message.payload.coordinates
+          });
+          break;
+
+        case 'tag_resized':
+          console.log('📏 Tag resized by another user');
+          updateTag(message.payload.tagId, {
+            coordinates: message.payload.coordinates
+          });
+          break;
+
+        case 'session_state_sync':
+          console.log('🔄 Receiving session state sync');
+          if (message.payload.tags) {
+            setTags(message.payload.tags);
+          }
+          if (message.payload.participants) {
+            setParticipants(message.payload.participants);
+          }
           break;
 
         case 'error':
@@ -256,6 +361,15 @@ export const useWebSocket = (config: WebSocketConfig) => {
             ...prev,
             lastError: message.payload.message
           }));
+          toast({
+            title: "Connection Error",
+            description: message.payload.message,
+            variant: "destructive"
+          });
+          break;
+
+        case 'pong':
+          // Handle pong response
           break;
 
         default:
@@ -267,7 +381,8 @@ export const useWebSocket = (config: WebSocketConfig) => {
   }, [
     addTag, updateTag, deleteTag, updateCursor, setCurrentPage, 
     setCurrentDocument, replaceAllTags, syncToPage, updateLastSync, 
-    setConnectionStatus, processMessageQueue, toast
+    setConnectionStatus, processMessageQueue, toast, updateUserPresence,
+    setParticipants, setTags
   ]);
 
   // Connect to WebSocket
@@ -383,6 +498,16 @@ export const useWebSocket = (config: WebSocketConfig) => {
       heartbeatIntervalRef.current = null;
     }
 
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+
+    if (cursorThrottleRef.current) {
+      clearTimeout(cursorThrottleRef.current);
+      cursorThrottleRef.current = null;
+    }
+
     if (wsRef.current) {
       wsRef.current.close(1000, 'User disconnected');
       wsRef.current = null;
@@ -438,11 +563,32 @@ export const useWebSocket = (config: WebSocketConfig) => {
       });
     },
 
-    cursorMoved: (x: number, y: number, pageNumber: number, documentId: string) => {
+    tagMoved: (tagId: string, coordinates: any) => {
       sendMessage({
-        type: 'cursor_moved',
-        payload: { x, y, pageNumber, documentId }
+        type: 'tag_moved',
+        payload: { tagId, coordinates }
       });
+    },
+
+    tagResized: (tagId: string, coordinates: any) => {
+      sendMessage({
+        type: 'tag_resized',
+        payload: { tagId, coordinates }
+      });
+    },
+
+    cursorMoved: (x: number, y: number, pageNumber: number, documentId: string) => {
+      // Throttle cursor updates to prevent spam
+      if (cursorThrottleRef.current) {
+        clearTimeout(cursorThrottleRef.current);
+      }
+      
+      cursorThrottleRef.current = setTimeout(() => {
+        sendMessage({
+          type: 'cursor_moved',
+          payload: { x, y, pageNumber, documentId }
+        });
+      }, 100); // Throttle to 10fps
     },
 
     pageChanged: (pageNumber: number) => {
@@ -478,6 +624,33 @@ export const useWebSocket = (config: WebSocketConfig) => {
         type: 'user_typing',
         payload: { fieldId }
       });
+      
+      // Clear existing timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      
+      // Set timeout to stop typing indicator
+      typingTimeoutRef.current = setTimeout(() => {
+        sendMessage({
+          type: 'user_stopped_typing',
+          payload: { fieldId }
+        });
+      }, 3000);
+    },
+
+    userStoppedTyping: (fieldId: string) => {
+      sendMessage({
+        type: 'user_stopped_typing',
+        payload: { fieldId }
+      });
+    },
+
+    requestSessionState: () => {
+      sendMessage({
+        type: 'request_session_state',
+        payload: {}
+      });
     }
   };
 
@@ -494,6 +667,7 @@ export const useWebSocket = (config: WebSocketConfig) => {
 
   return {
     connectionState,
+    userPresence: Array.from(userPresence.values()),
     sendMessage,
     connect,
     disconnect,

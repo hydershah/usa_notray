@@ -1,7 +1,9 @@
-import React, { useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
 import { useWebSocket } from '../../hooks/editor/useWebSocket';
 import type { DocumentTag, TagCoordinates } from '../../types/editor';
+import { motion, AnimatePresence } from 'framer-motion';
+import { User, MousePointer, Type, Users, Wifi, WifiOff } from 'lucide-react';
 
 interface CollaborationSyncProps {
   sessionId: string;
@@ -18,6 +20,15 @@ interface CursorIndicator {
   pageNumber: number;
   documentId: string;
   isVisible: boolean;
+  userType: 'notary' | 'signer' | 'witness';
+}
+
+interface TypingIndicator {
+  userId: string;
+  displayName: string;
+  fieldId: string;
+  userType: 'notary' | 'signer' | 'witness';
+  timestamp: number;
 }
 
 export const CollaborationSync: React.FC<CollaborationSyncProps> = ({
@@ -27,6 +38,8 @@ export const CollaborationSync: React.FC<CollaborationSyncProps> = ({
 }) => {
   const cursorUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastTagUpdateRef = useRef<{ tagId: string; timestamp: number } | null>(null);
+  const [typingIndicators, setTypingIndicators] = useState<TypingIndicator[]>([]);
+  const [showParticipants, setShowParticipants] = useState(false);
   
   const {
     tags,
@@ -36,7 +49,8 @@ export const CollaborationSync: React.FC<CollaborationSyncProps> = ({
     participants,
     mode,
     cursors,
-    updateCursor
+    updateCursor,
+    updateTag
   } = useEditorStore();
 
   const webSocket = useWebSocket({
@@ -46,6 +60,21 @@ export const CollaborationSync: React.FC<CollaborationSyncProps> = ({
     reconnectInterval: 3000,
     maxReconnectAttempts: 10
   });
+
+  // Update typing indicators from user presence
+  useEffect(() => {
+    const typingUsers = webSocket.userPresence
+      .filter(user => user.isTyping && user.userId !== userId)
+      .map(user => ({
+        userId: user.userId,
+        displayName: user.displayName,
+        fieldId: user.typingField || '',
+        userType: user.userType,
+        timestamp: Date.now()
+      }));
+    
+    setTypingIndicators(typingUsers);
+  }, [webSocket.userPresence, userId]);
 
   // Throttled cursor position updates
   const updateCursorPosition = useCallback((x: number, y: number) => {
@@ -153,7 +182,7 @@ export const CollaborationSync: React.FC<CollaborationSyncProps> = ({
         if (!participant) return null;
 
         return (
-          <div
+          <motion.div
             key={cursor.userId}
             className="absolute pointer-events-none z-50"
             style={{
@@ -161,6 +190,10 @@ export const CollaborationSync: React.FC<CollaborationSyncProps> = ({
               top: `${cursor.y * viewer.zoomLevel}px`,
               transform: 'translate(-50%, -50%)'
             }}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ duration: 0.2 }}
           >
             {/* Cursor pointer */}
             <div
@@ -172,16 +205,52 @@ export const CollaborationSync: React.FC<CollaborationSyncProps> = ({
               </svg>
               
               {/* User name label */}
-              <div
-                className="absolute left-6 top-0 px-2 py-1 rounded text-xs font-medium text-white whitespace-nowrap"
+              <motion.div
+                className="absolute left-6 top-0 px-2 py-1 rounded text-xs font-medium text-white whitespace-nowrap shadow-lg"
                 style={{ backgroundColor: participant.colorCode }}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.1 }}
               >
                 {participant.displayName}
-              </div>
+                <span className="ml-1 opacity-75">
+                  {participant.userType === 'notary' ? '👨‍⚖️' : '✍️'}
+                </span>
+              </motion.div>
             </div>
-          </div>
+          </motion.div>
         );
       });
+  };
+
+  // Render typing indicators
+  const renderTypingIndicators = () => {
+    if (!enabled || typingIndicators.length === 0) return null;
+
+    return (
+      <div className="fixed bottom-20 left-4 z-50 space-y-2">
+        <AnimatePresence>
+          {typingIndicators.map(indicator => (
+            <motion.div
+              key={indicator.userId}
+              className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg shadow-lg"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              <Type className="w-4 h-4 text-blue-600 animate-pulse" />
+              <span className="text-sm font-medium text-blue-800">
+                {indicator.displayName} is typing...
+              </span>
+              <span className="text-xs text-blue-600">
+                {indicator.userType === 'notary' ? '👨‍⚖️' : '✍️'}
+              </span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+    );
   };
 
   // Connection status indicator
@@ -191,9 +260,14 @@ export const CollaborationSync: React.FC<CollaborationSyncProps> = ({
     const { connectionState } = webSocket;
 
     return (
-      <div className="fixed top-4 right-4 z-50">
+      <motion.div 
+        className="fixed top-4 right-4 z-50"
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+      >
         <div className={`
-          flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200
+          flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 shadow-lg
           ${connectionState.isConnected 
             ? 'bg-green-100 text-green-800 border border-green-200' 
             : connectionState.isConnecting
@@ -201,15 +275,13 @@ export const CollaborationSync: React.FC<CollaborationSyncProps> = ({
             : 'bg-red-100 text-red-800 border border-red-200'
           }
         `}>
-          <div className={`
-            w-2 h-2 rounded-full
-            ${connectionState.isConnected 
-              ? 'bg-green-500' 
-              : connectionState.isConnecting
-              ? 'bg-yellow-500 animate-pulse'
-              : 'bg-red-500'
-            }
-          `} />
+          {connectionState.isConnected ? (
+            <Wifi className="w-4 h-4" />
+          ) : connectionState.isConnecting ? (
+            <div className="w-4 h-4 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <WifiOff className="w-4 h-4" />
+          )}
           
           <span>
             {connectionState.isConnected 
@@ -228,17 +300,22 @@ export const CollaborationSync: React.FC<CollaborationSyncProps> = ({
         </div>
 
         {connectionState.lastError && (
-          <div className="mt-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+          <motion.div 
+            className="mt-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 shadow-lg"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            transition={{ duration: 0.3 }}
+          >
             {connectionState.lastError}
             <button
               onClick={webSocket.reconnect}
-              className="ml-2 underline hover:no-underline"
+              className="ml-2 underline hover:no-underline font-medium"
             >
               Retry
             </button>
-          </div>
+          </motion.div>
         )}
-      </div>
+      </motion.div>
     );
   };
 
@@ -247,50 +324,138 @@ export const CollaborationSync: React.FC<CollaborationSyncProps> = ({
     if (!enabled || participants.length <= 1) return null;
 
     return (
-      <div className="fixed bottom-4 left-4 z-50">
+      <motion.div 
+        className="fixed bottom-4 left-4 z-50"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+      >
         <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 max-w-xs">
-          <h4 className="text-sm font-medium text-gray-700 mb-2">
-            Active Participants ({participants.length})
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              Active Participants ({participants.length})
+            </h4>
+            <button
+              onClick={() => setShowParticipants(!showParticipants)}
+              className="text-gray-500 hover:text-gray-700 transition-colors"
+            >
+              {showParticipants ? '−' : '+'}
+            </button>
+          </div>
+          
+          <AnimatePresence>
+            {showParticipants && (
+              <motion.div 
+                className="space-y-2"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                {participants.map(participant => {
+                  const isCurrentUser = participant.userId === userId;
+                  const isOnline = webSocket.connectionState.isConnected;
+                  const isTyping = typingIndicators.some(t => t.userId === participant.userId);
+                  
+                  return (
+                    <motion.div
+                      key={participant.userId}
+                      className="flex items-center gap-3 text-sm p-2 rounded-lg hover:bg-gray-50 transition-colors"
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.1 }}
+                    >
+                      <div className="relative">
+                        <div
+                          className="w-3 h-3 rounded-full border-2 border-white shadow-sm"
+                          style={{ backgroundColor: participant.colorCode }}
+                        />
+                        {isTyping && (
+                          <motion.div
+                            className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full"
+                            animate={{ scale: [1, 1.2, 1] }}
+                            transition={{ duration: 1, repeat: Infinity }}
+                          />
+                        )}
+                      </div>
+                      
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900 truncate flex items-center gap-1">
+                          {participant.displayName}
+                          {isCurrentUser && (
+                            <span className="text-xs text-gray-500">(You)</span>
+                          )}
+                          {isTyping && (
+                            <Type className="w-3 h-3 text-blue-500 animate-pulse" />
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500 capitalize flex items-center gap-1">
+                          {participant.userType} • Page {participant.currentPage}
+                          {participant.userType === 'notary' ? '👨‍⚖️' : '✍️'}
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-1">
+                        <div className={`
+                          w-2 h-2 rounded-full
+                          ${participant.status === 'active' ? 'bg-green-400' : 
+                            participant.status === 'joined' ? 'bg-yellow-400' : 'bg-gray-400'}
+                        `} />
+                        {isTyping && (
+                          <motion.div
+                            className="w-2 h-2 bg-blue-500 rounded-full"
+                            animate={{ opacity: [1, 0.3, 1] }}
+                            transition={{ duration: 1, repeat: Infinity }}
+                          />
+                        )}
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </motion.div>
+    );
+  };
+
+  // Real-time activity feed
+  const renderActivityFeed = () => {
+    if (!enabled) return null;
+
+    return (
+      <motion.div 
+        className="fixed top-4 left-4 z-50 max-w-sm"
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.3, delay: 0.2 }}
+      >
+        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3">
+          <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+            <MousePointer className="w-4 h-4" />
+            Live Activity
           </h4>
           
-          <div className="space-y-2">
-            {participants.map(participant => {
-              const isCurrentUser = participant.userId === userId;
-              const isOnline = webSocket.connectionState.isConnected; // Simplified
-              
-              return (
-                <div
-                  key={participant.userId}
-                  className="flex items-center gap-3 text-sm"
-                >
-                  <div
-                    className="w-3 h-3 rounded-full border-2 border-white shadow-sm"
-                    style={{ backgroundColor: participant.colorCode }}
-                  />
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-gray-900 truncate">
-                      {participant.displayName}
-                      {isCurrentUser && (
-                        <span className="ml-1 text-xs text-gray-500">(You)</span>
-                      )}
-                    </div>
-                    <div className="text-xs text-gray-500 capitalize">
-                      {participant.userType} • Page {participant.currentPage}
-                    </div>
-                  </div>
-                  
-                  <div className={`
-                    w-2 h-2 rounded-full
-                    ${participant.status === 'active' ? 'bg-green-400' : 
-                      participant.status === 'joined' ? 'bg-yellow-400' : 'bg-gray-400'}
-                  `} />
-                </div>
-              );
-            })}
+          <div className="space-y-1 text-xs text-gray-600">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+              <span>Real-time collaboration active</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+              <span>{cursors.filter(c => c.userId !== userId).length} users viewing</span>
+            </div>
+            {typingIndicators.length > 0 && (
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+                <span>{typingIndicators.length} user(s) typing</span>
+              </div>
+            )}
           </div>
         </div>
-      </div>
+      </motion.div>
     );
   };
 
@@ -302,8 +467,10 @@ export const CollaborationSync: React.FC<CollaborationSyncProps> = ({
   return (
     <>
       {renderCursorIndicators()}
+      {renderTypingIndicators()}
       {renderConnectionStatus()}
       {renderParticipantsList()}
+      {renderActivityFeed()}
     </>
   );
 };
