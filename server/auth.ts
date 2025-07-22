@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
+import { SessionManagementService } from './services/session-management-service';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
@@ -10,21 +11,70 @@ export interface AuthUser {
   privileges?: string[];
 }
 
-export const verifyToken = (req: any, res: Response, next: NextFunction) => {
+export const verifyToken = async (req: any, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
   
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'Access denied. No token provided.' });
+    return res.status(401).json({ 
+      message: 'Access denied. No token provided.',
+      code: 'NO_TOKEN'
+    });
   }
 
   const token = authHeader.substring(7);
   
   try {
+    // First check if token is blacklisted
+    const isBlacklisted = await SessionManagementService.isTokenBlacklisted(token);
+    if (isBlacklisted) {
+      return res.status(401).json({ 
+        message: 'Token has been invalidated. Please log in again.',
+        code: 'TOKEN_BLACKLISTED',
+        requireLogin: true
+      });
+    }
+
+    // Verify JWT signature and expiration
     const decoded = jwt.verify(token, JWT_SECRET) as AuthUser;
+    
+    // Check if this is a stale session (created before server restart)
+    // Note: For now we'll just verify the token. In the future, if you want to
+    // automatically logout users on server restart, uncomment the below code:
+    
+    // const sessionId = req.headers['x-session-id'] as string;
+    // if (sessionId) {
+    //   const isStale = await SessionManagementService.isSessionStale(sessionId);
+    //   if (isStale) {
+    //     return res.status(401).json({ 
+    //       message: 'Session expired due to server restart. Please log in again.',
+    //       code: 'SESSION_STALE',
+    //       requireLogin: true
+    //     });
+    //   }
+    //   
+    //   // Update session activity
+    //   await SessionManagementService.updateSessionActivity(sessionId);
+    // }
+
     req.user = decoded;
     next();
   } catch (error) {
-    res.status(401).json({ message: 'Invalid token' });
+    let message = 'Invalid token';
+    let code = 'INVALID_TOKEN';
+    
+    if (error instanceof jwt.TokenExpiredError) {
+      message = 'Token has expired. Please log in again.';
+      code = 'TOKEN_EXPIRED';
+    } else if (error instanceof jwt.JsonWebTokenError) {
+      message = 'Invalid token format. Please log in again.';
+      code = 'TOKEN_MALFORMED';
+    }
+    
+    res.status(401).json({ 
+      message,
+      code,
+      requireLogin: true
+    });
   }
 };
 

@@ -148,6 +148,9 @@ const upload = multer({
 // Import the professional email service
 import { emailService } from './lib/email-service';
 
+// Import enhanced login logging service
+import { enhancedLoginLoggingService } from './services/enhanced-login-logging-service';
+
 // Import security middleware
 import { 
   authLimiter, 
@@ -181,6 +184,14 @@ import {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
+  // Initialize session management service
+  try {
+    const { SessionManagementService } = await import('./services/session-management-service');
+    await SessionManagementService.initialize();
+  } catch (error) {
+    console.error('❌ Failed to initialize session management:', error);
+  }
+
   // Basic route handlers to prevent 404 errors
   // Only serve API response if we're not serving static files
   app.get('/', (req, res, next) => {
@@ -219,24 +230,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { email, password, twoFactorCode } = req.body;
       
       if (!email || !password) {
+        // Log failed attempt due to missing credentials
+        await enhancedLoginLoggingService.logFailedLogin(req, email || 'unknown', 'Missing email or password');
         return res.status(400).json({ message: 'Email and password are required' });
       }
 
       const user = await storage.getUserByEmail(email);
       if (!user) {
         recordFailedLogin(email);
+        // Log failed attempt due to user not found
+        await enhancedLoginLoggingService.logFailedLogin(req, email, 'User not found');
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
       const isValidPassword = await bcrypt.compare(password, user.password);
       if (!isValidPassword) {
         recordFailedLogin(email);
+        // Log failed attempt due to invalid password
+        await enhancedLoginLoggingService.logFailedLogin(req, email, 'Invalid password');
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
       // Check if 2FA is enabled for this user
       if (user.mfaEnabled) {
         if (!twoFactorCode) {
+          // Log 2FA required attempt
+          await enhancedLoginLoggingService.logTwoFactorRequired(req, {
+            id: user.id,
+            email: user.email,
+            username: user.username || undefined,
+            fullName: user.fullName || undefined,
+            role: user.role,
+            privileges: user.privileges || []
+          });
+          
           // Return without token, indicating 2FA is required
           return res.json({
             requiresTwoFactor: true,
@@ -246,6 +273,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Verify 2FA code
         if (!user.mfaSecret) {
+          await enhancedLoginLoggingService.logFailedLogin(req, email, '2FA configuration error');
           return res.status(500).json({ message: '2FA configuration error' });
         }
 
@@ -258,6 +286,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         if (!verified) {
           recordFailedLogin(email);
+          // Log failed attempt due to invalid 2FA code
+          await enhancedLoginLoggingService.logFailedLogin(req, email, 'Invalid 2FA code');
           return res.status(401).json({ message: 'Invalid two-factor authentication code' });
         }
       }
@@ -266,23 +296,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
       clearFailedAttempts(email);
 
       // Generate token with privileges included
-      const token = jwt.sign(
-        { 
-          id: user.id, 
-          email: user.email, 
-          role: user.role,
-          privileges: user.privileges || []
-        },
-        JWT_SECRET,
-        { expiresIn: '24h' }
-      );
+      const tokenPayload = { 
+        id: user.id, 
+        email: user.email, 
+        role: user.role,
+        privileges: user.privileges || []
+      };
+      
+      const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });
+
+      // Create session for tracking
+      let sessionId = null;
+      try {
+        const { SessionManagementService } = await import('./services/session-management-service');
+        sessionId = await SessionManagementService.createSession(tokenPayload, req);
+      } catch (sessionError) {
+        console.error('Failed to create session:', sessionError);
+        // Don't fail login if session creation fails
+      }
 
       // Check privileges for frontend
       const isAdmin = hasAdminPrivileges(user);
       const isNotary = hasNotaryPrivileges(user);
 
+      // Log successful login with comprehensive details
+      await enhancedLoginLoggingService.logSuccessfulLogin(req, {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        fullName: user.fullName,
+        role: user.role,
+        privileges: user.privileges || []
+      });
+
+      // Track login in comprehensive session tracking system
+      try {
+        const { comprehensiveSessionTrackingService } = await import('./services/comprehensive-session-tracking-service');
+        await comprehensiveSessionTrackingService.trackLogin(req, {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          role: user.role,
+          name: user.fullName || user.username
+        }, sessionId);
+      } catch (trackingError) {
+        console.error('Failed to track login in session tracking system:', trackingError);
+        // Don't fail login if tracking fails
+      }
+
       res.json({
         token,
+        sessionId, // Include session ID for client-side tracking
         user: {
           id: user.id,
           username: user.username,
@@ -296,6 +360,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error('Login error:', error);
+      // Log system error
+      await enhancedLoginLoggingService.logFailedLogin(req, req.body?.email || 'unknown', `System error: ${error.message}`);
       res.status(500).json({ message: 'Internal server error' });
     }
   });
@@ -396,14 +462,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/auth/logout', verifyToken, async (req: any, res) => {
     try {
-      // In a real application, you might want to:
-      // 1. Add the token to a blacklist
-      // 2. Update user's last logout time
-      // 3. Log the logout event for audit purposes
+      const authHeader = req.headers.authorization;
+      const sessionId = req.headers['x-session-id'] as string;
       
-      // For now, we'll just return success
-      // The client will handle clearing localStorage
-      res.json({ message: 'Logged out successfully' });
+      if (authHeader) {
+        // Blacklist the current token
+        const { SessionManagementService } = await import('./services/session-management-service');
+        await SessionManagementService.blacklistToken(authHeader, 'user_logout');
+        
+        // Invalidate the session if session ID is provided
+        if (sessionId) {
+          await SessionManagementService.invalidateSession(sessionId, 'user_logout');
+        }
+        
+        console.log(`🚪 User logged out: ${req.user.email} (ID: ${req.user.id})`);
+      }
+      
+      // Update user's last logout time for audit purposes
+      try {
+        await storage.executeQuery(
+          'UPDATE users SET last_logout_at = NOW() WHERE id = $1',
+          [req.user.id]
+        );
+      } catch (dbError) {
+        console.error('Failed to update logout time:', dbError);
+        // Don't fail the logout for this
+      }
+      
+      res.json({ 
+        message: 'Logged out successfully',
+        timestamp: new Date().toISOString()
+      });
     } catch (error) {
       console.error('Logout error:', error);
       res.status(500).json({ message: 'Internal server error' });
@@ -2667,6 +2756,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           userId,
           jobId
         });
+
+        // Track session join in comprehensive tracking system
+        try {
+          const { comprehensiveSessionTrackingService } = await import('./services/comprehensive-session-tracking-service');
+          const sessionId = `session_${jobId}_${Date.now()}`;
+          await comprehensiveSessionTrackingService.trackSessionJoin(req, jobId, {
+            id: userId,
+            email: user.email,
+            username: user.username || user.fullName,
+            role: user.role,
+            name: user.fullName || user.username
+          }, sessionId);
+        } catch (trackingError) {
+          console.error('Failed to track session join:', trackingError);
+          // Don't fail access if tracking fails
+        }
+
         return res.json({
           hasAccess: true,
           accessReason,
@@ -3082,6 +3188,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         endDate: meeting.endDate,
         configured: configStatus.configured
       });
+
+      // Track video conference join in comprehensive tracking system
+      try {
+        const { comprehensiveSessionTrackingService } = await import('./services/comprehensive-session-tracking-service');
+        const sessionId = meeting.meetingId || `video_${jobId}_${Date.now()}`;
+        await comprehensiveSessionTrackingService.trackVideoJoin(req, jobId, sessionId, {
+          id: req.user.id,
+          email: req.user.email,
+          username: req.user.username || req.user.fullName,
+          role: req.user.role,
+          name: req.user.fullName || req.user.username
+        });
+      } catch (trackingError) {
+        console.error('Failed to track video join:', trackingError);
+        // Don't fail video session creation if tracking fails
+      }
       
       res.json({
         success: true,
@@ -3763,6 +3885,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Placeholder stamp error:', error);
       res.status(500).send('Error generating placeholder');
+    }
+  });
+
+  // Admin session management endpoints
+  app.get('/api/admin/session-stats', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const { SessionManagementService } = await import('./services/session-management-service');
+      const stats = await SessionManagementService.getSessionStats();
+      
+      res.json(stats);
+    } catch (error) {
+      console.error('Get session stats error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.get('/api/admin/active-sessions', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const { SessionManagementService } = await import('./services/session-management-service');
+      const sessions = await SessionManagementService.getActiveSessions();
+      
+      res.json(sessions);
+    } catch (error) {
+      console.error('Get active sessions error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/admin/invalidate-user-sessions/:userId', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const userId = parseInt(req.params.userId);
+      const { reason } = req.body;
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: 'Invalid user ID' });
+      }
+
+      const { SessionManagementService } = await import('./services/session-management-service');
+      await SessionManagementService.invalidateUserSessions(userId, reason || 'admin_action');
+      
+      res.json({ 
+        message: 'User sessions invalidated successfully',
+        userId 
+      });
+    } catch (error) {
+      console.error('Invalidate user sessions error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/admin/invalidate-all-sessions', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const { reason } = req.body;
+
+      const { SessionManagementService } = await import('./services/session-management-service');
+      await SessionManagementService.invalidateAllSessions(reason || 'admin_action');
+      
+      res.json({ 
+        message: 'All sessions invalidated successfully' 
+      });
+    } catch (error) {
+      console.error('Invalidate all sessions error:', error);
+      res.status(500).json({ message: 'Internal server error' });
     }
   });
 
@@ -6249,6 +6450,14 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   app.use('/api/notary', notaryJobApprovalRoutes);
   app.use('/api', screenRecordingRoutes);
   
+  // Register user logs routes
+  const userLogsRoutes = await import('./routes/user-logs-routes');
+  app.use('/api/user', userLogsRoutes.default);
+
+  // ===== SESSION TRACKING ROUTES =====
+  const sessionTrackingRoutes = await import('./routes/session-tracking-routes');
+  app.use('/api/session-tracking', sessionTrackingRoutes.default);
+  
   // ==========================================
   // ADMIN VERIFICATION ROUTES (Missing endpoints for dashboard)
   // ==========================================
@@ -6904,7 +7113,11 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           updateData.verificationImageSelfieUrl = uploadedFiles.selfieImage;
         }
 
-        await db.update(users).set(updateData).where(eq(users.id, parseInt(userId)));
+        console.log(`🔍 DEBUG: About to execute database update for user ${userId}`);
+        
+        const dbUpdateResult = await db.update(users).set(updateData).where(eq(users.id, parseInt(userId)));
+        
+        console.log(`✅ DEBUG: Database update completed for user ${userId}:`, dbUpdateResult);
 
         // 🆕 AUTOMATIC SELF-SIGNED CERTIFICATE GENERATION after successful ID verification
         let certificateInfo = null;
@@ -7274,53 +7487,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     }
   });
 
-  // User download their own certificate
-  app.get('/api/user/certificate/download', verifyToken, async (req: any, res) => {
-    try {
-      const userId = req.user.id;
-      
-      // Get the user to verify role
-      const [user] = await db
-        .select({ id: users.id, role: users.role, fullName: users.fullName })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-        
-      if (!user) {
-        return res.status(404).json({ error: 'User not found' });
-      }
-      
-      // Only signers and witnesses have self-signed certificates
-      if (!['signer', 'witness'].includes(user.role)) {
-        return res.status(400).json({ 
-          error: `Your role '${user.role}' does not have self-signed certificates. Only signers and witnesses have auto-generated certificates.` 
-        });
-      }
-      
-      const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
-      const certificate = await selfSignedCertificateService.getUserCertificate(userId);
-      
-      if (!certificate || !certificate.certificate_content) {
-        return res.status(404).json({ 
-          error: 'No certificate found',
-          suggestion: 'Complete ID verification to automatically generate your certificate'
-        });
-      }
-      
-      // Set headers for file download
-      const filename = `${user.fullName || 'my'}_${user.role}_certificate.pem`;
-      res.setHeader('Content-Type', 'application/x-pem-file');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      res.setHeader('Cache-Control', 'no-cache');
-      
-      // Send the certificate content
-      res.send(certificate.certificate_content);
-      
-    } catch (error) {
-      console.error('User certificate download error:', error);
-      res.status(500).json({ error: 'Failed to download certificate' });
-    }
-  });
+
 
   // ==========================================
   // KBA (Knowledge-Based Authentication) Routes
@@ -7467,2501 +7634,82 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     }
   });
 
-  // Get session state and participants - ULTRA OPTIMIZED VERSION  
-  app.get('/api/session/:sessionId/state', verifyToken, async (req: any, res) => {
-    const startTime = Date.now();
-    
+  // Admin session management endpoints
+  app.get('/api/admin/session-stats', verifyToken, async (req: any, res) => {
     try {
-      const { sessionId } = req.params;
-      
-      // Generate ETag based on sessionId and timestamp to enable 304 responses
-      const etag = `"session-${sessionId}-${Math.floor(Date.now() / 30000)}"`;  // Update every 30s
-      
-      // Check for conditional request headers for ultra-fast 304 responses
-      if (req.headers['if-none-match'] === etag) {
-        console.log(`⚡ ULTRA-FAST 304: session ${sessionId} (${Date.now() - startTime}ms)`);
-        return res.status(304).end();
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
       }
 
-      // Try Redis cache first (with shorter duration logging)
-      const cacheKey = `session:${sessionId}:state:v2`;
-      try {
-        const cached = await redisCache.get(cacheKey);
-        if (cached) {
-          res.set('ETag', etag);
-          res.set('Cache-Control', 'max-age=30');
-          console.log(`📦 Cache HIT: session ${sessionId} (${Date.now() - startTime}ms)`);
-          return res.json({
-            success: true,
-            data: cached
-          });
-        }
-      } catch (cacheError) {
-        console.warn('Cache read error:', cacheError);
-      }
-
-      console.log(`📡 Fresh request: session ${sessionId} by user ${req.user.id}`);
-
-      const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
+      const { SessionManagementService } = await import('./services/session-management-service');
+      const stats = await SessionManagementService.getSessionStats();
       
-      const sessionState = await LiveSigningSessionService.getSessionStateOptimized(sessionId);
-      
-      // Cache the result for 30 seconds
-      try {
-        await redisCache.set(cacheKey, sessionState, 30);
-      } catch (cacheError) {
-        console.warn('Cache write error:', cacheError);
-      }
-      
-      const duration = Date.now() - startTime;
-      
-      // Set proper cache headers
-      res.set('ETag', etag);
-      res.set('Cache-Control', 'max-age=30, must-revalidate');
-      
-      if (duration > 200) {  // Lower threshold for session state
-        console.log(`🐌 SLOW REQUEST: {
-  method: 'GET',
-  url: '/api/session/${sessionId}/state',
-  duration: '${duration}ms',
-  statusCode: 200,
-  requestId: 'req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}',
-      userId: ${req.user.id}
-  }`);
-      } else {
-        console.log(`⚡ FAST: session ${sessionId} (${duration}ms)`);
-      }
-      
-      res.json({
-        success: true,
-        data: sessionState
-      });
-      
+      res.json(stats);
     } catch (error) {
-      const duration = Date.now() - startTime;
-      console.error('Get session state error:', error, `(${duration}ms)`);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to get session state',
-        error: 'get_session_state_failed'
-      });
+      console.error('Get session stats error:', error);
+      res.status(500).json({ message: 'Internal server error' });
     }
   });
 
-  // Set active user (for user switching via keyboard shortcuts)
-  app.post('/api/session/:sessionId/set-active-user', verifyToken, async (req: any, res) => {
+  app.get('/api/admin/active-sessions', verifyToken, async (req: any, res) => {
     try {
-      const { sessionId } = req.params;
-      const { userId } = req.body;
-
-      if (!userId) {
-        return res.status(400).json({ message: 'userId is required' });
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
       }
 
-      const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
+      const { SessionManagementService } = await import('./services/session-management-service');
+      const sessions = await SessionManagementService.getActiveSessions();
       
-      await LiveSigningSessionService.setActiveUser(sessionId, userId);
-      
-      res.json({
-        success: true,
-        message: 'Active user set successfully'
-      });
-      
-    } catch (error) {
-      console.error('Set active user error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to set active user',
-        error: 'set_active_user_failed'
-      });
-    }
-  });
-
-  // Sync all users to notary view
-  app.post('/api/session/:sessionId/sync-users', verifyToken, async (req: any, res) => {
-    try {
-      const { sessionId } = req.params;
-      const { pageNumber, documentId } = req.body;
-      const userId = req.user.id;
-
-      // Verify user is notary
-      const [user] = await db
-        .select({ role: users.role })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-
-      if (!user || user.role !== 'notary') {
-        return res.status(403).json({ 
-          message: 'Only notaries can sync users',
-          error: 'insufficient_permissions'
-        });
-      }
-
-      // Import WebSocket service and trigger sync
-      const { WebSocketService } = await import('./services/editor/WebSocketService');
-      
-      // Broadcast sync command to all session participants
-      const syncMessage = {
-        type: 'sync_to_notary',
-        payload: {
-          sessionId,
-          pageNumber: pageNumber || 1,
-          documentId: documentId || null,
-          syncedBy: userId,
-          notaryName: user.role, // You might want to get the actual user name
-          timestamp: Date.now()
-        },
-        userId: userId.toString(),
-        sessionId,
-        timestamp: Date.now()
-      };
-
-      // Send sync message to all participants in the session
-      WebSocketService.broadcastToSession(sessionId, syncMessage);
-      
-      res.json({
-        success: true,
-        message: `All users synced to page ${pageNumber || 1}`,
-        pageNumber: pageNumber || 1,
-        documentId: documentId || null
-      });
-      
-    } catch (error) {
-      console.error('Sync users error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to sync users',
-        error: 'sync_users_failed'
-      });
-    }
-  });
-
-  // Pause session
-  app.post('/api/session/:sessionId/pause', verifyToken, async (req: any, res) => {
-    try {
-      const { sessionId } = req.params;
-      const { reason } = req.body;
-      const userId = req.user.id;
-
-      const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
-      
-      const result = await LiveSigningSessionService.pauseSession(sessionId, userId, reason);
-      
-      res.json({
-        success: true,
-        data: result,
-        message: 'Session paused successfully'
-      });
-      
-    } catch (error) {
-      console.error('Pause session error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to pause session',
-        error: 'pause_session_failed'
-      });
-    }
-  });
-
-  // Resume session
-  app.post('/api/session/:sessionId/resume', verifyToken, async (req: any, res) => {
-    try {
-      const { sessionId } = req.params;
-      const userId = req.user.id;
-
-      const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
-      
-      const result = await LiveSigningSessionService.resumeSession(sessionId, userId);
-      
-      res.json({
-        success: true,
-        data: result,
-        message: 'Session resumed successfully'
-      });
-      
-    } catch (error) {
-      console.error('Resume session error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to resume session',
-        error: 'resume_session_failed'
-      });
-    }
-  });
-
-  // Check if user can interact with session
-  app.get('/api/session/:sessionId/can-interact/:userId', verifyToken, async (req: any, res) => {
-    try {
-      const { sessionId, userId } = req.params;
-
-      const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
-      
-      const canInteract = await LiveSigningSessionService.canUserInteract(sessionId, parseInt(userId));
-      
-      res.json({
-        success: true,
-        data: { canInteract }
-      });
-      
-    } catch (error) {
-      console.error('Check interaction permission error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to check permissions',
-        error: 'check_interaction_failed'
-      });
-    }
-  });
-
-  // Complete live signing session
-  app.post('/api/session/:sessionId/complete', verifyToken, async (req: any, res) => {
-    try {
-      const { sessionId } = req.params;
-      const { force = false } = req.body;
-      console.log(`📝 Completing session: ${sessionId} by user ${req.user.id}`);
-
-      // Get session using editor session service
-      const { SessionService } = await import('./services/editor/SessionService');
-      const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
-      
-      let session;
-      let actualSessionId = sessionId;
-      
-      try {
-        // First try to get session directly
-        session = await SessionService.getSession(sessionId);
-        
-        if (session) {
-          actualSessionId = session.id;
-          console.log(`✅ Found session by sessionId: ${actualSessionId}`);
-        }
-      } catch (error) {
-        console.log(`🔍 Session not found by sessionId, checking if it's a jobId...`);
-      }
-      
-      // If session not found by sessionId, try to find by jobId (backward compatibility)
-      if (!session) {
-        const jobId = parseInt(sessionId);
-        
-        if (!isNaN(jobId)) {
-          // Look for the most recent active session for this job
-          const sessions = await db
-            .select()
-            .from(editorSessions)
-            .where(eq(editorSessions.jobId, jobId))
-            .orderBy(desc(editorSessions.createdAt))
-            .limit(1);
-          
-          if (sessions.length > 0) {
-            const sessionData = sessions[0];
-            session = {
-              id: sessionData.sessionId,
-              jobId: sessionData.jobId,
-              sessionType: sessionData.sessionType,
-              status: sessionData.status,
-              notaryId: sessionData.notaryId,
-              videoSessionId: sessionData.videoSessionId,
-              createdAt: sessionData.createdAt,
-              startedAt: sessionData.startedAt,
-              completedAt: sessionData.completedAt
-            };
-            actualSessionId = sessionData.sessionId;
-            console.log(`✅ Found session by jobId: ${actualSessionId}`);
-          }
-        }
-      }
-      
-      if (!session) {
-        return res.status(404).json({ 
-          message: 'Session not found',
-          error: 'session_not_found'
-        });
-      }
-
-      // Check if session is already completed
-      if (session.status === 'completed') {
-        return res.status(200).json({
-          success: true,
-          message: 'Session was already completed',
-          sessionId: actualSessionId,
-          alreadyCompleted: true
-        });
-      }
-
-      // Verify user permissions
-      const isAdmin = req.user.role === 'admin' || (req.user.privileges && req.user.privileges.includes('admin'));
-      const isAssignedNotary = session.notaryId === req.user.id;
-      
-      if (!isAssignedNotary && !isAdmin) {
-        return res.status(403).json({ 
-          message: 'Only the assigned notary or admin can complete the session',
-          error: 'insufficient_permissions'
-        });
-      }
-
-      // For live signing sessions, handle completion
-      if (session.sessionType === 'notary' || session.sessionType === 'tagging') {
-        try {
-          // Get all tags for validation
-          const { TagService } = await import('./services/editor/TagService');
-          const tags = await TagService.getSessionTags(actualSessionId);
-          
-          console.log(`📊 Session completion validation - Total tags: ${tags.length}`);
-          
-          // Tags will only be marked as completed when users manually click and fill them
-          // No auto-completion needed - tags are just markers for the tagging session
-          
-          console.log(`📊 Validation results:`);
-          console.log(`  - Total tags: ${tags.length}`);
-          console.log(`  - Completed tags: ${tags.filter(t => t.isCompleted).length}`);
-          
-          // For tagging sessions: Allow completion regardless of tag completion status
-          // For live signing sessions: Only allow completion if users have filled their assigned tags
-          if (session.sessionType === 'notary') {
-            // Live signing session - check if tags have real content from users
-            const incompleteTags = tags.filter(tag => !tag.isCompleted);
-            
-            if (incompleteTags.length > 0 && !force) {
-              console.log(`❌ Live signing session completion blocked - users haven't filled all tags:`, incompleteTags.map(t => ({
-                id: t.id,
-                type: t.tagType,
-                assignedUser: t.assignedUserId,
-                hasContent: !!(t.content && t.content.trim())
-              })));
-              
-              return res.status(400).json({
-                success: false,
-                message: `Cannot complete session: ${incompleteTags.length} tags haven't been filled by users`,
-                error: 'incomplete_user_tags',
-                canForce: true,
-                incompleteTags: incompleteTags.map(t => ({
-                  id: t.id,
-                  type: t.tagType,
-                  assignedUser: t.assignedUserId,
-                  note: 'User needs to click this tag to fill it with real content'
-                }))
-              });
-            }
-          }
-          
-          // For tagging sessions, no validation needed - tags are just markers
-
-                               // Generate final PDF with real user content (only for live signing sessions)
-          if (session.sessionType === 'notary' && tags.length > 0 && tags.some(t => t.isCompleted)) {
-            try {
-              const { PDFProcessorService } = await import('./services/pdf-processor.service');
-              const pdfProcessor = PDFProcessorService.getInstance();
-              
-              // Process the document and apply real content
-              const processedDoc = await pdfProcessor.processCompletedDocument(actualSessionId);
-              
-              if (processedDoc && processedDoc.buffer) {
-                // Upload signed PDF to Vultr cloud storage
-                try {
-                  const { VultrUploadHandler } = await import('./vultr-upload-handler');
-                  
-                  const signedFileName = `job_${session.jobId}_signed_${Date.now()}.pdf`;
-                  
-                  // Upload to Vultr with proper organization
-                  const uploadResult = await VultrUploadHandler.handleJobDocumentUpload(
-                    processedDoc.buffer,
-                    signedFileName,
-                    session.jobId,
-                    req.user.id,
-                    {
-                      documentType: 'signed_document',
-                      isRequired: false,
-                      sessionId: actualSessionId,
-                      signedAt: new Date().toISOString(),
-                      processedTags: tags.length,
-                      completedTags: tags.filter(t => t.isCompleted).length
-                    }
-                  );
-                  
-                  if (uploadResult.success) {
-                                  console.log(`✅ Generated final document with real user content: ${signedFileName} (${processedDoc.fileSize} bytes)`);
-              console.log(`📁 Vultr location: ${uploadResult.fileKey}`);
-              console.log(`📊 Applied ${tags.filter(t => t.isCompleted).length} user-filled tags to document`);
-                    
-                    // Also save to local uploads directory as backup
-                    const fs = await import('fs/promises');
-                    const path = await import('path');
-                    const uploadsDir = path.resolve('uploads/signed');
-                    
-                    try {
-                      await fs.mkdir(uploadsDir, { recursive: true });
-                      const localPath = path.join(uploadsDir, signedFileName);
-                      await fs.writeFile(localPath, processedDoc.buffer);
-                      console.log(`📁 Local backup saved: ${signedFileName}`);
-                    } catch (localError) {
-                      console.warn('Failed to save local backup:', localError);
-                      // Don't fail on local backup error
-                    }
-                    
-                  } else {
-                    throw new Error(`Failed to upload signed PDF: ${uploadResult.error}`);
-                  }
-                  
-                } catch (uploadError) {
-                  console.error('❌ Failed to upload signed PDF to Vultr:', uploadError);
-                  
-                  // Fallback: Save to local uploads directory only
-                  const fs = await import('fs/promises');
-                  const path = await import('path');
-                  const uploadsDir = path.resolve('uploads/signed');
-                  
-                  await fs.mkdir(uploadsDir, { recursive: true });
-                  const signedFileName = `job_${session.jobId}_signed_${Date.now()}.pdf`;
-                  const signedFilePath = path.join(uploadsDir, signedFileName);
-                  await fs.writeFile(signedFilePath, processedDoc.buffer);
-                  
-                  console.log(`📁 Fallback: Saved signed PDF locally: ${signedFileName}`);
-                }
-                
-                // Update job status to indicate signed documents are available
-                await db
-                  .update(jobs)
-                  .set({
-                    jobStatus: 'completed',
-                    completedAt: new Date()
-                  })
-                  .where(eq(jobs.id, session.jobId));
-              }
-              
-            } catch (pdfError) {
-              console.error('❌ Failed to generate final signed PDF:', pdfError);
-              // Don't fail the completion, just log the error
-              console.warn('Session marked as completed but PDF generation failed');
-            }
-          }
-          
-          // Complete the live signing session
-          await LiveSigningSessionService.completeSession(actualSessionId, req.user.id);
-          
-        } catch (error) {
-          console.error('Error during live signing completion:', error);
-          // Don't fail completely, still mark session as completed
-        }
-      }
-      
-      // Mark session as completed
-      await SessionService.updateSessionStatus(actualSessionId, 'completed', {
-        completedAt: new Date()
-      });
-
-      // 🆕 GENERATE JOB COMPLETION REPORT
-      if (session.jobId) {
-        try {
-          console.log(`📊 Generating completion report for job ${session.jobId}`);
-          
-          const { JobCompletionReportService } = await import('./services/job-completion-report-service');
-          const reportResult = await JobCompletionReportService.generateJobCompletionReport(session.jobId);
-          
-          if (reportResult.success) {
-            console.log(`✅ Job completion report generated: ${reportResult.reportPath}`);
-          } else {
-            console.error(`❌ Failed to generate completion report: ${reportResult.error}`);
-          }
-        } catch (reportError) {
-          console.error('Error generating completion report:', reportError);
-          // Don't fail the session completion if report generation fails
-        }
-      }
-      
-      console.log(`✅ Session completed: ${actualSessionId} by user ${req.user.id}`);
-      
-      res.json({
-        success: true,
-        message: 'Session completed successfully',
-        sessionId: actualSessionId,
-        completedAt: new Date()
-      });
-      
-    } catch (error) {
-      console.error('Complete session error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to complete session',
-        error: 'complete_session_failed'
-      });
-    }
-  });
-
-  // ==========================================
-  // EDITOR ROUTES - PDF Tagging & Signing Sessions
-  // ==========================================
-
-  // Create editor session from job
-  app.post('/api/editor/job/:jobId/session', verifyToken, async (req: any, res) => {
-    try {
-      const jobId = parseInt(req.params.jobId);
-      const { sessionType = 'tagging', videoSessionId } = req.body;
-      
-      if (!jobId || isNaN(jobId)) {
-        return res.status(400).json({ message: 'Invalid job ID' });
-      }
-      
-      // Check if job exists and has a notary assigned
-      const [job] = await db
-        .select()
-        .from(jobs)
-        .where(eq(jobs.id, jobId))
-        .limit(1);
-        
-      if (!job) {
-        return res.status(404).json({ message: 'Job not found' });
-      }
-      
-      // If no notary is assigned to the job, try to auto-assign based on current user
-      if (!job.notaryId && !job.selectedNotary) {
-        console.log(`⚠️ Job ${jobId} has no notary assigned. Attempting auto-assignment...`);
-        
-        // Auto-assign notary if current user can be the notary
-        if (hasAdminPrivileges(req.user) || 
-            (req.user.role === 'notary' && req.user.notaryType === 'subscriber')) {
-          
-          await db
-            .update(jobs)
-            .set({
-              notaryId: req.user.id,
-              selectedNotary: req.user.id.toString(),
-              notaryApprovalStatus: 'approved'
-            })
-            .where(eq(jobs.id, jobId));
-            
-          console.log(`✅ Auto-assigned ${req.user.role} as notary for job ${jobId}`);
-        } else {
-          return res.status(400).json({ 
-            message: 'This job has no notary assigned. Please assign a notary before starting the tagging session.',
-            error: 'no_notary_assigned',
-            suggestion: 'Contact an administrator to assign a notary to this job.'
-          });
-        }
-      }
-      
-      // Import SessionService dynamically
-      const { SessionService } = await import('./services/editor/SessionService');
-      
-      // Get the updated job data to get the correct notary ID
-      const [updatedJob] = await db
-        .select()
-        .from(jobs)
-        .where(eq(jobs.id, jobId))
-        .limit(1);
-      
-      if (!updatedJob) {
-        return res.status(404).json({ message: 'Job not found after update' });
-      }
-      
-      // Use notaryId if available, otherwise parse selectedNotary
-      let notaryId = updatedJob.notaryId;
-      if (!notaryId && updatedJob.selectedNotary) {
-        notaryId = parseInt(updatedJob.selectedNotary);
-        if (isNaN(notaryId)) {
-          return res.status(400).json({ 
-            message: 'Invalid notary assignment. Please check the job configuration.',
-            error: 'invalid_notary_id'
-          });
-        }
-      }
-      
-      if (!notaryId) {
-        return res.status(400).json({ 
-          message: 'No notary assigned to this job. Please assign a notary before starting the session.',
-          error: 'no_notary_assigned'
-        });
-      }
-      
-      const session = await SessionService.createSession({
-        jobId,
-        sessionType,
-        notaryId,
-        videoSessionId
-      });
-      
-      res.json({
-        success: true,
-        session,
-        message: `${sessionType} session created successfully`
-      });
-      
-    } catch (error) {
-      console.error('Create editor session error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to create session',
-        error: 'session_creation_failed'
-      });
-    }
-  });
-
-  // Get editor session data
-  app.get('/api/editor/session/:sessionId', verifyToken, cacheJobData(120), async (req: any, res) => {
-    try {
-      const { sessionId } = req.params;
-      
-      const { SessionService } = await import('./services/editor/SessionService');
-      
-      const session = await SessionService.getSession(sessionId);
-      if (!session) {
-        return res.status(404).json({ message: 'Session not found' });
-      }
-      
-      // Get session documents and participants
-      const [documents, participants] = await Promise.all([
-        SessionService.getSessionDocuments(session.jobId),
-        SessionService.getSessionParticipants(session.jobId)
-      ]);
-      
-      res.json({
-        session,
-        documents,
-        participants
-      });
-      
-    } catch (error) {
-      console.error('Get editor session error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to get session',
-        error: 'session_fetch_failed'
-      });
-    }
-  });
-
-  // Update session status
-  app.put('/api/editor/session/:sessionId/status', verifyToken, async (req: any, res) => {
-    try {
-      const { sessionId } = req.params;
-      const { status, startedAt, completedAt } = req.body;
-      
-      const { SessionService } = await import('./services/editor/SessionService');
-      
-      await SessionService.updateSessionStatus(sessionId, status, {
-        startedAt: startedAt ? new Date(startedAt) : undefined,
-        completedAt: completedAt ? new Date(completedAt) : undefined
-      });
-      
-      res.json({
-        success: true,
-        message: `Session status updated to ${status}`
-      });
-      
-    } catch (error) {
-      console.error('Update session status error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to update session',
-        error: 'session_update_failed'
-      });
-    }
-  });
-
-  // Get job participants for editor
-  app.get('/api/jobs/:jobId/participants', verifyToken, async (req: any, res) => {
-    try {
-      const jobId = parseInt(req.params.jobId);
-      
-      const { SessionService } = await import('./services/editor/SessionService');
-      
-      const participants = await SessionService.getSessionParticipants(jobId);
-      
-      res.json({
-        participants,
-        count: participants.length
-      });
-      
-    } catch (error) {
-      console.error('Get job participants error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to get participants',
-        error: 'participants_fetch_failed'
-      });
-    }
-  });
-
-  // Get existing sessions for a job
-  app.get('/api/jobs/:jobId/sessions', verifyToken, async (req: any, res) => {
-    try {
-      const jobId = parseInt(req.params.jobId);
-      
-      if (!jobId || isNaN(jobId)) {
-        return res.status(400).json({ message: 'Invalid job ID' });
-      }
-      
-      // Query editor_sessions table for this job
-      const existingSessions = await db
-        .select()
-        .from(editorSessions)
-        .where(eq(editorSessions.jobId, jobId))
-        .orderBy(desc(editorSessions.createdAt));
-      
-      // Convert to the expected format with sessionId as id for frontend compatibility
-      const formattedSessions = existingSessions.map(session => ({
-        id: session.sessionId, // Use sessionId as the id field for frontend
-        dbId: session.id, // Keep database ID for reference
-        jobId: session.jobId,
-        sessionType: session.sessionType,
-        status: session.status,
-        notaryId: session.notaryId,
-        videoSessionId: session.videoSessionId,
-        createdAt: session.createdAt,
-        startedAt: session.startedAt,
-        completedAt: session.completedAt,
-        updatedAt: session.updatedAt
-      }));
-      
-      res.json({
-        sessions: formattedSessions,
-        count: formattedSessions.length
-      });
-      
-    } catch (error) {
-      console.error('Get job sessions error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to get sessions',
-        error: 'sessions_fetch_failed'
-      });
-    }
-  });
-
-  // Cancel editor session
-  app.delete('/api/editor/session/:sessionId', verifyToken, async (req: any, res) => {
-    try {
-      const { sessionId } = req.params;
-      
-      const { SessionService } = await import('./services/editor/SessionService');
-      
-      await SessionService.cancelSession(sessionId);
-      
-      res.json({
-        success: true,
-        message: 'Session cancelled successfully'
-      });
-      
-    } catch (error) {
-      console.error('Cancel session error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to cancel session',
-        error: 'session_cancel_failed'
-      });
-    }
-  });
-
-  // ==========================================
-  // TAG MANAGEMENT ROUTES - Place, Update, Delete Tags
-  // ==========================================
-
-  // Place a new tag
-  app.post('/api/editor/session/:sessionId/place-tag', verifyToken, async (req: any, res) => {
-    try {
-      const { sessionId } = req.params;
-      const { documentId, tagType, coordinates, assignedUserId } = req.body;
-      
-      console.log('🏷️ Place tag request received:', {
-        sessionId,
-        documentId,
-        tagType,
-        coordinates,
-        assignedUserId: assignedUserId,
-        requestUserId: req.user.id,
-        requestUserRole: req.user.role,
-        finalAssignedUserId: assignedUserId || req.user.id
-      });
-      
-      if (!documentId || !tagType || !coordinates) {
-        return res.status(400).json({ message: 'Missing required fields' });
-      }
-      
-      // ✅ SERVER-SIDE AUTHORIZATION: Check if user can place tags
-      // Get session info to determine if this is a signing session
-      const { SessionService } = await import('./services/editor/SessionService');
-      const session = await SessionService.getSession(sessionId);
-      
-      if (!session) {
-        return res.status(404).json({ message: 'Session not found' });
-      }
-      
-      // In signing sessions (notary mode), only notaries and admins can place new tags
-      if (session.sessionType === 'notary' || session.sessionType === 'tagging') {
-        const userRole = req.user.role;
-        const isNotary = userRole === 'notary';
-        const isAdmin = userRole === 'admin';
-        
-        if (!isNotary && !isAdmin) {
-          console.log(`❌ Authorization failed: ${userRole} (${req.user.id}) cannot place tags in signing session`);
-          return res.status(403).json({ 
-            message: 'Only notaries and admins can place new tags during signing sessions',
-            error: 'insufficient_permissions'
-          });
-        }
-        
-        console.log(`✅ Authorization passed: ${userRole} (${req.user.id}) can place tags in signing session`);
-      }
-      
-      const { TagService } = await import('./services/editor/TagService');
-      
-      const tag = await TagService.placeTag({
-        sessionId,
-        documentId,
-        tagType,
-        coordinates,
-        assignedUserId: assignedUserId || req.user.id,
-        placedBy: req.user.id
-      });
-      
-      // 🚀 REAL-TIME SYNC: Broadcast tag placement to all session participants
-      try {
-        const { WebSocketService } = await import('./services/editor/WebSocketService');
-        
-        const syncMessage = {
-          type: 'tag_placed',
-          payload: { tag },
-          userId: req.user.id.toString(),
-          sessionId,
-          timestamp: Date.now()
-        };
-
-        WebSocketService.broadcastToSession(sessionId, syncMessage);
-        console.log(`🔄 Tag placement broadcasted for new tag ${tag.id} in session ${sessionId}`);
-        
-      } catch (wsError) {
-        console.warn('Failed to broadcast tag placement via WebSocket:', wsError);
-        // Don't fail the request if WebSocket broadcast fails
-      }
-      
-      res.json({
-        success: true,
-        tag,
-        message: 'Tag placed successfully'
-      });
-      
-    } catch (error) {
-      console.error('Place tag error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to place tag',
-        error: 'tag_place_failed'
-      });
-    }
-  });
-
-  // Get all tags for a session, optionally filtered by document
-  app.get('/api/editor/session/:sessionId/tags', verifyToken, cacheJobData(10), async (req: any, res) => {
-    try {
-      const { sessionId } = req.params;
-      const { documentId } = req.query;
-      
-      const { TagService } = await import('./services/editor/TagService');
-      
-      let tags;
-      if (documentId) {
-        // Get tags for specific document
-        tags = await TagService.getDocumentTags(sessionId, documentId);
-      } else {
-        // Get all tags for session
-        tags = await TagService.getSessionTags(sessionId);
-      }
-      
-      res.json({
-        tags,
-        count: tags.length,
-        documentId: documentId || null,
-        timestamp: Date.now() // Include timestamp to ensure fresh data
-      });
-      
-    } catch (error) {
-      console.error('Get tags error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to get tags',
-        error: 'tags_fetch_failed'
-      });
-    }
-  });
-
-  // Update a tag
-  app.put('/api/editor/session/:sessionId/tag/:tagId', verifyToken, async (req: any, res) => {
-    try {
-      const { sessionId, tagId } = req.params;
-      const updates = req.body;
-      
-      const { TagService } = await import('./services/editor/TagService');
-      
-      const tag = await TagService.updateTag(tagId, {
-        ...updates,
-        updatedBy: req.user.id
-      });
-      
-      // 🚀 REAL-TIME SYNC: Broadcast tag update to all session participants
-      try {
-        const { WebSocketService } = await import('./services/editor/WebSocketService');
-        
-        const syncMessage = {
-          type: 'tag_updated',
-          payload: {
-            tagId: tag.id,
-            updates: {
-              coordinates: tag.coordinates,
-              ...updates
-            }
-          },
-          userId: req.user.id.toString(),
-          sessionId,
-          timestamp: Date.now()
-        };
-
-        WebSocketService.broadcastToSession(sessionId, syncMessage);
-        console.log(`🔄 Tag update broadcasted for tag ${tagId} in session ${sessionId}`);
-        
-      } catch (wsError) {
-        console.warn('Failed to broadcast tag update via WebSocket:', wsError);
-        // Don't fail the request if WebSocket broadcast fails
-      }
-      
-      res.json({
-        success: true,
-        tag,
-        message: 'Tag updated successfully'
-      });
-      
-    } catch (error) {
-      console.error('Update tag error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to update tag',
-        error: 'tag_update_failed'
-      });
-    }
-  });
-
-  // Delete a tag
-  app.delete('/api/editor/session/:sessionId/tag/:tagId', verifyToken, async (req: any, res) => {
-    try {
-      const { sessionId, tagId } = req.params;
-      
-      // ✅ SERVER-SIDE AUTHORIZATION: Check if user can delete tags
-      const { SessionService } = await import('./services/editor/SessionService');
-      const session = await SessionService.getSession(sessionId);
-      
-      if (!session) {
-        return res.status(404).json({ message: 'Session not found' });
-      }
-      
-      // In signing sessions, only notaries and admins can delete tags
-      if (session.sessionType === 'notary' || session.sessionType === 'tagging') {
-        const userRole = req.user.role;
-        const isNotary = userRole === 'notary';
-        const isAdmin = userRole === 'admin';
-        
-        if (!isNotary && !isAdmin) {
-          console.log(`❌ Authorization failed: ${userRole} (${req.user.id}) cannot delete tags in signing session`);
-          return res.status(403).json({ 
-            message: 'Only notaries and admins can delete tags during signing sessions',
-            error: 'insufficient_permissions'
-          });
-        }
-        
-        console.log(`✅ Authorization passed: ${userRole} (${req.user.id}) can delete tags in signing session`);
-      }
-      
-      const { TagService } = await import('./services/editor/TagService');
-      
-      await TagService.deleteTag(tagId, req.user.id);
-      
-      // 🚀 REAL-TIME SYNC: Broadcast tag deletion to all session participants
-      try {
-        const { WebSocketService } = await import('./services/editor/WebSocketService');
-        
-        const syncMessage = {
-          type: 'tag_deleted',
-          payload: { tagId },
-          userId: req.user.id.toString(),
-          sessionId,
-          timestamp: Date.now()
-        };
-
-        WebSocketService.broadcastToSession(sessionId, syncMessage);
-        console.log(`🔄 Tag deletion broadcasted for tag ${tagId} in session ${sessionId}`);
-        
-      } catch (wsError) {
-        console.warn('Failed to broadcast tag deletion via WebSocket:', wsError);
-        // Don't fail the request if WebSocket broadcast fails
-      }
-      
-      res.json({
-        success: true,
-        message: 'Tag deleted successfully'
-      });
-      
-    } catch (error) {
-      console.error('Delete tag error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to delete tag',
-        error: 'tag_delete_failed'
-      });
-    }
-  });
-
-  // Remove the replace-all endpoint as tags should only be filled by user interaction
-
-  // Removed duplicate endpoint - keeping the more comprehensive one below
-
-  // Get default content for a tag (auto-fill functionality)
-  app.get('/api/editor/session/:sessionId/tag/:tagId/default-content', verifyToken, async (req: any, res) => {
-    try {
-      const { sessionId, tagId } = req.params;
-      
-      const { TagService } = await import('./services/editor/TagService');
-      
-      // Get tag details and generate default content
-      const tags = await TagService.getSessionTags(sessionId);
-      const tag = tags.find(t => t.id === tagId);
-      
-      if (!tag) {
-        return res.status(404).json({ message: 'Tag not found' });
-      }
-      
-      // Get user profile for content generation
-      const userId = tag.assignedUserId || req.user.id;
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, parseInt(userId)))
-        .limit(1);
-      
-      if (!user) {
-        return res.status(404).json({ message: 'User profile not found' });
-      }
-      
-      let defaultContent = '';
-      let contentType = 'text';
-      
-      // Generate content based on tag type
-      switch (tag.tagType) {
-        case 'A': // Name
-          defaultContent = user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim();
-          break;
-        case 'S': // Signature
-          defaultContent = user.signatureImage || user.signatureData || user.signatureTyped || '';
-          contentType = 'signature';
-          break;
-        case 'I': // Initials
-          defaultContent = user.initialsImage || user.initialData || user.initialsTyped || 
-                          (user.firstName && user.lastName ? `${user.firstName.charAt(0)}${user.lastName.charAt(0)}` : '');
-          contentType = user.initialsImage || user.initialData ? 'signature' : 'text';
-          break;
-        case 'D': // Date
-          defaultContent = new Date().toLocaleDateString();
-          contentType = 'date';
-          break;
-        case 'N': // Commission Number
-          defaultContent = user.commissionNumber || '';
-          break;
-        case 'X': // Commission Expiration
-          defaultContent = user.commissionExpiration || '';
-          contentType = 'date';
-          break;
-        case 'O': // Disclosure
-          defaultContent = user.disclosure || '';
-          break;
-        case 'T': // Text
-          defaultContent = '';
-          break;
-        default:
-          defaultContent = '';
-      }
-      
-      res.json({
-        success: true,
-        content: defaultContent,
-        contentType,
-        hasContent: !!defaultContent,
-        tagType: tag.tagType
-      });
-      
-    } catch (error) {
-      console.error('Get default content error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to get default content',
-        error: 'default_content_failed'
-      });
-    }
-  });
-
-  // Click to fill tag with profile data (auto-fill from user profile)
-  app.post('/api/editor/session/:sessionId/tag/:tagId/fill', verifyToken, async (req: any, res) => {
-    try {
-      const { sessionId, tagId } = req.params;
-      
-      const { TagService } = await import('./services/editor/TagService');
-      const { ProfileAutoFillService } = await import('./services/ProfileAutoFillService');
-      
-      // Get tag details first
-      const tags = await TagService.getSessionTags(sessionId);
-      const tag = tags.find(t => t.id === tagId);
-      
-      if (!tag) {
-        return res.status(404).json({ message: 'Tag not found' });
-      }
-      
-      // 🔒 CRITICAL: Use ProfileAutoFillService with signing session validation
-      const userId = parseInt(tag.assignedUserId) || req.user.id;
-      const autoFillResult = await ProfileAutoFillService.getTagAutoFillData(
-        tag.tagType, 
-        userId, 
-        sessionId
-      );
-      
-      if (!autoFillResult.success) {
-        return res.status(400).json({ 
-          message: autoFillResult.message || 'Auto-fill failed',
-          error: 'auto_fill_failed',
-          autoFillResult
-        });
-      }
-      
-      // Update tag with profile content and mark as completed
-      const updatedTag = await TagService.updateTag(tagId, {
-        content: autoFillResult.content,
-        contentType: autoFillResult.contentType,
-        contentData: autoFillResult.contentData ? JSON.stringify(autoFillResult.contentData) : null,
-        isCompleted: true,
-        completedBy: req.user.id,
-        completedAt: new Date(),
-        updatedBy: req.user.id
-      });
-
-      // 🚀 REAL-TIME SYNC: Broadcast auto-fill update to all session participants  
-      try {
-        const { WebSocketService } = await import('./services/editor/WebSocketService');
-        
-        const syncMessage = {
-          type: 'tag_content_updated',
-          payload: {
-            tagId: updatedTag.id,
-            tagType: tag.tagType,
-            content: autoFillResult.content,
-            contentType: autoFillResult.contentType,
-            contentData: autoFillResult.contentData,
-            isCompleted: true,
-            completedBy: req.user.id,
-            completedAt: new Date(),
-            updatedBy: req.user.id,
-            source: 'auto_fill'
-          },
-          userId: req.user.id.toString(),
-          sessionId,
-          timestamp: Date.now()
-        };
-
-        WebSocketService.broadcastToSession(sessionId, syncMessage);
-        console.log(`🔄 Auto-fill update broadcasted for tag ${tagId} in session ${sessionId}`);
-        
-      } catch (wsError) {
-        console.warn('Failed to broadcast auto-fill update via WebSocket:', wsError);
-        // Don't fail the request if WebSocket broadcast fails
-      }
-      
-      res.json({
-        success: true,
-        tag: updatedTag,
-        message: autoFillResult.message || 'Tag auto-filled successfully',
-        autoFillResult,
-        source: 'profile_auto_fill'
-      });
-      
-    } catch (error) {
-      console.error('Fill tag error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to fill tag with profile data',
-        error: 'tag_fill_failed'
-      });
-    }
-  });
-
-  // Configure seal/stamp with notarization details
-  app.post('/api/editor/session/:sessionId/tag/:tagId/seal-config', verifyToken, async (req: any, res) => {
-    try {
-      const { sessionId, tagId } = req.params;
-      const { applicableSigners, notarizationType, notaryNote } = req.body;
-      
-      console.log('🔖 Seal configuration request:', {
-        sessionId,
-        tagId,
-        applicableSigners,
-        notarizationType,
-        notaryNote,
-        notaryUserId: req.user.id
-      });
-      
-      const { TagService } = await import('./services/editor/TagService');
-      const { ProfileAutoFillService } = await import('./services/ProfileAutoFillService');
-      const { users } = await import('../shared/schema');
-      
-      // Validate that user is a notary
-      const [notary] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, req.user.id))
-        .limit(1);
-      
-      if (!notary || notary.role !== 'notary') {
-        return res.status(403).json({ message: 'Only notaries can configure seals' });
-      }
-      
-      // Get tag details first
-      const tags = await TagService.getSessionTags(sessionId);
-      const tag = tags.find(t => t.id === tagId);
-      
-      if (!tag) {
-        return res.status(404).json({ message: 'Tag not found' });
-      }
-      
-      if (tag.tagType !== 'E') {
-        return res.status(400).json({ message: 'This endpoint is only for seal tags' });
-      }
-      
-      // Get notary's stamp/seal image using ProfileAutoFillService
-      const autoFillResult = await ProfileAutoFillService.getTagAutoFillData(
-        'E', 
-        req.user.id, 
-        sessionId
-      );
-      
-      if (!autoFillResult.success) {
-        return res.status(400).json({ 
-          message: autoFillResult.message || 'No notary seal available',
-          error: 'no_seal_available'
-        });
-      }
-      
-      // Create seal configuration data
-      const sealConfigData = {
-        type: 'seal',
-        stampImageUrl: autoFillResult.content,
-        applicableSigners,
-        notarizationType,
-        notaryNote,
-        notaryId: req.user.id,
-        notaryName: `${notary.firstName} ${notary.lastName}`,
-        configuredAt: new Date().toISOString(),
-        pageNumber: tag.coordinates?.pageNumber || 1,
-        // Include original auto-fill data
-        ...autoFillResult.contentData
-      };
-      
-      // Update tag with seal configuration and mark as completed
-      const updatedTag = await TagService.updateTag(tagId, {
-        content: autoFillResult.content,
-        contentType: 'image',
-        contentData: JSON.stringify(sealConfigData),
-        isCompleted: true,
-        completedBy: req.user.id,
-        completedAt: new Date(),
-        updatedBy: req.user.id
-      });
-      
-      // TODO: Create notary log entries for each applicable signer
-      // TODO: Create audit trail entries
-      
-      console.log('✅ Seal configured successfully:', {
-        tagId,
-        applicableSigners,
-        notarizationType,
-        hasStampImage: !!autoFillResult.content
-      });
-      
-      res.json({
-        success: true,
-        sealData: {
-          content: autoFillResult.content,
-          contentData: sealConfigData
-        },
-        message: `Seal configured for ${applicableSigners.length} signer(s) with ${notarizationType} notarization`,
-        configuration: {
-          applicableSigners,
-          notarizationType,
-          notaryNote,
-          notaryId: req.user.id
-        }
-      });
-      
-    } catch (error) {
-      console.error('Failed to configure seal:', error);
-      res.status(500).json({ 
-        message: 'Failed to configure seal',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // Update tag content (for manual content entry)
-  app.put('/api/editor/session/:sessionId/tag/:tagId/content', verifyToken, async (req: any, res) => {
-    try {
-      const { sessionId, tagId } = req.params;
-      const { content, contentType, completedBy, completedAt } = req.body;
-      
-      if (content === undefined || content === null) {
-        return res.status(400).json({ message: 'Content is required' });
-      }
-      
-      const { TagService } = await import('./services/editor/TagService');
-      
-      // Get tag details to determine proper content structure
-      const tags = await TagService.getSessionTags(sessionId);
-      const tag = tags.find(t => t.id === tagId);
-      
-      if (!tag) {
-        return res.status(404).json({ message: 'Tag not found' });
-      }
-      
-      // Structure content data based on tag type and content
-      let structuredContentData: any;
-      let finalContent: string;
-      let finalContentType: string;
-      
-      if (typeof content === 'object' && content !== null) {
-        // Already structured content (from frontend)
-        structuredContentData = content;
-        finalContent = content.value || JSON.stringify(content);
-        finalContentType = content.type || contentType || 'text';
-      } else {
-        // Raw content - need to structure based on tag type
-        finalContent = content.toString();
-        finalContentType = contentType || 'text';
-        
-        // Detect content type and structure appropriately
-        const isImageContent = (
-          finalContent.startsWith('data:image/') ||
-          finalContent.startsWith('http') ||
-          finalContent.includes('vultrobjects.com') ||
-          finalContent.includes('.png') ||
-          finalContent.includes('.jpg') ||
-          finalContent.includes('.jpeg') ||
-          finalContent.includes('.webp')
-        );
-        
-        // Structure based on tag type
-        switch (tag.tagType) {
-          case 'S': // Signature
-            structuredContentData = {
-              type: 'signature',
-              value: finalContent,
-              contentType: isImageContent ? 'image' : 'text',
-              timestamp: new Date().toISOString()
-            };
-            finalContentType = isImageContent ? 'image' : 'text';
-            break;
-            
-          case 'I': // Initials
-            structuredContentData = {
-              type: 'initials',
-              value: finalContent,
-              contentType: isImageContent ? 'image' : 'text',
-              timestamp: new Date().toISOString()
-            };
-            finalContentType = isImageContent ? 'image' : 'text';
-            break;
-            
-          case 'E': // Notary seal/stamp
-            structuredContentData = {
-              type: 'seal',
-              value: finalContent,
-              contentType: isImageContent ? 'image' : 'text',
-              timestamp: new Date().toISOString()
-            };
-            finalContentType = isImageContent ? 'image' : 'text';
-            break;
-            
-          case 'D': // Date
-            structuredContentData = {
-              type: 'date',
-              value: finalContent,
-              timestamp: new Date().toISOString()
-            };
-            finalContentType = 'date';
-            break;
-            
-          default: // Text and other types
-            structuredContentData = {
-              type: 'text',
-              value: finalContent,
-              timestamp: new Date().toISOString()
-            };
-            finalContentType = 'text';
-            break;
-        }
-      }
-      
-      console.log('🏷️ Structuring tag content:', {
-        tagId,
-        tagType: tag.tagType,
-        originalContent: typeof content === 'string' ? content.substring(0, 100) : content,
-        structuredData: {
-          type: structuredContentData.type,
-          contentType: structuredContentData.contentType,
-          hasValue: !!structuredContentData.value,
-          valuePreview: typeof structuredContentData.value === 'string' ? structuredContentData.value.substring(0, 100) : 'non-string'
-        }
-      });
-      
-      // Update tag with properly structured content
-      const updatedTag = await TagService.updateTag(tagId, {
-        content: finalContent,
-        contentType: finalContentType,
-        contentData: JSON.stringify(structuredContentData),
-        isCompleted: true,
-        completedBy: completedBy || req.user.id,
-        completedAt: completedAt ? new Date(completedAt) : new Date(),
-        updatedBy: req.user.id
-      });
-
-      // 🚀 REAL-TIME SYNC: Broadcast tag content update to all session participants
-      try {
-        const { WebSocketService } = await import('./services/editor/WebSocketService');
-        
-        const syncMessage = {
-          type: 'tag_content_updated',
-          payload: {
-            tagId: updatedTag.id,
-            tagType: tag.tagType,
-            content: finalContent,
-            contentType: finalContentType,
-            contentData: structuredContentData,
-            isCompleted: true,
-            completedBy: completedBy || req.user.id,
-            completedAt: completedAt ? new Date(completedAt) : new Date(),
-            updatedBy: req.user.id
-          },
-          userId: req.user.id.toString(),
-          sessionId,
-          timestamp: Date.now()
-        };
-
-        WebSocketService.broadcastToSession(sessionId, syncMessage);
-        console.log(`🔄 Tag content update broadcasted for tag ${tagId} in session ${sessionId}`);
-        
-      } catch (wsError) {
-        console.warn('Failed to broadcast tag content update via WebSocket:', wsError);
-        // Don't fail the request if WebSocket broadcast fails
-      }
-      
-      res.json({
-        success: true,
-        tag: updatedTag,
-        message: 'Tag content updated successfully',
-        contentStructure: structuredContentData
-      });
-      
-    } catch (error) {
-      console.error('Update tag content error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to update tag content',
-        error: 'tag_content_update_failed'
-      });
-    }
-  });
-
-  // Validate user profile completeness for tag types
-  app.post('/api/editor/validate-profile', verifyToken, async (req: any, res) => {
-    try {
-      const { userId, tagTypes } = req.body;
-      
-      if (!userId || !tagTypes || !Array.isArray(tagTypes)) {
-        return res.status(400).json({ 
-          message: 'Missing required fields: userId and tagTypes array' 
-        });
-      }
-      
-      // Allow users to check their own profile or admins/notaries to check any profile
-      if (req.user.id !== parseInt(userId) && !['admin', 'notary'].includes(req.user.role)) {
-        return res.status(403).json({ 
-          message: 'Access denied: You can only validate your own profile' 
-        });
-      }
-      
-      const { TagService } = await import('./services/editor/TagService');
-      
-      const validation = await TagService.validateUserProfileForTags(parseInt(userId), tagTypes);
-      
-      res.json({
-        success: true,
-        validation,
-        recommendations: validation.missingFields.length > 0 ? {
-          message: 'Profile incomplete for optimal tag experience',
-          action: 'Please complete missing profile fields before session',
-          priority: validation.missingFields.some(f => ['A', 'S', 'I'].includes(f.tagType)) ? 'high' : 'medium'
-        } : {
-          message: 'Profile is complete for requested tag types',
-          action: 'Ready for tagging session'
-        }
-      });
-      
-    } catch (error) {
-      console.error('Profile validation error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to validate profile',
-        error: 'profile_validation_failed'
-      });
-    }
-  });
-
-  // Complete tagging session
-  app.post('/api/editor/session/:sessionId/complete', verifyToken, async (req: any, res) => {
-    try {
-      const { sessionId } = req.params;
-      const { force = false } = req.body; // Allow force completion even with incomplete tags
-      
-      const { SessionService } = await import('./services/editor/SessionService');
-      const { TagService } = await import('./services/editor/TagService');
-      
-      // Get session info
-      const session = await SessionService.getSession(sessionId);
-      if (!session) {
-        return res.status(404).json({ message: 'Session not found' });
-      }
-      
-      // Get all tags for validation
-      const tags = await TagService.getSessionTags(sessionId);
-      
-      if (session.status === 'completed') {
-        return res.status(200).json({ 
-          message: 'Session was already completed',
-          sessionId,
-          alreadyCompleted: true,
-          document: {
-            taggedDocumentReady: true,
-            tagsPlaced: tags.length,
-            message: 'Tagged document is ready for live signing session'
-          }
-        });
-      }
-      
-      // Check if there are any tags placed
-      if (tags.length === 0 && !force) {
-        return res.status(400).json({ 
-          message: 'Cannot complete session: No tags have been placed',
-          error: 'no_tags_placed',
-          canForce: true
-        });
-      }
-      
-      // Optional: Check for minimum required tags (can be customized based on business rules)
-      const participantCount = (await SessionService.getSessionParticipants(session.jobId)).length;
-      const minimumTags = Math.max(1, participantCount); // At least one tag per participant
-      
-      if (tags.length < minimumTags && !force) {
-        return res.status(400).json({
-          message: `Recommended minimum of ${minimumTags} tags not met (${tags.length} placed)`,
-          error: 'insufficient_tags',
-          canForce: true,
-          placed: tags.length,
-          recommended: minimumTags
-        });
-      }
-      
-      // For tagging sessions: Save tagged document configuration (NOT final PDF yet)
-      // For live signing sessions: Generate final PDF with real content applied
-      let documentInfo = null;
-      
-      if (session.sessionType === 'tagging') {
-        // Tagging completion: Just save the tag configuration
-        console.log(`📋 Tagging session completed: ${sessionId} with ${tags.length} tags placed`);
-        
-        // The "tagged document" is the combination of:
-        // 1. Original PDF document (unchanged)
-        // 2. Tag metadata in database (already saved via TagService)
-        // This will be used later in the live signing session
-        
-        documentInfo = {
-          taggedDocumentReady: true,
-          tagsPlaced: tags.length,
-          message: 'Tagged document configuration saved for live signing session',
-          canContinueEditing: true,
-          note: 'You can start tagging again to continue editing these tags'
-        };
-        
-      } else if (tags.length > 0 && tags.some(tag => tag.isCompleted)) {
-        // Live signing completion: Generate final PDF with real content
-        try {
-          console.log(`✍️ Generating final PDF for live signing session: ${sessionId}`);
-          console.log(`📊 Tags status: ${tags.filter(t => t.isCompleted).length}/${tags.length} completed`);
-          
-          // Check if all required tags are completed
-          const incompleteTags = tags.filter(tag => !tag.isCompleted && tag.isRequired !== false);
-          if (incompleteTags.length > 0 && !force) {
-            return res.status(400).json({
-              message: `Cannot complete session: ${incompleteTags.length} required tags are not completed`,
-              error: 'incomplete_required_tags',
-              canForce: true,
-              incompleteTags: incompleteTags.map(t => ({
-                id: t.id,
-                type: t.tagType,
-                assignedUser: t.assignedUserId
-              }))
-            });
-          }
-          
-          const { PDFProcessorService } = await import('./services/pdf-processor.service');
-          const pdfProcessor = PDFProcessorService.getInstance();
-          
-          // Process the document and apply real content (not placeholder tags)
-          const processedDoc = await pdfProcessor.processCompletedDocument(sessionId);
-          
-          // Save to uploads directory
-          const fs = await import('fs/promises');
-          const path = await import('path');
-          const uploadsDir = path.resolve('uploads/signed');
-          
-          // Ensure directory exists
-          try {
-            await fs.mkdir(uploadsDir, { recursive: true });
-          } catch (mkdirError) {
-            console.log('Uploads directory already exists or created');
-          }
-          
-          const signedFileName = `job_${session.jobId}_signed_${Date.now()}.pdf`;
-          const signedFilePath = path.join(uploadsDir, signedFileName);
-          
-          // Write the signed PDF
-          await fs.writeFile(signedFilePath, processedDoc.buffer);
-          
-          // Create document version record
-          const [documentVersion] = await db.insert(documentVersions).values({
-            originalDocumentId: session.jobId,
-            sessionId: parseInt(sessionId),
-            versionNumber: 1,
-            fileName: signedFileName,
-            filePath: signedFilePath,
-            fileSize: processedDoc.fileSize,
-            status: 'completed',
-            digitalCertificateApplied: false
-          }).returning();
-          
-          // Update job status to indicate signed documents are available
-          await db
-            .update(jobs)
-            .set({
-              status: 'completed',
-              completedAt: new Date(),
-              signedDocumentId: documentVersion.id
-            })
-            .where(eq(jobs.id, session.jobId));
-          
-          documentInfo = {
-            documentVersionId: documentVersion.id,
-            fileName: signedFileName,
-            fileSize: processedDoc.fileSize,
-            downloadUrl: `/api/documents/signed/${encodeURIComponent(signedFileName)}`,
-            message: 'Final signed PDF generated successfully'
-          };
-          
-          console.log(`✅ Generated signed PDF: ${signedFileName} (${processedDoc.fileSize} bytes)`);
-          
-        } catch (pdfError) {
-          console.error('❌ Failed to generate final signed PDF:', pdfError);
-          // Don't fail the completion, just log the error
-          console.warn('Session marked as completed but PDF generation failed');
-        }
-      }
-      
-      // Mark session as completed
-      await SessionService.updateSessionStatus(sessionId, 'completed', {
-        completedAt: new Date()
-      });
-      
-      console.log(`✅ Tagging session completed: ${sessionId} by user ${req.user.id}`);
-      
-      res.json({
-        success: true,
-        message: 'Tagging session completed successfully',
-        sessionId,
-        completedAt: new Date(),
-        document: documentInfo,
-        stats: {
-          totalTags: tags.length,
-          completedTags: tags.filter(tag => tag.isCompleted).length,
-          participantCount
-        }
-      });
-      
-    } catch (error) {
-      console.error('Complete tagging session error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to complete session',
-        error: 'session_completion_failed'
-      });
-    }
-  });
-
-  // Legacy signed document serving - REMOVED
-  // All signed documents are now stored in Vultr cloud storage
-  // Use document-specific download routes instead
-
-  // Handle preflight OPTIONS requests for document serving
-  app.options('/api/documents/:filePath(*)', (req: any, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.status(200).end();
-  });
-
-    // Serve documents with Vultr cloud storage and local fallback
-  app.get('/api/documents/:filePath(*)', async (req: any, res) => {
-    try {
-      const filePath = decodeURIComponent(req.params.filePath);
-      console.log('📄 Document request for:', filePath);
-      
-      // Set response timeout to prevent hanging
-      req.setTimeout(30000); // 30 second timeout
-      res.setTimeout(30000);
-      
-      const { cloudStorage } = await import('./lib/cloud-storage-service');
-      
-      // Check if cloud storage is properly configured
-      const bucketStats = await cloudStorage.getBucketStats();
-      console.log('☁️ Cloud storage status:', bucketStats);
-      
-      if (bucketStats.isAccessible) {
-        // Try Vultr cloud storage first
-        try {
-          console.log('☁️ Attempting Vultr cloud storage for:', filePath);
-          
-          // Check if file exists in Vultr with timeout
-          const fileExists = await Promise.race([
-            cloudStorage.fileExists(filePath),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout checking file existence')), 10000))
-          ]);
-          
-          if (!fileExists) {
-            console.log('📄 Document not found in Vultr, trying local fallback:', filePath);
-            throw new Error('File not found in cloud storage');
-          }
-          
-          // Generate signed URL with timeout
-          const signedUrl = await Promise.race([
-            cloudStorage.getSignedUrl(filePath, 3600),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout generating signed URL')), 10000))
-          ]);
-          
-          console.log('🔗 Generated Vultr signed URL for:', filePath);
-          
-          // Check if this is a development mock URL
-          if (signedUrl.includes('/dev-storage/')) {
-            console.log('🔄 Received dev storage URL, falling back to local');
-            throw new Error('Development mode - falling back to local storage');
-          }
-          
-          // Set proper headers for PDF viewing including CORS
-          res.setHeader('Content-Type', 'application/pdf');
-          res.setHeader('Cache-Control', 'private, max-age=300');
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-          res.setHeader('X-Served-From', 'vultr-cloud');
-          
-          // Implement fetch with timeout and retry logic
-          const fetchWithTimeout = async (url: string, timeoutMs: number = 20000, retries: number = 1): Promise<Response> => {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-            
-            try {
-              const response = await fetch(url, {
-                signal: controller.signal,
-                headers: {
-                  'User-Agent': 'USA-Notary-Service/1.0'
-                }
-              });
-              clearTimeout(timeoutId);
-              return response;
-            } catch (error: any) {
-              clearTimeout(timeoutId);
-              
-              if (error.name === 'AbortError' && retries > 0) {
-                console.warn(`⏰ Vultr fetch timeout, retrying... (${retries} attempts left)`);
-                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s before retry
-                return fetchWithTimeout(url, timeoutMs, retries - 1);
-              }
-              throw error;
-            }
-          };
-          
-          // Fetch PDF content with shorter timeout for faster fallback
-          const pdfResponse = await fetchWithTimeout(signedUrl, 15000, 1); // 15 second timeout, 1 retry
-          
-          if (!pdfResponse.ok) {
-            throw new Error(`Failed to fetch PDF from Vultr: ${pdfResponse.status} ${pdfResponse.statusText}`);
-          }
-          
-          const pdfBuffer = await pdfResponse.arrayBuffer();
-          console.log('✅ Successfully served document from Vultr:', filePath);
-          res.send(Buffer.from(pdfBuffer));
-          return;
-          
-        } catch (vultrError: any) {
-          console.warn('⚠️ Vultr failed, attempting local fallback:', vultrError.message);
-          // Don't return error yet, try local fallback
-        }
-      } else {
-        console.log('⚠️ Vultr not accessible, using local fallback for:', filePath);
-      }
-      
-      // LOCAL STORAGE FALLBACK - Check if file exists locally
-      const path = await import('path');
-      const fs = await import('fs/promises');
-      
-      // Try different local paths where the file might exist
-      const possibleLocalPaths = [
-        path.resolve('uploads', filePath),
-        path.resolve('uploads', 'documents', filePath),
-        path.resolve(filePath.startsWith('/') ? filePath.substring(1) : filePath),
-        path.resolve(filePath)
-      ];
-      
-      let localFilePath = null;
-      let fileStats = null;
-      
-      for (const possiblePath of possibleLocalPaths) {
-        try {
-          fileStats = await fs.stat(possiblePath);
-          if (fileStats.isFile()) {
-            localFilePath = possiblePath;
-            console.log('📁 Found local file at:', localFilePath);
-            break;
-          }
-        } catch (e) {
-          // File doesn't exist at this path, continue checking
-        }
-      }
-      
-      if (localFilePath && fileStats) {
-        try {
-          // Serve local file
-          console.log('📁 Serving local file:', localFilePath);
-          
-          // Set appropriate headers
-          res.setHeader('Content-Type', 'application/pdf');
-          res.setHeader('Cache-Control', 'private, max-age=300');
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-          res.setHeader('X-Served-From', 'local-storage');
-          res.setHeader('Content-Length', fileStats.size.toString());
-          
-          const fileBuffer = await fs.readFile(localFilePath);
-          res.send(fileBuffer);
-          return;
-          
-        } catch (localError: any) {
-          console.error('📁 Local file serving failed:', localError);
-        }
-      }
-      
-      // If we get here, both Vultr and local storage failed
-      console.error('❌ Document not found in Vultr or local storage:', filePath);
-      res.setHeader('Content-Type', 'application/json');
-      return res.status(404).json({ 
-        error: 'Document not found',
-        message: 'The requested PDF file does not exist on the server.',
-        filePath: filePath,
-        timestamp: new Date().toISOString(),
-        searchedPaths: possibleLocalPaths,
-        vultrStatus: bucketStats.isAccessible ? 'accessible' : 'not accessible'
-      });
-      
-    } catch (error) {
-      console.error('📄 Document serving error:', error);
-      res.setHeader('Content-Type', 'application/json');
-      res.status(500).json({ 
-        error: 'Internal server error',
-        message: 'Failed to serve document due to server error.',
-        timestamp: new Date().toISOString()
-      });
-    }
-  });
-
-  // User Notarization & Audit Logs Routes
-  
-  // Get user's notarization logs
-  app.get('/api/user/notarization-logs', verifyToken, async (req: any, res) => {
-    try {
-      const userId = req.user.id;
-      
-      // For now, return empty array until notary log entries table has data
-      const logs: any[] = [];
-      
-      // TODO: Uncomment when notary_log_entries table has data
-      // const logs = await db
-      //   .select({
-      //     id: notaryLogEntries.id,
-      //     sessionId: notaryLogEntries.sessionId,
-      //     notaryId: notaryLogEntries.notaryId,
-      //     signerId: notaryLogEntries.signerId,
-      //     documentId: notaryLogEntries.documentId,
-      //     notarizationType: notaryLogEntries.notarizationType,
-      //     pageNumber: notaryLogEntries.pageNumber,
-      //     timestamp: notaryLogEntries.timestamp,
-      //     createdAt: notaryLogEntries.createdAt,
-      //   })
-      //   .from(notaryLogEntries)
-      //   .where(
-      //     or(
-      //       eq(notaryLogEntries.notaryId, userId), // User was the notary
-      //       eq(notaryLogEntries.signerId, userId)  // User was the signer
-      //     )
-      //   )
-      //   .orderBy(desc(notaryLogEntries.timestamp))
-      //   .limit(100);
-
-      res.json(logs);
-    } catch (error) {
-      console.error('Error fetching user notarization logs:', error);
-      res.status(500).json({ error: 'Failed to fetch notarization logs' });
-    }
-  });
-
-  // Get user's audit trail
-  app.get('/api/user/audit-trail', verifyToken, async (req: any, res) => {
-    try {
-      const userId = req.user.id;
-      
-      // For now, return empty array until audit trail table has data
-      const auditEntries: any[] = [];
-      
-      // TODO: Uncomment when audit_trail table has data
-      // const auditEntries = await db
-      //   .select()
-      //   .from(auditTrail)
-      //   .where(eq(auditTrail.userId, userId))
-      //   .orderBy(desc(auditTrail.timestamp))
-      //   .limit(200);
-
-      res.json(auditEntries);
-    } catch (error) {
-      console.error('Error fetching user audit trail:', error);
-      res.status(500).json({ error: 'Failed to fetch audit trail' });
-    }
-  });
-
-  // Get user's system activity logs
-  app.get('/api/user/activity-logs', verifyToken, async (req: any, res) => {
-    try {
-      const userId = req.user.id;
-      
-      const activityLogs = await db
-        .select()
-        .from(systemActivityLogs)
-        .where(eq(systemActivityLogs.userId, userId))
-        .orderBy(desc(systemActivityLogs.createdAt))
-        .limit(100);
-
-      res.json(activityLogs);
-    } catch (error) {
-      console.error('Error fetching user activity logs:', error);
-      res.status(500).json({ error: 'Failed to fetch activity logs' });
-    }
-  });
-
-  // Get user's notarization sessions
-  app.get('/api/user/notarization-sessions', verifyToken, async (req: any, res) => {
-    try {
-      const userId = req.user.id;
-      
-      // For now, return empty array until editor sessions table has data
-      const sessions: any[] = [];
-      
-      // TODO: Uncomment when editor_sessions table has data
-      // const sessions = await db
-      //   .select()
-      //   .from(editorSessions)
-      //   .where(eq(editorSessions.notaryId, userId))
-      //   .orderBy(desc(editorSessions.startedAt))
-      //   .limit(50);
-
       res.json(sessions);
     } catch (error) {
-      console.error('Error fetching user notarization sessions:', error);
-      res.status(500).json({ error: 'Failed to fetch notarization sessions' });
+      console.error('Get active sessions error:', error);
+      res.status(500).json({ message: 'Internal server error' });
     }
   });
 
-  // Download user logs as PDF
-  app.get('/api/user/download-logs', verifyToken, async (req: any, res) => {
-    try {
-      const userId = req.user.id;
-      const type = req.query.type as string;
-      
-      // For now, return a simple text response
-      // In production, you'd generate a proper PDF using a library like PDFKit
-      const timestamp = new Date().toISOString();
-      const username = req.user.username || 'user';
-      
-      let content = `Sharp Note - ${type.toUpperCase()} Logs Report\n`;
-      content += `Generated: ${timestamp}\n`;
-      content += `User: ${username} (ID: ${userId})\n`;
-      content += `\n${'='.repeat(50)}\n\n`;
-      
-      switch (type) {
-        case 'notary':
-          content += 'NOTARIZATION LOGS\n';
-          content += 'This report contains all notarization activities for this user.\n';
-          break;
-        case 'audit':
-          content += 'AUDIT TRAIL\n';
-          content += 'This report contains all audit trail entries for this user.\n';
-          break;
-        case 'activity':
-          content += 'SYSTEM ACTIVITY LOGS\n';
-          content += 'This report contains all system activities for this user.\n';
-          break;
-        case 'sessions':
-          content += 'NOTARIZATION SESSIONS\n';
-          content += 'This report contains all notarization sessions for this user.\n';
-          break;
-        default:
-          content += 'COMPREHENSIVE LOGS\n';
-          content += 'This report contains all logs for this user.\n';
-      }
-      
-      content += '\nNote: This is a simplified export. Full PDF generation with detailed logs will be implemented.\n';
-      
-      res.setHeader('Content-Type', 'text/plain');
-      res.setHeader('Content-Disposition', `attachment; filename="${username}_${type}_logs_${timestamp.split('T')[0]}.txt"`);
-      res.send(content);
-      
-    } catch (error) {
-      console.error('Error generating log export:', error);
-      res.status(500).json({ error: 'Failed to generate log export' });
-    }
-  });
-
-  // Whereby diagnostic endpoint
-  app.get('/api/whereby/diagnostics', verifyToken, async (req: any, res) => {
-    try {
-      const { wherebyService } = await import('./lib/whereby-service');
-      
-      // Test Whereby configuration
-      const configValidation = wherebyService.validateConfiguration();
-      const configStatus = wherebyService.getConfigStatus();
-      
-      const diagnostics = {
-        server: {
-          nodeVersion: process.version,
-          platform: process.platform,
-          environment: process.env.NODE_ENV,
-          timestamp: new Date().toISOString()
-        },
-        whereby: {
-          apiKeyConfigured: configStatus.hasApiKey ? 'configured' : 'missing',
-          apiUrl: configStatus.apiUrl,
-          serviceConfigured: configStatus.configured,
-          configurationValid: configValidation.valid,
-          configurationErrors: configValidation.errors,
-          configurationWarnings: configValidation.warnings,
-          serviceStatus: configValidation.valid ? 'ready' : (process.env.NODE_ENV === 'production' ? 'misconfigured' : 'fallback-mode')
-        },
-        authentication: {
-          jwtSecret: process.env.JWT_SECRET ? 'configured' : 'missing',
-          userId: req.user.id,
-          userRole: req.user.role
-        },
-        features: {
-          videoConferencing: true,
-          cloudRecording: configStatus.configured,
-          hostControls: configStatus.configured,
-          waitingRoom: false,
-          complianceMode: true,
-          fallbackMode: !configStatus.configured
-        }
-      };
-
-      console.log('Whereby diagnostics requested by user:', req.user.id);
-      console.log('Whereby service status:', configStatus);
-      
-      const recommendations = [];
-      if (configValidation.errors.length > 0) {
-        recommendations.push(...configValidation.errors.map(error => `❌ ${error}`));
-      }
-      if (configValidation.warnings.length > 0) {
-        recommendations.push(...configValidation.warnings.map(warning => `⚠️ ${warning}`));
-      }
-      if (!configStatus.configured) {
-        recommendations.push('📝 Set WHEREBY_API_KEY environment variable for full video functionality');
-        if (process.env.NODE_ENV === 'development') {
-          recommendations.push('💡 Development mode: Video will use fallback implementation');
-        }
-      }
-      
-      res.json({
-        success: true,
-        diagnostics,
-        recommendations
-      });
-    } catch (error) {
-      console.error('Whereby diagnostics error:', error);
-      res.status(500).json({ 
-        message: 'Failed to get Whereby diagnostics',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // Vultr cloud storage diagnostic endpoint
-  app.get('/api/diagnostics/storage', verifyToken, async (req: any, res) => {
-    try {
-      const { cloudStorage } = await import('./lib/cloud-storage-service');
-      
-      // Check required environment variables
-      const requiredVars = [
-        'VULTR_ACCESS_KEY',
-        'VULTR_SECRET_KEY', 
-        'VULTR_REGION',
-        'VULTR_BUCKET_NAME',
-        'VULTR_ENDPOINT'
-      ];
-      
-      const envCheck = requiredVars.reduce((acc, varName) => {
-        acc[varName] = process.env[varName] ? 'configured' : 'missing';
-        return acc;
-      }, {} as Record<string, string>);
-      
-      // Get bucket stats
-      const bucketStats = await cloudStorage.getBucketStats();
-      
-      // Test a simple operation
-      let testResult = { success: false, error: 'Not tested' };
-      try {
-        const testExists = await cloudStorage.fileExists('test-file-that-should-not-exist');
-        testResult = { success: true, error: null };
-      } catch (error) {
-        testResult = { 
-          success: false, 
-          error: error instanceof Error ? error.message : 'Unknown error' 
-        };
-      }
-      
-      const diagnostics = {
-        environment: {
-          variables: envCheck,
-          allConfigured: !Object.values(envCheck).includes('missing')
-        },
-        bucket: bucketStats,
-        connectivity: testResult,
-        recommendations: []
-      };
-      
-      // Add recommendations based on findings
-      if (!diagnostics.environment.allConfigured) {
-        diagnostics.recommendations.push('Configure missing Vultr environment variables for cloud storage');
-      }
-      if (!diagnostics.bucket.isAccessible) {
-        diagnostics.recommendations.push('Check Vultr credentials and bucket permissions');
-      }
-      if (!diagnostics.connectivity.success) {
-        diagnostics.recommendations.push('Verify network connectivity to Vultr endpoints');
-      }
-      
-      res.json({
-        success: true,
-        diagnostics,
-        status: diagnostics.environment.allConfigured && diagnostics.bucket.isAccessible ? 'healthy' : 'degraded'
-      });
-      
-    } catch (error) {
-      console.error('Storage diagnostics error:', error);
-      res.status(500).json({ 
-        success: false,
-        message: 'Failed to run storage diagnostics',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // ==========================================
-  // SELF-SIGNED CERTIFICATE ROUTES
-  // ==========================================
-
-  // Get user's certificate information
-  app.get('/api/user/certificate', verifyToken, async (req: any, res) => {
-    try {
-      const userId = req.user.id;
-      
-      const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
-      const certificate = await selfSignedCertificateService.getUserCertificate(userId);
-      
-      if (!certificate) {
-        return res.json({
-          hasCertificate: false,
-          message: 'No certificate found. Complete ID verification to generate a certificate.'
-        });
-      }
-
-      const isExpired = new Date() > new Date(certificate.expires_at);
-      
-      res.json({
-        hasCertificate: true,
-        certificate: {
-          id: certificate.id,
-          certificateId: certificate.certificate_id,
-          commonName: certificate.common_name,
-          userRole: certificate.user_role,
-          issuedAt: certificate.issued_at,
-          expiresAt: certificate.expires_at,
-          status: certificate.status,
-          isExpired,
-          downloadUrl: `/api/user/certificate/download`
-        }
-      });
-    } catch (error) {
-      console.error('Get user certificate error:', error);
-      res.status(500).json({ error: 'Failed to get certificate information' });
-    }
-  });
-
-  // Download user's certificate
-  app.get('/api/user/certificate/download', verifyToken, async (req: any, res) => {
-    try {
-      const userId = req.user.id;
-      const fileType = (req.query.type as string) || 'cert';
-      
-      if (!['cert', 'key', 'pubkey'].includes(fileType)) {
-        return res.status(400).json({ error: 'Invalid file type. Use: cert, key, or pubkey' });
-      }
-
-      const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
-      const result = await selfSignedCertificateService.getCertificateFile(userId, fileType as any);
-      
-      if (!result.success) {
-        return res.status(404).json({ error: result.error });
-      }
-
-      // Set appropriate headers for file download
-      const fileExtension = fileType === 'cert' ? 'pem' : fileType === 'key' ? 'key' : 'pub';
-      const fileName = `certificate-${userId}-${fileType}.${fileExtension}`;
-      
-      res.setHeader('Content-Type', 'application/x-pem-file');
-      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-      res.setHeader('X-Certificate-Type', 'self-signed');
-      
-      res.send(result.content);
-    } catch (error) {
-      console.error('Download certificate error:', error);
-      res.status(500).json({ error: 'Failed to download certificate' });
-    }
-  });
-
-  // Generate certificate manually (for users who didn't get one automatically)
-  app.post('/api/user/certificate/generate', verifyToken, async (req: any, res) => {
-    try {
-      const userId = req.user.id;
-      
-      // Check if user is eligible
-      const [user] = await db
-        .select({ role: users.role, isVerified: users.isVerified, isVerificationBypassed: users.isVerificationBypassed })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-
-      if (!user) {
-        return res.status(404).json({ error: 'User not found' });
-      }
-
-      if (!['signer', 'witness'].includes(user.role)) {
-        return res.status(403).json({ 
-          error: 'Certificate generation is only available for signers and witnesses' 
-        });
-      }
-
-      const isVerified = user.isVerified || user.isVerificationBypassed;
-      if (!isVerified) {
-        return res.status(403).json({ 
-          error: 'Please complete ID verification before generating a certificate' 
-        });
-      }
-
-      const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
-      const result = await selfSignedCertificateService.generateCertificateForUser(userId);
-      
-      if (result.success) {
-        res.json({
-          success: true,
-          message: 'Self-signed certificate generated successfully',
-          certificate: {
-            certificateId: result.certificateId,
-            expirationDate: result.expirationDate,
-            downloadUrl: '/api/user/certificate/download'
-          }
-        });
-      } else {
-        res.status(400).json({
-          success: false,
-          error: result.error
-        });
-      }
-    } catch (error) {
-      console.error('Generate certificate error:', error);
-      res.status(500).json({ error: 'Failed to generate certificate' });
-    }
-  });
-
-  // Admin: Get all certificates
-  app.get('/api/admin/certificates', verifyToken, async (req: any, res) => {
+  app.post('/api/admin/invalidate-user-sessions/:userId', verifyToken, async (req: any, res) => {
     try {
       if (!hasAdminPrivileges(req.user)) {
-        return res.status(403).json({ error: 'Admin access required' });
-      }
-
-      const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
-      const certificates = await selfSignedCertificateService.getAllCertificates();
-      
-      res.json({
-        certificates,
-        count: certificates.length,
-        stats: {
-          active: certificates.filter(c => c.status === 'active' && !c.isExpired).length,
-          expired: certificates.filter(c => c.isExpired).length,
-          revoked: certificates.filter(c => c.status === 'revoked').length
-        }
-      });
-    } catch (error) {
-      console.error('Get all certificates error:', error);
-      res.status(500).json({ error: 'Failed to get certificates' });
-    }
-  });
-
-  // Admin: Get certificate for specific user
-  app.get('/api/admin/users/:userId/certificate', verifyToken, async (req: any, res) => {
-    try {
-      if (!hasAdminPrivileges(req.user)) {
-        return res.status(403).json({ error: 'Admin access required' });
-      }
-
-      const userId = parseInt(req.params.userId);
-      if (isNaN(userId)) {
-        return res.status(400).json({ error: 'Invalid user ID' });
-      }
-
-      const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
-      const certificate = await selfSignedCertificateService.getUserCertificate(userId);
-      
-      if (!certificate) {
-        return res.json({
-          hasCertificate: false,
-          message: 'User has no certificate'
-        });
-      }
-
-      const isExpired = new Date() > new Date(certificate.expires_at);
-      
-      res.json({
-        hasCertificate: true,
-        certificate: {
-          id: certificate.id,
-          certificateId: certificate.certificate_id,
-          commonName: certificate.common_name,
-          userRole: certificate.user_role,
-          userEmail: certificate.user_email,
-          issuedAt: certificate.issued_at,
-          expiresAt: certificate.expires_at,
-          status: certificate.status,
-          isExpired,
-          downloadUrl: `/api/admin/users/${userId}/certificate/download`
-        }
-      });
-    } catch (error) {
-      console.error('Get user certificate error:', error);
-      res.status(500).json({ error: 'Failed to get user certificate' });
-    }
-  });
-
-  // Admin: Download certificate for specific user
-  app.get('/api/admin/users/:userId/certificate/download', verifyToken, async (req: any, res) => {
-    try {
-      if (!hasAdminPrivileges(req.user)) {
-        return res.status(403).json({ error: 'Admin access required' });
-      }
-
-      const userId = parseInt(req.params.userId);
-      const fileType = (req.query.type as string) || 'cert';
-      
-      if (isNaN(userId)) {
-        return res.status(400).json({ error: 'Invalid user ID' });
-      }
-
-      if (!['cert', 'key', 'pubkey'].includes(fileType)) {
-        return res.status(400).json({ error: 'Invalid file type. Use: cert, key, or pubkey' });
-      }
-
-      console.log(`🔍 Admin ${req.user.id} requesting certificate for user ${userId}, type: ${fileType}`);
-
-      const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
-      
-      // First check if user exists and has the right role
-      const [user] = await db
-        .select({ id: users.id, role: users.role, fullName: users.fullName })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-        
-      if (!user) {
-        console.log(`❌ User ${userId} not found`);
-        return res.status(404).json({ error: 'User not found' });
-      }
-      
-      if (!['signer', 'witness'].includes(user.role)) {
-        console.log(`❌ User ${userId} has role '${user.role}', not signer/witness`);
-        return res.status(400).json({ 
-          error: `User role '${user.role}' does not have self-signed certificates. Only signers and witnesses have auto-generated certificates.` 
-        });
-      }
-      
-      console.log(`✅ User ${userId} (${user.role}) found, checking certificate...`);
-      
-      const result = await selfSignedCertificateService.getCertificateFile(userId, fileType as any);
-      
-      if (!result.success) {
-        console.log(`❌ Certificate not found for user ${userId}: ${result.error}`);
-        return res.status(404).json({ error: result.error });
-      }
-
-      console.log(`✅ Certificate found for user ${userId}, sending download...`);
-
-      // Set appropriate headers for file download
-      const fileExtension = fileType === 'cert' ? 'pem' : fileType === 'key' ? 'key' : 'pub';
-      const fileName = `${user.fullName || 'user'}_${user.role}_certificate.${fileExtension}`;
-      
-      res.setHeader('Content-Type', 'application/x-pem-file');
-      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-      res.setHeader('X-Certificate-Type', 'self-signed');
-      res.setHeader('X-Downloaded-By', 'admin');
-      
-      res.send(result.content);
-    } catch (error) {
-      console.error('Admin download certificate error:', error);
-      res.status(500).json({ error: 'Failed to download certificate' });
-    }
-  });
-
-  // Admin: Revoke certificate
-  app.post('/api/admin/users/:userId/certificate/revoke', verifyToken, async (req: any, res) => {
-    try {
-      if (!hasAdminPrivileges(req.user)) {
-        return res.status(403).json({ error: 'Admin access required' });
+        return res.status(403).json({ message: 'Admin access required' });
       }
 
       const userId = parseInt(req.params.userId);
       const { reason } = req.body;
-      
+
       if (isNaN(userId)) {
-        return res.status(400).json({ error: 'Invalid user ID' });
+        return res.status(400).json({ message: 'Invalid user ID' });
       }
 
-      const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
-      const result = await selfSignedCertificateService.revokeCertificate(userId, reason);
+      const { SessionManagementService } = await import('./services/session-management-service');
+      await SessionManagementService.invalidateUserSessions(userId, reason || 'admin_action');
       
-      if (result.success) {
-        res.json({
-          success: true,
-          message: 'Certificate revoked successfully'
-        });
-      } else {
-        res.status(400).json({
-          success: false,
-          error: result.error
-        });
-      }
+      res.json({ 
+        message: 'User sessions invalidated successfully',
+        userId 
+      });
     } catch (error) {
-      console.error('Revoke certificate error:', error);
-      res.status(500).json({ error: 'Failed to revoke certificate' });
+      console.error('Invalidate user sessions error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/admin/invalidate-all-sessions', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const { reason } = req.body;
+
+      const { SessionManagementService } = await import('./services/session-management-service');
+      await SessionManagementService.invalidateAllSessions(reason || 'admin_action');
+      
+      res.json({ 
+        message: 'All sessions invalidated successfully' 
+      });
+    } catch (error) {
+      console.error('Invalidate all sessions error:', error);
+      res.status(500).json({ message: 'Internal server error' });
     }
   });
 

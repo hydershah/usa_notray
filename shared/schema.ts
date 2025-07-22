@@ -150,6 +150,7 @@ export const users = pgTable("users", {
   // Notification and status fields
   isNotificationsEnabled: boolean("is_notifications_enabled").default(true),
   lastLoginAt: timestamp("last_login_at"),
+  lastLogoutAt: timestamp("last_logout_at"),
   
   // MFA and Security
   mfaEnabled: boolean("mfa_enabled").default(false),
