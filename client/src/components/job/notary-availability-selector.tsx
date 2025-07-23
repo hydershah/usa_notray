@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -53,6 +53,8 @@ export function NotaryAvailabilitySelector({
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [bookingStatus, setBookingStatus] = useState<'idle' | 'confirming' | 'confirmed' | 'error'>('idle');
+  // Ref for time panel auto-scroll
+  const timePanelRef = useRef<HTMLDivElement>(null);
 
   // Load notary's available slots
   const loadNotaryAvailability = async () => {
@@ -126,6 +128,10 @@ export function NotaryAvailabilitySelector({
   // Handle date selection
   const handleDateSelect = (date: Date | undefined) => {
     setSelectedDateInternal(date);
+    // Scroll time panel into view when a date is picked
+    if (date) {
+      timePanelRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
     if (date) {
       const dateString = date.toISOString().split('T')[0];
       const timeSlotsForDate = getTimeSlotsForDate(dateString);
@@ -236,155 +242,160 @@ export function NotaryAvailabilitySelector({
         </Alert>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CalendarIcon className="h-5 w-5" />
-            Available Dates
-            {availableDates.size > 0 && (
-              <Badge variant="secondary" className="ml-2">
-                {availableDates.size} days available
-              </Badge>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="flex items-center justify-center p-8">
-              <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-              <span className="ml-2 text-gray-600">Loading availability...</span>
-            </div>
-          ) : loadingError ? (
-            <div className="text-center p-8">
-              <XCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Unable to Load Availability</h3>
-              <p className="text-gray-600 mb-4">Please try refreshing or contact support if the problem persists.</p>
-              <Button onClick={refreshAvailability} variant="outline">
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Try Again
-              </Button>
-            </div>
-          ) : availableDates.size > 0 ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-gray-600">
-                  Green dates show available appointment times
-                </p>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={refreshAvailability}
-                  disabled={isLoading}
-                >
-                  <RefreshCw className={cn("h-4 w-4 mr-1", isLoading && "animate-spin")} />
-                  Refresh
-                </Button>
-              </div>
-              <Calendar
-                mode="single"
-                selected={selectedDateInternal}
-                onSelect={handleDateSelect}
-                disabled={disabled ? () => true : disableDate}
-                className="rounded-md border"
-                modifiers={{
-                  available: (date) => isDateAvailable(date)
-                }}
-                modifiersStyles={{
-                  available: {
-                    backgroundColor: '#dcfce7',
-                    color: '#166534'
-                  }
-                }}
-              />
-            </div>
-          ) : (
-            <div className="text-center p-8">
-              <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No Availability</h3>
-              <p className="text-gray-600 mb-4">This notary has no available time slots in the next 60 days.</p>
-              <Button onClick={refreshAvailability} variant="outline">
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Check Again
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {selectedDateInternal && timeSlots.length > 0 && (
-        <Card>
+      {/* Side-by-side layout: calendar and time panel */}
+      <div className="flex flex-col md:flex-row gap-6 items-stretch">
+        {/* Calendar Panel */}
+        <Card className="flex-1 md:w-1/3 h-full">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5" />
-              Available Times - {selectedDateInternal.toLocaleDateString('en-US', { 
-                weekday: 'long',
-                month: 'long', 
-                day: 'numeric',
-                year: 'numeric'
-              })}
-              <Badge variant="outline" className="ml-2">
-                {timeSlots.length} slots available
-              </Badge>
+              <CalendarIcon className="h-5 w-5" />
+              Available Dates
+              {availableDates.size > 0 && (
+                <Badge variant="secondary" className="ml-2">
+                  {availableDates.size} days available
+                </Badge>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {selectedTime && (
-                <Alert>
-                  <CheckCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    Selected: {selectedDateInternal.toLocaleDateString()} at {selectedTime}
-                  </AlertDescription>
-                </Alert>
-              )}
-              
-              <div className="text-sm text-gray-600 mb-3">
-                Select an available time slot for your appointment:
+            {isLoading ? (
+              <div className="flex items-center justify-center p-8">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                <span className="ml-2 text-gray-600">Loading availability...</span>
               </div>
-              
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {timeSlots.map((slot) => (
+            ) : loadingError ? (
+              <div className="text-center p-8">
+                <XCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Unable to Load Availability</h3>
+                <p className="text-gray-600 mb-4">Please try refreshing or contact support if the problem persists.</p>
+                <Button onClick={refreshAvailability} variant="outline">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Try Again
+                </Button>
+              </div>
+            ) : availableDates.size > 0 ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-600">
+                    Green dates show available appointment times
+                  </p>
                   <Button
-                    key={slot.id}
-                    variant={selectedTime === slot.startTime ? "default" : "outline"}
+                    variant="ghost"
                     size="sm"
-                    disabled={disabled || bookingStatus === 'confirming'}
-                    onClick={() => handleTimeSelect(slot.startTime)}
-                    className={cn(
-                      "flex items-center gap-2 justify-center transition-all",
-                      selectedTime === slot.startTime && "ring-2 ring-blue-300"
-                    )}
+                    onClick={refreshAvailability}
+                    disabled={isLoading}
                   >
-                    {bookingStatus === 'confirming' && selectedTime === slot.startTime ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : selectedTime === slot.startTime ? (
-                      <CheckCircle className="h-4 w-4" />
-                    ) : null}
-                    {slot.startTime}
+                    <RefreshCw className={cn("h-4 w-4 mr-1", isLoading && "animate-spin")} />
+                    Refresh
                   </Button>
-                ))}
+                </div>
+                <Calendar
+                  mode="single"
+                  selected={selectedDateInternal}
+                  onSelect={handleDateSelect}
+                  disabled={disabled ? () => true : disableDate}
+                  className="rounded-md border"
+                  modifiers={{
+                    available: (date) => isDateAvailable(date)
+                  }}
+                  modifiersStyles={{
+                    available: {
+                      backgroundColor: '#dcfce7',
+                      color: '#166534'
+                    }
+                  }}
+                />
               </div>
-            </div>
+            ) : (
+              <div className="text-center p-8">
+                <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Availability</h3>
+                <p className="text-gray-600 mb-4">This notary has no available time slots in the next 60 days.</p>
+                <Button onClick={refreshAvailability} variant="outline">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Check Again
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
-      )}
-
-      {selectedDateInternal && timeSlots.length === 0 && !isLoading && !loadingError && (
-        <Card>
-          <CardContent className="p-6 text-center">
-            <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Time Slots Available</h3>
-            <p className="text-gray-600 mb-4">
-              No available time slots for {selectedDateInternal.toLocaleDateString()}. 
-              Try selecting a different date or check if the notary has updated their availability.
-            </p>
-            <Button onClick={refreshAvailability} variant="outline" size="sm">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh Availability
-            </Button>
+        {/* Time Panel - always visible */}
+        <Card ref={timePanelRef} className="flex-1 md:w-2/3 h-full max-h-[400px] overflow-y-auto">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Available Times {selectedDateInternal ? `- ${selectedDateInternal.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}` : ''}
+              {selectedDateInternal && timeSlots.length > 0 && (
+                <Badge variant="outline" className="ml-2">{timeSlots.length} slots available</Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {/* Placeholder when no date selected */}
+            {!selectedDateInternal && (
+              <div className="flex items-center justify-center p-8 text-gray-500">
+                <span>Select a date to view available time slots</span>
+              </div>
+            )}
+            {/* Loader when fetching times */}
+            {selectedDateInternal && isLoading && (
+              <div className="flex items-center justify-center p-8">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                <span className="ml-2 text-gray-600">Loading time slots...</span>
+              </div>
+            )}
+            {/* No slots available message */}
+            {selectedDateInternal && !isLoading && timeSlots.length === 0 && (
+              <div className="text-center p-6">
+                <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Time Slots Available</h3>
+                <p className="text-gray-600 mb-4">No available time slots for {selectedDateInternal.toLocaleDateString()}.</p>
+                <Button onClick={refreshAvailability} variant="outline" size="sm">
+                  <RefreshCw className="h-4 w-4 mr-2" /> Refresh Availability
+                </Button>
+              </div>
+            )}
+            {/* Time slots grid */}
+            {selectedDateInternal && !isLoading && timeSlots.length > 0 && (
+              <div className="space-y-4">
+                {selectedTime && (
+                  <Alert>
+                    <CheckCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      Selected: {selectedDateInternal.toLocaleDateString()} at {selectedTime}
+                    </AlertDescription>
+                  </Alert>
+                )}
+                <div className="text-sm text-gray-600 mb-3">
+                  Select an available time slot for your appointment:
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {timeSlots.map((slot) => (
+                    <Button
+                      key={slot.id}
+                      variant={selectedTime === slot.startTime ? "default" : "outline"}
+                      size="sm"
+                      disabled={disabled || bookingStatus === 'confirming'}
+                      onClick={() => handleTimeSelect(slot.startTime)}
+                      className={cn(
+                        "flex items-center gap-2 justify-center transition-all",
+                        selectedTime === slot.startTime && "ring-2 ring-blue-300"
+                      )}
+                    >
+                      {bookingStatus === 'confirming' && selectedTime === slot.startTime ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : selectedTime === slot.startTime ? (
+                        <CheckCircle className="h-4 w-4" />
+                      ) : null}
+                      {slot.startTime}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
-      )}
+      </div>
 
       {/* Fallback inputs for when calendar is not available */}
       {!isLoading && !loadingError && availableDates.size === 0 && (
