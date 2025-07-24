@@ -153,6 +153,42 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           }
           break;
           
+        // 🔧 NEW: Handle tag content updates from WebSocket
+        case 'tag_content_updated':
+          // Update text input content when notary/other user saves content
+          if (data.tagType === 'T') {
+            console.log('🔄 Syncing text tag content update:', {
+              tagId: data.tagId,
+              newContent: data.content,
+              isCompleted: data.isCompleted,
+              currentlySelected: selectedTextInputId === data.tagId
+            });
+            
+            // Only update if this text input is not currently selected/being edited
+            // This prevents overwriting user input while they're actively typing
+            if (selectedTextInputId !== data.tagId) {
+              setTextInputs(prev => prev.map(input => {
+                if (input.id === data.tagId) {
+                  console.log('✅ Updated text input content from tag content update:', {
+                    id: data.tagId,
+                    oldContent: input.content,
+                    newContent: data.content,
+                    isCompleted: data.isCompleted
+                  });
+                  return { 
+                    ...input, 
+                    content: data.content || '',
+                    isNew: false // Mark as not new since it has content
+                  };
+                }
+                return input;
+              }));
+            } else {
+              console.log('⚠️ Skipping tag content sync update - text input is currently selected/being edited');
+            }
+          }
+          break;
+          
         case 'text_input_content_changed':
           // Update text input content from another user
           console.log('🔄 Syncing text content from another user:', {

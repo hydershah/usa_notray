@@ -199,9 +199,19 @@ export const useWebSocket = (config: WebSocketConfig) => {
           
           // 🔧 FIX: Update text inputs for text tags (T)
           if (message.payload.tagType === 'T') {
-            console.log('📝 Updating text input for text tag:', message.payload.tagId);
+            console.log('📝 Syncing text tag content update to text inputs:', message.payload.tagId);
             // Notify text input system about the content change
-            // This is handled via the tags state update above, but we could add specific text input sync here
+            if (typeof window !== 'undefined' && (window as any).textInputSyncCallback) {
+              (window as any).textInputSyncCallback('tag_content_updated', {
+                tagId: message.payload.tagId,
+                tagType: message.payload.tagType,
+                content: message.payload.content,
+                contentType: message.payload.contentType,
+                contentData: processedContentData,
+                isCompleted: message.payload.isCompleted,
+                source: message.payload.source || 'manual'
+              });
+            }
           }
           
           break;
