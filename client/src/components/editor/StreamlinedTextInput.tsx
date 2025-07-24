@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Rnd } from 'react-rnd';
 import { useToast } from '@/hooks/use-toast';
 import { useEditorStore } from '@/hooks/editor/useEditorStore';
@@ -50,6 +50,7 @@ interface StreamlinedTextInputProps {
   onMove?: (newCoordinates: { x: number; y: number }) => void;
   onResize?: (newCoordinates: { x: number; y: number; width: number; height: number }) => void;
   onFontSizeChange?: (fontSize: number) => void;
+  webSocket?: WebSocket | null; // Add WebSocket for real-time updates
 }
 
 export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
@@ -70,12 +71,17 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
   onSelect,
   onMove,
   onResize,
-  onFontSizeChange
+  onFontSizeChange,
+  webSocket
 }) => {
   const [inputValue, setInputValueRaw] = useState(content);
+  const [isEditing, setIsEditing] = useState(isNew); // Start editing if new
+  const [hasStartedEditing, setHasStartedEditing] = useState(isNew); // Track if user has started editing
+  const [lastSavedContent, setLastSavedContent] = useState(content); // Track last saved content to avoid resets
+  const [isProcessingClick, setIsProcessingClick] = useState(false); // Prevent duplicate click processing
   
   // Debug wrapper for setInputValue to track all calls
-  const setInputValue = (value: string) => {
+  const setInputValue = useCallback((value: string) => {
     console.log('📝 setInputValue called:', {
       id,
       from: inputValue,
@@ -83,37 +89,45 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       stack: new Error().stack?.split('\n')[2]?.trim() // Show where it was called from
     });
     setInputValueRaw(value);
-  };
-  const [isEditing, setIsEditing] = useState(isNew); // Start editing if new
-  const [hasStartedEditing, setHasStartedEditing] = useState(isNew); // Track if user has started editing
-  const [lastSavedContent, setLastSavedContent] = useState(content); // Track last saved content to avoid resets
-  
-  // Access editor store for custom dimensions
-  const { setCustomTagDimensions } = useEditorStore();
-  
-  // Debug: Track when inputValue changes
-  const prevInputValue = useRef(inputValue);
-  useEffect(() => {
-    if (prevInputValue.current !== inputValue) {
-      console.log('🎯 InputValue changed:', {
-        id,
-        from: prevInputValue.current,
-        to: inputValue,
-        isEditing,
-        hasStartedEditing,
-        content
-      });
-      prevInputValue.current = inputValue;
-    }
-  }, [inputValue, id, isEditing, hasStartedEditing, content]);
+  }, [id, inputValue]);
+
+  // Debounced WebSocket broadcast for real-time text changes
+  const broadcastTextChange = useCallback(
+    debounce((newValue: string) => {
+      if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+        console.log('📡 Broadcasting text change:', {
+          textInputId: id,
+          content: newValue,
+          userId: assignedUserId.toString()
+        });
+        
+        webSocket.send(JSON.stringify({
+          type: 'text_input_changed',
+          payload: {
+            textInputId: id,
+            content: newValue,
+            coordinates,
+            sessionId
+          },
+          userId: assignedUserId.toString(),
+          sessionId,
+          timestamp: Date.now()
+        }));
+      }
+    }, 300), // Increased debounce to reduce network traffic
+    [webSocket, id, coordinates, sessionId, assignedUserId]
+  );
 
   // Debug: Track component mount/unmount (CRITICAL for debugging text vanishing)
   useEffect(() => {
     console.log('🚀 StreamlinedTextInput MOUNTED:', id);
     return () => {
       console.log('💀 StreamlinedTextInput UNMOUNTED:', id);
+      // Cancel any pending debounced operations
+      broadcastTextChange.cancel();
     };
-  }, [id]);
+  }, [id, broadcastTextChange]);
+
   const [isVisible, setIsVisible] = useState(true);
   const [isResizing, setIsResizing] = useState(false);
   const [position, setPosition] = useState({ 
@@ -125,26 +139,20 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     height: coordinates.height
   });
   const [isDeleted, setIsDeleted] = useState(false); // Track deletion state
-  
-  // Debug: Track when dimensions change
-  useEffect(() => {
-    console.log('📦 Dimensions state changed:', {
-      id,
-      newDimensions: dimensions,
-      scaledSize: {
-        width: dimensions.width * scaleFactor,
-        height: dimensions.height * scaleFactor
-      }
-    });
-  }, [dimensions, id, scaleFactor]);
+  const [clickTimeout, setClickTimeout] = useState<NodeJS.Timeout | null>(null); // For debouncing clicks
 
+  // Access editor store for custom dimensions
+  const { setCustomTagDimensions } = useEditorStore();
+  
   const inputRef = useRef<HTMLInputElement>(null);
   const spanRef = useRef<HTMLSpanElement>(null);
   const measureRef = useRef<HTMLDivElement>(null); // For measuring text dimensions
   const { toast } = useToast();
   
-  // Calculate dynamic font size based on container height
-  const dynamicFontSize = Math.max(8, Math.min(dimensions.height * 0.6, 24));
+  // Memoized dynamic font size calculation
+  const dynamicFontSize = useMemo(() => {
+    return Math.max(8, Math.min(dimensions.height * 0.6, 24));
+  }, [dimensions.height]);
 
   // Update position and dimensions when coordinates change
   useEffect(() => {
@@ -165,14 +173,21 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     });
 
     // Don't reset inputValue if user is actively editing and has typed something
+    // This prevents overwriting user input while they're typing
     if (hasStartedEditing && isEditing && inputValue.trim() !== '') {
-      console.log('📝 Preserving user input during ID transition:', inputValue);
+      console.log('📝 Preserving user input during editing:', inputValue);
       return;
     }
     
-    // Only update if the content actually changed (not just ID transition)
-    if (content !== lastSavedContent) {
-      console.log('📄 Content prop updated, syncing inputValue:', { from: lastSavedContent, to: content });
+    // Only update if the content actually changed and it's not the same as current input
+    // This prevents unnecessary re-renders and input field resets
+    if (content !== lastSavedContent && content !== inputValue) {
+      console.log('📄 Content prop updated, syncing inputValue:', { 
+        from: lastSavedContent, 
+        to: content,
+        currentInput: inputValue,
+        isFromSync: true
+      });
       setInputValue(content);
       setLastSavedContent(content);
     }
@@ -269,6 +284,65 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     }
   }, [hasStartedEditing, isEditing, inputValue, isSelected]);
 
+  // Handle deletion - IMPROVED
+  const handleDelete = useCallback(async () => {
+    if (isDeleted) return; // Prevent multiple deletions
+    
+    console.log('🗑️ Deleting text input:', id);
+    setIsDeleted(true); // Mark as deleted immediately
+    setIsVisible(false); // Hide immediately
+    
+    // Cancel any ongoing editing
+    setIsEditing(false);
+    setHasStartedEditing(false);
+    
+    // Cancel any pending operations
+    broadcastTextChange.cancel();
+    
+    try {
+      // ✅ FIX: Add proper backend API call to delete text input
+      const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!response.ok && response.status !== 404) {
+        console.error('❌ Failed to delete text input from backend:', response.status);
+        // Don't restore on backend failure - keep it deleted locally
+      } else {
+        console.log('✅ Text input deleted from backend successfully');
+      }
+      
+      // ✅ FIX: Broadcast deletion via WebSocket for real-time sync
+      if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+        console.log('📡 Broadcasting text input deletion:', {
+          textInputId: id,
+          userId: assignedUserId.toString()
+        });
+        
+        webSocket.send(JSON.stringify({
+          type: 'text_input_deleted',
+          payload: {
+            textInputId: id,
+            sessionId
+          },
+          userId: assignedUserId.toString(),
+          sessionId,
+          timestamp: Date.now()
+        }));
+      }
+      
+    } catch (error) {
+      console.error('❌ Error during text input deletion:', error);
+      // Keep it deleted locally even if backend fails
+    }
+    
+    // Clean up any pending operations and call parent handler
+    onDelete();
+  }, [id, onDelete, isDeleted, sessionId, webSocket, assignedUserId, broadcastTextChange]);
+
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (!isSelected || isDeleted) return;
@@ -295,7 +369,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       setIsEditing(false);
       setHasStartedEditing(false);
     }
-  }, [isSelected, isEditing, isDeleted, content]);
+  }, [isSelected, isEditing, isDeleted, content, setInputValue, handleDelete]);
 
   // Add keyboard event listener when selected
   useEffect(() => {
@@ -314,11 +388,11 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     }
   }, [isEditing, isDeleted]);
 
-  // Save text content
-  const handleSave = useCallback(async () => {
+  // Save text content - IMPROVED with real-time sync
+  const handleSave = useCallback(async (content?: string) => {
     if (isDeleted) return; // Prevent API calls after deletion
     
-    const trimmedValue = inputValue.trim();
+    const trimmedValue = (content || inputValue).trim();
     
     // If there's no content, don't save but keep editing mode for new inputs
     if (!trimmedValue && isNew) {
@@ -356,6 +430,31 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       const result = await response.json();
       console.log(`✅ Text saved successfully:`, result);
       
+      // ✅ FIX: Broadcast save completion via WebSocket for real-time sync
+      if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+        console.log('📡 Broadcasting text save completion:', {
+          textInputId: id,
+          content: trimmedValue,
+          userId: assignedUserId.toString()
+        });
+        
+        webSocket.send(JSON.stringify({
+          type: 'text_input_saved',
+          payload: {
+            textInputId: id,
+            content: trimmedValue,
+            coordinates,
+            sessionId,
+            fontSize,
+            fontFamily,
+            textColor
+          },
+          userId: assignedUserId.toString(),
+          sessionId,
+          timestamp: Date.now()
+        }));
+      }
+      
       // Only exit edit mode if we have content or if it's not a new input
       if (trimmedValue || !isNew) {
         setIsEditing(false);
@@ -369,52 +468,85 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       onSave(trimmedValue);
       
     } catch (error) {
-      console.error('❌ Failed to save text:', error);
+      if (isDeleted) return; // Ignore errors for deleted components
       
-      // Revert local state on error
-      setLastSavedContent(content);
-      
-      if (!isDeleted) {
-        toast({
-          variant: "destructive",
-          title: "Save Failed",
-          description: "Failed to save text. Please try again."
-        });
-      }
+      console.error(`❌ Failed to save text content for ${id}:`, error);
+      toast({
+        title: "Save Error",
+        description: `Failed to save text: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        variant: "destructive",
+      });
     }
-  }, [inputValue, sessionId, id, fontSize, fontFamily, textColor, onSave, toast, isDeleted, isNew, content]);
+  }, [id, sessionId, fontSize, fontFamily, textColor, onSave, toast, isDeleted, isNew, inputValue, webSocket, assignedUserId, coordinates]);
 
-  // Handle deletion
-  const handleDelete = useCallback(() => {
-    if (isDeleted) return; // Prevent multiple deletions
+  // ✅ NEW: WebSocket message handler for real-time updates
+  useEffect(() => {
+    if (!webSocket || webSocket.readyState !== WebSocket.OPEN) return;
     
-    console.log('🗑️ Deleting text input:', id);
-    setIsDeleted(true); // Mark as deleted immediately
-    setIsVisible(false); // Hide immediately
+    const handleWebSocketMessage = (event: MessageEvent) => {
+      try {
+        const message = JSON.parse(event.data);
+        
+        // Only handle messages for this specific text input
+        if (message.payload?.textInputId !== id) return;
+        
+        // Don't process messages from the same user to avoid loops
+        if (message.userId === assignedUserId.toString()) return;
+        
+        console.log('📡 Received WebSocket message for text input:', id, message);
+        
+        switch (message.type) {
+          case 'text_input_changed':
+            // Update content in real-time while someone else is typing
+            if (message.payload?.content !== undefined && !isEditing) {
+              console.log('📝 Updating text content from WebSocket:', message.payload.content);
+              setInputValue(message.payload.content);
+              setLastSavedContent(message.payload.content);
+            }
+            break;
+            
+          case 'text_input_saved':
+            // Update content when someone else saves
+            if (message.payload?.content !== undefined) {
+              console.log('💾 Updating text content from WebSocket save:', message.payload.content);
+              setInputValue(message.payload.content);
+              setLastSavedContent(message.payload.content);
+              // Exit editing mode if we're not the one editing
+              if (!isEditing) {
+                setIsEditing(false);
+                setHasStartedEditing(false);
+              }
+            }
+            break;
+        }
+      } catch (error) {
+        console.error('❌ Error processing WebSocket message:', error);
+      }
+    };
     
-    // Cancel any ongoing editing
-    setIsEditing(false);
-    setHasStartedEditing(false);
+    webSocket.addEventListener('message', handleWebSocketMessage);
     
-    // Clean up any pending operations
-    onDelete();
-  }, [id, onDelete, isDeleted]);
+    return () => {
+      webSocket.removeEventListener('message', handleWebSocketMessage);
+    };
+  }, [webSocket, id, assignedUserId, isEditing, setInputValue]);
 
-  // Handle position and size changes from Rnd
-  const handleDragStop = useCallback((e: any, data: { x: number; y: number }) => {
+  // Handle drag stop - convert back to PDF coordinates and save to server
+  const handleDragStop = useCallback((e: any, data: any) => {
     if (isDeleted) return;
     
-    const newX = data.x / scaleFactor;
-    const newY = data.y / scaleFactor;
+    const newX = Math.round(data.x / scaleFactor);
+    const newY = Math.round(data.y / scaleFactor);
     
+    // Update position immediately for real-time feedback
     setPosition({ x: newX, y: newY });
     
     if (onMove) {
       onMove({ x: newX, y: newY });
     }
     
-    // Save position to backend
-    const savePosition = async () => {
+    // 🚀 REAL-TIME SYNC: Save position to server with WebSocket broadcasting (fire and forget)
+    (async () => {
       try {
         const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${id}/position`, {
           method: 'PUT',
@@ -424,20 +556,25 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
           },
           body: JSON.stringify({
             x: newX,
-            y: newY
+            y: newY,
+            width: dimensions.width,
+            height: dimensions.height,
+            pageNumber: coordinates.pageNumber
           })
         });
         
         if (!response.ok && response.status !== 404) {
-          throw new Error('Failed to save position');
+          throw new Error(`Failed to save position: ${response.status}`);
         }
+        
+        console.log(`✅ Text tag position saved: ${newX}, ${newY}`);
+        
       } catch (error) {
-        console.error('Failed to save position:', error);
+        console.error('❌ Failed to save text tag position:', error);
+        // Don't revert position on error - let user retry
       }
-    };
-    
-    savePosition();
-  }, [scaleFactor, sessionId, id, onMove, isDeleted]);
+    })();
+  }, [scaleFactor, sessionId, id, onMove, coordinates.pageNumber, dimensions.width, dimensions.height, isDeleted]);
 
   const handleResize = useCallback((
     e: any,
@@ -472,14 +609,10 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       onResize({ x: newX, y: newY, width: newWidth, height: newHeight });
     }
     
-    // Save dimensions to backend
-    const saveDimensions = async () => {
+    // 🚀 REAL-TIME SYNC: Save dimensions to server with WebSocket broadcasting (fire and forget)
+    (async () => {
       try {
-        // Calculate new font size based on new height
-        const newFontSize = Math.max(8, Math.min(newHeight * 0.6, 24));
-        
-        // Save dimensions
-        const dimensionsResponse = await fetch(`/api/editor/session/${sessionId}/text-tag/${id}/dimensions`, {
+        const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${id}/position`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -489,41 +622,22 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
             x: newX,
             y: newY,
             width: newWidth,
-            height: newHeight
+            height: newHeight,
+            pageNumber: coordinates.pageNumber
           })
         });
         
-        if (!dimensionsResponse.ok && dimensionsResponse.status !== 404) {
-          throw new Error('Failed to save dimensions');
+        if (!response.ok && response.status !== 404) {
+          throw new Error(`Failed to save dimensions: ${response.status}`);
         }
         
-        // Save font size
-        const fontSizeResponse = await fetch(`/api/editor/session/${sessionId}/text-tag/${id}/font-size`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          },
-          body: JSON.stringify({
-            fontSize: newFontSize,
-            fontFamily: fontFamily,
-            textColor: textColor
-          })
-        });
-        
-        if (!fontSizeResponse.ok && fontSizeResponse.status !== 404) {
-          throw new Error('Failed to save font size');
-        }
-        
-        console.log(`✅ Text tag resized: ${newWidth}x${newHeight}, font size: ${newFontSize}px`);
+        console.log(`✅ Text tag dimensions saved: ${newWidth}x${newHeight} at ${newX}, ${newY}`);
         
       } catch (error) {
-        console.error('Failed to save dimensions:', error);
+        console.error('❌ Failed to save text tag dimensions:', error);
+        // Don't revert dimensions on error - let user retry
       }
-    };
-    
-    saveDimensions();
-    setIsResizing(false);
+    })();
   }, [scaleFactor, sessionId, id, onResize, isDeleted]);
 
   // Handle resize stop (when user finishes resizing)
@@ -532,11 +646,31 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     console.log('🔧 Text tag resize completed');
   }, []);
 
-  // Handle click to select or start editing
+  // Handle click to select or start editing - FIXED to prevent duplication
   const handleClick = useCallback((e: React.MouseEvent) => {
     if (isDeleted || isResizing) return;
     
+    // ✅ CRITICAL FIX: Prevent duplicate processing with more robust debouncing
+    if (isProcessingClick) {
+      console.log('🚫 Click already being processed, ignoring duplicate');
+      return;
+    }
+    
+    setIsProcessingClick(true);
+    
+    // Clear any existing timeout
+    if (clickTimeout) {
+      clearTimeout(clickTimeout);
+    }
+    
+    // Set timeout to reset processing flag
+    const newTimeout = setTimeout(() => {
+      setIsProcessingClick(false);
+    }, 300);
+    setClickTimeout(newTimeout);
+    
     e.stopPropagation();
+    e.preventDefault();
     
     console.log('🖱️ Text tag clicked:', {
       id,
@@ -545,28 +679,50 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       clickDetail: e.detail,
       isNew,
       target: (e.target as HTMLElement).tagName,
-      isInputTarget: (e.target as HTMLElement).tagName === 'INPUT'
+      timeStamp: e.timeStamp
     });
     
     // If clicking on the input field directly, don't interfere
     if ((e.target as HTMLElement).tagName === 'INPUT') {
+      console.log('🎯 Input field clicked directly, allowing natural focus');
       return;
     }
     
-    // Always select the text input when clicked
-    if (onSelect) {
-      onSelect();
-      console.log('📍 Text tag selection triggered for:', id);
+    // If already editing, don't process click
+    if (isEditing) {
+      console.log('⚠️ Already editing, ignoring click for:', id);
+      return;
     }
     
-    // Start editing immediately for new inputs, or on any click for existing inputs
-    if (isNew || !isEditing) {
-      setIsEditing(true);
-      setHasStartedEditing(true);
-      setTimeout(() => inputRef.current?.focus(), 50);
-      console.log('✏️ Text tag editing started for:', id);
+    // Always select the text input when clicked (avoid duplicate selections)
+    if (onSelect && !isSelected) {
+      console.log('📍 Text tag selection triggered for:', id);
+      onSelect();
     }
-  }, [isNew, onSelect, isDeleted, isResizing, id, isSelected, isEditing]);
+    
+    // ✅ FIX: Simplified click handling - single click starts editing
+    console.log('✏️ Starting text editing for:', id);
+    setIsEditing(true);
+    setHasStartedEditing(true);
+    
+    // Focus with proper timing
+    setTimeout(() => {
+      if (inputRef.current && !isDeleted) {
+        inputRef.current.focus();
+        inputRef.current.select(); // Select existing text for easy replacement
+      }
+    }, 50);
+    
+  }, [onSelect, isDeleted, isResizing, id, isSelected, isEditing, isProcessingClick, clickTimeout]);
+
+  // Clean up timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (clickTimeout) {
+        clearTimeout(clickTimeout);
+      }
+    };
+  }, [clickTimeout]);
 
   // Handle keyboard in input field
   const handleInputKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -574,7 +730,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSave();
+      handleSave(inputValue); // Use inputValue from state
     } else if (e.key === 'Escape') {
       e.preventDefault();
       // Cancel editing and restore original value
@@ -582,9 +738,9 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       setIsEditing(false);
       setHasStartedEditing(false);
     }
-  }, [handleSave, content, isDeleted]);
+  }, [handleSave, content, isDeleted, setInputValue, inputValue]);
 
-  // Handle input blur (save when clicking outside)
+  // Handle input blur (save when clicking outside) - IMPROVED
   const handleBlur = useCallback(() => {
     if (isDeleted) return;
     
@@ -596,20 +752,25 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       isNew
     });
     
-    // Save if content has changed
-    if (isEditing && inputValue.trim() !== lastSavedContent) {
-      console.log('💾 Content changed, saving on blur');
-      handleSave();
-    } else if (isEditing) {
-      // Only exit edit mode if we have content OR if it's not a new input
-      if (inputValue.trim() || !isNew) {
-        console.log('✅ Exiting edit mode on blur');
-        setIsEditing(false);
-        setHasStartedEditing(false);
-      } else {
-        console.log('📝 Keeping new input in edit mode (no content)');
+    // Small delay to allow for potential clicks on the same element
+    setTimeout(() => {
+      if (isDeleted) return;
+      
+      // Save if content has changed
+      if (isEditing && inputValue.trim() !== lastSavedContent) {
+        console.log('💾 Content changed, saving on blur');
+        handleSave(inputValue);
+      } else if (isEditing) {
+        // Only exit edit mode if we have content OR if it's not a new input
+        if (inputValue.trim() || !isNew) {
+          console.log('✅ Exiting edit mode on blur');
+          setIsEditing(false);
+          setHasStartedEditing(false);
+        } else {
+          console.log('📝 Keeping new input in edit mode (no content)');
+        }
       }
-    }
+    }, 100); // Small delay to prevent race conditions
   }, [isEditing, inputValue, lastSavedContent, handleSave, isDeleted, isNew, id]);
 
   // Old text measurement function - DISABLED in favor of canvas-based measurement
@@ -768,8 +929,8 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     };
   }, [debouncedSaveDimensions]);
 
-  // Calculate display properties
-  const displayStyle: React.CSSProperties = {
+  // Memoized display style to prevent recalculation
+  const displayStyle = useMemo((): React.CSSProperties => ({
     position: 'absolute',
     left: `${position.x * scaleFactor}px`,
     top: `${position.y * scaleFactor}px`,
@@ -781,9 +942,9 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     lineHeight: '1.2',
     cursor: isEditing ? 'text' : 'move',
     zIndex: isSelected ? 1000 : 100,
-    pointerEvents: 'auto', // Important: Allow interaction with text inputs
+    pointerEvents: 'auto',
     userSelect: isEditing ? 'text' : 'none'
-  };
+  }), [position.x, position.y, dimensions.width, dimensions.height, scaleFactor, fontSize, fontFamily, textColor, isEditing, isSelected]);
 
   if (!isVisible || isDeleted) {
     return null;
@@ -851,6 +1012,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
         minWidth={30 * scaleFactor}
         minHeight={15 * scaleFactor}
         bounds="parent"
+        className="streamlined-text-input"
         style={{
           zIndex: isSelected ? 1000 : 100,
           pointerEvents: 'auto',
@@ -891,6 +1053,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
         }}
       >
         <div
+          data-text-input-id={id}
           style={{
             width: '100%',
             height: '100%',
@@ -915,10 +1078,19 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
             value={inputValue}
             onChange={(e) => {
               const newValue = e.target.value;
+              
+              // Update local state immediately for responsive UI
               setInputValue(newValue);
               
-              // Use the centralized auto-resize function
+              // ✅ FIX: Only broadcast changes if user is actively typing (not programmatic updates)
+              if (hasStartedEditing) {
+                broadcastTextChange(newValue);
+              }
+              
+              // Auto-resize as user types
               performAutoResize(newValue);
+              
+              // Auto-save when user stops typing (will be handled by blur event)
             }}
             onKeyDown={handleInputKeyDown}
             onBlur={handleBlur}
@@ -978,7 +1150,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
                 whiteSpace: 'nowrap',
                 boxSizing: 'border-box'
               }}
-              title="Double-click to edit, Delete key to delete"
+              title="Click to edit, Delete key to delete"
             >
               {inputValue || (
                 <span style={{ 
@@ -987,7 +1159,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
                   fontSize: '0.9em',
                   whiteSpace: 'nowrap'
                 }}>
-                  Double-click to add text
+                  Click to add text
                 </span>
               )}
             </span>

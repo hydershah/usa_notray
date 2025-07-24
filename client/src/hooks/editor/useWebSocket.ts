@@ -139,11 +139,31 @@ export const useWebSocket = (config: WebSocketConfig) => {
         case 'tag_placed':
           console.log('📝 Tag placed by another user');
           addTag(message.payload.tag);
+          
+          // 🔧 SYNC TEXT INPUTS: If it's a text tag, also update text inputs state
+          if (message.payload.tag.tagType === 'T') {
+            console.log('📝 Syncing new text tag to text inputs:', message.payload.tag.id);
+            // Trigger text input reload or direct state update
+            if (typeof window !== 'undefined' && (window as any).textInputSyncCallback) {
+              (window as any).textInputSyncCallback('tag_placed', message.payload.tag);
+            }
+          }
           break;
 
         case 'tag_updated':
           console.log('✏️ Tag updated by another user');
           updateTag(message.payload.tagId, message.payload.updates);
+          
+          // 🔧 SYNC TEXT INPUTS: If it's a text tag, also update text inputs state
+          if (message.payload.tagType === 'T' || message.payload.updates?.tagType === 'T') {
+            console.log('📝 Syncing text tag position update to text inputs:', message.payload.tagId);
+            if (typeof window !== 'undefined' && (window as any).textInputSyncCallback) {
+              (window as any).textInputSyncCallback('tag_updated', {
+                id: message.payload.tagId,
+                updates: message.payload.updates
+              });
+            }
+          }
           break;
 
         case 'tag_content_updated':
@@ -174,10 +194,7 @@ export const useWebSocket = (config: WebSocketConfig) => {
             content: message.payload.content,
             contentType: message.payload.contentType,
             contentData: processedContentData,
-            isCompleted: message.payload.isCompleted,
-            completedBy: message.payload.completedBy,
-            completedAt: message.payload.completedAt,
-            updatedBy: message.payload.updatedBy
+            isCompleted: message.payload.isCompleted
           });
           
           // 🔧 FIX: Update text inputs for text tags (T)
@@ -192,6 +209,14 @@ export const useWebSocket = (config: WebSocketConfig) => {
         case 'tag_deleted':
           console.log('🗑️ Tag deleted by another user');
           deleteTag(message.payload.tagId);
+          
+          // 🔧 SYNC TEXT INPUTS: If it's a text tag, also remove from text inputs state
+          console.log('📝 Syncing text tag deletion to text inputs:', message.payload.tagId);
+          if (typeof window !== 'undefined' && (window as any).textInputSyncCallback) {
+            (window as any).textInputSyncCallback('tag_deleted', {
+              id: message.payload.tagId
+            });
+          }
           break;
 
         case 'cursor_moved':
@@ -243,6 +268,30 @@ export const useWebSocket = (config: WebSocketConfig) => {
           
           // Sync to the specified page
           syncToPage(message.payload.pageNumber || 1);
+          break;
+
+        case 'text_input_changed':
+          console.log('📝 Text input changed by another user:', {
+            textInputId: message.payload.textInputId,
+            content: message.payload.content,
+            messageUserId: message.payload.userId || message.userId,
+            displayName: message.payload.displayName,
+            currentUserId: userId
+          });
+          
+          // Sync text input changes to local state (but don't update if it's from the same user)
+          const changeUserId = message.payload.userId || message.userId;
+          if (changeUserId !== userId && changeUserId?.toString() !== userId?.toString() && typeof window !== 'undefined' && (window as any).textInputSyncCallback) {
+            console.log('✅ Applying text input sync from different user');
+            (window as any).textInputSyncCallback('text_input_content_changed', {
+              id: message.payload.textInputId,
+              content: message.payload.content,
+              coordinates: message.payload.coordinates,
+              fromUser: message.payload.displayName || `User ${changeUserId}`
+            });
+          } else {
+            console.log('⚠️ Skipping text input sync - same user or self-update');
+          }
           break;
 
         case 'user_typing':

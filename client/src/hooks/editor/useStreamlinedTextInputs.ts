@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
 interface StreamlinedTextInput {
@@ -38,6 +38,165 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
   const pendingCreations = useRef<Set<string>>(new Set());
   const { toast } = useToast();
 
+  // 🔧 Persistence key for temporary text inputs
+  const tempStorageKey = `temp_text_inputs_${sessionId}`;
+
+  // 🔧 Load temporary text inputs from localStorage on initialization
+  useEffect(() => {
+    try {
+      const savedTempInputs = localStorage.getItem(tempStorageKey);
+      if (savedTempInputs) {
+        const parsedInputs = JSON.parse(savedTempInputs);
+        console.log('📂 Recovered temporary text inputs from localStorage:', parsedInputs);
+        
+        // Add recovered inputs to state
+        setTextInputs(prev => {
+          const existingIds = new Set(prev.map(input => input.id));
+          const recoveredInputs = parsedInputs.filter((input: StreamlinedTextInput) => 
+            !existingIds.has(input.id)
+          );
+          return [...prev, ...recoveredInputs];
+        });
+        
+        // Clear the temporary storage after recovery
+        localStorage.removeItem(tempStorageKey);
+      }
+    } catch (error) {
+      console.warn('Failed to recover temporary text inputs:', error);
+    }
+  }, [sessionId, tempStorageKey]);
+
+  // 🔧 Save temporary text inputs to localStorage when created
+  const saveTempInputToStorage = useCallback((input: StreamlinedTextInput) => {
+    try {
+      const existing = localStorage.getItem(tempStorageKey);
+      const existingInputs = existing ? JSON.parse(existing) : [];
+      const updatedInputs = [...existingInputs, input];
+      localStorage.setItem(tempStorageKey, JSON.stringify(updatedInputs));
+      console.log('💾 Saved temporary text input to localStorage:', input.id);
+    } catch (error) {
+      console.warn('Failed to save temporary text input to localStorage:', error);
+    }
+  }, [tempStorageKey]);
+
+  // 🔧 Remove temporary text input from localStorage when converted to real ID
+  const removeTempInputFromStorage = useCallback((tempId: string) => {
+    try {
+      const existing = localStorage.getItem(tempStorageKey);
+      if (existing) {
+        const existingInputs = JSON.parse(existing);
+        const filteredInputs = existingInputs.filter((input: StreamlinedTextInput) => input.id !== tempId);
+        if (filteredInputs.length > 0) {
+          localStorage.setItem(tempStorageKey, JSON.stringify(filteredInputs));
+        } else {
+          localStorage.removeItem(tempStorageKey);
+        }
+        console.log('🗑️ Removed temporary text input from localStorage:', tempId);
+      }
+    } catch (error) {
+      console.warn('Failed to remove temporary text input from localStorage:', error);
+    }
+  }, [tempStorageKey]);
+
+  // 🔧 WebSocket sync callback for real-time text input synchronization
+  useEffect(() => {
+    const handleWebSocketSync = (eventType: string, data: any) => {
+      console.log('📝 Text input WebSocket sync:', eventType, data);
+      
+      switch (eventType) {
+        case 'tag_placed':
+          if (data.tagType === 'T') {
+            // Convert tag to text input format
+            const newTextInput: StreamlinedTextInput = {
+              id: data.id.toString(),
+              coordinates: {
+                x: data.coordinates.x,
+                y: data.coordinates.y,
+                width: data.coordinates.width,
+                height: data.coordinates.height,
+                pageNumber: data.coordinates.pageNumber
+              },
+              content: data.content || '',
+              fontSize: 12,
+              fontFamily: 'Arial',
+              textColor: '#000000',
+              assignedUserId: data.assignedUserId,
+              userColor: data.colorCode || '#4ECDC4',
+              isNew: false,
+              createdAt: new Date()
+            };
+            
+            setTextInputs(prev => {
+              // Avoid duplicates
+              if (prev.some(input => input.id === newTextInput.id)) {
+                return prev;
+              }
+              return [...prev, newTextInput];
+            });
+          }
+          break;
+          
+        case 'tag_updated':
+          if (data.updates.coordinates) {
+            setTextInputs(prev => prev.map(input => 
+              input.id === data.id 
+                ? { ...input, coordinates: { ...input.coordinates, ...data.updates.coordinates } }
+                : input
+            ));
+          }
+          break;
+          
+        case 'tag_deleted':
+          setTextInputs(prev => prev.filter(input => input.id !== data.id));
+          if (selectedTextInputId === data.id) {
+            setSelectedTextInputId(null);
+          }
+          break;
+          
+        case 'text_input_content_changed':
+          // Update text input content from another user
+          console.log('🔄 Syncing text content from another user:', {
+            textInputId: data.id,
+            newContent: data.content,
+            fromUser: data.fromUser,
+            currentlySelected: selectedTextInputId === data.id
+          });
+          
+          // Only update if this text input is not currently selected/being edited
+          // This prevents overwriting user input while they're actively typing
+          if (selectedTextInputId !== data.id) {
+            setTextInputs(prev => prev.map(input => {
+              if (input.id === data.id) {
+                console.log('✅ Updated text input content from sync:', {
+                  id: data.id,
+                  oldContent: input.content,
+                  newContent: data.content,
+                  fromUser: data.fromUser
+                });
+                return { ...input, content: data.content };
+              }
+              return input;
+            }));
+          } else {
+            console.log('⚠️ Skipping sync update - text input is currently selected/being edited');
+          }
+          break;
+      }
+    };
+
+    // Register the callback globally
+    if (typeof window !== 'undefined') {
+      (window as any).textInputSyncCallback = handleWebSocketSync;
+    }
+
+    // Cleanup
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete (window as any).textInputSyncCallback;
+      }
+    };
+  }, [selectedTextInputId]);
+
   // Place new text input
   const placeTextInput = useCallback(async (command: PlaceTextInputCommand, userColor: string) => {
     const tempId = `text_temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -60,6 +219,9 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
     setTextInputs(prev => [...prev, optimisticTextInput]);
     setSelectedTextInputId(tempId);
     pendingCreations.current.add(tempId);
+    
+    // 🔧 Save to localStorage for recovery on refresh
+    saveTempInputToStorage(optimisticTextInput);
 
     console.log('📝 Added optimistic text input:', {
       tempId,
@@ -123,6 +285,9 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
 
       setSelectedTextInputId(tag.id);
       pendingCreations.current.delete(tempId);
+      
+      // 🔧 Remove from temporary storage since it's now persisted on server
+      removeTempInputFromStorage(tempId);
 
       console.log(`✅ Text input placed successfully:`, tag.id);
       return tag.id;
@@ -133,6 +298,9 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       setSelectedTextInputId(null);
       pendingCreations.current.delete(tempId);
       
+      // 🔧 Remove from temporary storage since it failed
+      removeTempInputFromStorage(tempId);
+      
       console.error('❌ Failed to place text input:', error);
       toast({
         variant: "destructive",
@@ -141,7 +309,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       });
       throw error;
     }
-  }, [sessionId, toast]);
+  }, [sessionId, toast, saveTempInputToStorage, removeTempInputFromStorage]);
 
   // Save text content
   const saveTextContent = useCallback(async (textInputId: string, content: string) => {

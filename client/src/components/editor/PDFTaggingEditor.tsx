@@ -268,25 +268,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
           // Load text tags into streamlined text input system
           loadTextInputsFromTags(validTags);
           
-          // Load whiteout overlays from completed whiteout tags
-          const whiteoutTags = validTags.filter((tag: DocumentTag) => 
-            tag.tagType === 'W' && tag.isCompleted
-          );
-          const overlays = whiteoutTags.map((tag: DocumentTag) => ({
-            id: `whiteout_${tag.id}`,
-            documentId: tag.documentId.toString(),
-            coordinates: {
-              x: tag.coordinates.x,
-              y: tag.coordinates.y,
-              width: tag.coordinates.width,
-              height: tag.coordinates.height,
-              pageNumber: tag.coordinates.pageNumber
-            },
-            sessionId: sessionId,
-            createdAt: new Date(tag.createdAt)
-          }));
-          useEditorStore.getState().setWhiteoutOverlays(overlays);
-          console.log('✅ Loaded whiteout overlays:', overlays.length);
+          // ✅ SIMPLIFIED: Whiteout tags now render as regular tags, no need for separate overlay system
+          console.log('✅ Whiteout tags will render as regular tags');
           
           if (validTags.length > 0) {
             console.log(`🏷️  Tags loaded successfully - session appears to be a continuation of previous work`);
@@ -859,20 +842,57 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       
       await handleAutoFillTag(tag);
     } else if (inlineEditTags.includes(tag.tagType)) {
-      // ✏️ INLINE EDIT: Start inline text editing
+      // ✏️ INLINE EDIT: Start inline text editing for text tags
       console.log('✏️ Starting inline text editing for tag:', tag.tagType);
-      toast({
-        title: "Text Editing",
-        description: "Click directly on the text tag to edit inline",
-        variant: "default"
-      });
+      
+      // Find the text input with matching tag ID and trigger editing directly
+      const matchingTextInput = textInputs.find(input => input.id === tag.id.toString());
+      if (matchingTextInput) {
+        // Select the text input first
+        selectTextInput(matchingTextInput.id);
+        
+        // ✅ DIRECT APPROACH: Instead of synthetic events, directly trigger editing via state
+        // This prevents duplication by avoiding multiple event handlers
+        setTimeout(() => {
+          console.log('🎯 Directly triggering text input editing for:', matchingTextInput.id);
+          
+          // Try to find the text input element and call its click handler directly
+          const textElement = document.querySelector(`[data-text-input-id="${matchingTextInput.id}"]`);
+          if (textElement) {
+            // Instead of dispatching events, directly call the StreamlinedTextInput's selection logic
+            // The component will handle starting edit mode when selected
+            const inputElement = textElement.querySelector('input');
+            if (inputElement) {
+              inputElement.focus();
+              inputElement.click();
+            } else {
+              // If no input field is visible, the component isn't in edit mode yet
+              // The single click will trigger edit mode
+              (textElement as HTMLElement).click();
+            }
+          }
+        }, 100);
+        
+        toast({
+          title: "Text Editing Active",
+          description: "Text input is now active for editing.",
+          variant: "default"
+        });
+      } else {
+        console.warn('⚠️ No matching text input found for tag:', tag.id);
+        toast({
+          title: "Text Input Not Found",
+          description: "Could not find the text input for editing.",
+          variant: "destructive"
+        });
+      }
     } else {
       // 📝 FALLBACK: Show modal for unknown tag types
       console.log('📝 Fallback to modal for unknown tag type:', tag.tagType);
       setSelectedTagForInput(tag);
       setTagModalPosition(position);
     }
-  }, [mode, participants, currentUserId, liveSessionState, toast, handleAutoFillTag, userProfiles]);
+  }, [mode, participants, currentUserId, liveSessionState, toast, handleAutoFillTag, userProfiles, textInputs, selectTextInput]);
 
   // Handle tag content save
   const handleTagContentSave = useCallback(async (content: any) => {
@@ -1215,7 +1235,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
             sessionId={sessionId}
             onCoordinateClick={handleTagPlacement}
             onTagClick={mode === 'signing' ? handleTagClick : undefined}
-            tags={tags.filter(tag => tag.documentId === currentDocument.id && tag.tagType !== 'T' && tag.tagType !== 'W')}
+            tags={tags.filter(tag => tag.documentId === currentDocument.id && tag.tagType !== 'T')}
             mode={mode === 'notary' ? 'tagging' : mode as 'tagging' | 'signing'}
             selectedUser={selectedUser}
             onTagUpdate={updateTagPosition}
@@ -1232,6 +1252,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
             onSyncUsers={onSyncUsers}
             currentUser={currentUser}
             isSyncLoading={isSyncLoading}
+            webSocket={webSocket}
           />
         </div>
 

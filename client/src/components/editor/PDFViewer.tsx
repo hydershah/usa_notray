@@ -62,6 +62,7 @@ interface PDFViewerProps {
   onSyncUsers?: () => void;
   currentUser?: SessionParticipant | null;
   isSyncLoading?: boolean;
+  webSocket?: WebSocket | null; // Add WebSocket for real-time updates
 }
 
 interface TagRendererProps {
@@ -197,35 +198,71 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       bounds="parent"
       onClick={(e: React.MouseEvent<HTMLDivElement>) => {
         e.stopPropagation();
+        
+        // Prevent interference with text inputs
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.closest('input') || target.closest('.streamlined-text-input')) {
+          return;
+        }
+        
         console.log('🏷️ Tag clicked in PDFViewer:', {
           tagId: tag.id,
+          tagType: tag.tagType,
           mode,
           isCompleted: tag.isCompleted,
           hasOnTagClick: !!onTagClick,
           canEdit,
           isSelected,
-          clickDetail: e.detail
+          clickDetail: e.detail,
+          timeStamp: e.timeStamp
         });
         
+        // ✅ FIX: Special handling for whiteout tags
+        if (tag.tagType === 'W') {
+          if (mode === 'signing' && onTagClick && !tag.isCompleted) {
+            console.log('🎯 Whiteout tag clicked - applying immediately');
+            onTagClick(tag, {
+              x: e.currentTarget.getBoundingClientRect().left,
+              y: e.currentTarget.getBoundingClientRect().top,
+              width: e.currentTarget.getBoundingClientRect().width,
+              height: e.currentTarget.getBoundingClientRect().height
+            });
+          } else if (mode === 'tagging') {
+            console.log('🔗 Selecting whiteout tag in tagging mode');
+            onSelect();
+          }
+          return;
+        }
+        
         if (mode === 'signing' && onTagClick && !tag.isCompleted) {
-          // Check if it's a double-click to open the modal
-          if (e.detail === 2) {
-            // Double-click: trigger interactive input for incomplete tags
+          // Improved double-click detection with timing check
+          const clickTime = e.timeStamp;
+          const lastClickTime = (e.currentTarget as any)._lastClickTime || 0;
+          const timeDiff = clickTime - lastClickTime;
+          (e.currentTarget as any)._lastClickTime = clickTime;
+          
+          if (e.detail === 2 && timeDiff < 500) {
+            // Confirmed double-click within reasonable time
             const rect = e.currentTarget.getBoundingClientRect();
-            console.log('🎯 Double-click detected - triggering interactive input for tag:', tag.id);
+            console.log('🎯 Double-click confirmed - triggering interactive input for tag:', tag.id);
             onTagClick(tag, {
               x: rect.left,
               y: rect.top,
               width: rect.width,
               height: rect.height
             });
-          } else {
-            // Single-click: just select the tag
-            console.log('🔗 Single-click detected - selecting tag:', tag.id);
-            onSelect();
+          } else if (e.detail === 1) {
+            // Single-click: just select the tag (with debouncing)
+            setTimeout(() => {
+              const currentClickTime = (e.currentTarget as any)._lastClickTime || 0;
+              if (Math.abs(currentClickTime - clickTime) < 50) { // Only if no subsequent clicks
+                console.log('🔗 Single-click confirmed - selecting tag:', tag.id);
+                onSelect();
+              }
+            }, 250); // Wait to see if double click follows
           }
         } else {
-          // In tagging mode or for completed tags, just select
+          // In tagging mode or for completed tags, just select immediately
           console.log('🔗 Selecting tag:', tag.id, 'onSelect function:', typeof onSelect);
           onSelect();
         }
@@ -239,14 +276,14 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       `}
       style={{
         backgroundColor: (() => {
-          // Special handling for whiteout tags
+          // Special handling for whiteout tags - IMPROVED
           if (tag.tagType === 'W') {
             if (mode === 'signing' && tag.isCompleted) {
               return '#FFFFFF'; // Solid white background for completed whiteout
             } else if (mode === 'signing' && !tag.isCompleted) {
-              return 'rgba(255, 255, 255, 0.8)'; // Semi-transparent white for incomplete whiteout
+              return 'rgba(255, 255, 255, 0.9)'; // Semi-transparent white for incomplete whiteout
             } else {
-              return 'rgba(255, 255, 255, 0.95)'; // White for tagging mode
+              return 'rgba(255, 255, 255, 0.8)'; // More transparent white for tagging mode
             }
           }
           
@@ -260,14 +297,14 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           }
         })(),
         border: (() => {
-          // Special handling for whiteout tags
+          // Special handling for whiteout tags - IMPROVED
           if (tag.tagType === 'W') {
             if (mode === 'signing' && tag.isCompleted) {
               return '1px solid #E5E7EB'; // Subtle border for completed whiteout
             } else if (mode === 'signing' && !tag.isCompleted) {
-              return '2px dashed #6B7280'; // Gray dashed border for incomplete whiteout
+              return '2px solid #DC2626'; // Red border for clickable whiteout to make it more visible
             } else {
-              return `2px solid ${tag.colorCode || '#6B7280'}`; // Gray border for tagging
+              return `2px solid ${tag.colorCode || '#DC2626'}`; // Red border for tagging
             }
           }
           
@@ -287,16 +324,23 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           : tag.colorCode || '#3B82F6',
         zIndex: tag.tagType === 'W' ? (isSelected ? 1000 : 10) : (isSelected ? 1000 : 100), // Lower z-index for whiteout (background)
         pointerEvents: 'auto',
-        cursor: mode === 'signing' && !tag.isCompleted ? 'pointer' : 'default',
+        cursor: (() => {
+          if (tag.tagType === 'W') {
+            return mode === 'signing' && !tag.isCompleted ? 'pointer' : 'default';
+          }
+          return mode === 'signing' && !tag.isCompleted ? 'pointer' : 'default';
+        })(),
         boxShadow: (() => {
-          // Special shadow for whiteout tags
+          // Special shadow for whiteout tags - IMPROVED
           if (tag.tagType === 'W') {
             if (mode === 'signing' && tag.isCompleted) {
               return '0 1px 3px rgba(0,0,0,0.1)'; // Subtle shadow for completed whiteout
             } else if (isSelected) {
-              return `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${(tag.colorCode || '#6B7280')}20`;
+              return `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${(tag.colorCode || '#DC2626')}20`;
+            } else if (mode === 'signing' && !tag.isCompleted) {
+              return '0 2px 8px rgba(220, 38, 38, 0.3)'; // Red glow for clickable whiteout
             } else {
-              return '0 2px 4px rgba(107, 114, 128, 0.3)'; // Gray shadow for whiteout
+              return '0 2px 4px rgba(220, 38, 38, 0.3)'; // Red shadow for whiteout
             }
           }
           
@@ -585,7 +629,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   onDeleteTextInput,
   onSyncUsers,
   currentUser,
-  isSyncLoading = false
+  isSyncLoading = false,
+  webSocket
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRefs = useRef<HTMLCanvasElement[]>([]);
@@ -949,7 +994,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       const baseScale = Math.min((containerWidth - 120) / viewport.width, 1.0); // Reduced to 1.0x max scale for better fit
       const finalScale = baseScale * viewer.zoomLevel;
 
-      console.log(`📐 Page ${pageNumber} scale calculation:`, { containerWidth, baseScale, zoomLevel: viewer.zoomLevel, finalScale });
+      console.log(`�� Page ${pageNumber} scale calculation:`, { containerWidth, baseScale, zoomLevel: viewer.zoomLevel, finalScale });
 
       // Store scale factor for coordinate conversion
       setScaleFactors(prev => new Map(prev.set(pageNumber, finalScale)));
@@ -1281,8 +1326,34 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
   // Tag event handlers
   const handleTagUpdate = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {
+    // Update local state immediately for responsive UI
     onTagUpdate?.(tagId, coordinates);
-  }, [onTagUpdate]);
+    
+    // 🚀 REAL-TIME SYNC: Broadcast tag update via WebSocket
+    if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+      console.log('📡 Broadcasting tag update via WebSocket:', {
+        tagId,
+        coordinates
+      });
+      
+      try {
+        webSocket.send(JSON.stringify({
+          type: 'tag_updated',
+          payload: {
+            tagId,
+            coordinates,
+            sessionId
+          },
+          sessionId,
+          timestamp: Date.now()
+        }));
+      } catch (error) {
+        console.error('❌ Failed to broadcast tag update via WebSocket:', error);
+      }
+    } else {
+      console.warn('⚠️ WebSocket not available for tag update broadcast, state:', webSocket?.readyState);
+    }
+  }, [onTagUpdate, webSocket, sessionId]);
 
   const handleTagSave = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {
     if (!onTagResize) return;
@@ -1298,7 +1369,32 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     };
     
     onTagResize(tagId, fullCoordinates);
-  }, [onTagResize, tags]);
+    
+    // 🚀 REAL-TIME SYNC: Broadcast tag save via WebSocket
+    if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+      console.log('📡 Broadcasting tag save via WebSocket:', {
+        tagId,
+        coordinates: fullCoordinates
+      });
+      
+      try {
+        webSocket.send(JSON.stringify({
+          type: 'tag_saved',
+          payload: {
+            tagId,
+            coordinates: fullCoordinates,
+            sessionId
+          },
+          sessionId,
+          timestamp: Date.now()
+        }));
+      } catch (error) {
+        console.error('❌ Failed to broadcast tag save via WebSocket:', error);
+      }
+    } else {
+      console.warn('⚠️ WebSocket not available for tag save broadcast, state:', webSocket?.readyState);
+    }
+  }, [onTagResize, tags, webSocket, sessionId]);
 
   const handleTagDelete = useCallback((tagId: string) => {
     onTagDelete?.(tagId);
@@ -1308,44 +1404,66 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     selectTag(tag.id === selectedTag?.id ? null : tag);
   }, [selectTag, selectedTag]);
 
-  // Handle whiteout overlay updates
-  const handleWhiteoutUpdate = useCallback(async (overlayId: string, coordinates: Partial<{ x: number; y: number; width: number; height: number }>) => {
-    try {
-      // Update local state immediately
-      const { whiteoutOverlays, setWhiteoutOverlays } = useEditorStore.getState();
-      const updatedOverlays = whiteoutOverlays.map(overlay => 
-        overlay.id === overlayId 
-          ? { ...overlay, coordinates: { ...overlay.coordinates, ...coordinates } }
-          : overlay
-      );
-      setWhiteoutOverlays(updatedOverlays);
-      
-      console.log('✅ Whiteout overlay updated locally:', overlayId, coordinates);
-      
-      // TODO: Add backend API call to save whiteout overlay position/size
-      // await fetch(`/api/editor/whiteout-overlay/${overlayId}`, { method: 'PUT', ... });
-      
-    } catch (error) {
-      console.error('❌ Failed to update whiteout overlay:', error);
-    }
-  }, []);
+  // ✅ CLEANED UP: Whiteout overlay functions removed - whiteout tags now use regular tag system
 
-  // Handle whiteout overlay deletion
-  const handleWhiteoutDelete = useCallback(async (overlayId: string) => {
-    try {
-      // Remove from local state immediately
-      const { deleteWhiteoutOverlay } = useEditorStore.getState();
-      deleteWhiteoutOverlay(overlayId);
-      
-      console.log('✅ Whiteout overlay deleted locally:', overlayId);
-      
-      // TODO: Add backend API call to delete whiteout overlay
-      // await fetch(`/api/editor/whiteout-overlay/${overlayId}`, { method: 'DELETE', ... });
-      
-    } catch (error) {
-      console.error('❌ Failed to delete whiteout overlay:', error);
+  // ✅ NEW: WebSocket message handler for real-time updates
+  useEffect(() => {
+    if (!webSocket) return;
+    
+    // Check WebSocket connection state
+    if (webSocket.readyState !== WebSocket.OPEN) {
+      console.warn('⚠️ WebSocket not ready for message handling, state:', webSocket.readyState);
+      return;
     }
-  }, []);
+    
+    const handleWebSocketMessage = (event: MessageEvent) => {
+      try {
+        const message = JSON.parse(event.data);
+        
+        console.log('📡 Received WebSocket message in PDFViewer:', message);
+        
+        switch (message.type) {
+          case 'tag_updated':
+          case 'tag_saved':
+            // Update tag position/size from other users (including whiteout tags)
+            if (message.payload?.tagId && message.payload?.coordinates && onTagUpdate) {
+              console.log('📝 Updating tag from WebSocket:', message.payload);
+              onTagUpdate(message.payload.tagId, message.payload.coordinates);
+            }
+            break;
+        }
+      } catch (error) {
+        console.error('❌ Error processing WebSocket message in PDFViewer:', error);
+      }
+    };
+    
+    // Add WebSocket event listeners
+    webSocket.addEventListener('message', handleWebSocketMessage);
+    
+    // Add connection state monitoring
+    const handleWebSocketError = (error: Event) => {
+      console.error('❌ WebSocket error in PDFViewer:', error);
+    };
+    
+    const handleWebSocketClose = (event: CloseEvent) => {
+      console.warn('⚠️ WebSocket closed in PDFViewer:', event.code, event.reason);
+    };
+    
+    const handleWebSocketOpen = (event: Event) => {
+      console.log('✅ WebSocket connected in PDFViewer');
+    };
+    
+    webSocket.addEventListener('error', handleWebSocketError);
+    webSocket.addEventListener('close', handleWebSocketClose);
+    webSocket.addEventListener('open', handleWebSocketOpen);
+    
+    return () => {
+      webSocket.removeEventListener('message', handleWebSocketMessage);
+      webSocket.removeEventListener('error', handleWebSocketError);
+      webSocket.removeEventListener('close', handleWebSocketClose);  
+      webSocket.removeEventListener('open', handleWebSocketOpen);
+    };
+  }, [webSocket]);
 
   // Zoom controls
   const handleZoomIn = () => setZoomLevel(Math.min(viewer.zoomLevel * 1.25, 3.0));
@@ -1534,84 +1652,17 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                     );
                   })}
                   
-                  {/* Whiteout overlays (render over content) */}
-                  {whiteoutOverlays?.filter(overlay => 
-                    overlay.coordinates.pageNumber === pageNumber
-                  ).map(overlay => (
-                    <Rnd
-                      key={`whiteout-${overlay.id}`}
-                      size={{
-                        width: overlay.coordinates.width * scaleFactor,
-                        height: overlay.coordinates.height * scaleFactor
-                      }}
-                      position={{
-                        x: overlay.coordinates.x * scaleFactor,
-                        y: overlay.coordinates.y * scaleFactor
-                      }}
-                      onDragStop={(e, data) => {
-                        const newCoordinates = {
-                          x: Math.round(data.x / scaleFactor),
-                          y: Math.round(data.y / scaleFactor)
-                        };
-                        handleWhiteoutUpdate(overlay.id, newCoordinates);
-                      }}
-                      onResizeStop={(e, direction, ref, delta, position) => {
-                        const newCoordinates = {
-                          x: Math.round(position.x / scaleFactor),
-                          y: Math.round(position.y / scaleFactor),
-                          width: Math.round(ref.offsetWidth / scaleFactor),
-                          height: Math.round(ref.offsetHeight / scaleFactor)
-                        };
-                        handleWhiteoutUpdate(overlay.id, newCoordinates);
-                      }}
-                      enableResizing={canEditTags}
-                      disableDragging={!canEditTags}
-                      bounds="parent"
-                      minWidth={20 * scaleFactor}
-                      minHeight={10 * scaleFactor}
-                      style={{
-                        zIndex: 500, // Higher than tags but lower than selected elements
-                      }}
-                      resizeHandleStyles={canEditTags ? {
-                        bottomRight: { 
-                          width: '8px', 
-                          height: '8px', 
-                          backgroundColor: '#6B7280',
-                          border: '2px solid white',
-                          borderRadius: '50%',
-                          right: '-4px',
-                          bottom: '-4px',
-                          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                        }
-                      } : undefined}
-                    >
-                      <div
-                        className="w-full h-full"
-                        style={{
-                          backgroundColor: '#FFFFFF',
-                          border: '1px solid #E5E7EB',
-                          borderRadius: '2px',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                          cursor: canEditTags ? 'move' : 'default'
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Delete' || e.key === 'Backspace') {
-                            e.preventDefault();
-                            handleWhiteoutDelete(overlay.id);
-                          }
-                        }}
-                        tabIndex={0}
-                      />
-                    </Rnd>
-                  ))}
+                  {/* ✅ SIMPLIFIED: Whiteout overlays removed - whiteout tags now render as regular tags */}
 
-                  {/* Text inputs overlay (separate from regular tags) */}
+                  {/* Text inputs overlay (separate from regular tags) - FIXED KEY GENERATION */}
                   {textInputs?.filter(textInput => textInput.coordinates.pageNumber === pageNumber).map((textInput) => {
-                    // Always use coordinate-based stable key to prevent unmount/remount during ID transition
-                    const stableKey = `text-stable-${textInput.coordinates.x}-${textInput.coordinates.y}-${textInput.coordinates.pageNumber}-${scaleFactor}`;
+                    // ✅ CRITICAL FIX: Use ID as primary key to prevent duplication, fallback to coordinates only if ID is unstable
+                    const primaryKey = textInput.id && textInput.id !== 'temp' ? 
+                      `text-${textInput.id}-${scaleFactor}` : 
+                      `text-temp-${textInput.coordinates.x}-${textInput.coordinates.y}-${textInput.coordinates.pageNumber}-${scaleFactor}`;
                     
                     return (
-                    <div key={stableKey} className="absolute top-0 left-0 w-full h-full" style={{ pointerEvents: 'none' }}>
+                    <div key={primaryKey} className="absolute top-0 left-0 w-full h-full" style={{ pointerEvents: 'none' }}>
                       <StreamlinedTextInput
                         id={textInput.id}
                         coordinates={textInput.coordinates}
@@ -1639,6 +1690,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                           // Handle text tag resize - could call parent resize handler or update directly
                           console.log('Text tag resized:', newCoordinates);
                         }}
+                        webSocket={webSocket}
                       />
                     </div>
                     );

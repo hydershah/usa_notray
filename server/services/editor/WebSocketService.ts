@@ -250,6 +250,22 @@ export class WebSocketService {
           this.handleTagContentUpdated(user, message);
           break;
 
+        case 'text_input_changed':
+          this.handleTextInputChanged(user, message);
+          break;
+
+        case 'text_input_created':
+          this.handleTextInputCreated(user, message);
+          break;
+
+        case 'text_input_deleted':
+          this.handleTextInputDeleted(user, message);
+          break;
+
+        case 'text_input_position_updated':
+          this.handleTextInputPositionUpdated(user, message);
+          break;
+
         case 'ping':
           // Handle WebSocket ping - respond with pong
           this.sendToUser(user, {
@@ -418,6 +434,84 @@ export class WebSocketService {
   private handleUserTyping(user: ConnectedUser, message: WSMessage): void {
     // Broadcast typing indicator to other users
     this.broadcastToSession(user.sessionId, message, user.userId);
+  }
+
+  /**
+   * Handle real-time text input content changes
+   */
+  private handleTextInputChanged(user: ConnectedUser, message: WSMessage): void {
+    // Don't store every keystroke in history (too frequent)
+    // Just broadcast to other users for real-time updates
+    this.broadcastToSession(user.sessionId, {
+      ...message,
+      payload: {
+        ...message.payload,
+        userId: user.userId,
+        displayName: user.displayName,
+        timestamp: Date.now()
+      }
+    }, user.userId);
+    
+    console.log(`✏️ Text input changed by ${user.displayName}: ${message.payload?.textInputId} in session ${user.sessionId}`);
+  }
+
+  /**
+   * Handle text input creation
+   */
+  private handleTextInputCreated(user: ConnectedUser, message: WSMessage): void {
+    // Add to message history for new text inputs
+    this.addToMessageHistory(user.sessionId, message);
+    
+    // Broadcast to all users in session
+    this.broadcastToSession(user.sessionId, {
+      ...message,
+      payload: {
+        ...message.payload,
+        createdBy: user.userId,
+        createdByName: user.displayName,
+        timestamp: Date.now()
+      }
+    }, user.userId);
+    
+    console.log(`📝 Text input created by ${user.displayName} in session ${user.sessionId}`);
+  }
+
+  /**
+   * Handle text input deletion
+   */
+  private handleTextInputDeleted(user: ConnectedUser, message: WSMessage): void {
+    // Add to message history
+    this.addToMessageHistory(user.sessionId, message);
+    
+    // Broadcast to all users in session
+    this.broadcastToSession(user.sessionId, {
+      ...message,
+      payload: {
+        ...message.payload,
+        deletedBy: user.userId,
+        deletedByName: user.displayName,
+        timestamp: Date.now()
+      }
+    }, user.userId);
+    
+    console.log(`🗑️ Text input deleted by ${user.displayName}: ${message.payload?.textInputId} in session ${user.sessionId}`);
+  }
+
+  /**
+   * Handle text input position/size updates
+   */
+  private handleTextInputPositionUpdated(user: ConnectedUser, message: WSMessage): void {
+    // Don't store every drag/resize in history (too frequent)
+    // Just broadcast to other users for real-time updates
+    this.broadcastToSession(user.sessionId, {
+      ...message,
+      payload: {
+        ...message.payload,
+        updatedBy: user.userId,
+        updatedByName: user.displayName,
+        timestamp: Date.now()
+      }
+    }, user.userId);
   }
   
   /**

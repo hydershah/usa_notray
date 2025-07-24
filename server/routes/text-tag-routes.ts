@@ -97,6 +97,49 @@ export function registerTextTagRoutes(app: Express) {
         console.warn('Could not parse contentData, using defaults');
       }
 
+      // 🚀 REAL-TIME SYNC: Broadcast text tag placement to all session participants
+      try {
+        const { WebSocketService } = await import('../services/editor/WebSocketService');
+        
+        const syncMessage = {
+          type: 'tag_placed',
+          payload: { 
+            tag: {
+              id: createdTag.id.toString(),
+              sessionId: session.id,
+              documentId: createdTag.documentId,
+              tagType: 'T',
+              assignedUserId: createdTag.assignedUserId,
+              coordinates: {
+                x: createdTag.xPosition,
+                y: createdTag.yPosition,
+                width: createdTag.width,
+                height: createdTag.height,
+                pageNumber: createdTag.pageNumber
+              },
+              displayLabel: `✏️ Text - ${assignedUser.firstName} ${assignedUser.lastName}`,
+              colorCode: colorCode,
+              isCompleted: false,
+              content: createdTag.content || '',
+              contentType: 'text',
+              contentData: createdTag.contentData,
+              createdAt: createdTag.createdAt,
+              updatedAt: createdTag.updatedAt
+            }
+          },
+          userId: req.user.id.toString(),
+          sessionId: session.sessionId,
+          timestamp: Date.now()
+        };
+
+        WebSocketService.broadcastToSession(session.sessionId, syncMessage);
+        console.log(`🔄 Text tag placement broadcasted for new tag ${createdTag.id} in session ${session.sessionId}`);
+        
+      } catch (wsError) {
+        console.warn('Failed to broadcast text tag placement via WebSocket:', wsError);
+        // Don't fail the request if WebSocket broadcast fails
+      }
+
       res.json({
         success: true,
         tag: {
@@ -754,6 +797,26 @@ export function registerTextTagRoutes(app: Express) {
         .where(eq(documentTags.id, numericTagId));
 
       console.log(`✅ Text tag deleted: ${tagId}`);
+
+      // 🚀 REAL-TIME SYNC: Broadcast text tag deletion to all session participants
+      try {
+        const { WebSocketService } = await import('../services/editor/WebSocketService');
+        
+        const syncMessage = {
+          type: 'tag_deleted',
+          payload: { tagId: tagId.toString() },
+          userId: req.user.id.toString(),
+          sessionId,
+          timestamp: Date.now()
+        };
+
+        WebSocketService.broadcastToSession(sessionId, syncMessage);
+        console.log(`🔄 Text tag deletion broadcasted for tag ${tagId} in session ${sessionId}`);
+        
+      } catch (wsError) {
+        console.warn('Failed to broadcast text tag deletion via WebSocket:', wsError);
+        // Don't fail the request if WebSocket broadcast fails
+      }
 
       res.json({
         success: true,
