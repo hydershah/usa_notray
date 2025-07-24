@@ -309,7 +309,7 @@ const SimpleVideoConference: React.FC<SimpleVideoConferenceProps> = ({
       <iframe
         ref={iframeRef}
         className="w-full h-full border-0"
-        allow="camera; microphone; fullscreen; speaker; display-capture"
+        allow="camera; microphone; fullscreen; display-capture"
         title="Whereby Video Session"
       />
       

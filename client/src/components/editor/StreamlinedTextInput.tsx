@@ -320,6 +320,15 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     
     const trimmedValue = inputValue.trim();
     
+    // If there's no content, don't save but keep editing mode for new inputs
+    if (!trimmedValue && isNew) {
+      console.log('📝 Empty content for new input, keeping in edit mode');
+      return;
+    }
+    
+    // Update local state immediately to prevent flickering
+    setLastSavedContent(trimmedValue);
+    
     try {
       const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${id}/content`, {
         method: 'PUT',
@@ -341,18 +350,30 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
           console.log('Text input was deleted, ignoring save attempt');
           return;
         }
-        throw new Error('Failed to save text content');
+        throw new Error(`Failed to save text content: ${response.status}`);
       }
 
-      setIsEditing(false);
-      setHasStartedEditing(false); // Reset editing flag after successful save
-      setLastSavedContent(trimmedValue); // Update last saved content to prevent resets
-      onSave(trimmedValue);
+      const result = await response.json();
+      console.log(`✅ Text saved successfully:`, result);
       
-      console.log(`✅ Text saved: "${trimmedValue}"`);
+      // Only exit edit mode if we have content or if it's not a new input
+      if (trimmedValue || !isNew) {
+        setIsEditing(false);
+        setHasStartedEditing(false);
+      }
+      
+      // Ensure the component remains visible and selected after save
+      setIsVisible(true);
+      
+      // Call parent save handler with the server response
+      onSave(trimmedValue);
       
     } catch (error) {
       console.error('❌ Failed to save text:', error);
+      
+      // Revert local state on error
+      setLastSavedContent(content);
+      
       if (!isDeleted) {
         toast({
           variant: "destructive",
@@ -361,7 +382,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
         });
       }
     }
-  }, [inputValue, sessionId, id, fontSize, fontFamily, textColor, onSave, toast, isDeleted]);
+  }, [inputValue, sessionId, id, fontSize, fontFamily, textColor, onSave, toast, isDeleted, isNew, content]);
 
   // Handle deletion
   const handleDelete = useCallback(() => {
@@ -522,16 +543,24 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       isSelected,
       isEditing,
       clickDetail: e.detail,
-      isNew
+      isNew,
+      target: (e.target as HTMLElement).tagName,
+      isInputTarget: (e.target as HTMLElement).tagName === 'INPUT'
     });
     
+    // If clicking on the input field directly, don't interfere
+    if ((e.target as HTMLElement).tagName === 'INPUT') {
+      return;
+    }
+    
+    // Always select the text input when clicked
     if (onSelect) {
       onSelect();
       console.log('📍 Text tag selection triggered for:', id);
     }
     
-    // Only start editing on double click or if it's a new input
-    if (e.detail === 2 || isNew) {
+    // Start editing immediately for new inputs, or on any click for existing inputs
+    if (isNew || !isEditing) {
       setIsEditing(true);
       setHasStartedEditing(true);
       setTimeout(() => inputRef.current?.focus(), 50);
@@ -559,15 +588,29 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
   const handleBlur = useCallback(() => {
     if (isDeleted) return;
     
-    if (isEditing && inputValue !== content) {
+    console.log('📤 Text input blur event:', {
+      id,
+      isEditing,
+      inputValue: inputValue.trim(),
+      hasContent: inputValue.trim().length > 0,
+      isNew
+    });
+    
+    // Save if content has changed
+    if (isEditing && inputValue.trim() !== lastSavedContent) {
+      console.log('💾 Content changed, saving on blur');
       handleSave();
-    } else if (isEditing && inputValue.trim() !== '') {
-      // Only stop editing if we have content, otherwise keep editing mode
-      setIsEditing(false);
-      setHasStartedEditing(false);
+    } else if (isEditing) {
+      // Only exit edit mode if we have content OR if it's not a new input
+      if (inputValue.trim() || !isNew) {
+        console.log('✅ Exiting edit mode on blur');
+        setIsEditing(false);
+        setHasStartedEditing(false);
+      } else {
+        console.log('📝 Keeping new input in edit mode (no content)');
+      }
     }
-    // If inputValue is empty, keep editing mode active for new inputs
-  }, [isEditing, inputValue, content, handleSave, isDeleted]);
+  }, [isEditing, inputValue, lastSavedContent, handleSave, isDeleted, isNew, id]);
 
   // Old text measurement function - DISABLED in favor of canvas-based measurement
   /*

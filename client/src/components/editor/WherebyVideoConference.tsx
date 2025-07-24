@@ -300,7 +300,7 @@ const WherebyVideoConference: React.FC<WherebyVideoConferenceProps> = ({
       <iframe
         ref={iframeRef}
         className={`w-full h-full border-0 ${isVideoActive && !error ? 'block' : 'hidden'}`}
-        allow="camera; microphone; fullscreen; speaker; display-capture"
+        allow="camera; microphone; fullscreen; display-capture"
         title="Whereby Video Session - Live Signing"
         sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-presentation allow-modals"
       />

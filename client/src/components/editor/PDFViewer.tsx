@@ -337,36 +337,19 @@ const TagRenderer: React.FC<TagRendererProps> = ({
               // Regular completed tag - show actual content as plain text/image
               <div className="w-full h-full flex items-center justify-center">
                 {(tag.contentData || tag.content) && (() => {
-                  // Parse contentData if it's a string, fallback to content with enhanced error handling
+                  // Parse contentData if it's a string, fallback to content
                   let contentData;
                   try {
                     if (tag.contentData) {
-                      // Handle different contentData formats safely
-                      if (typeof tag.contentData === 'string') {
-                        try {
-                          contentData = JSON.parse(tag.contentData);
-                        } catch (parseError) {
-                          // If JSON parsing fails, treat as raw string content
-                          console.warn('📋 contentData not JSON, treating as raw string for tag', tag.id);
-                          contentData = {
-                            type: 'text',
-                            value: tag.contentData
-                          };
-                        }
-                      } else {
-                        contentData = tag.contentData;
-                      }
-                      
+                      contentData = typeof tag.contentData === 'string' ? JSON.parse(tag.contentData) : tag.contentData;
                       console.log('📋 Parsed contentData for tag', tag.id, ':', {
                         tagType: tag.tagType,
-                        contentDataType: contentData?.type || 'unknown',
-                        hasValue: !!contentData?.value,
-                        valueType: typeof contentData?.value,
-                        valuePreview: contentData?.value && typeof contentData.value === 'string' ? 
-                          contentData.value.substring(0, 100) + '...' : 
-                          JSON.stringify(contentData?.value).substring(0, 100) + '...',
-                        isBase64Image: typeof contentData?.value === 'string' && contentData.value.startsWith('data:image/'),
-                        isVultrUrl: typeof contentData?.value === 'string' && contentData.value.includes('vultrobjects.com')
+                        contentDataType: contentData.type,
+                        hasValue: !!contentData.value,
+                        valueType: typeof contentData.value,
+                        valuePreview: typeof contentData.value === 'string' ? contentData.value.substring(0, 100) + '...' : contentData.value,
+                        isBase64Image: typeof contentData.value === 'string' && contentData.value.startsWith('data:image/'),
+                        isVultrUrl: typeof contentData.value === 'string' && contentData.value.includes('vultrobjects.com')
                       });
                     } else if (tag.content) {
                       contentData = {
@@ -375,61 +358,104 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                       };
                       console.log('📋 Using raw content for tag', tag.id, ':', {
                         tagType: tag.tagType,
-                        contentPreview: typeof tag.content === 'string' ? tag.content.substring(0, 100) + '...' : JSON.stringify(tag.content),
-                        isBase64Image: typeof tag.content === 'string' && tag.content.startsWith('data:image/'),
-                        isVultrUrl: typeof tag.content === 'string' && tag.content.includes('vultrobjects.com')
+                        contentPreview: tag.content.substring(0, 100) + '...',
+                        isBase64Image: tag.content.startsWith('data:image/'),
+                        isVultrUrl: tag.content.includes('vultrobjects.com')
                       });
                     } else {
                       contentData = { type: 'text', value: '' };
                     }
                   } catch (e) {
                     console.error('Failed to parse contentData for tag', tag.id, ':', e, 'Raw contentData:', tag.contentData);
-                    // Safe fallback that won't cause runtime errors
-                    const fallbackValue = (() => {
-                      try {
-                        if (typeof tag.content === 'string') return tag.content;
-                        if (typeof tag.contentData === 'string') return tag.contentData;
-                        return JSON.stringify(tag.content || tag.contentData || '');
-                      } catch {
-                        return '[Content parsing error]';
-                      }
-                    })();
-                    
                     contentData = {
                       type: 'text',
-                      value: fallbackValue
+                      value: tag.content || tag.contentData || ''
                     };
                   }
                   
-                  // Helper function to check if contentData contains an image
+                  // Enhanced image detection logic
                   const isImageContent = () => {
-                    if (!contentData || !contentData.value) return false;
+                    // CRITICAL: Whiteout tags should NEVER be treated as images
+                    if (tag.tagType === 'W') {
+                      return false; // Whiteout is always text/solid color, never an image
+                    }
                     
-                    const value = contentData.value;
-                    const isSignatureType = contentData.type === 'signature' || contentData.type === 'initials' || contentData.type === 'seal';
-                    const isImageUrl = (typeof value === 'string') && (
-                      value.startsWith('data:image/') ||
-                      value.startsWith('https://') ||
-                      value.startsWith('http://') ||
-                      value.includes('vultrobjects.com') ||
-                      value.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i)
-                    );
-                    
-                    console.log('🔍 Image content check for tag', tag.id, ':', {
+                    console.log('🔍 Image detection for tag', tag.id, ':', {
                       tagType: tag.tagType,
-                      contentDataType: contentData.type,
-                      isSignatureType,
-                      valueType: typeof value,
-                      valueLength: typeof value === 'string' ? value.length : 'not string',
-                      startsWithDataImage: typeof value === 'string' && value.startsWith('data:image/'),
-                      startsWithHttps: typeof value === 'string' && value.startsWith('https://'),
-                      includesVultr: typeof value === 'string' && value.includes('vultrobjects.com'),
-                      hasImageExtension: typeof value === 'string' && !!value.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i),
-                      isImageUrl,
-                      result: isSignatureType && isImageUrl
+                      hasContentData: !!contentData,
+                      contentDataType: contentData?.type,
+                      contentDataValue: contentData?.value ? contentData.value.substring(0, 50) + '...' : null,
+                      hasTagContent: !!tag.content,
+                      tagContentPreview: tag.content ? tag.content.substring(0, 50) + '...' : null,
+                      contentType: tag.contentType
                     });
                     
-                    return isSignatureType && isImageUrl;
+                    // Check contentData.value first (most reliable)
+                    if (contentData?.value && typeof contentData.value === 'string') {
+                      const value = contentData.value;
+                      const hasImageData = (
+                        value.startsWith('data:image/') ||
+                        value.startsWith('https://') ||
+                        value.includes('vultrobjects.com') ||
+                        value.includes('.png') ||
+                        value.includes('.jpg') ||
+                        value.includes('.jpeg') ||
+                        value.includes('.webp') ||
+                        value.includes('.gif') ||
+                        value.includes('.svg')
+                      );
+                      
+                      if (hasImageData) {
+                        console.log('✅ Image detected in contentData.value for tag', tag.id, 'Value type:', value.substring(0, 30) + '...');
+                        return true;
+                      }
+                    }
+                    
+                    // Check raw content field as fallback (for direct image data)
+                    if (tag.content && typeof tag.content === 'string') {
+                      const hasImageData = (
+                        tag.content.startsWith('data:image/') ||
+                        tag.content.startsWith('https://') ||
+                        tag.content.includes('vultrobjects.com') ||
+                        tag.content.includes('.png') ||
+                        tag.content.includes('.jpg') ||
+                        tag.content.includes('.jpeg') ||
+                        tag.content.includes('.webp')
+                      );
+                      
+                      if (hasImageData) {
+                        console.log('✅ Image detected in raw content for tag', tag.id);
+                        return true;
+                      }
+                    }
+                    
+                    // Check contentType field
+                    if (contentData?.contentType === 'image' || tag.contentType === 'image') {
+                      console.log('✅ Image detected via contentType for tag', tag.id);
+                      return true;
+                    }
+                    
+                    // Check if it's a signature/initials/seal type with content
+                    if (contentData?.type && ['signature', 'initials', 'seal', 'stamp'].includes(contentData.type)) {
+                      // Only return true if there's actual image-like content
+                      const contentToCheck = contentData.value || tag.content;
+                      const isImageLike = !!(contentToCheck && 
+                              typeof contentToCheck === 'string' && 
+                              contentToCheck.length > 50 && // Must be substantial content
+                              (contentToCheck.startsWith('data:image/') || 
+                               contentToCheck.startsWith('https://') ||
+                               contentToCheck.includes('vultrobjects.com')));
+                      
+                      if (isImageLike) {
+                        console.log('✅ Image detected via signature/seal type for tag', tag.id);
+                      }
+                      
+                      return isImageLike;
+                    }
+                    
+                    const result = false;
+                    console.log('🔍 Image detection result for tag', tag.id, ':', result);
+                    return result;
                   };
                   
                   // If image failed to load or not image content, show text content
@@ -444,96 +470,16 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                           fontFamily: 'inherit'
                         }}
                       >
-                        {/* Show actual content for completed tags, prioritizing image display for signature/seal tags */}
-                        {(() => {
-                          // Only display meaningful content to users, never debug data
-                          if (typeof contentData?.value === 'string') {
-                            const value = contentData.value;
-                            
-                            // For signature, initials, and seal tags, prioritize showing images even with technical URLs
-                            const isSignatureOrSealTag = ['S', 'I', 'E'].includes(tag.tagType);
-                            const isImageUrl = value.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i) || 
-                                             value.startsWith('data:image') || 
-                                             value.includes('vultrobjects.com') || 
-                                             (value.startsWith('http') && isSignatureOrSealTag);
-                            
-                            if (isImageUrl) {
-                              // For image content that failed to load, try to display as img element anyway
-                              // This allows the browser's error handling to take over
-                              return (
-                                <img 
-                                  src={value} 
-                                  alt={`${tag.tagType === 'S' ? 'Signature' : tag.tagType === 'I' ? 'Initials' : 'Seal'}`}
-                                  className="max-h-full max-w-full object-contain"
-                                  onError={(e) => {
-                                    // If image still fails, replace with a user-friendly message
-                                    const img = e.target as HTMLImageElement;
-                                    const parent = img.parentElement;
-                                    if (parent) {
-                                      parent.innerHTML = `<div class="text-center text-gray-600 text-xs">[${tag.tagType === 'S' ? 'Signature Applied' : tag.tagType === 'I' ? 'Initials Applied' : 'Seal Applied'}]</div>`;
-                                    }
-                                  }}
-                                />
-                              );
-                            }
-                            
-                            // Filter out technical/debug data for non-image URLs only
-                            if (value.includes('Algorithm=') || value.includes('Signature=') || value.includes('Expires=') || value.includes('&X-Amz-')) {
-                              return '[Applied]';
-                            }
-                            return value;
-                          } else if (contentData?.value && typeof contentData.value === 'object') {
-                            return '[Applied]';
-                          } else {
-                            return tag.content && typeof tag.content === 'string' ? tag.content : '[No content]';
-                          }
-                        })()}
+                        {/* Always show the actual content, never "Applied" messages */}
+                        {typeof contentData?.value === 'string' ? contentData.value : 
+                         contentData?.value ? JSON.stringify(contentData.value) :
+                         tag.content || '[No content]'}
                       </div>
                     );
                   }
                   
-                  // Determine the best image source from available data, handling nested objects
-                  const getImageUrl = () => {
-                    // First try contentData.value
-                    if (typeof contentData?.value === 'string') return contentData.value;
-                    
-                    // Try nested object structure (for complex signature data)
-                    if (contentData?.value && typeof contentData.value === 'object') {
-                      const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src', 'value'];
-                      for (const key of possibleKeys) {
-                        if (typeof (contentData.value as any)[key] === 'string') {
-                          return (contentData.value as any)[key];
-                        }
-                      }
-                    }
-                    
-                    // Fallback to tag.content
-                    if (typeof tag.content === 'string') return tag.content;
-                    
-                    // Try nested object in tag.content
-                    if (tag.content && typeof tag.content === 'object') {
-                      const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src', 'value'];
-                      for (const key of possibleKeys) {
-                        if (typeof (tag.content as any)[key] === 'string') {
-                          return (tag.content as any)[key];
-                        }
-                      }
-                    }
-                    
-                    return '';
-                  };
-
-                  console.log('🎨 Rendering completed tag', tag.id, ':', {
-                    tagType: tag.tagType,
-                    isImageContent: isImageContent(),
-                    imageUrl: getImageUrl(),
-                    contentDataType: contentData?.type,
-                    contentDataValue: typeof contentData?.value === 'string' 
-                      ? contentData.value.substring(0, 100) + '...' 
-                      : JSON.stringify(contentData?.value)
-                  });
-
-                  const imageSource = getImageUrl();
+                  // Determine the best image source from available data
+                  const imageSource = contentData.value || tag.content || '';
                   
                   return (
                     <img 
@@ -548,36 +494,11 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                         maxWidth: '100%'
                       }}
                       onError={(e) => {
-                        console.error('🖼️ Image failed to load for tag:', tag.id, 'Source:', typeof imageSource === 'string' ? imageSource.substring(0, 100) + '...' : JSON.stringify(imageSource), 'ContentData:', contentData);
-                        
-                        // IMPROVED ERROR HANDLING: Try different approaches
-                        const img = e.target as HTMLImageElement;
-                        
-                        // If it's a Vultr URL that might be expired, try to refresh it
-                        if (imageSource.includes('vultrobjects.com') && imageSource.includes('X-Amz-Expires')) {
-                          console.log('🔄 Attempting to refresh expired Vultr URL for tag:', tag.id);
-                          // Remove the current error state and try to reload the tag
-                          fetch(`/api/tags/${tag.id}/refresh-content`, {
-                            method: 'POST',
-                            headers: {
-                              'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                              'Content-Type': 'application/json'
-                            }
-                          }).then(response => {
-                            if (response.ok) {
-                              console.log('✅ Tag content refreshed, triggering page reload');
-                              // Could trigger a tag refresh here
-                            }
-                          }).catch(err => {
-                            console.error('❌ Failed to refresh tag content:', err);
-                          });
-                        }
-                        
+                        console.error('🖼️ Image failed to load for tag:', tag.id, 'Source:', imageSource, 'ContentData:', contentData);
                         setImageLoadError(true);
                       }}
                       onLoad={() => {
                         console.log('✅ Image loaded successfully for tag:', tag.id, 'Type:', tag.tagType);
-                        setImageLoadError(false); // Reset error state on successful load
                       }}
                     />
                   );
@@ -743,7 +664,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
           // Replace token placeholder if present
           const token = localStorage.getItem('token');
           const fetchUrl = url.includes('{{TOKEN}}') ? url.replace('{{TOKEN}}', token || '') : url;
-          console.log('🔗 Final fetch URL:', typeof fetchUrl === 'string' ? fetchUrl.substring(0, 100) + '...' : JSON.stringify(fetchUrl));
+          console.log('🔗 Final fetch URL:', fetchUrl.substring(0, 100) + '...');
           
           const response = await fetch(fetchUrl, {
             method: 'GET',
@@ -822,7 +743,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
           // Check if response is HTML (likely an error page)
           if (contentType && contentType.includes('text/html')) {
             const htmlText = await response.text();
-            console.error('📄 Server returned HTML instead of PDF. First 500 chars:', typeof htmlText === 'string' ? htmlText.substring(0, 500) : JSON.stringify(htmlText));
+            console.error('📄 Server returned HTML instead of PDF. First 500 chars:', htmlText.substring(0, 500));
             throw new Error('Server returned an HTML page instead of PDF. This usually means authentication failed or the document URL is incorrect.');
           }
           
@@ -1199,57 +1120,36 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     renderInitialPages();
   }, [pdfDoc, renderPage]);
 
-  // Re-render pages on zoom change - FIXED: Cancel existing renders first
+  // Re-render pages on zoom change
   useEffect(() => {
     if (!pdfDoc) return;
     
     console.log('🔄 Zoom changed, re-rendering all pages...');
+    setRenderedPages(new Set());
+    setScaleFactors(new Map());
     
-    // CRITICAL FIX: Cancel ALL existing render tasks before starting new ones
-    renderTasksRef.current.forEach((task, pageNumber) => {
-      if (task && typeof task.cancel === 'function') {
+    const renderAllPages = async () => {
+      // Render pages sequentially to avoid concurrent canvas operations
+      for (let i = 1; i <= pdfDoc.numPages; i++) {
         try {
-          task.cancel();
-          console.log(`🚫 Cancelled render task for page ${pageNumber} due to zoom change`);
-        } catch (e) {
-          // Ignore cancellation errors
+          await renderPage(i, true); // Force render on zoom change
+          // Small delay between renders to prevent canvas conflicts
+          await new Promise(resolve => setTimeout(resolve, 5));
+        } catch (error) {
+          console.error(`Failed to render page ${i} during zoom:`, error);
         }
       }
-    });
-    renderTasksRef.current.clear();
+      console.log('✅ All pages re-rendered after zoom change');
+    };
     
-    // Wait for cancellations to complete before starting new renders
-    setTimeout(async () => {
-      setRenderedPages(new Set());
-      setScaleFactors(new Map());
-      
-      const renderAllPages = async () => {
-        // Render pages sequentially to avoid concurrent canvas operations
-        for (let i = 1; i <= pdfDoc.numPages; i++) {
-          // Double-check mount status
-          if (!isMountedRef.current) break;
-          
-          try {
-            await renderPage(i, true); // Force render on zoom change
-            // Longer delay between renders to prevent canvas conflicts
-            await new Promise(resolve => setTimeout(resolve, 50));
-          } catch (error) {
-            console.error(`Failed to render page ${i} during zoom:`, error);
-          }
-        }
-        console.log('✅ All pages re-rendered after zoom change');
-      };
-      
-      renderAllPages();
-    }, 100); // Wait 100ms for cancellations to complete
-    
+    renderAllPages();
   }, [pdfDoc, viewer.zoomLevel, renderPage]);
 
   // Log component state changes (debounced to prevent spam)
   useEffect(() => {
     const timeout = setTimeout(() => {
       console.log('📊 PDFViewer state update:', {
-        documentUrl: documentUrl && typeof documentUrl === 'string' ? documentUrl.substring(0, 50) + '...' : JSON.stringify(documentUrl),
+        documentUrl: documentUrl?.substring(0, 50) + '...',
         pdfDocLoaded: !!pdfDoc,
         numPages: pdfDoc?.numPages,
         loading,

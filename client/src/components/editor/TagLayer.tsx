@@ -107,6 +107,26 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       // Update local state immediately (optimistic update)
       onUpdate(newPdfCoordinates);
       
+      // 🚀 REAL-TIME SYNC: Broadcast tag position update to all participants
+      const { useEditorStore } = await import('@/hooks/editor/useEditorStore');
+      const webSocket = useEditorStore.getState().webSocket;
+      
+      if (webSocket && webSocket.tagUpdated) {
+        try {
+          console.log('📡 Broadcasting tag position update via WebSocket:', {
+            tagId: tag.id,
+            coordinates: newPdfCoordinates
+          });
+          
+          webSocket.tagUpdated(tag.id, { coordinates: newPdfCoordinates });
+          console.log('✅ Tag position update broadcasted successfully');
+        } catch (wsError) {
+          console.warn('⚠️ Failed to broadcast tag position update via WebSocket:', wsError);
+        }
+      } else {
+        console.warn('⚠️ WebSocket not available for broadcasting tag position update');
+      }
+      
       // Send to server
       const response = await fetch(`/api/editor/session/${session.id}/tag/${tag.id}`, {
         method: 'PUT',
@@ -154,6 +174,26 @@ const TagRenderer: React.FC<TagRendererProps> = ({
     try {
       // Update local state immediately (optimistic update)  
       onUpdate(newPdfCoordinates);
+      
+      // 🚀 REAL-TIME SYNC: Broadcast tag resize update to all participants
+      const { useEditorStore } = await import('@/hooks/editor/useEditorStore');
+      const webSocket = useEditorStore.getState().webSocket;
+      
+      if (webSocket && webSocket.tagUpdated) {
+        try {
+          console.log('📡 Broadcasting tag resize update via WebSocket:', {
+            tagId: tag.id,
+            coordinates: newPdfCoordinates
+          });
+          
+          webSocket.tagUpdated(tag.id, { coordinates: newPdfCoordinates });
+          console.log('✅ Tag resize update broadcasted successfully');
+        } catch (wsError) {
+          console.warn('⚠️ Failed to broadcast tag resize update via WebSocket:', wsError);
+        }
+      } else {
+        console.warn('⚠️ WebSocket not available for broadcasting tag resize update');
+      }
       
       // Send to server
       const response = await fetch(`/api/editor/session/${session.id}/tag/${tag.id}`, {
@@ -514,16 +554,11 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           
           if (mode.mode === 'signing' && !tag.isCompleted) {
             if (canInteract && onTagClick) {
-              // Check if it's a double-click to open the modal
-              if (e.detail === 2) {
-                console.log('🎯 Double-click detected - triggering tag interaction for tag:', tag.id);
-                onTagClick(tag);
-              } else {
-                // Single-click: just select the tag
-                console.log('🔗 Single-click detected - selecting tag:', tag.id);
-                onSelect();
-              }
+              // Single-click: trigger tag interaction immediately for better UX
+              console.log('🎯 Single-click detected - triggering tag interaction for tag:', tag.id);
+              onTagClick(tag);
             } else {
+              console.log('🔗 Single-click detected - selecting tag:', tag.id);
               onSelect();
             }
           } else {
@@ -590,16 +625,12 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         });
         
         if (onTagClick && mode.mode === 'signing' && !tag.isCompleted) {
-          // Check if it's a double-click to open the modal
-          if (e.detail === 2) {
-            console.log('🎯 Double-click detected - triggering tag interaction for tag:', tag.id);
-            onTagClick(tag);
-          } else {
-            // Single-click: just select the tag
-            console.log('🔗 Single-click detected - selecting tag:', tag.id);
-            onSelect();
-          }
+          // Single-click: trigger tag interaction immediately for better UX
+          console.log('🎯 Single-click detected - triggering tag interaction for tag:', tag.id);
+          onTagClick(tag);
         } else {
+          // Single-click: just select the tag
+          console.log('🔗 Single-click detected - selecting tag:', tag.id);
           onSelect();
         }
       }}

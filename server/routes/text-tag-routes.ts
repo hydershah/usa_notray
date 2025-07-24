@@ -399,6 +399,40 @@ export function registerTextTagRoutes(app: Express) {
 
       console.log(`✅ Text tag position updated: ${tagId} -> (${x}, ${y})`);
 
+      // 🚀 REAL-TIME SYNC: Broadcast text tag position update to all session participants
+      try {
+        const { WebSocketService } = await import('../services/editor/WebSocketService');
+        
+        const syncMessage = {
+          type: 'tag_updated',
+          payload: {
+            tagId: updatedTag.id.toString(),
+            tagType: 'T', // Text tag type
+            updates: {
+              coordinates: {
+                x: updatedTag.xPosition,
+                y: updatedTag.yPosition,
+                width: updatedTag.width,
+                height: updatedTag.height,
+                pageNumber: updatedTag.pageNumber
+              }
+            },
+            updatedBy: req.user.id,
+            source: 'position_update'
+          },
+          userId: req.user.id.toString(),
+          sessionId,
+          timestamp: Date.now()
+        };
+
+        WebSocketService.broadcastToSession(sessionId, syncMessage);
+        console.log(`🔄 Text tag position update broadcasted for tag ${tagId} in session ${sessionId}`);
+        
+      } catch (wsError) {
+        console.warn('Failed to broadcast text tag position update via WebSocket:', wsError);
+        // Don't fail the request if WebSocket broadcast fails
+      }
+
       res.json({
         success: true,
         tag: {
@@ -469,6 +503,40 @@ export function registerTextTagRoutes(app: Express) {
       }
 
       console.log(`✅ Text tag dimensions updated: ${tagId} -> (${x}, ${y}, ${width}x${height})`);
+
+      // 🚀 REAL-TIME SYNC: Broadcast text tag dimensions update to all session participants
+      try {
+        const { WebSocketService } = await import('../services/editor/WebSocketService');
+        
+        const syncMessage = {
+          type: 'tag_updated',
+          payload: {
+            tagId: updatedTag.id.toString(),
+            tagType: 'T', // Text tag type
+            updates: {
+              coordinates: {
+                x: updatedTag.xPosition,
+                y: updatedTag.yPosition,
+                width: updatedTag.width,
+                height: updatedTag.height,
+                pageNumber: updatedTag.pageNumber
+              }
+            },
+            updatedBy: req.user.id,
+            source: 'dimensions_update'
+          },
+          userId: req.user.id.toString(),
+          sessionId,
+          timestamp: Date.now()
+        };
+
+        WebSocketService.broadcastToSession(sessionId, syncMessage);
+        console.log(`🔄 Text tag dimensions update broadcasted for tag ${tagId} in session ${sessionId}`);
+        
+      } catch (wsError) {
+        console.warn('Failed to broadcast text tag dimensions update via WebSocket:', wsError);
+        // Don't fail the request if WebSocket broadcast fails
+      }
 
       res.json({
         success: true,

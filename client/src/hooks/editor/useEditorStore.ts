@@ -63,6 +63,7 @@ interface EditorStore {
   syncEnabled: boolean;
   lastSyncTime: Date | null;
   isConnected: boolean;
+  webSocket: any | null; // WebSocket instance for real-time collaboration
   
   // Actions - Session Management
   setSession: (session: EditorSession | null) => void;
@@ -113,6 +114,7 @@ interface EditorStore {
   setSyncEnabled: (enabled: boolean) => void;
   setConnectionStatus: (connected: boolean) => void;
   updateLastSync: () => void;
+  setWebSocket: (webSocket: any) => void;
   
   // Complex actions
   placeTag: (command: PlaceTagCommand) => Promise<void>;
@@ -173,6 +175,7 @@ export const useEditorStore = create<EditorStore>()(
       syncEnabled: true,
       lastSyncTime: null,
       isConnected: false,
+      webSocket: null,
       
       // Session Management Actions
       setSession: (session) => set({ session }),
@@ -376,6 +379,8 @@ export const useEditorStore = create<EditorStore>()(
       setConnectionStatus: (connected) => set({ isConnected: connected }),
       
       updateLastSync: () => set({ lastSyncTime: new Date() }),
+      
+      setWebSocket: (webSocket) => set({ webSocket }),
       
       // Complex Actions
       placeTag: async (command: PlaceTagCommand) => {

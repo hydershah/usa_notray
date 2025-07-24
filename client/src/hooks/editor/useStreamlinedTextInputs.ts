@@ -220,20 +220,21 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
         return;
       }
 
-      // Remove from local state immediately
-      setTextInputs(prev => prev.filter(input => input.id !== textInputId));
-      
-      if (selectedTextInputId === textInputId) {
-        setSelectedTextInputId(null);
-      }
+      console.log(`🗑️ Starting deletion of text input: ${textInputId}`);
 
       // Don't send delete request for temporary/pending inputs
       if (pendingCreations.current.has(textInputId)) {
+        console.log(`📝 Deleting pending creation: ${textInputId}`);
         pendingCreations.current.delete(textInputId);
+        // Remove from local state for pending items
+        setTextInputs(prev => prev.filter(input => input.id !== textInputId));
+        if (selectedTextInputId === textInputId) {
+          setSelectedTextInputId(null);
+        }
         return;
       }
 
-      // Send delete request to server
+      // For existing server items, send delete request first
       const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${textInputId}`, {
         method: 'DELETE',
         headers: {
@@ -243,27 +244,39 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       });
 
       if (!response.ok) {
-        // If it's already deleted (404), that's ok
+        // If it's already deleted (404), that's ok - remove from local state
         if (response.status === 404) {
           console.log(`Text input ${textInputId} was already deleted on server`);
+          setTextInputs(prev => prev.filter(input => input.id !== textInputId));
+          if (selectedTextInputId === textInputId) {
+            setSelectedTextInputId(null);
+          }
           return;
         }
-        throw new Error('Failed to delete text input');
+        throw new Error(`Failed to delete text input: ${response.status}`);
       }
 
-      console.log(`✅ Text input deleted: ${textInputId}`);
+      // Only remove from local state after successful server deletion
+      setTextInputs(prev => prev.filter(input => input.id !== textInputId));
+      
+      if (selectedTextInputId === textInputId) {
+        setSelectedTextInputId(null);
+      }
+
+      console.log(`✅ Text input deleted successfully: ${textInputId}`);
 
     } catch (error) {
       console.error('❌ Failed to delete text input:', error);
       
-      // Only show toast if it's not a 404 (already deleted)
-      if (error instanceof Error && !error.message.includes('404')) {
-        toast({
-          variant: "destructive",
-          title: "Delete Failed",
-          description: "Failed to delete text input. Please try again."
-        });
-      }
+      // Show user-friendly error message
+      toast({
+        variant: "destructive",
+        title: "Delete Failed",
+        description: `Failed to delete text input. ${error instanceof Error ? error.message : 'Please try again.'}`
+      });
+      
+      // Note: We don't restore the item to local state here because the deletion
+      // might have succeeded on the server even if we got an error response
     }
   }, [sessionId, selectedTextInputId, textInputs, toast]);
 

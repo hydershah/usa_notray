@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
 import { PDFViewer } from './PDFViewer';
 import { TaggingToolbar } from './TaggingToolbar';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
@@ -24,7 +24,7 @@ interface PDFTaggingEditorProps {
   onSetActiveUser?: (userId: number) => void;
   onSyncUsers?: () => void;
   isSyncLoading?: boolean;
-  webSocket?: any; // WebSocket instance for real-time updates
+  webSocket?: any;
 }
 
 export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
@@ -69,7 +69,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     saveTagUpdate,
     deleteTag,
     batchSaveChanges
-  } = useTagOperations(sessionId, webSocket);
+  } = useTagOperations(sessionId);
 
   // Streamlined text inputs for immediate editing
   const {
@@ -104,7 +104,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     setParticipants,
     setCurrentUser,
     setMode,
-    setZoomLevel
+    setZoomLevel,
+    setWebSocket
   } = useEditorStore();
 
   // Handle page load from PDFViewer to get canvas element
@@ -180,6 +181,22 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     document.addEventListener('click', handleGlobalClick);
     return () => document.removeEventListener('click', handleGlobalClick);
   }, [selectedTextInputId, selectTextInput, justPlacedTextInput]);
+
+  // Store WebSocket instance in editor store for global access - stabilized to prevent infinite loops
+  const stableWebSocket = useMemo(() => {
+    // Only return the webSocket if it's connected, otherwise return null
+    return webSocket?.connectionState?.isConnected ? webSocket : null;
+  }, [webSocket?.connectionState?.isConnected]);
+  
+  useEffect(() => {
+    if (stableWebSocket) {
+      console.log('📡 Storing WebSocket instance in editor store for global access');
+      setWebSocket(stableWebSocket);
+    } else {
+      console.log('📡 Clearing WebSocket instance from editor store');
+      setWebSocket(null);
+    }
+  }, [stableWebSocket, setWebSocket]);
 
   // Initialize session on mount
   useEffect(() => {
@@ -348,12 +365,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
                   initialsTyped: profile.initialsTyped
                 }
               };
-            } else if (response.status === 403) {
-              // This is expected - signers can't access other users' profiles
-              console.log(`ℹ️ Access denied to profile for ${participant.displayName} - this is expected for security`);
-              return null;
             } else {
-              console.warn(`⚠️ Failed to load profile for ${participant.displayName} (${participant.userType}):`, response.status);
+              console.warn(`⚠️ Failed to load profile for ${participant.displayName}`);
               return null;
             }
           } catch (error) {
@@ -381,42 +394,6 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
 
     loadUserProfiles();
   }, [mode, participants]);
-
-  // 🔧 FIX: Sync text inputs when tags change via WebSocket
-  useEffect(() => {
-    // Only sync text inputs when tags change and we have text tags
-    const textTags = tags.filter(tag => tag.tagType === 'T');
-    if (textTags.length > 0) {
-      console.log('🔄 Syncing text inputs with updated tags:', textTags.length, 'text tags');
-      loadTextInputsFromTags(tags);
-    }
-  }, [tags, loadTextInputsFromTags]);
-
-  // 🔧 FIX: Sync whiteout overlays when tags change via WebSocket
-  useEffect(() => {
-    // Update whiteout overlays when whiteout tags change
-    const whiteoutTags = tags.filter((tag: DocumentTag) => 
-      tag.tagType === 'W' && tag.isCompleted
-    );
-    
-    if (whiteoutTags.length > 0) {
-      console.log('🔄 Syncing whiteout overlays with updated tags:', whiteoutTags.length, 'whiteout tags');
-      const overlays = whiteoutTags.map((tag: DocumentTag) => ({
-        id: `whiteout_${tag.id}`,
-        documentId: tag.documentId.toString(),
-        coordinates: {
-          x: tag.coordinates.x,
-          y: tag.coordinates.y,
-          width: tag.coordinates.width,
-          height: tag.coordinates.height,
-          pageNumber: tag.coordinates.pageNumber
-        },
-        sessionId: sessionId,
-        createdAt: new Date(tag.createdAt)
-      }));
-      useEditorStore.getState().setWhiteoutOverlays(overlays);
-    }
-  }, [tags, sessionId]);
 
   // Handle instant tag completion (whiteout) - Complete immediately without user interaction
   const handleInstantTagCompletion = useCallback(async (tag: DocumentTag) => {
@@ -527,33 +504,6 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         } : t
       );
       setTags(updatedTags);
-
-      // 🚀 REAL-TIME SYNC: Broadcast auto-fill update to all participants
-      if (webSocket && webSocket.tagContentUpdated) {
-        try {
-          console.log('📡 Broadcasting auto-fill update via WebSocket:', {
-            tagId: tag.id,
-            tagType: tag.tagType,
-            isCompleted: true
-          });
-          
-          const contentToSend = result.tag?.contentData ? 
-            JSON.parse(result.tag.contentData) : 
-            result.autoFillResult?.contentData || result.autoFillResult?.content;
-            
-          webSocket.tagContentUpdated(
-            tag.id.toString(),
-            contentToSend,
-            result.tag?.contentType || result.autoFillResult?.contentType || 'text',
-            true,
-            'auto_fill'
-          );
-          
-          console.log('✅ Auto-fill update broadcasted successfully');
-        } catch (wsError) {
-          console.warn('⚠️ Failed to broadcast auto-fill update via WebSocket:', wsError);
-        }
-      }
 
       // Show success message
       toast({
@@ -954,37 +904,6 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       );
       setTags(updatedTags);
 
-      // 🚀 REAL-TIME SYNC: Broadcast tag content update to all participants
-      if (webSocket && webSocket.tagContentUpdated) {
-        try {
-          console.log('📡 Broadcasting tag content update via WebSocket:', {
-            tagId: selectedTagForInput.id,
-            tagType: selectedTagForInput.tagType,
-            isCompleted: true,
-            hasWebSocket: !!webSocket
-          });
-          
-          // Use the WebSocket instance to broadcast the update
-          webSocket.tagContentUpdated(
-            selectedTagForInput.id.toString(),
-            content,
-            'interactive',
-            true,
-            'manual'
-          );
-          
-          console.log('✅ Tag content update broadcasted successfully');
-        } catch (wsError) {
-          console.warn('⚠️ Failed to broadcast tag update via WebSocket:', wsError);
-          // Don't fail the entire operation if WebSocket fails
-        }
-      } else {
-        console.warn('⚠️ No WebSocket available for broadcasting tag update:', {
-          hasWebSocket: !!webSocket,
-          hasTagContentUpdated: !!(webSocket && webSocket.tagContentUpdated)
-        });
-      }
-
       toast({
         title: "Tag Completed",
         description: "Content saved successfully.",
@@ -1296,7 +1215,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
             sessionId={sessionId}
             onCoordinateClick={handleTagPlacement}
             onTagClick={mode === 'signing' ? handleTagClick : undefined}
-            tags={tags.filter(tag => tag.documentId === currentDocument.id)}
+            tags={tags.filter(tag => tag.documentId === currentDocument.id && tag.tagType !== 'T' && tag.tagType !== 'W')}
             mode={mode === 'notary' ? 'tagging' : mode as 'tagging' | 'signing'}
             selectedUser={selectedUser}
             onTagUpdate={updateTagPosition}
