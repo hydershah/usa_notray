@@ -573,17 +573,39 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       
       const result = await response.json();
       
-      // Add to store with server response data
-      const serverOverlay = {
+      // Convert the server response to a proper DocumentTag and add to tags array
+      // The server actually creates a completed whiteout tag, not an overlay
+      const whiteoutTag = {
         id: result.overlay.id,
         documentId: result.overlay.documentId,
-        coordinates: result.overlay.coordinates,
         sessionId: result.overlay.sessionId,
-        createdAt: new Date(result.overlay.createdAt)
+        tagType: 'W' as const,
+        assignedUserId: localStorage.getItem('userId') || '0',
+        coordinates: {
+          x: result.overlay.coordinates.x,
+          y: result.overlay.coordinates.y,
+          width: result.overlay.coordinates.width,
+          height: result.overlay.coordinates.height,
+          pageNumber: result.overlay.coordinates.pageNumber
+        },
+        isCompleted: true, // Whiteout is immediately completed
+        content: 'WHITEOUT',
+        contentType: 'whiteout',
+        contentData: JSON.stringify({
+          type: 'whiteout',
+          value: 'WHITEOUT',
+          timestamp: new Date().toISOString()
+        }),
+        displayLabel: 'Whiteout',
+        createdAt: new Date(result.overlay.createdAt),
+        updatedAt: new Date(result.overlay.createdAt),
+        completedAt: new Date(result.overlay.createdAt),
+        colorCode: '#FFFFFF' // White color for whiteout
       };
       
-      useEditorStore.getState().addWhiteoutOverlay(serverOverlay);
-      console.log('✅ Whiteout overlay saved to server and added to store:', result);
+      // Add the completed whiteout tag to the tags array (not overlay array)
+      useEditorStore.getState().addTag(whiteoutTag);
+      console.log('✅ Whiteout tag created and added to tags:', result);
       
     } catch (error) {
       console.error('❌ Failed to place whiteout overlay:', error);
