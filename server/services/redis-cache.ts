@@ -202,6 +202,13 @@ export class RedisCache {
   }
 
   /**
+   * Public method to check if Redis is disabled
+   */
+  public isRedisDisabled(): boolean {
+    return this.isDisabled();
+  }
+
+  /**
    * Get cached value with automatic JSON parsing
    */
   async get<T>(key: string): Promise<T | null> {
@@ -254,6 +261,31 @@ export class RedisCache {
       return result === 'OK';
     } catch (error) {
       console.error('Redis SET error:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Set key only if it doesn't exist (atomic operation for locking)
+   */
+  async setIfNotExists(key: string, value: any, ttlSeconds: number): Promise<boolean> {
+    if (this.isDisabled()) return false;
+
+    try {
+      const startTime = performance.now();
+      const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+      
+      // Use SET with NX (only set if not exists) and EX (expire time in seconds)
+      const result = await this.redis.set(key, serialized, 'EX', ttlSeconds, 'NX');
+      
+      const duration = performance.now() - startTime;
+      if (duration > 10) {
+        console.log(`🐌 Slow Redis SET NX: ${key} (${duration.toFixed(2)}ms)`);
+      }
+
+      return result === 'OK';
+    } catch (error) {
+      console.error('Redis SET NX error:', error);
       return false;
     }
   }

@@ -282,9 +282,19 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           contentData = typeof tag.contentData === 'string' ? 
             JSON.parse(tag.contentData) : tag.contentData;
         } else if (tag.content) {
-          // Fallback: create contentData from content field
+          // Fallback: create contentData from content field with correct type based on tag type
+          const getTypeFromTagType = (tagType: string) => {
+            switch (tagType) {
+              case 'S': return 'signature';
+              case 'I': return 'initials';
+              case 'E': return 'seal';
+              case 'D': return 'date';
+              default: return 'text';
+            }
+          };
+          
           contentData = {
-            type: 'text',
+            type: getTypeFromTagType(tag.tagType),
             value: tag.content
           };
         } else {
@@ -293,8 +303,18 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       } catch (e) {
         console.error('Failed to parse contentData in TagLayer:', e);
         // Fallback to content field if contentData parsing fails
+        const getTypeFromTagType = (tagType: string) => {
+          switch (tagType) {
+            case 'S': return 'signature';
+            case 'I': return 'initials';
+            case 'E': return 'seal';
+            case 'D': return 'date';
+            default: return 'text';
+          }
+        };
+        
         contentData = {
-          type: 'text',
+          type: getTypeFromTagType(tag.tagType),
           value: tag.content || tag.contentData || ''
         };
       }
@@ -304,7 +324,13 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         if (!contentData || !contentData.value) return false;
         
         const value = contentData.value;
+        
+        // Check if content type indicates it's an image-based content
         const isSignatureType = contentData.type === 'signature' || contentData.type === 'initials' || contentData.type === 'seal';
+        
+        // Also check tag type as backup (in case contentData.type is wrong)
+        const isSignatureTagType = ['S', 'I', 'E'].includes(tag.tagType);
+        
         const isImageUrl = (typeof value === 'string') && (
           value.startsWith('data:image/') ||
           value.startsWith('https://') ||
@@ -313,10 +339,19 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           value.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i)
         );
         
+        // Special aggressive detection for signature/seal/initial tags
+        const isLikelySignatureUrl = (typeof value === 'string') && (
+          (value.length > 100 && value.includes('signature')) ||
+          (value.length > 100 && value.includes('stamp')) ||
+          (value.length > 100 && value.includes('vultrobjects.com')) ||
+          (value.length > 100 && value.includes('X-Amz-Algorithm'))
+        );
+        
         console.log('🔍 TagLayer image content check for tag', tag.id, ':', {
           tagType: tag.tagType,
           contentDataType: contentData.type,
           isSignatureType,
+          isSignatureTagType,
           valueType: typeof value,
           valueLength: typeof value === 'string' ? value.length : 'not string',
           startsWithDataImage: typeof value === 'string' && value.startsWith('data:image/'),
@@ -324,10 +359,12 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           includesVultr: typeof value === 'string' && value.includes('vultrobjects.com'),
           hasImageExtension: typeof value === 'string' && !!value.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i),
           isImageUrl,
-          result: isSignatureType && isImageUrl
+          isLikelySignatureUrl,
+          result: (isSignatureType || isSignatureTagType) && (isImageUrl || isLikelySignatureUrl)
         });
         
-        return isSignatureType && isImageUrl;
+        // Return true if it's either a signature content type OR a signature tag type, AND it looks like an image URL
+        return (isSignatureType || isSignatureTagType) && (isImageUrl || isLikelySignatureUrl);
       };
 
       // Determine the best image source from available data
@@ -480,7 +517,15 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                                    value.includes('vultrobjects.com') || 
                                    (value.startsWith('http') && isSignatureOrSealTag);
                   
-                  if (isImageUrl) {
+                  // Enhanced signature URL detection (same as main isImageContent function)
+                  const isLikelySignatureUrl = (
+                    (value.length > 100 && value.includes('signature')) ||
+                    (value.length > 100 && value.includes('stamp')) ||
+                    (value.length > 100 && value.includes('vultrobjects.com')) ||
+                    (value.length > 100 && value.includes('X-Amz-Algorithm'))
+                  );
+                  
+                  if (isImageUrl || (isSignatureOrSealTag && isLikelySignatureUrl)) {
                     // Return the URL so it can be processed by image rendering logic above
                     return (
                       <img 
@@ -499,8 +544,8 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                     );
                   }
                   
-                  // Filter out technical/debug data for non-image URLs
-                  if (value.includes('Algorithm=') || value.includes('Signature=') || value.includes('Expires=') || value.includes('&X-Amz-') || value.includes('vultrobjects.com')) {
+                  // For signature/seal/initial tags that didn't match image detection above, show applied message
+                  if (isSignatureOrSealTag && (value.includes('Algorithm=') || value.includes('Signature=') || value.includes('Expires=') || value.includes('&X-Amz-'))) {
                     return '[Applied]';
                   }
                   return value;

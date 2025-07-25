@@ -269,62 +269,66 @@ export class PDFProcessorService {
    */
   private async extractImageContent(contentData: any, content: string): Promise<string | null> {
     try {
-      // Check if contentData has image content (new structured format)
-      if (contentData?.value && typeof contentData.value === 'string') {
-        const value = contentData.value;
-        
-        // Check if it's already base64 data
-        if (value.startsWith('data:image/')) {
-          return value;
-        }
-        
-        // Check if it's a Vultr URL or regular URL
-        if (value.startsWith('http') || value.includes('vultrobjects.com')) {
-          console.log('🌐 Downloading image from URL for PDF (structured):', value.substring(0, 100));
-          return await PDFProcessorService.downloadImageFromUrl(value);
-        }
-        
-        // Check if it's just base64 without the data: prefix
-        if (this.isBase64String(value)) {
-          // Try to determine format and add proper prefix
-          return `data:image/png;base64,${value}`;
-        }
-      }
-      
-      // FALLBACK: Handle legacy format where contentData might be a direct URL string
-      if (typeof contentData === 'string' && contentData.length > 0) {
-        // Check if contentData itself is a URL (legacy format)
-        if (contentData.startsWith('http') || contentData.includes('vultrobjects.com')) {
-          console.log('🌐 Downloading image from URL for PDF (legacy contentData):', contentData.substring(0, 100));
-          return await PDFProcessorService.downloadImageFromUrl(contentData);
-        }
-        
-        // Check if it's base64 data
-        if (contentData.startsWith('data:image/')) {
-          return contentData;
-        }
-        
-        if (this.isBase64String(contentData)) {
-          return `data:image/png;base64,${contentData}`;
+      console.log('🔍 extractImageContent called with:', {
+        hasContentData: !!contentData,
+        contentDataType: contentData?.type,
+        hasContentDataValue: !!contentData?.value,
+        contentDataValueType: typeof contentData?.value,
+        hasContent: !!content,
+        contentType: typeof content,
+        contentPreview: typeof content === 'string' ? content.substring(0, 100) + '...' : content
+      });
+
+      // Check contentData.value first
+      if (contentData?.value) {
+        if (typeof contentData.value === 'string') {
+          if (contentData.value.startsWith('data:image/')) {
+            console.log('✅ Found data URL in contentData.value');
+            return contentData.value;
+          }
+          
+          if (contentData.value.startsWith('http') || contentData.value.includes('vultrobjects.com')) {
+            console.log('🌐 Downloading image from URL in contentData.value:', contentData.value.substring(0, 100));
+            const downloadResult = await PDFProcessorService.downloadImageFromUrl(contentData.value);
+            if (downloadResult) {
+              console.log('✅ Successfully downloaded image from contentData.value URL');
+              return downloadResult;
+            } else {
+              console.error('❌ Failed to download image from contentData.value URL');
+            }
+          }
+          
+          if (this.isBase64String(contentData.value)) {
+            console.log('✅ Found base64 string in contentData.value');
+            return `data:image/png;base64,${contentData.value}`;
+          }
         }
       }
-      
+
       // Check content field as fallback
       if (content && typeof content === 'string') {
         if (content.startsWith('data:image/')) {
+          console.log('✅ Found data URL in content field');
           return content;
         }
         
         if (content.startsWith('http') || content.includes('vultrobjects.com')) {
           console.log('🌐 Downloading image from URL for PDF (fallback):', content.substring(0, 100));
-          return await PDFProcessorService.downloadImageFromUrl(content);
+          const downloadResult = await PDFProcessorService.downloadImageFromUrl(content);
+          if (downloadResult) {
+            console.log('✅ Successfully downloaded image from content field URL');
+            return downloadResult;
+          } else {
+            console.error('❌ Failed to download image from content field URL');
+          }
         }
         
         if (this.isBase64String(content)) {
+          console.log('✅ Found base64 string in content field');
           return `data:image/png;base64,${content}`;
         }
       }
-      
+
       // Check if contentData type indicates it should be an image
       if (contentData?.type && ['signature', 'initials', 'seal', 'stamp'].includes(contentData.type)) {
         console.log('⚠️ Content type indicates image but no valid image data found:', {
@@ -334,7 +338,8 @@ export class PDFProcessorService {
           valuePreview: typeof contentData.value === 'string' ? contentData.value.substring(0, 50) : contentData.value
         });
       }
-      
+
+      console.log('❌ No valid image content found');
       return null;
       
     } catch (error) {

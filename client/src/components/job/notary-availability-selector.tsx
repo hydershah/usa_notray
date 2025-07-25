@@ -236,11 +236,12 @@ export function NotaryAvailabilitySelector({
         </Alert>
       )}
 
+      {/* Improved Side-by-Side Date and Time Selection */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <CalendarIcon className="h-5 w-5" />
-            Available Dates
+            Select Date & Time
             {availableDates.size > 0 && (
               <Badge variant="secondary" className="ml-2">
                 {availableDates.size} days available
@@ -265,37 +266,134 @@ export function NotaryAvailabilitySelector({
               </Button>
             </div>
           ) : availableDates.size > 0 ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Date Selection */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-medium text-gray-900 flex items-center gap-2">
+                    <CalendarIcon className="h-4 w-4" />
+                    Choose Date
+                  </h3>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={refreshAvailability}
+                    disabled={isLoading}
+                  >
+                    <RefreshCw className={cn("h-4 w-4 mr-1", isLoading && "animate-spin")} />
+                    Refresh
+                  </Button>
+                </div>
                 <p className="text-sm text-gray-600">
-                  Green dates show available appointment times
+                  Green dates have available appointment times
                 </p>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={refreshAvailability}
-                  disabled={isLoading}
-                >
-                  <RefreshCw className={cn("h-4 w-4 mr-1", isLoading && "animate-spin")} />
-                  Refresh
-                </Button>
+                <Calendar
+                  mode="single"
+                  selected={selectedDateInternal}
+                  onSelect={handleDateSelect}
+                  disabled={disabled ? () => true : disableDate}
+                  className="rounded-md border w-full"
+                  modifiers={{
+                    available: (date) => isDateAvailable(date)
+                  }}
+                  modifiersStyles={{
+                    available: {
+                      backgroundColor: '#dcfce7',
+                      color: '#166534',
+                      fontWeight: '600'
+                    }
+                  }}
+                />
+                {selectedDateInternal && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2 text-blue-800">
+                      <CheckCircle className="h-4 w-4" />
+                      <span className="font-medium">Selected Date:</span>
+                    </div>
+                    <p className="text-blue-700 mt-1">
+                      {selectedDateInternal.toLocaleDateString('en-US', { 
+                        weekday: 'long',
+                        month: 'long', 
+                        day: 'numeric',
+                        year: 'numeric'
+                      })}
+                    </p>
+                  </div>
+                )}
               </div>
-              <Calendar
-                mode="single"
-                selected={selectedDateInternal}
-                onSelect={handleDateSelect}
-                disabled={disabled ? () => true : disableDate}
-                className="rounded-md border"
-                modifiers={{
-                  available: (date) => isDateAvailable(date)
-                }}
-                modifiersStyles={{
-                  available: {
-                    backgroundColor: '#dcfce7',
-                    color: '#166534'
-                  }
-                }}
-              />
+
+              {/* Time Selection */}
+              <div className="space-y-4">
+                <h3 className="font-medium text-gray-900 flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  Choose Time
+                  {timeSlots.length > 0 && (
+                    <Badge variant="outline" className="ml-2">
+                      {timeSlots.length} slots
+                    </Badge>
+                  )}
+                </h3>
+
+                {!selectedDateInternal ? (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
+                    <Clock className="h-8 w-8 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-600 text-sm">
+                      Please select a date first to see available times
+                    </p>
+                  </div>
+                ) : timeSlots.length === 0 ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-6 text-center">
+                    <AlertCircle className="h-8 w-8 text-amber-500 mx-auto mb-3" />
+                    <p className="text-amber-700 text-sm font-medium mb-2">
+                      No times available on this date
+                    </p>
+                    <p className="text-amber-600 text-xs">
+                      Try selecting a different date or check if the notary has updated their availability
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <p className="text-sm text-gray-600">
+                      Select your preferred appointment time:
+                    </p>
+                    
+                    <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-2">
+                      {timeSlots.map((slot) => (
+                        <Button
+                          key={slot.id}
+                          variant={selectedTime === slot.startTime ? "default" : "outline"}
+                          size="sm"
+                          disabled={disabled || bookingStatus === 'confirming'}
+                          onClick={() => handleTimeSelect(slot.startTime)}
+                          className={cn(
+                            "flex items-center gap-2 justify-center transition-all h-10",
+                            selectedTime === slot.startTime && "ring-2 ring-blue-300 shadow-md"
+                          )}
+                        >
+                          {bookingStatus === 'confirming' && selectedTime === slot.startTime ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : selectedTime === slot.startTime ? (
+                            <CheckCircle className="h-3 w-3" />
+                          ) : (
+                            <Clock className="h-3 w-3" />
+                          )}
+                          {slot.startTime}
+                        </Button>
+                      ))}
+                    </div>
+
+                    {selectedTime && (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                        <div className="flex items-center gap-2 text-green-800">
+                          <CheckCircle className="h-4 w-4" />
+                          <span className="font-medium">Selected Time:</span>
+                        </div>
+                        <p className="text-green-700 mt-1">{selectedTime}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <div className="text-center p-8">
@@ -310,81 +408,6 @@ export function NotaryAvailabilitySelector({
           )}
         </CardContent>
       </Card>
-
-      {selectedDateInternal && timeSlots.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5" />
-              Available Times - {selectedDateInternal.toLocaleDateString('en-US', { 
-                weekday: 'long',
-                month: 'long', 
-                day: 'numeric',
-                year: 'numeric'
-              })}
-              <Badge variant="outline" className="ml-2">
-                {timeSlots.length} slots available
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {selectedTime && (
-                <Alert>
-                  <CheckCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    Selected: {selectedDateInternal.toLocaleDateString()} at {selectedTime}
-                  </AlertDescription>
-                </Alert>
-              )}
-              
-              <div className="text-sm text-gray-600 mb-3">
-                Select an available time slot for your appointment:
-              </div>
-              
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {timeSlots.map((slot) => (
-                  <Button
-                    key={slot.id}
-                    variant={selectedTime === slot.startTime ? "default" : "outline"}
-                    size="sm"
-                    disabled={disabled || bookingStatus === 'confirming'}
-                    onClick={() => handleTimeSelect(slot.startTime)}
-                    className={cn(
-                      "flex items-center gap-2 justify-center transition-all",
-                      selectedTime === slot.startTime && "ring-2 ring-blue-300"
-                    )}
-                  >
-                    {bookingStatus === 'confirming' && selectedTime === slot.startTime ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : selectedTime === slot.startTime ? (
-                      <CheckCircle className="h-4 w-4" />
-                    ) : null}
-                    {slot.startTime}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {selectedDateInternal && timeSlots.length === 0 && !isLoading && !loadingError && (
-        <Card>
-          <CardContent className="p-6 text-center">
-            <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Time Slots Available</h3>
-            <p className="text-gray-600 mb-4">
-              No available time slots for {selectedDateInternal.toLocaleDateString()}. 
-              Try selecting a different date or check if the notary has updated their availability.
-            </p>
-            <Button onClick={refreshAvailability} variant="outline" size="sm">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh Availability
-            </Button>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Fallback inputs for when calendar is not available */}
       {!isLoading && !loadingError && availableDates.size === 0 && (

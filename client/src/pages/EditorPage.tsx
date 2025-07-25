@@ -259,10 +259,13 @@ const EditorPage: React.FC<EditorPageProps> = () => {
   }, [jobId, user, job, mode, toast, isAuthenticated]);
 
   // Handle session completion
+  const [isCompletingSession, setIsCompletingSession] = useState(false);
+  
   const handleSessionComplete = async () => {
-    if (!sessionData) return;
+    if (!sessionData || isCompletingSession) return;
 
     try {
+      setIsCompletingSession(true);
       console.log('🔄 Completing session:', sessionData.session.id);
       
       // Use the correct completion endpoint based on mode
@@ -280,16 +283,36 @@ const EditorPage: React.FC<EditorPageProps> = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
+        
+        // Handle already completed sessions gracefully
+        if (errorData.alreadyCompleted) {
+          console.log('✅ Session was already completed, redirecting...');
+          toast({
+            title: "Session Already Completed",
+            description: "This session was already completed successfully!"
+          });
+          setLocation(`/jobs/${jobId}`);
+          return;
+        }
+        
         throw new Error(errorData.message || `Failed to complete session: ${response.status}`);
       }
 
       const result = await response.json();
       console.log('✅ Session completed successfully:', result);
 
-      toast({
-        title: "Session Completed",
-        description: `${mode === 'tagging' ? 'Tagging' : mode === 'signing' ? 'Live signing' : 'Notary'} session completed successfully!`
-      });
+      // Handle already completed sessions from successful response
+      if (result.alreadyCompleted) {
+        toast({
+          title: "Session Already Completed",
+          description: "This session was already completed successfully!"
+        });
+      } else {
+        toast({
+          title: "Session Completed",
+          description: `${mode === 'tagging' ? 'Tagging' : mode === 'signing' ? 'Live signing' : 'Notary'} session completed successfully!`
+        });
+      }
 
       // Navigate back to job details
       setLocation(`/jobs/${jobId}`);
@@ -301,6 +324,8 @@ const EditorPage: React.FC<EditorPageProps> = () => {
         title: "Error",
         description: "Failed to complete session. Please try again."
       });
+    } finally {
+      setIsCompletingSession(false);
     }
   };
 

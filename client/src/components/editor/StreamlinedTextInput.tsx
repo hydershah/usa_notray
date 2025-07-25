@@ -80,6 +80,11 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
   const [lastSavedContent, setLastSavedContent] = useState(content); // Track last saved content to avoid resets
   const [isProcessingClick, setIsProcessingClick] = useState(false); // Prevent duplicate click processing
   
+  // ✅ NEW: Drag state management to prevent flickering
+  const [isDragging, setIsDragging] = useState(false);
+  const [isLocallyUpdating, setIsLocallyUpdating] = useState(false);
+  const dragTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
   // Debug wrapper for setInputValue to track all calls
   const setInputValue = useCallback((value: string) => {
     console.log('📝 setInputValue called:', {
@@ -479,7 +484,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     }
   }, [id, sessionId, fontSize, fontFamily, textColor, onSave, toast, isDeleted, isNew, inputValue, webSocket, assignedUserId, coordinates]);
 
-  // ✅ NEW: WebSocket message handler for real-time updates
+  // ✅ IMPROVED: WebSocket message handler with drag state awareness
   useEffect(() => {
     if (!webSocket || webSocket.readyState !== WebSocket.OPEN) return;
     
@@ -492,6 +497,12 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
         
         // Don't process messages from the same user to avoid loops
         if (message.userId === assignedUserId.toString()) return;
+        
+        // ✅ NEW: Skip position updates while dragging to prevent conflicts
+        if (isDragging && (message.type === 'text_input_position_updated' || message.type === 'tag_updated')) {
+          console.log('🚫 Skipping position update during drag:', message.type);
+          return;
+        }
         
         console.log('📡 Received WebSocket message for text input:', id, message);
         
@@ -518,6 +529,23 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
               }
             }
             break;
+            
+          case 'text_input_position_updated':
+            // Update position from other users (only if not dragging)
+            if (!isDragging && !isLocallyUpdating && message.payload?.coordinates) {
+              console.log('📍 Updating position from WebSocket:', message.payload.coordinates);
+              setPosition({
+                x: message.payload.coordinates.x,
+                y: message.payload.coordinates.y
+              });
+              if (message.payload.coordinates.width && message.payload.coordinates.height) {
+                setDimensions({
+                  width: message.payload.coordinates.width,
+                  height: message.payload.coordinates.height
+                });
+              }
+            }
+            break;
         }
       } catch (error) {
         console.error('❌ Error processing WebSocket message:', error);
@@ -529,7 +557,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     return () => {
       webSocket.removeEventListener('message', handleWebSocketMessage);
     };
-  }, [webSocket, id, assignedUserId, isEditing, setInputValue]);
+  }, [webSocket, id, assignedUserId, isEditing, isDragging, isLocallyUpdating, setInputValue]);
 
   // Handle drag stop - convert back to PDF coordinates and save to server
   const handleDragStop = useCallback((e: any, data: any) => {

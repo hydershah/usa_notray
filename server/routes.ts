@@ -3118,6 +3118,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errorCode = 'API_FORBIDDEN';
           message = 'Video service access denied';
           statusCode = 503;
+        } else if (error.message.includes('402')) {
+          errorCode = 'API_PAYMENT_REQUIRED';
+          message = 'Video service payment required';
+          statusCode = 503;
         } else if (error.message.includes('429')) {
           errorCode = 'API_RATE_LIMITED';
           message = 'Video service rate limit exceeded';
@@ -7715,73 +7719,113 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       const { force = false } = req.body;
       console.log(`📝 Completing session: ${sessionId} by user ${req.user.id}`);
 
-      // Get session using editor session service
-      const { SessionService } = await import('./services/editor/SessionService');
-      const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
+      // Use a completion lock to prevent race conditions (with Redis fallback)
+      const lockKey = `session_completion:${sessionId}`;
+      const lockResult = await redisCache.setIfNotExists(lockKey, req.user.id, 60); // 60 second lock
       
-      let session;
-      let actualSessionId = sessionId;
-      
-      try {
-        // First try to get session directly
-        session = await SessionService.getSession(sessionId);
-        
-        if (session) {
-          actualSessionId = session.id;
-          console.log(`✅ Found session by sessionId: ${actualSessionId}`);
-        }
-      } catch (error) {
-        console.log(`🔍 Session not found by sessionId, checking if it's a jobId...`);
-      }
-      
-      // If session not found by sessionId, try to find by jobId (backward compatibility)
-      if (!session) {
-        const jobId = parseInt(sessionId);
-        
-        if (!isNaN(jobId)) {
-          // Look for the most recent active session for this job
-          const sessions = await db
-            .select()
-            .from(editorSessions)
-            .where(eq(editorSessions.jobId, jobId))
-            .orderBy(desc(editorSessions.createdAt))
-            .limit(1);
-          
-          if (sessions.length > 0) {
-            const sessionData = sessions[0];
-            session = {
-              id: sessionData.sessionId,
-              jobId: sessionData.jobId,
-              sessionType: sessionData.sessionType,
-              status: sessionData.status,
-              notaryId: sessionData.notaryId,
-              videoSessionId: sessionData.videoSessionId,
-              createdAt: sessionData.createdAt,
-              startedAt: sessionData.startedAt,
-              completedAt: sessionData.completedAt
-            };
-            actualSessionId = sessionData.sessionId;
-            console.log(`✅ Found session by jobId: ${actualSessionId}`);
-          }
-        }
-      }
-      
-      if (!session) {
-        return res.status(404).json({ 
-          message: 'Session not found',
-          error: 'session_not_found'
+      // If Redis is available and lock failed, another completion is in progress
+      if (lockResult === false && !redisCache.isRedisDisabled()) {
+        console.log(`🔒 Session ${sessionId} completion already in progress`);
+        return res.status(409).json({
+          success: false,
+          message: 'Session completion already in progress',
+          error: 'completion_in_progress'
         });
+      }
+      
+      // If Redis is disabled, we can't use locking but should still proceed
+      if (redisCache.isRedisDisabled()) {
+        console.log(`⚠️ Redis disabled, proceeding without completion lock for session ${sessionId}`);
       }
 
-      // Check if session is already completed
-      if (session.status === 'completed') {
-        return res.status(200).json({
-          success: true,
-          message: 'Session was already completed',
-          sessionId: actualSessionId,
-          alreadyCompleted: true
-        });
-      }
+      try {
+        // Get session using editor session service
+        const { SessionService } = await import('./services/editor/SessionService');
+        const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
+        
+        let session;
+        let actualSessionId = sessionId;
+        
+        try {
+          // First try to get session directly
+          session = await SessionService.getSession(sessionId);
+          
+          if (session) {
+            actualSessionId = session.id;
+            console.log(`✅ Found session by sessionId: ${actualSessionId}`);
+          }
+        } catch (error) {
+          console.log(`🔍 Session not found by sessionId, checking if it's a jobId...`);
+        }
+        
+        // If session not found by sessionId, try to find by jobId (backward compatibility)
+        if (!session) {
+          const jobId = parseInt(sessionId);
+          
+          if (!isNaN(jobId)) {
+            // Look for the most recent active session for this job
+            const sessions = await db
+              .select()
+              .from(editorSessions)
+              .where(eq(editorSessions.jobId, jobId))
+              .orderBy(desc(editorSessions.createdAt))
+              .limit(1);
+            
+            if (sessions.length > 0) {
+              const sessionData = sessions[0];
+              session = {
+                id: sessionData.sessionId,
+                jobId: sessionData.jobId,
+                sessionType: sessionData.sessionType,
+                status: sessionData.status,
+                notaryId: sessionData.notaryId,
+                videoSessionId: sessionData.videoSessionId,
+                createdAt: sessionData.createdAt,
+                startedAt: sessionData.startedAt,
+                completedAt: sessionData.completedAt
+              };
+              actualSessionId = sessionData.sessionId;
+              console.log(`✅ Found session by jobId: ${actualSessionId}`);
+            }
+          }
+        }
+        
+        if (!session) {
+          return res.status(404).json({ 
+            message: 'Session not found',
+            error: 'session_not_found'
+          });
+        }
+
+        // 🚀 EARLY COMPLETION CHECK - Prevent expensive operations if already completed
+        if (session.status === 'completed') {
+          console.log(`✅ Session ${actualSessionId} already completed, returning immediately`);
+          return res.status(200).json({
+            success: true,
+            message: 'Session was already completed',
+            sessionId: actualSessionId,
+            alreadyCompleted: true,
+            completedAt: session.completedAt
+          });
+        }
+      
+        // Double-check completion status in database to handle race conditions
+        const [currentSession] = await db
+          .select({ status: editorSessions.status, completedAt: editorSessions.completedAt })
+          .from(editorSessions)
+          .where(eq(editorSessions.sessionId, actualSessionId))
+          .limit(1);
+        
+        if (currentSession?.status === 'completed') {
+          console.log(`✅ Session ${actualSessionId} found completed in database, returning immediately`);
+          return res.status(200).json({
+            success: true,
+            message: 'Session was already completed',
+            sessionId: actualSessionId,
+            alreadyCompleted: true,
+            completedAt: currentSession.completedAt
+          });
+        }
 
       // Verify user permissions
       const isAdmin = req.user.role === 'admin' || (req.user.privileges && req.user.privileges.includes('admin'));
@@ -7963,17 +8007,29 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         }
       }
       
-      console.log(`✅ Session completed: ${actualSessionId} by user ${req.user.id}`);
-      
-      res.json({
-        success: true,
-        message: 'Session completed successfully',
-        sessionId: actualSessionId,
-        completedAt: new Date()
-      });
+        console.log(`✅ Session completed: ${actualSessionId} by user ${req.user.id}`);
+        
+        res.json({
+          success: true,
+          message: 'Session completed successfully',
+          sessionId: actualSessionId,
+          completedAt: new Date()
+        });
+        
+      } finally {
+        // Always release the completion lock
+        await redisCache.del(lockKey);
+      }
       
     } catch (error) {
       console.error('Complete session error:', error);
+      // Make sure to clean up lock on error
+      try {
+        await redisCache.del(`session_completion:${sessionId}`);
+      } catch (lockError) {
+        console.error('Failed to clean up completion lock:', lockError);
+      }
+      
       res.status(500).json({ 
         message: error instanceof Error ? error.message : 'Failed to complete session',
         error: 'complete_session_failed'
@@ -8827,19 +8883,44 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           finalContent.includes('.png') ||
           finalContent.includes('.jpg') ||
           finalContent.includes('.jpeg') ||
-          finalContent.includes('.webp')
+          finalContent.includes('.webp') ||
+          finalContent.includes('.gif') ||
+          finalContent.includes('.svg')
         );
+        
+        console.log('🔍 Server content type detection:', {
+          tagType: tag.tagType,
+          finalContent: finalContent.substring(0, 100) + '...',
+          isImageContent,
+          startsWithDataImage: finalContent.startsWith('data:image/'),
+          startsWithHttp: finalContent.startsWith('http'),
+          includesVultr: finalContent.includes('vultrobjects.com'),
+          includesPng: finalContent.includes('.png')
+        });
         
         // Structure based on tag type
         switch (tag.tagType) {
           case 'S': // Signature
+            // For signature tags, be more aggressive about detecting images
+            const isSignatureImage = isImageContent || (
+              typeof finalContent === 'string' && 
+              finalContent.length > 50 && 
+              (finalContent.includes('signature') || finalContent.includes('vultrobjects.com'))
+            );
             structuredContentData = {
               type: 'signature',
               value: finalContent,
-              contentType: isImageContent ? 'image' : 'text',
+              contentType: isSignatureImage ? 'image' : 'text',
               timestamp: new Date().toISOString()
             };
-            finalContentType = isImageContent ? 'image' : 'text';
+            finalContentType = isSignatureImage ? 'image' : 'text';
+            console.log('📝 Signature content structured:', {
+              tagType: 'S',
+              isImageContent,
+              isSignatureImage,
+              finalContentType,
+              contentPreview: finalContent.substring(0, 50) + '...'
+            });
             break;
             
           case 'I': // Initials

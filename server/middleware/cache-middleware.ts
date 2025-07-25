@@ -20,10 +20,10 @@ export function cacheResponse(options: CacheOptions = {}) {
       return next();
     }
 
-    // Generate cache key
+    // Generate cache key (optimized)
     const cacheKey = keyGenerator 
       ? keyGenerator(req)
-      : `api:${req.originalUrl}:${JSON.stringify(req.query)}`;
+      : `api:${req.originalUrl}:${req.url.includes('?') ? req.url.split('?')[1] : ''}`;
 
     // Check condition if provided
     if (condition && !condition(req, res)) {
@@ -72,7 +72,8 @@ export function cacheUserData(ttl: number = 600) {
     ttl,
     keyGenerator: (req: Request) => {
       const userId = req.user?.id || 'anonymous';
-      return `user:${userId}:${req.originalUrl}:${JSON.stringify(req.query)}`;
+      const queryString = req.url.includes('?') ? req.url.split('?')[1] : '';
+      return `user:${userId}:${req.originalUrl}:${queryString}`;
     }
   });
 }
@@ -84,7 +85,8 @@ export function cacheAdminData(ttl: number = 300) {
   return cacheResponse({
     ttl,
     keyGenerator: (req: Request) => {
-      return `admin:${req.originalUrl}:${JSON.stringify(req.query)}`;
+      const queryString = req.url.includes('?') ? req.url.split('?')[1] : '';
+      return `admin:${req.originalUrl}:${queryString}`;
     },
     condition: (req: Request) => {
       return hasAdminPrivileges(req.user);
@@ -100,7 +102,8 @@ export function cacheCompanyData(ttl: number = 600) {
     ttl,
     keyGenerator: (req: Request) => {
       const companyId = req.user?.company_id || 'none';
-      return `company:${companyId}:${req.originalUrl}:${JSON.stringify(req.query)}`;
+      const queryString = req.url.includes('?') ? req.url.split('?')[1] : '';
+      return `company:${companyId}:${req.originalUrl}:${queryString}`;
     }
   });
 }
@@ -119,10 +122,12 @@ export function cacheJobData(ttl: number = 180) {
       // For editor endpoints, include session and document context
       if (sessionId && req.originalUrl.includes('/editor/session/')) {
         const docContext = documentId ? `:doc:${documentId}` : '';
-        return `job:${jobId}:session:${sessionId}${docContext}:${req.originalUrl}:${JSON.stringify(req.query)}`;
+        const queryString = req.url.includes('?') ? req.url.split('?')[1] : '';
+        return `job:${jobId}:session:${sessionId}${docContext}:${req.originalUrl}:${queryString}`;
       }
       
-      return `job:${jobId}:${req.originalUrl}:${JSON.stringify(req.query)}`;
+      const queryString = req.url.includes('?') ? req.url.split('?')[1] : '';
+      return `job:${jobId}:${req.originalUrl}:${queryString}`;
     }
   });
 }

@@ -136,7 +136,7 @@ function JobWizardInternal() {
   const [currentStep, setCurrentStep] = useState(1);
   const [signers, setSigners] = useState<SignerFormData[]>([]);
   const [signerErrors, setSignerErrors] = useState<Record<number, Record<string, string>>>({});
-  const [signerModes, setSignerModes] = useState<Record<number, 'existing' | 'new'>>({});
+  const [autoPopulatedSigners, setAutoPopulatedSigners] = useState<Record<number, boolean>>({});
   const [documents, setDocuments] = useState<DocumentFile[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [, setLocation] = useLocation();
@@ -677,54 +677,58 @@ function JobWizardInternal() {
 
   const handleRemoveSigner = (index: number) => {
     setSigners(prev => prev.filter((_, i) => i !== index));
-    setSignerModes(prev => {
-      const newModes = { ...prev };
-      delete newModes[index];
-      // Reindex remaining modes
-      const reindexedModes: Record<number, 'existing' | 'new'> = {};
-      Object.entries(newModes).forEach(([key, value]) => {
+    setAutoPopulatedSigners(prev => {
+      const newAutoPopulated = { ...prev };
+      delete newAutoPopulated[index];
+      // Reindex remaining entries
+      const reindexedAutoPopulated: Record<number, boolean> = {};
+      Object.entries(newAutoPopulated).forEach(([key, value]) => {
         const oldIndex = parseInt(key);
         if (oldIndex > index) {
-          reindexedModes[oldIndex - 1] = value;
+          reindexedAutoPopulated[oldIndex - 1] = value;
         } else if (oldIndex < index) {
-          reindexedModes[oldIndex] = value;
+          reindexedAutoPopulated[oldIndex] = value;
         }
       });
-      return reindexedModes;
+      return reindexedAutoPopulated;
     });
   };
 
-  const handleSignerModeChange = (index: number, mode: 'existing' | 'new') => {
-    setSignerModes(prev => ({ ...prev, [index]: mode }));
-    if (mode === 'new') {
-      // Clear fields when switching to new mode
+  const handleEmailLookup = (index: number, email: string) => {
+    // First update the email field
+    setSigners(prev => prev.map((signer, i) => 
+      i === index ? { ...signer, signerEmail: email } : signer
+    ));
+
+    // Check if email exists in existing signers
+    const existingUser = existingSigners.find(user => 
+      user.email.toLowerCase() === email.toLowerCase()
+    );
+
+    if (existingUser) {
+      // Auto-populate fields from existing user
       setSigners(prev => prev.map((signer, i) => 
         i === index ? {
-          signerName: '',
-          signerEmail: '',
-          signerPhoneNumber: '',
-          signerRole: '',
+          signerName: existingUser.firstName && existingUser.lastName 
+            ? `${existingUser.firstName} ${existingUser.lastName}` 
+            : existingUser.username,
+          signerEmail: existingUser.email,
+          signerPhoneNumber: existingUser.phoneNumber || '',
+          signerRole: signer.signerRole, // Keep the selected role
+          existingUserId: existingUser.id,
         } : signer
       ));
+      setAutoPopulatedSigners(prev => ({ ...prev, [index]: true }));
+    } else {
+      // Clear auto-population flag for manual entry
+      setSigners(prev => prev.map((signer, i) => 
+        i === index ? { ...signer, existingUserId: undefined } : signer
+      ));
+      setAutoPopulatedSigners(prev => ({ ...prev, [index]: false }));
     }
   };
 
-  const handleExistingSignerSelect = (index: number, userId: string) => {
-    const selectedUser = existingSigners.find(user => user.id.toString() === userId);
-    if (selectedUser) {
-      setSigners(prev => prev.map((signer, i) => 
-        i === index ? {
-          signerName: selectedUser.firstName && selectedUser.lastName 
-            ? `${selectedUser.firstName} ${selectedUser.lastName}` 
-            : selectedUser.username,
-          signerEmail: selectedUser.email,
-          signerPhoneNumber: selectedUser.phoneNumber || '',
-          signerRole: '',
-          existingUserId: selectedUser.id, // Store the user ID for reference
-        } : signer
-      ));
-    }
-  };
+
 
   const handleSignerChange = (index: number, field: keyof SignerFormData, value: string) => {
     setSigners(prev => prev.map((signer, i) => 
@@ -1461,80 +1465,18 @@ function JobWizardInternal() {
                             </CardHeader>
                             
                             <CardContent className="p-6">
-                              {/* Mode Selection - Title companies can only invite new users */}
-                              {currentUser?.role !== 'title_company' && (
-                                <div className="mb-6">
-                                  <Label className="text-sm font-medium text-gray-700 mb-3 block">Participant Type</Label>
-                                  <RadioGroup
-                                    value={signerModes[index] || 'new'}
-                                    onValueChange={(value: 'existing' | 'new') => handleSignerModeChange(index, value)}
-                                    className="grid grid-cols-2 gap-4"
-                                  >
-                                    <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                                      <RadioGroupItem value="existing" id={`existing-${index}`} />
-                                      <div>
-                                        <Label htmlFor={`existing-${index}`} className="font-medium text-gray-900">Existing User</Label>
-                                        <p className="text-xs text-gray-600">Select from registered users</p>
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                                      <RadioGroupItem value="new" id={`new-${index}`} />
-                                      <div>
-                                        <Label htmlFor={`new-${index}`} className="font-medium text-gray-900">New Participant</Label>
-                                        <p className="text-xs text-gray-600">Add new person details</p>
-                                      </div>
-                                    </div>
-                                  </RadioGroup>
-                                </div>
-                              )}
-
-                              {/* Title Company Info - Only new participants allowed */}
-                              {currentUser?.role === 'title_company' && (
-                                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                  <div className="flex items-center">
-                                    <AlertCircle className="w-5 h-5 text-blue-600 mr-2" />
-                                    <div>
-                                      <h4 className="text-sm font-medium text-blue-800">New Participant Only</h4>
-                                      <p className="text-xs text-blue-700 mt-1">
-                                        Title companies can only invite new users to join jobs. Please enter the participant's details below.
-                                      </p>
-                                    </div>
+                              {/* Email Lookup Info */}
+                              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                <div className="flex items-center">
+                                  <AlertCircle className="w-5 h-5 text-blue-600 mr-2" />
+                                  <div>
+                                    <h4 className="text-sm font-medium text-blue-800">Smart Participant Entry</h4>
+                                    <p className="text-xs text-blue-700 mt-1">
+                                      Enter an email address below. If the user exists in our system, their details will auto-populate. Otherwise, you can manually enter their information.
+                                    </p>
                                   </div>
                                 </div>
-                              )}
-
-                              {/* Existing User Selection */}
-                              {signerModes[index] === 'existing' && (
-                                <div className="mb-6">
-                                  <Label className="text-sm font-medium text-gray-700">Select User</Label>
-                                  <Select onValueChange={(value) => handleExistingSignerSelect(index, value)}>
-                                    <SelectTrigger className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 mt-2">
-                                      <SelectValue placeholder="Choose an existing user" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {existingSigners.map((user: any) => (
-                                        <SelectItem key={user.id} value={user.id.toString()}>
-                                          <div className="flex items-center justify-between w-full">
-                                            <span className="font-medium">
-                                              {user.firstName && user.lastName 
-                                                ? `${user.firstName} ${user.lastName}` 
-                                                : user.username}
-                                            </span>
-                                            <div className="flex items-center space-x-2">
-                                              <span className="text-xs text-gray-500">
-                                                {user.email}
-                                              </span>
-                                              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                                                {user.role}
-                                              </span>
-                                            </div>
-                                          </div>
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                              )}
+                              </div>
 
                               {/* Signer Details */}
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1548,7 +1490,7 @@ function JobWizardInternal() {
                                     placeholder="Enter participant name"
                                     className={`h-12 mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerName ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
-                                    disabled={signerModes[index] === 'existing'}
+                                    disabled={autoPopulatedSigners[index]}
                                   />
                                   {signerErrors[index]?.signerName && (
                                     <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerName}</p>
@@ -1562,14 +1504,19 @@ function JobWizardInternal() {
                                   <Input
                                     type="email"
                                     value={signer.signerEmail}
-                                    onChange={(e) => handleSignerChange(index, 'signerEmail', e.target.value)}
-                                    placeholder="Enter email address"
+                                    onChange={(e) => handleEmailLookup(index, e.target.value)}
+                                    placeholder="Enter email address (will auto-populate if user exists)"
                                     className={`h-12 mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerEmail ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
-                                    disabled={signerModes[index] === 'existing'}
                                   />
                                   {signerErrors[index]?.signerEmail && (
                                     <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerEmail}</p>
+                                  )}
+                                  {autoPopulatedSigners[index] && (
+                                    <p className="text-xs text-green-600 mt-1 flex items-center">
+                                      <CheckCircle className="w-4 h-4 mr-1" />
+                                      User found! Details auto-populated from existing account.
+                                    </p>
                                   )}
                                 </div>
                                 
@@ -1583,7 +1530,7 @@ function JobWizardInternal() {
                                     placeholder="(123) 456-7890"
                                     className={`h-12 mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerPhoneNumber ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
-                                    disabled={signerModes[index] === 'existing'}
+                                    disabled={autoPopulatedSigners[index]}
                                   />
                                   {signerErrors[index]?.signerPhoneNumber && (
                                     <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerPhoneNumber}</p>
@@ -1623,17 +1570,17 @@ function JobWizardInternal() {
                                 </div>
                               </div>
 
-                              {/* Existing User Info */}
-                              {signerModes[index] === 'existing' && signer.existingUserId && (
-                                <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                              {/* Auto-populated User Info */}
+                              {autoPopulatedSigners[index] && signer.existingUserId && (
+                                <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
                                   <div className="flex items-center">
-                                    <CheckCircle className="w-5 h-5 text-blue-600 mr-2" />
+                                    <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
                                     <div>
-                                      <p className="text-sm font-medium text-blue-800">
-                                        Selected User: {signer.signerName}
+                                      <p className="text-sm font-medium text-green-800">
+                                        Existing User: {signer.signerName}
                                       </p>
-                                      <p className="text-xs text-blue-600">
-                                        {signer.signerEmail} • Information auto-populated
+                                      <p className="text-xs text-green-600">
+                                        {signer.signerEmail} • Information auto-populated from existing account
                                       </p>
                                     </div>
                                   </div>

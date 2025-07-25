@@ -76,9 +76,12 @@ const getPoolConfig = () => {
   if (DATABASE_URL.includes('supabase.co') || DATABASE_URL.includes('supabase.com')) {
     return {
       ...baseConfig,
-      max: 8,                   // Lower max for Supabase pooler
-      min: 1,                   // Lower min for Supabase
+      max: 10,                  // Increased max for better concurrency
+      min: 3,                   // Increased min for faster response
       idleTimeoutMillis: 20000, // Shorter idle timeout for Supabase
+      connectionTimeoutMillis: 5000, // Faster connection timeout
+      query_timeout: 15000,     // Reduced query timeout for web responses
+      statement_timeout: 15000, // Reduced statement timeout
     };
   }
 
