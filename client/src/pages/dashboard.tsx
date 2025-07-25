@@ -33,6 +33,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { EVSVerification } from '@/components/verification/evs-verification';
 import { KBAVerification } from '@/components/verification/kba-verification';
@@ -225,6 +226,46 @@ function SignerDashboard() {
   const [loading, setLoading] = useState(true);
   const [showVerification, setShowVerification] = useState(false);
   const [showKBAVerification, setShowKBAVerification] = useState(false);
+  const [selectedJobForDocuments, setSelectedJobForDocuments] = useState<any>(null);
+  const [jobDocuments, setJobDocuments] = useState<any[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+
+  const fetchJobDocuments = async (jobId: number) => {
+    setDocumentsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/jobs/${jobId}/documents`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch documents');
+      }
+
+      const documents = await response.json();
+      setJobDocuments(documents);
+    } catch (error) {
+      console.error('Failed to fetch job documents:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to load documents. Please try again.",
+      });
+      setJobDocuments([]);
+    } finally {
+      setDocumentsLoading(false);
+    }
+  };
+
+  const handleViewDocuments = (job: any) => {
+    setSelectedJobForDocuments(job);
+    fetchJobDocuments(job.id);
+  };
+
+  const handlePreviewDocument = (documentId: number) => {
+    const previewUrl = `/api/jobs/${selectedJobForDocuments.id}/documents/${documentId}/preview?token=${localStorage.getItem('token')}`;
+    window.open(previewUrl, '_blank');
+  };
 
   const fetchSignerProfile = async () => {
     if (!user?.id) return;
@@ -534,6 +575,69 @@ function SignerDashboard() {
                     </div>
                     
                     <div className="flex gap-2">
+                      {/* View Documents Button - Always available for signers */}
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => handleViewDocuments(job)}
+                          >
+                            <Eye className="h-4 w-4 mr-2" />
+                            View Documents
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                          <DialogHeader>
+                            <DialogTitle>Documents for {job.titleCompany}</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4">
+                            {documentsLoading ? (
+                              <div className="flex items-center justify-center py-8">
+                                <div className="text-center">
+                                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                                  <p className="mt-2 text-gray-600">Loading documents...</p>
+                                </div>
+                              </div>
+                            ) : jobDocuments.length > 0 ? (
+                              <div className="space-y-3">
+                                {jobDocuments.map((document: any) => (
+                                  <div key={document.id} className="flex items-center justify-between p-4 border rounded-lg bg-gray-50">
+                                    <div className="flex items-center space-x-3">
+                                      <FileText className="h-8 w-8 text-blue-600" />
+                                      <div>
+                                        <p className="font-medium">{document.originalName}</p>
+                                        <p className="text-sm text-gray-600">
+                                          Type: {document.documentType || 'Document'}
+                                          {document.isRequired && (
+                                            <Badge className="ml-2 bg-red-100 text-red-800">Required</Badge>
+                                          )}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handlePreviewDocument(document.id)}
+                                        title="Preview document"
+                                      >
+                                        <Eye className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-center py-8">
+                                <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                                <p className="text-gray-600">No documents found for this job.</p>
+                              </div>
+                            )}
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+
                       {job.signingStatus === 'pending' && profile?.isVerified && (
                         <Button 
                           size="sm" 

@@ -3925,7 +3925,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if user has access to this job
-      if (req.user.role !== 'admin' && job.userId !== req.user.id && job.selectedNotary !== req.user.id.toString()) {
+      let hasAccess = false;
+      
+      // Admin access
+      if (req.user.role === 'admin') {
+        hasAccess = true;
+        console.log(`✅ DOCUMENT LIST: Admin user ${req.user.id}`);
+      }
+      // Job creator access
+      else if (job.userId === req.user.id) {
+        hasAccess = true;
+        console.log(`✅ DOCUMENT LIST: Job creator user ${req.user.id}`);
+      }
+      // Assigned notary access
+      else if (job.selectedNotary === req.user.id.toString()) {
+        hasAccess = true;
+        console.log(`✅ DOCUMENT LIST: Assigned notary user ${req.user.id}`);
+      }
+      // Signer access - check via signers table
+      else if (req.user.role === 'signer' || req.user.role === 'witness') {
+        const [signer] = await db
+          .select()
+          .from(signers)
+          .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, req.user.email)))
+          .limit(1);
+        
+        if (signer) {
+          hasAccess = true;
+          console.log(`✅ DOCUMENT LIST: Invited signer user ${req.user.id} (${req.user.email}) on job ${jobId}`);
+        }
+      }
+      
+      if (!hasAccess) {
+        console.log(`❌ DOCUMENT LIST DENIED: User ${req.user.id} (${req.user.email}, role: ${req.user.role}) not authorized for job ${jobId} documents`);
         return res.status(403).json({ message: 'Access denied' });
       }
 
