@@ -512,6 +512,11 @@ export class WebSocketService {
         timestamp: Date.now()
       }
     }, user.userId);
+
+    // ✅ ENHANCED: Add logging for text tag resize events
+    const textInputId = message.payload?.textInputId;
+    const coordinates = message.payload?.coordinates;
+    console.log(`📏 Text input resized by ${user.displayName}: ${textInputId} to ${coordinates?.width}x${coordinates?.height} at (${coordinates?.x}, ${coordinates?.y}) in session ${user.sessionId}`);
   }
   
   /**

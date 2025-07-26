@@ -189,6 +189,35 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           }
           break;
           
+        // ✅ NEW: Handle text input position/resize updates from WebSocket
+        case 'text_input_position_updated':
+          console.log('📏 Syncing text input position/resize update:', {
+            textInputId: data.textInputId,
+            coordinates: data.coordinates,
+            fromUser: data.updatedByName,
+            currentlySelected: selectedTextInputId === data.textInputId
+          });
+          
+          setTextInputs(prev => prev.map(input => {
+            if (input.id === data.textInputId) {
+              console.log('✅ Updated text input coordinates from WebSocket:', {
+                id: data.textInputId,
+                oldCoords: input.coordinates,
+                newCoords: data.coordinates,
+                fromUser: data.updatedByName
+              });
+              return { 
+                ...input, 
+                coordinates: {
+                  ...input.coordinates,
+                  ...data.coordinates
+                }
+              };
+            }
+            return input;
+          }));
+          break;
+          
         case 'text_input_content_changed':
           // Update text input content from another user
           console.log('🔄 Syncing text content from another user:', {

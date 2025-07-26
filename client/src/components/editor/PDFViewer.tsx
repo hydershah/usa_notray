@@ -1683,12 +1683,58 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                           onDeleteTextInput?.(textInput.id);
                         }}
                         onSelect={() => {
+                          console.log('🎯 Text tag selected for resizing:', textInput.id);
                           onTextInputSelect?.(textInput.id);
                         }}
                         onMove={() => {}}
                         onResize={(newCoordinates) => {
-                          // Handle text tag resize - could call parent resize handler or update directly
-                          console.log('Text tag resized:', newCoordinates);
+                          // ✅ ENHANCED: Handle text tag resize with proper WebSocket sync
+                          console.log('📏 Text tag resized - broadcasting update:', {
+                            textInputId: textInput.id,
+                            oldCoords: textInput.coordinates,
+                            newCoords: newCoordinates
+                          });
+
+                          // Update coordinates immediately for responsive UI
+                          if (onTagResize) {
+                            onTagResize(textInput.id, {
+                              x: newCoordinates.x,
+                              y: newCoordinates.y,
+                              width: newCoordinates.width,
+                              height: newCoordinates.height,
+                              pageNumber: textInput.coordinates.pageNumber
+                            });
+                          }
+
+                          // 🚀 REAL-TIME SYNC: Broadcast text tag resize via WebSocket
+                          if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+                            const updateMessage = {
+                              type: 'text_input_position_updated',
+                              payload: {
+                                textInputId: textInput.id,
+                                coordinates: {
+                                  x: newCoordinates.x,
+                                  y: newCoordinates.y,
+                                  width: newCoordinates.width,
+                                  height: newCoordinates.height,
+                                  pageNumber: textInput.coordinates.pageNumber
+                                },
+                                sessionId: sessionId || ''
+                              },
+                              userId: textInput.assignedUserId.toString(),
+                              sessionId: sessionId || '',
+                              timestamp: Date.now()
+                            };
+
+                            try {
+                              webSocket.send(JSON.stringify(updateMessage));
+                              console.log('✅ Text tag resize broadcasted via WebSocket:', updateMessage);
+                            } catch (error) {
+                              console.error('❌ Failed to broadcast text tag resize:', error);
+                            }
+                          } else {
+                            console.warn('⚠️ WebSocket not available for text tag resize broadcast');
+                          }
                         }}
                         webSocket={webSocket}
                       />
