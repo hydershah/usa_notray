@@ -275,101 +275,57 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         ${canEdit ? 'hover:shadow-md' : ''}
       `}
       style={{
-        backgroundColor: (() => {
-          // Special handling for whiteout tags - IMPROVED
-          if (tag.tagType === 'W') {
-            if (mode === 'signing' && tag.isCompleted) {
-              return '#FFFFFF'; // Solid white background for completed whiteout
-            } else if (mode === 'signing' && !tag.isCompleted) {
-              return 'rgba(255, 255, 255, 0.9)'; // Semi-transparent white for incomplete whiteout
-            } else {
-              return 'rgba(255, 255, 255, 0.8)'; // More transparent white for tagging mode
-            }
-          }
-          
-          // Default behavior for other tags
-          if (mode === 'signing' && tag.isCompleted) {
-            return 'rgba(255, 255, 255, 0.1)'; // Very subtle background for completed tags
-          } else if (mode === 'signing' && !tag.isCompleted) {
-            return 'rgba(59, 130, 246, 0.1)'; // Blue background for incomplete/clickable
-          } else {
-            return 'rgba(255, 255, 255, 0.95)'; // White for tagging mode
-          }
-        })(),
-        border: (() => {
-          // Special handling for whiteout tags - IMPROVED
-          if (tag.tagType === 'W') {
-            if (mode === 'signing' && tag.isCompleted) {
-              return '1px solid #E5E7EB'; // Subtle border for completed whiteout
-            } else if (mode === 'signing' && !tag.isCompleted) {
-              return '2px solid #DC2626'; // Red border for clickable whiteout to make it more visible
-            } else {
-              return `2px solid ${tag.colorCode || '#DC2626'}`; // Red border for tagging
-            }
-          }
-          
-          // Default behavior for other tags
-          if (mode === 'signing' && tag.isCompleted) {
-            return '1px solid rgba(156, 163, 175, 0.3)'; // Very subtle border for completed tags
-          } else if (mode === 'signing' && !tag.isCompleted) {
-            return '2px dashed #3b82f6'; // Dashed blue border for clickable
-          } else {
-            return `2px solid ${tag.colorCode || '#3B82F6'}`; // Normal border for tagging
-          }
-        })(),
-        borderRadius: (tag.tagType === 'W' && mode === 'signing' && tag.isCompleted) ? '2px' : 
-                     (mode === 'signing' && tag.isCompleted) ? '0' : '6px',
-        color: mode === 'signing' && tag.isCompleted 
-          ? '#000000' // Black text for completed content (plain text appearance)
-          : tag.colorCode || '#3B82F6',
-        zIndex: tag.tagType === 'W' ? (isSelected ? 1000 : 10) : (isSelected ? 1000 : 100), // Lower z-index for whiteout (background)
+        // Completely transparent background for all tags
+        backgroundColor: 'transparent',
+        
+        // Minimal styling for text tags
+        border: tag.tagType === 'T' 
+          ? 'none' // Completely borderless for text tags
+          : tag.isCompleted && mode === 'signing' 
+          ? '1px solid #e2e8f0' // Very light grey border for completed tags
+          : isSelected
+          ? '2px solid #3b82f6' // Blue border for selected tags
+          : '1px solid #d1d5db', // Light grey border for all other tags
+        
+        borderRadius: tag.tagType === 'T' ? '2px' : '8px', // Minimal radius for text tags
+        
+        // Better color contrast
+        color: tag.isCompleted && mode === 'signing' 
+          ? '#1f2937' // Dark grey text for completed content
+          : tag.colorCode || '#374151',
+        
+        zIndex: tag.tagType === 'W' ? (isSelected ? 1000 : 10) : (isSelected ? 1000 : 100),
         pointerEvents: 'auto',
-        cursor: (() => {
-          if (tag.tagType === 'W') {
-            return mode === 'signing' && !tag.isCompleted ? 'pointer' : 'default';
-          }
-          return mode === 'signing' && !tag.isCompleted ? 'pointer' : 'default';
-        })(),
-        boxShadow: (() => {
-          // Special shadow for whiteout tags - IMPROVED
-          if (tag.tagType === 'W') {
-            if (mode === 'signing' && tag.isCompleted) {
-              return '0 1px 3px rgba(0,0,0,0.1)'; // Subtle shadow for completed whiteout
-            } else if (isSelected) {
-              return `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${(tag.colorCode || '#DC2626')}20`;
-            } else if (mode === 'signing' && !tag.isCompleted) {
-              return '0 2px 8px rgba(220, 38, 38, 0.3)'; // Red glow for clickable whiteout
-            } else {
-              return '0 2px 4px rgba(220, 38, 38, 0.3)'; // Red shadow for whiteout
-            }
-          }
-          
-          // Default shadow for other tags
-          if (mode === 'signing' && tag.isCompleted) {
-            return '0 1px 2px rgba(0,0,0,0.05)'; // Very subtle shadow for completed tags
-          } else if (isSelected) {
-            return `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${(tag.colorCode || '#3B82F6')}20`;
-          } else if (mode === 'signing' && !tag.isCompleted) {
-            return '0 2px 8px rgba(59, 130, 246, 0.3)'; // Blue glow for clickable
-          } else {
-            return '0 2px 4px rgba(0,0,0,0.1)';
-          }
-        })()
+        cursor: mode === 'signing' && !tag.isCompleted ? 'pointer' : 'default',
+        
+        // Improved shadows - borderless for text tags
+        boxShadow: tag.tagType === 'T' 
+          ? 'none' // No shadows for borderless text tags
+          : tag.isCompleted && mode === 'signing'
+          ? '0 1px 3px rgba(0,0,0,0.08)' // Subtle shadow for completed tags
+          : isSelected 
+          ? '0 4px 12px rgba(59, 130, 246, 0.15), 0 0 0 2px rgba(59, 130, 246, 0.1)' 
+          : '0 2px 6px rgba(0,0,0,0.1)', // Enhanced shadow for better depth
+        
+        // Minimum sizing only for non-text tags
+        minWidth: tag.tagType === 'T' ? 'auto' : '80px',
+        minHeight: tag.tagType === 'T' ? 'auto' : '32px'
       }}
       resizeHandleStyles={canEdit ? {
         bottomRight: { 
-          width: '10px', 
-          height: '10px', 
-          backgroundColor: tag.colorCode || '#3B82F6',
+          width: '16px', // Increased from 10px to 16px for better interaction
+          height: '16px', // Increased from 10px to 16px
+          backgroundColor: tag.colorCode || '#3b82f6',
           border: '2px solid white',
           borderRadius: '50%',
-          right: '-5px',
-          bottom: '-5px',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+          right: '-8px', // Adjusted position for larger handle
+          bottom: '-8px', // Adjusted position for larger handle
+          boxShadow: '0 2px 6px rgba(0,0,0,0.2)', // Enhanced shadow
+          cursor: 'nw-resize'
         }
       } : undefined}
     >
-      <div className="w-full h-full flex flex-col items-center justify-center p-1">
+      <div className="w-full h-full flex flex-col items-center justify-center p-3">
         {mode === 'signing' ? (
           // Signing mode: Show interactive state
           tag.isCompleted ? (
@@ -552,50 +508,50 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           ) : (
             // Incomplete tag in signing mode - use SAME UI as tagging mode
             <>
-              {/* Main tag content - SAME as tagging mode */}
-              <div className="flex items-center gap-1">
-                <span className="text-xs opacity-80">{tagInfo.icon}</span>
-                <span className="text-xs font-medium truncate">{tagInfo.label}</span>
+              {/* Main tag content - improved sizing */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm opacity-80">{tagInfo.icon}</span>
+                <span className="text-sm font-medium truncate">{tagInfo.label}</span>
               </div>
               
-              {/* User identification - extract from displayLabel - SAME as tagging mode */}
+              {/* User identification - improved sizing */}
               {tag.displayLabel && tag.displayLabel.includes(' - ') && (
-                <div className="flex items-center gap-1 mt-0.5 px-1 py-0.5 bg-white bg-opacity-70 rounded-full">
+                <div className="flex items-center gap-1.5 mt-1 px-2 py-1 bg-transparent rounded-full border border-gray-200">
                   <div 
-                    className="w-2 h-2 rounded-full border border-white shadow-sm" 
+                    className="w-2.5 h-2.5 rounded-full border border-white shadow-sm" 
                     style={{ backgroundColor: tag.colorCode }}
                   />
-                  <span className="text-xs font-medium opacity-90 truncate">
+                  <span className="text-sm font-medium opacity-90 truncate">
                     {tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
                   </span>
                 </div>
               )}
               
-              {/* Interaction hint for signing mode */}
-              <div className="mt-0.5">
-                <span className="text-xs opacity-70">
+              {/* Interaction hint for signing mode - improved sizing */}
+              <div className="mt-1">
+                <span className="text-sm opacity-70">
                   Double-click to {['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter'}
                 </span>
               </div>
             </>
           )
         ) : (
-          // Tagging mode: Show tag info - SAME UI as above
+          // Tagging mode: Show tag info - improved sizing
           <>
-            {/* Main tag content */}
-            <div className="flex items-center gap-1">
-              <span className="text-xs opacity-80">{tagInfo.icon}</span>
-              <span className="text-xs font-medium truncate">{tagInfo.label}</span>
+            {/* Main tag content - improved sizing */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm opacity-80">{tagInfo.icon}</span>
+              <span className="text-sm font-medium truncate">{tagInfo.label}</span>
             </div>
             
-            {/* User identification - extract from displayLabel */}
+            {/* User identification - improved sizing */}
             {tag.displayLabel && tag.displayLabel.includes(' - ') && (
-              <div className="flex items-center gap-1 mt-0.5 px-1 py-0.5 bg-white bg-opacity-70 rounded-full">
+              <div className="flex items-center gap-1.5 mt-1 px-2 py-1 bg-transparent rounded-full border border-gray-200">
                 <div 
-                  className="w-2 h-2 rounded-full border border-white shadow-sm" 
+                  className="w-2.5 h-2.5 rounded-full border border-white shadow-sm" 
                   style={{ backgroundColor: tag.colorCode }}
                 />
-                <span className="text-xs font-medium opacity-90 truncate">
+                <span className="text-sm font-medium opacity-90 truncate">
                   {tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
                 </span>
               </div>
@@ -1579,7 +1535,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         <div className="w-full flex flex-col items-center space-y-6" style={{ minWidth: 'min-content' }}>
           {Array.from({ length: pdfDoc.numPages }, (_, index) => {
             const pageNumber = index + 1;
-            const pageTags = tags.filter(tag => tag.coordinates.pageNumber === pageNumber);
+            const pageTags = tags.filter(tag => tag.coordinates.pageNumber === pageNumber && tag.tagType !== 'T'); // ✅ FIXED: Exclude text tags to prevent dual rendering
             const scaleFactor = scaleFactors.get(pageNumber) || 1;
             
             return (

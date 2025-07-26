@@ -134,7 +134,12 @@ const steps = [
 // Internal JobWizard component
 function JobWizardInternal() {
   const [currentStep, setCurrentStep] = useState(1);
-  const [signers, setSigners] = useState<SignerFormData[]>([]);
+  const [signers, setSigners] = useState<SignerFormData[]>([{
+    signerName: '',
+    signerEmail: '',
+    signerPhoneNumber: '',
+    signerRole: '',
+  }]);
   const [signerErrors, setSignerErrors] = useState<Record<number, Record<string, string>>>({});
   const [autoPopulatedSigners, setAutoPopulatedSigners] = useState<Record<number, boolean>>({});
   const [documents, setDocuments] = useState<DocumentFile[]>([]);
@@ -661,18 +666,12 @@ function JobWizardInternal() {
   };
 
   const handleAddSigner = () => {
-    const newIndex = signers.length;
     setSigners(prev => [...prev, {
       signerName: '',
       signerEmail: '',
       signerPhoneNumber: '',
       signerRole: '',
     }]);
-    // Title companies can only add new participants, others can choose
-    setSignerModes(prev => ({ 
-      ...prev, 
-      [newIndex]: currentUser?.role === 'title_company' ? 'new' : 'new' 
-    }));
   };
 
   const handleRemoveSigner = (index: number) => {

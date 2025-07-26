@@ -306,6 +306,21 @@ export class RedisCache {
   }
 
   /**
+   * Get keys matching a pattern
+   */
+  async getMatchingKeys(pattern: string): Promise<string[]> {
+    if (this.isDisabled()) return [];
+
+    try {
+      const keys = await this.redis.keys(pattern);
+      return keys;
+    } catch (error) {
+      console.error('Redis KEYS pattern error:', error);
+      return [];
+    }
+  }
+
+  /**
    * Delete keys matching a pattern
    */
   async delPattern(pattern: string): Promise<number> {

@@ -38,6 +38,29 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
   const pendingCreations = useRef<Set<string>>(new Set());
   const { toast } = useToast();
 
+  // 🚧 Ensure unique text input IDs – remove accidental duplicates (e.g., when optimistic + WebSocket updates overlap)
+  useEffect(() => {
+    if (textInputs.length < 2) return;
+
+    const seen = new Set<string>();
+    const deduped: StreamlinedTextInput[] = [];
+
+    let hasDuplicates = false;
+    for (const input of textInputs) {
+      if (seen.has(input.id)) {
+        hasDuplicates = true;
+        continue; // Skip duplicate
+      }
+      seen.add(input.id);
+      deduped.push(input);
+    }
+
+    if (hasDuplicates) {
+      console.warn('🧹 Removing duplicate text inputs with identical IDs:', textInputs.map(i => i.id));
+      setTextInputs(deduped);
+    }
+  }, [textInputs]);
+
   // 🔧 Persistence key for temporary text inputs
   const tempStorageKey = `temp_text_inputs_${sessionId}`;
 
@@ -127,10 +150,32 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
             };
             
             setTextInputs(prev => {
-              // Avoid duplicates
+              // If a text input with the final ID already exists, do nothing
               if (prev.some(input => input.id === newTextInput.id)) {
                 return prev;
               }
+
+              // Attempt to find a matching optimistic temp input by coordinates (same page & close x/y)
+              const tempMatchIndex = prev.findIndex(input => {
+                const samePage = input.coordinates.pageNumber === newTextInput.coordinates.pageNumber;
+                const closePosition = Math.abs(input.coordinates.x - newTextInput.coordinates.x) < 0.5 &&
+                                      Math.abs(input.coordinates.y - newTextInput.coordinates.y) < 0.5;
+                return samePage && closePosition && input.id.startsWith('text_temp_');
+              });
+
+              if (tempMatchIndex !== -1) {
+                // Replace the temp entry with the real one while preserving any local edits
+                const updated = [...prev];
+                updated[tempMatchIndex] = {
+                  ...updated[tempMatchIndex],
+                  ...newTextInput,
+                  // Preserve local content if user already typed something
+                  content: updated[tempMatchIndex].content !== '' ? updated[tempMatchIndex].content : newTextInput.content
+                };
+                return updated;
+              }
+
+              // No matching temp input – just add the new text input
               return [...prev, newTextInput];
             });
           }
@@ -267,11 +312,12 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
     const tempId = `text_temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     // Create optimistic text input for immediate editing
+    const inheritedFontSize = textInputs.length > 0 ? textInputs[textInputs.length - 1].fontSize : 12;
     const optimisticTextInput: StreamlinedTextInput = {
       id: tempId,
       coordinates: command.coordinates,
       content: '',
-      fontSize: 12,
+      fontSize: inheritedFontSize,
       fontFamily: 'Arial',
       textColor: '#000000',
       assignedUserId: command.assignedUserId,
@@ -374,7 +420,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       });
       throw error;
     }
-  }, [sessionId, toast, saveTempInputToStorage, removeTempInputFromStorage]);
+  }, [sessionId, toast, saveTempInputToStorage, removeTempInputFromStorage, textInputs]);
 
   // Save text content
   const saveTextContent = useCallback(async (textInputId: string, content: string) => {

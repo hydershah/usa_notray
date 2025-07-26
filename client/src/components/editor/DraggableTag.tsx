@@ -174,31 +174,45 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
         top: `${tag.coordinates.y * scaleFactor}px`,
         width: `${tag.coordinates.width * scaleFactor}px`,
         height: `${tag.coordinates.height * scaleFactor}px`,
-        backgroundColor: tagStyle.backgroundColor,
-        border: `2px ${tagStyle.borderStyle} ${isDragging ? '#3B82F6' : tagStyle.borderColor}`,
-        borderRadius: '6px',
-        color: tagStyle.borderColor,
+        // Completely transparent background for all tags
+        backgroundColor: 'transparent',
+        // Minimal styling for text tags
+        border: tag.tagType === 'T' 
+          ? 'none' // Completely borderless for text tags
+          : isCompleted && isInSigningMode 
+          ? '1px solid #e2e8f0' // Very light grey border for completed tags
+          : isSelected || isDragging
+          ? '2px solid #3b82f6' // Blue border for selected/dragging tags
+          : '1px solid #d1d5db', // Light grey border for all other tags
+        borderRadius: '8px', // Slightly more rounded corners
+        color: isCompleted && isInSigningMode 
+          ? '#1f2937' // Dark grey text for completed content
+          : tag.colorCode || '#374151',
         cursor: tagStyle.cursor,
         userSelect: 'none',
         zIndex: isDragging ? 1000 : isSelected ? 500 : 100,
         transition: isDragging ? 'none' : 'all 0.2s ease',
         boxSizing: 'border-box',
-        boxShadow: isDragging 
-          ? `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${(tag.colorCode || '#3B82F6')}20` 
-          : isSelected
-          ? `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${tagStyle.borderColor}40`
-          : isInSigningMode && !isCompleted && isCurrentUserTag
-          ? '0 2px 8px rgba(59, 130, 246, 0.3)'
-          : '0 2px 4px rgba(0,0,0,0.1)',
+        // Improved shadows - borderless for text tags
+        boxShadow: tag.tagType === 'T' 
+          ? 'none' // No shadows for borderless text tags
+          : isCompleted && isInSigningMode
+          ? '0 1px 3px rgba(0,0,0,0.08)' // Subtle shadow for completed tags
+          : isDragging || isSelected
+          ? '0 4px 12px rgba(59, 130, 246, 0.15), 0 0 0 2px rgba(59, 130, 246, 0.1)'
+          : '0 2px 6px rgba(0,0,0,0.1)', // Enhanced shadow for better depth
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        pointerEvents: 'auto'
+        pointerEvents: 'auto',
+        // ✅ FIXED: Remove excessive minimum sizing constraints for text tags
+        minWidth: tag.tagType === 'T' ? 'auto' : '60px', // Reduced from 80px to 60px
+        minHeight: tag.tagType === 'T' ? 'auto' : '24px' // Reduced from 32px to 24px
       }}
     >
       <div style={{ 
-        padding: '2px 6px', 
-        fontSize: '10px', 
+        padding: tag.tagType === 'T' ? '2px 4px' : '6px 8px', // ✅ FIXED: Much smaller padding for text tags
+        fontSize: tag.tagType === 'T' ? '12px' : '14px', // ✅ FIXED: Smaller font size for text tags
         fontWeight: '500',
         whiteSpace: 'nowrap',
         overflow: 'hidden',
@@ -206,7 +220,7 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: '2px',
+        gap: tag.tagType === 'T' ? '1px' : '4px', // ✅ FIXED: Minimal gap for text tags
         height: '100%',
         justifyContent: 'center'
       }}>
@@ -214,16 +228,16 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
         {isInSigningMode && isCompleted ? (
           // Completed tag in signing mode
           <div style={{ textAlign: 'center', color: '#15803d' }}>
-            <div style={{ fontSize: '12px' }}>DONE</div>
-            <div style={{ fontSize: '8px' }}>Completed</div>
+            <div style={{ fontSize: '16px' }}>DONE</div>
+            <div style={{ fontSize: '12px' }}>Completed</div>
           </div>
         ) : isInSigningMode && isCurrentUserTag && !isCompleted ? (
           // Interactive tag in signing mode
           <div style={{ textAlign: 'center', color: '#1e40af' }}>
-            <div style={{ fontSize: '10px', marginBottom: '2px' }}>
+            <div style={{ fontSize: '14px', marginBottom: '4px' }}>
               {tag.tagType}
             </div>
-            <div style={{ fontSize: '8px' }}>Click to {['S', 'I'].includes(tag.tagType) ? 'apply' : 'enter'}</div>
+            <div style={{ fontSize: '12px' }}>Click to {['S', 'I'].includes(tag.tagType) ? 'apply' : 'enter'}</div>
           </div>
         ) : (
           // Normal tag display
@@ -235,21 +249,22 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
               </span>
             </div>
             
-            {/* User identification */}
+            {/* User identification - improved sizing */}
             {tag.displayLabel && tag.displayLabel.includes(' - ') && (
               <div style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
-                gap: '3px',
-                fontSize: '9px',
-                fontWeight: '400',
-                padding: '2px 4px',
-                backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                borderRadius: '8px'
+                gap: '6px', // Increased gap
+                fontSize: '12px', // Increased from 9px to 12px
+                fontWeight: '500',
+                padding: '4px 8px', // Increased padding
+                backgroundColor: 'transparent',
+                borderRadius: '12px',
+                border: '1px solid #e2e8f0' // Added light border
               }}>
                 <div style={{
-                  width: '6px',
-                  height: '6px',
+                  width: '8px', // Increased from 6px to 8px
+                  height: '8px', // Increased from 6px to 8px
                   borderRadius: '50%',
                   backgroundColor: tag.colorCode || '#3B82F6',
                   border: '1px solid white',

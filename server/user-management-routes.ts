@@ -17,6 +17,7 @@ import {
   validatePhoneNumber 
 } from './middleware/sanitization';
 import { redisCache } from './services/redis-cache';
+import { responseCacheMiddleware } from './middleware/response-cache';
 
 export function registerUserManagementRoutes(app: Express) {
   
@@ -476,7 +477,7 @@ export function registerUserManagementRoutes(app: Express) {
    * GET /api/users/:id/profile/comprehensive
    * Get comprehensive user profile with all fields
    */
-  app.get('/api/users/:id/profile/comprehensive', verifyToken, async (req: any, res) => {
+  app.get('/api/users/:id/profile/comprehensive', verifyToken, responseCacheMiddleware, async (req: any, res) => {
     try {
       const userId = parseInt(req.params.id);
       

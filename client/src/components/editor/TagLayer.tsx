@@ -4,6 +4,7 @@ import { useEditorStore } from '../../hooks/editor/useEditorStore';
 import { DocumentTag, TagCoordinates, DocumentMode } from '../../types/editor';
 import { useToast } from '../../hooks/use-toast';
 import DraggableTag from './DraggableTag';
+import { useDebouncedTagOperations } from '../../hooks/editor/useDebounced';
 
 const TAG_TYPE_INFO = {
   'A': { label: 'Name', icon: 'A' },
@@ -65,6 +66,9 @@ const TagRenderer: React.FC<TagRendererProps> = ({
 }) => {
   const { mode, selectedUser, currentUser, session } = useEditorStore();
   
+  // Use debounced operations hook
+  const { debouncedPositionUpdate } = useDebouncedTagOperations(session?.id || '');
+  
   // Check if current user can modify this tag
   const canModifyTag = canEdit && (
     currentUser?.userId === tag.assignedUserId ||
@@ -76,8 +80,13 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   const displayCoords = {
     x: Math.round(tag.coordinates.x * scaleFactor),
     y: Math.round(tag.coordinates.y * scaleFactor),
-    width: Math.max(Math.round(tag.coordinates.width * scaleFactor), 60), // Minimum display width
-    height: Math.max(Math.round(tag.coordinates.height * scaleFactor), 30) // Minimum display height
+    // ✅ FIXED: Remove excessive minimum size constraints for text tags
+    width: tag.tagType === 'T' 
+      ? Math.round(tag.coordinates.width * scaleFactor) // No minimum width for text tags
+      : Math.max(Math.round(tag.coordinates.width * scaleFactor), 60), // Keep minimum for other tags
+    height: tag.tagType === 'T' 
+      ? Math.round(tag.coordinates.height * scaleFactor) // No minimum height for text tags
+      : Math.max(Math.round(tag.coordinates.height * scaleFactor), 30) // Keep minimum for other tags
   };
 
   console.log('🏷️ Tag rendering:', {
@@ -88,7 +97,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
     scaleFactor
   });
 
-  // Handle drag stop - convert back to PDF coordinates and save to server
+  // Handle drag stop - convert back to PDF coordinates and save to server with debouncing
   const handleDragStop = useCallback(async (e: any, data: any) => {
     if (!canModifyTag || !session) return;
     
@@ -97,7 +106,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       y: Math.round(data.y / scaleFactor)
     };
     
-    console.log('🔄 Tag drag update:', {
+    console.log('🔄 Tag drag update (debounced):', {
       canvas: { x: data.x, y: data.y },
       pdf: newPdfCoordinates,
       scaleFactor
@@ -107,7 +116,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       // Update local state immediately (optimistic update)
       onUpdate(newPdfCoordinates);
       
-      // 🚀 REAL-TIME SYNC: Broadcast tag position update to all participants
+      // 🚀 REAL-TIME SYNC: Broadcast tag position update to all participants (throttled)
       const { useEditorStore } = await import('@/hooks/editor/useEditorStore');
       const webSocket = useEditorStore.getState().webSocket;
       
@@ -127,26 +136,16 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         console.warn('⚠️ WebSocket not available for broadcasting tag position update');
       }
       
-      // Send to server
-      const response = await fetch(`/api/editor/session/${session.id}/tag/${tag.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          coordinates: {
-            ...tag.coordinates,
-            ...newPdfCoordinates
-          }
-        })
+      // Use debounced position update instead of immediate server call
+      const debouncedUpdate = debouncedPositionUpdate(tag.id, {
+        ...tag.coordinates,
+        ...newPdfCoordinates
       });
       
-      if (!response.ok) {
-        throw new Error(`Failed to update tag position: ${response.statusText}`);
-      }
+      // Execute the debounced update
+      debouncedUpdate();
       
-      console.log('✅ Tag position updated on server');
+      console.log('🕒 Tag position update scheduled (debounced)');
       
     } catch (error) {
       console.error('❌ Failed to update tag position:', error);
@@ -497,12 +496,13 @@ const TagRenderer: React.FC<TagRendererProps> = ({
             />
           ) : (
             <div 
-              className="text-black w-full h-full flex items-center justify-center p-1"
+              className={`text-black w-full h-full flex items-center justify-center ${tag.tagType === 'T' ? 'p-1' : 'p-2'}`}
               style={{ 
-                fontSize: Math.max(10, Math.min(16, tag.coordinates.height * 0.6)),
-                lineHeight: '1.2',
+                fontSize: Math.max(12, Math.min(18, tag.coordinates.height * 0.6)),
+                lineHeight: '1.3',
                 wordBreak: 'break-word',
-                fontFamily: 'inherit'
+                fontFamily: 'inherit',
+                fontWeight: '500'
               }}
             >
               {(() => {
@@ -587,7 +587,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
     
     return (
       <div 
-        className="flex flex-col items-center justify-center w-full h-full p-1 cursor-pointer hover:opacity-80 transition-opacity"
+        className={`flex flex-col items-center justify-center w-full h-full ${tag.tagType === 'T' ? 'p-1' : 'p-2'} cursor-pointer hover:opacity-80 transition-opacity`}
         onClick={(e) => {
           console.log('🏷️ Tag content clicked in TagLayer:', {
             tagId: tag.id,
@@ -611,34 +611,34 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           }
         }}
       >
-        {/* Main tag content - SAME for both tagging and signing mode */}
-        <div className="flex items-center gap-1">
-          <span className="text-xs opacity-80">{tagInfo.icon}</span>
-          <span className="text-xs font-medium truncate">{tagInfo.label}</span>
+        {/* Main tag content - improved sizing */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm opacity-80">{tagInfo.icon}</span>
+          <span className="text-sm font-medium truncate">{tagInfo.label}</span>
           {/* Show status icon in signing mode for restricted tags */}
           {mode.mode === 'signing' && statusIcon && (
-            <span className="text-xs">{statusIcon}</span>
+            <span className="text-sm">{statusIcon}</span>
           )}
         </div>
         
-        {/* User identification - SAME for both modes */}
+        {/* User identification - improved sizing */}
         {userInfo && (
-          <div className="flex items-center gap-1 mt-0.5 px-1 py-0.5 bg-white bg-opacity-70 rounded-full">
+          <div className="flex items-center gap-1.5 mt-1 px-2 py-1 bg-transparent rounded-full border border-gray-200">
             <div 
-              className="w-2 h-2 rounded-full border border-white shadow-sm" 
+              className="w-2.5 h-2.5 rounded-full border border-white shadow-sm" 
               style={{ backgroundColor: userInfo.colorCode }}
             />
-            <span className="text-xs font-medium opacity-90 truncate">
+            <span className="text-sm font-medium opacity-90 truncate">
               {userInfo.name}
             </span>
           </div>
         )}
         
-        {/* Show interaction hint in signing mode */}
+        {/* Show interaction hint in signing mode - improved sizing */}
         {mode.mode === 'signing' && (
-          <div className="mt-0.5">
-            <span className="text-xs opacity-70">
-              {interactionMessage || `Double-click to ${['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter'}`}
+          <div className="mt-1">
+            <span className="text-sm opacity-70">
+              {interactionMessage || `Click to ${['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter'}`}
             </span>
           </div>
         )}
@@ -684,52 +684,70 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       className={`
         relative transition-all duration-200 overflow-hidden
         ${isSelected ? 'ring-2 ring-blue-400 ring-opacity-60' : ''}
-        ${canModifyTag ? 'cursor-move hover:shadow-md' : 'cursor-default'}
-        ${mode.showPlaceholders || !tag.isCompleted ? 'opacity-90' : 'opacity-100'}
+        ${canModifyTag ? 'cursor-move hover:shadow-lg' : 'cursor-default'}
+        ${mode.showPlaceholders || !tag.isCompleted ? 'opacity-95' : 'opacity-100'}
       `}
       style={{
-        backgroundColor: tag.isCompleted && mode.mode === 'signing' 
-          ? tag.tagType === 'W' ? '#FFFFFF' : 'rgba(255, 255, 255, 0.1)' // Whiteout = solid white, others = very subtle background
-          : 'rgba(255, 255, 255, 0.95)',
-        border: tag.isCompleted && mode.mode === 'signing' 
-          ? tag.tagType === 'W' ? '1px solid #E5E7EB' : '1px solid rgba(156, 163, 175, 0.3)' // Very subtle border for completed tags
-          : `2px solid ${tag.colorCode || userColor}`,
-        borderRadius: tag.isCompleted && mode.mode === 'signing' ? '0' : '6px',
-        zIndex: tag.tagType === 'W' ? (isSelected ? 1000 : 10) : (isSelected ? 1000 : 100), // Lower z-index for whiteout (background)
-        boxShadow: tag.isCompleted && mode.mode === 'signing'
-          ? '0 1px 2px rgba(0,0,0,0.05)' // Very subtle shadow for completed tags
+        // Completely transparent background for all tags
+        backgroundColor: 'transparent',
+        
+        // Minimal styling for text tags
+        border: tag.tagType === 'T' 
+          ? 'none' // Completely borderless for text tags
+          : tag.isCompleted && mode.mode === 'signing' 
+          ? '1px solid #e2e8f0' // Very light grey border for completed tags
+          : isSelected
+          ? '2px solid #3b82f6' // Blue border for selected tags
+          : '1px solid #d1d5db', // Light grey border for all other tags
+        
+        borderRadius: tag.tagType === 'T' ? '2px' : '8px', // Minimal radius for text tags
+        
+        // Improved shadows - borderless for text tags
+        boxShadow: tag.tagType === 'T' 
+          ? 'none' // No shadows for borderless text tags
+          : tag.isCompleted && mode.mode === 'signing'
+          ? '0 1px 3px rgba(0,0,0,0.08)' // Subtle shadow for completed tags
           : isSelected 
-          ? `0 4px 12px rgba(0,0,0,0.15), 0 0 0 2px ${(tag.colorCode || userColor)}20` 
-          : '0 2px 4px rgba(0,0,0,0.1)',
+          ? '0 4px 12px rgba(59, 130, 246, 0.15), 0 0 0 2px rgba(59, 130, 246, 0.1)' 
+          : '0 2px 6px rgba(0,0,0,0.1)', // Enhanced shadow for better depth
+        
+        // Better color contrast
         color: tag.isCompleted && mode.mode === 'signing' 
-          ? '#000000' // Black text for completed content in signing mode
-          : tag.colorCode || userColor
+          ? '#1f2937' // Dark grey text for completed content
+          : tag.colorCode || '#374151',
+        
+        zIndex: tag.tagType === 'W' ? (isSelected ? 1000 : 10) : (isSelected ? 1000 : 100),
+        
+        // ✅ FIXED: Reduced minimum sizing constraints for better text tag sizing
+        minWidth: tag.tagType === 'T' ? 'auto' : '60px', // Reduced from 80px to 60px
+        minHeight: tag.tagType === 'T' ? 'auto' : '24px' // Reduced from 32px to 24px
       }}
       resizeHandleStyles={{
         bottomRight: {
-          width: '10px',
-          height: '10px',
-          backgroundColor: tag.colorCode || userColor,
+          width: '16px', // Increased from 10px to 16px for better interaction
+          height: '16px', // Increased from 10px to 16px
+          backgroundColor: tag.colorCode || '#3b82f6',
           border: '2px solid white',
           borderRadius: '50%',
-          right: '-5px',
-          bottom: '-5px',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+          right: '-8px', // Adjusted position for larger handle
+          bottom: '-8px', // Adjusted position for larger handle
+          boxShadow: '0 2px 6px rgba(0,0,0,0.2)', // Enhanced shadow
+          cursor: 'nw-resize'
         }
       }}
     >
-      {/* Tag Content */}
-      <div className="w-full h-full flex items-center justify-center">
+      {/* Tag Content with improved padding and sizing */}
+      <div className={`w-full h-full flex items-center justify-center ${tag.tagType === 'T' ? 'p-1' : 'p-3'}`}> {/* ✅ FIXED: Minimal padding for text tags */}
         {renderTagContent()}
       </div>
 
-      {/* Selection Indicator */}
+      {/* Selection Indicator with improved styling */}
       {isSelected && canModifyTag && (
-        <div className="absolute -top-7 left-0 bg-gray-900 text-white text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap z-10">
+        <div className="absolute -top-8 left-0 bg-gray-900 text-white text-sm px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap z-10">
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
               <div 
-                className="w-2 h-2 rounded-full border border-white" 
+                className="w-2.5 h-2.5 rounded-full border border-white" 
                 style={{ backgroundColor: tag.colorCode }}
               />
               <span className="font-medium">Selected</span>
@@ -739,9 +757,9 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         </div>
       )}
 
-      {/* Debug info in development */}
+      {/* Debug info in development with improved styling */}
       {process.env.NODE_ENV === 'development' && (
-        <div className="absolute -bottom-16 left-0 text-xs text-gray-500 bg-white p-1 rounded shadow text-left whitespace-nowrap">
+        <div className="absolute -bottom-20 left-0 text-xs text-gray-500 bg-transparent p-2 rounded-lg shadow-lg text-left whitespace-nowrap border border-gray-200">
           PDF: {tag.coordinates.x},{tag.coordinates.y}<br/>
           Canvas: {displayCoords.x},{displayCoords.y}<br/>
           Scale: {scaleFactor.toFixed(2)}
@@ -829,7 +847,7 @@ export const TagLayer: React.FC<TagLayerProps> = ({
   };
 
   const pageTags = useMemo(() => {
-    return tags.filter(tag => tag.documentId === documentId && tag.coordinates.pageNumber === pageNumber);
+    return tags.filter(tag => tag.documentId === documentId && tag.coordinates.pageNumber === pageNumber && tag.tagType !== 'T');
   }, [tags, documentId, pageNumber]);
 
   // Update layer position to match canvas

@@ -126,9 +126,15 @@ export class TagService {
       
       console.log(`✅ Tag placed: ${request.tagType} for ${assignedUser.firstName} ${assignedUser.lastName} at page ${request.coordinates.pageNumber}`);
       
-      // 🚀 OPTIMIZED: Run cache invalidation in background to avoid blocking the response
-      this.invalidateTagCache(request.sessionId, request.documentId)
-        .catch(err => console.warn('Cache invalidation failed:', err));
+      // 🚀 SMART: Run targeted cache invalidation in background to avoid blocking the response
+      (async () => {
+        try {
+          const { smartCache } = await import('../smart-cache-invalidation');
+          await smartCache.onTagPlaced(request.sessionId, request.documentId, createdTag.id.toString());
+        } catch (err) {
+          console.warn('Smart cache invalidation failed:', err);
+        }
+      })();
       
       return this.convertToDocumentTagData(createdTag, displayLabel, colorCode);
       
@@ -420,9 +426,10 @@ export class TagService {
       
       console.log(`✅ Tag updated: ${tagId}`);
       
-      // Invalidate cache for this session and document
+      // Smart cache invalidation - only clear what actually changed
       if (session) {
-        await this.invalidateTagCache(session.sessionId, updatedTag.documentId.toString());
+        const { smartCache } = await import('../smart-cache-invalidation');
+        await smartCache.onTagUpdated(session.sessionId, updatedTag.documentId.toString(), tagId);
       }
       
       return this.convertToDocumentTagData(updatedTag, displayLabel, colorCode);
@@ -497,9 +504,10 @@ export class TagService {
       
       console.log(`✅ Tag deleted: ${tagId} by user ${deletedBy}`);
       
-      // Invalidate cache for this session and document
+      // Smart cache invalidation for tag deletion
       if (session && currentTag) {
-        await this.invalidateTagCache(session.sessionId, currentTag.documentId.toString());
+        const { smartCache } = await import('../smart-cache-invalidation');
+        await smartCache.onTagDeleted(session.sessionId, currentTag.documentId.toString(), tagId);
       }
       
     } catch (error) {

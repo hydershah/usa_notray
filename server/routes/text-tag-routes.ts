@@ -3,6 +3,7 @@ import { verifyToken } from "../auth";
 import { db } from "../db";
 import { documentTags, editorSessions, users } from "../../shared/schema";
 import { eq, and } from "drizzle-orm";
+import { textTagContentDeduplication, tagPositionDeduplication } from "../middleware/request-deduplication";
 
 /**
  * Enhanced Text Tag Routes
@@ -180,7 +181,7 @@ export function registerTextTagRoutes(app: Express) {
   });
 
   // Update text content (save on Enter key press)
-  app.put('/api/editor/session/:sessionId/text-tag/:tagId/content', verifyToken, async (req: any, res) => {
+  app.put('/api/editor/session/:sessionId/text-tag/:tagId/content', verifyToken, textTagContentDeduplication, async (req: any, res) => {
     try {
       const { sessionId, tagId } = req.params;
       const { content, fontSize, fontFamily, textColor } = req.body;
@@ -250,6 +251,14 @@ export function registerTextTagRoutes(app: Express) {
       }
 
       console.log(`✅ Text content updated for tag ${tagId}: "${content}"`);
+
+      // 🎯 SMART CACHE: Invalidate only content-related caches
+      try {
+        const { smartCache } = await import('../services/smart-cache-invalidation');
+        await smartCache.onTagContentChanged(sessionId, updatedTag.documentId.toString(), tagId);
+      } catch (cacheError) {
+        console.warn('Smart cache invalidation failed for text content:', cacheError);
+      }
 
       // 🚀 REAL-TIME SYNC: Broadcast text content update to all session participants
       try {
@@ -405,7 +414,7 @@ export function registerTextTagRoutes(app: Express) {
   });
 
   // Update text tag position
-  app.put('/api/editor/session/:sessionId/text-tag/:tagId/position', verifyToken, async (req: any, res) => {
+  app.put('/api/editor/session/:sessionId/text-tag/:tagId/position', verifyToken, tagPositionDeduplication, async (req: any, res) => {
     try {
       const { sessionId, tagId } = req.params;
       const { x, y } = req.body;
@@ -441,6 +450,14 @@ export function registerTextTagRoutes(app: Express) {
       }
 
       console.log(`✅ Text tag position updated: ${tagId} -> (${x}, ${y})`);
+
+      // 🎯 SMART CACHE: Invalidate only position-related caches
+      try {
+        const { smartCache } = await import('../services/smart-cache-invalidation');
+        await smartCache.onTagPositionChanged(sessionId, updatedTag.documentId.toString(), tagId);
+      } catch (cacheError) {
+        console.warn('Smart cache invalidation failed for text position:', cacheError);
+      }
 
       // 🚀 REAL-TIME SYNC: Broadcast text tag position update to all session participants
       try {

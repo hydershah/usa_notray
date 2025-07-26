@@ -17,6 +17,8 @@ import { auditLoggingService } from "./services/audit-logging-service";
 import { notificationService } from "./notification-service";
 import { verifyToken, hasAdminPrivileges, hasNotaryPrivileges, type AuthUser } from "./auth";
 import { cacheAdminData, cacheUserData, cacheCompanyData, cacheJobData } from "./middleware/cache-middleware";
+import { tagAutoFillDeduplication, tagUpdateDeduplication, tagPositionDeduplication } from "./middleware/request-deduplication";
+import { responseCacheMiddleware } from "./middleware/response-cache";
 
 // Define the extended request interface for authentication
 interface AuthenticatedRequest extends Express.Request {
@@ -7503,15 +7505,15 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     }
   });
 
-  // Get session state and participants - ULTRA OPTIMIZED VERSION  
-  app.get('/api/session/:sessionId/state', verifyToken, async (req: any, res) => {
+  // Get session state and participants - ULTRA OPTIMIZED VERSION V3
+  app.get('/api/session/:sessionId/state', verifyToken, responseCacheMiddleware, async (req: any, res) => {
     const startTime = Date.now();
     
     try {
       const { sessionId } = req.params;
       
-      // Generate ETag based on sessionId and timestamp to enable 304 responses
-      const etag = `"session-${sessionId}-${Math.floor(Date.now() / 30000)}"`;  // Update every 30s
+      // Generate ETag based on sessionId and timestamp for better cache control
+      const etag = `"session-${sessionId}-${Math.floor(Date.now() / 15000)}"`;  // Update every 15s for more frequent updates
       
       // Check for conditional request headers for ultra-fast 304 responses
       if (req.headers['if-none-match'] === etag) {
@@ -7519,13 +7521,25 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         return res.status(304).end();
       }
 
-      // Try Redis cache first (with shorter duration logging)
-      const cacheKey = `session:${sessionId}:state:v2`;
+      // Try Redis cache first with timeout protection
+      const cacheKey = `session:${sessionId}:state:v3`;
+      let cached = null;
+      
       try {
-        const cached = await redisCache.get(cacheKey);
+        const cacheStartTime = Date.now();
+        cached = await Promise.race([
+          redisCache.get(cacheKey),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Cache timeout')), 50))
+        ]);
+        
+        const cacheTime = Date.now() - cacheStartTime;
+        if (cacheTime > 20) {
+          console.log(`🐌 Slow Redis GET: ${cacheKey} (${cacheTime.toFixed(2)}ms)`);
+        }
+        
         if (cached) {
           res.set('ETag', etag);
-          res.set('Cache-Control', 'max-age=30');
+          res.set('Cache-Control', 'max-age=15');
           console.log(`📦 Cache HIT: session ${sessionId} (${Date.now() - startTime}ms)`);
           return res.json({
             success: true,
@@ -7533,29 +7547,40 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           });
         }
       } catch (cacheError) {
-        console.warn('Cache read error:', cacheError);
+        console.warn('Cache read error (continuing without cache):', cacheError.message);
       }
 
       console.log(`📡 Fresh request: session ${sessionId} by user ${req.user.id}`);
 
+      // Dynamic import for better performance
       const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
       
       const sessionState = await LiveSigningSessionService.getSessionStateOptimized(sessionId);
       
-      // Cache the result for 30 seconds
+      // Cache the result with safe operation and shorter TTL for more frequent updates
       try {
-        await redisCache.set(cacheKey, sessionState, 30);
+        const setCacheStartTime = Date.now();
+        await Promise.race([
+          redisCache.set(cacheKey, sessionState, 15), // 15 second cache
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Cache set timeout')), 100))
+        ]);
+        
+        const setCacheTime = Date.now() - setCacheStartTime;
+        if (setCacheTime > 20) {
+          console.log(`🐌 Slow Redis SET: ${cacheKey} (${setCacheTime.toFixed(2)}ms)`);
+        }
       } catch (cacheError) {
-        console.warn('Cache write error:', cacheError);
+        console.warn('Cache write error (continuing without cache):', cacheError.message);
       }
       
       const duration = Date.now() - startTime;
       
-      // Set proper cache headers
+      // Set optimized cache headers
       res.set('ETag', etag);
-      res.set('Cache-Control', 'max-age=30, must-revalidate');
+      res.set('Cache-Control', 'max-age=15, must-revalidate');
       
-      if (duration > 200) {  // Lower threshold for session state
+      // Performance tracking with lower threshold
+      if (duration > 100) {  // Target: under 100ms
         console.log(`🐌 SLOW REQUEST: {
   method: 'GET',
   url: '/api/session/${sessionId}/state',
@@ -7581,7 +7606,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         error: 'get_session_state_failed'
       });
     }
-  });
+      });
 
   // Set active user (for user switching via keyboard shortcuts)
   app.post('/api/session/:sessionId/set-active-user', verifyToken, async (req: any, res) => {
@@ -8458,7 +8483,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   });
 
   // Update a tag
-  app.put('/api/editor/session/:sessionId/tag/:tagId', verifyToken, async (req: any, res) => {
+  app.put('/api/editor/session/:sessionId/tag/:tagId', verifyToken, tagUpdateDeduplication, async (req: any, res) => {
     try {
       const { sessionId, tagId } = req.params;
       const updates = req.body;
@@ -8666,7 +8691,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   });
 
   // Click to fill tag with profile data (auto-fill from user profile)
-  app.post('/api/editor/session/:sessionId/tag/:tagId/fill', verifyToken, async (req: any, res) => {
+  app.post('/api/editor/session/:sessionId/tag/:tagId/fill', verifyToken, tagAutoFillDeduplication, async (req: any, res) => {
     try {
       const { sessionId, tagId } = req.params;
       

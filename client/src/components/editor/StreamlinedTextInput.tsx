@@ -75,6 +75,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
   webSocket
 }) => {
   const [inputValue, setInputValueRaw] = useState(content);
+  const [currentFontSize, setCurrentFontSize] = useState(fontSize);
   const [isEditing, setIsEditing] = useState(isNew); // Start editing if new
   const [hasStartedEditing, setHasStartedEditing] = useState(isNew); // Track if user has started editing
   const [lastSavedContent, setLastSavedContent] = useState(content); // Track last saved content to avoid resets
@@ -87,7 +88,6 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
   
   // ✅ NEW: Enhanced resize state management
   const [isResizing, setIsResizing] = useState(false);
-  const [resizeAttemptingTooSmall, setResizeAttemptingTooSmall] = useState(false);
   const [lastValidSize, setLastValidSize] = useState({ width: coordinates.width, height: coordinates.height });
   
   // Simplified setInputValue to prevent dependency loops
@@ -162,13 +162,8 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
   const measureRef = useRef<HTMLDivElement>(null); // For measuring text dimensions
   const { toast } = useToast();
   
-  // ✅ IMPROVED: Enhanced font size calculation with better minimum constraints
-  const dynamicFontSize = useMemo(() => {
-    // Calculate a font size that maintains readability
-    const baseFontSize = Math.max(10, Math.min(dimensions.height * 0.5, 22));
-    // Ensure text remains readable even in smaller containers
-    return Math.max(baseFontSize, 10);
-  }, [dimensions.height]);
+  // ✅ FIXED: Consistent font size that doesn't change based on container size to prevent UX disruption
+  const dynamicFontSize = useMemo(() => currentFontSize, [currentFontSize]);
 
   // ✅ IMPROVED: Calculate precise dimensions that fit text exactly
   const getMinimumDimensions = useCallback((text: string = inputValue): { width: number; height: number } => {
@@ -182,7 +177,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     }
 
     // Use the actual font size for precise measurement
-    const measureFontSize = Math.max(dynamicFontSize, 10);
+    const measureFontSize = currentFontSize;
     ctx.font = `${measureFontSize}px ${fontFamily}`;
     
     // Measure the text width
@@ -190,15 +185,15 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     const textMetrics = ctx.measureText(textToMeasure);
     const textWidth = textMetrics.width;
     
-    // ✅ TIGHT FIT: Minimal padding - just enough for text to be readable
-    const minTextWidth = Math.max(textWidth + 8, 30); // Just 4px padding on each side, minimum 30px
-    const minTextHeight = Math.max(measureFontSize + 6, 18); // Just 3px padding top/bottom, minimum 18px
+    // ✅ ULTRA-TIGHT FIT: Minimal padding that closely follows text outline
+    const minTextWidth = Math.max(textWidth + 4, 20); // Just 2px padding on each side, minimum 20px
+    const minTextHeight = Math.max(measureFontSize + 2, 14); // Just 1px padding top/bottom, minimum 14px
     
     return {
       width: minTextWidth,
       height: minTextHeight
     };
-  }, [inputValue, dynamicFontSize, fontFamily]);
+  }, [inputValue, currentFontSize, fontFamily]);
 
   // ✅ NEW: Calculate exact text dimensions for tight fitting
   const getExactTextDimensions = useCallback((text: string = inputValue): { width: number; height: number } => {
@@ -209,19 +204,19 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       return { width: 60, height: 24 };
     }
 
-    const measureFontSize = Math.max(dynamicFontSize, 10);
+    const measureFontSize = currentFontSize;
     ctx.font = `${measureFontSize}px ${fontFamily}`;
     
     const textToMeasure = text || 'Text';
     const textMetrics = ctx.measureText(textToMeasure);
     const textWidth = textMetrics.width;
     
-    // ✅ EXACT FIT: Background exactly matches text size
+    // ✅ EXACT FIT: Background exactly matches text size with minimal padding
     return {
-      width: Math.max(textWidth + 4, 25), // Minimal 2px padding each side
-      height: Math.max(measureFontSize + 2, 16) // Minimal 1px padding top/bottom
+      width: Math.max(textWidth + 2, 20), // Even tighter - just 1px padding each side
+      height: Math.max(measureFontSize + 1, 14) // Even tighter - minimal padding top/bottom
     };
-  }, [inputValue, dynamicFontSize, fontFamily]);
+  }, [inputValue, currentFontSize, fontFamily]);
 
   // Update position and dimensions when coordinates change
   useEffect(() => {
@@ -273,45 +268,48 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     }
   }, [isNew]);
 
-  // ✅ IMPROVED: Tight-fit auto-resize that matches text exactly
+  // ✅ FIXED: Simplified auto-resize that only runs when explicitly requested
   const lastResizeText = useRef<string>('');
   const performAutoResize = useCallback(
-    debounce((text: string) => {
-      if (isDeleted || lastResizeText.current === text) return;
+    debounce((text: string, force: boolean = false) => {
+      // Only auto-resize if forced or if it's a new text input that needs initial sizing
+      if (isDeleted || (!force && !isNew) || lastResizeText.current === text) return;
       
       lastResizeText.current = text;
-      console.log('📏 Performing tight auto-resize for:', text);
+      console.log('📏 Performing controlled auto-resize for:', text, '(forced:', force, ')');
       
       // Get exact dimensions for the text
       const exactDimensions = getExactTextDimensions(text);
       
-      console.log('✅ Auto-resize to exact text dimensions:', {
+      console.log('✅ Auto-resize to text dimensions:', {
         text: text || '(empty)',
         oldSize: `${dimensions.width.toFixed(1)}x${dimensions.height.toFixed(1)}`,
-        newSize: `${exactDimensions.width.toFixed(1)}x${exactDimensions.height.toFixed(1)}`
+        newSize: `${exactDimensions.width.toFixed(1)}x${exactDimensions.height.toFixed(1)}`,
+        isNew,
+        forced: force
       });
       
-      // Always resize to exact text dimensions for tight fit
+      // Only resize to exact text dimensions for new inputs or when forced
       setDimensions({
         width: exactDimensions.width,
         height: exactDimensions.height
       });
       
     }, 300), // Debounce auto-resize to prevent rapid calls
-    [isDeleted, getExactTextDimensions, dimensions.width, dimensions.height]
+    [isDeleted, getExactTextDimensions, dimensions.width, dimensions.height, isNew]
   );
 
-  // ✅ IMPROVED: Auto-resize when component mounts OR when inputValue changes
+  // ✅ FIXED: Only auto-resize for brand new text inputs that need initial sizing
   useEffect(() => {
-    if (inputValue && inputValue.trim() !== '') {
-      // Immediately resize to fit text tightly
-      performAutoResize(inputValue);
-    } else if (inputValue === '') {
-      // For empty text, use minimal size
-      const minSize = getExactTextDimensions('Text');
-      setDimensions({ width: minSize.width, height: minSize.height });
+    // Only auto-resize for completely new text inputs (never edited before)
+    if (isNew && !hasStartedEditing && !inputValue.trim()) {
+             console.log('📏 Initial sizing for new text input:', id);
+       // Set a tight default size for new text inputs
+       const defaultSize = getExactTextDimensions('Text');
+       setDimensions({ width: defaultSize.width, height: defaultSize.height });
     }
-  }, [inputValue, performAutoResize, getExactTextDimensions]); // React to content changes
+    // Don't auto-resize existing inputs or when user is actively editing
+  }, [isNew, hasStartedEditing, inputValue, getExactTextDimensions]); // Only for truly new inputs
 
   // Maintain editing state even when isNew becomes false if user was editing
   useEffect(() => {
@@ -323,6 +321,17 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     }
   }, [hasStartedEditing, isEditing, inputValue, isSelected]);
 
+  // 🧩 Auto-tighten box when content or font size changes (only when not editing/resizing)
+  useEffect(() => {
+    if (isEditing || isResizing || isDeleted) return;
+
+    const newFontSize = Math.max(8, Math.round(dimensions.height - 4));
+    if (newFontSize !== currentFontSize) {
+      setCurrentFontSize(newFontSize);
+      onFontSizeChange?.(newFontSize);
+    }
+  }, [dimensions.height, isEditing, isResizing, isDeleted, currentFontSize, onFontSizeChange]);
+   
   // Handle deletion - IMPROVED
   const handleDelete = useCallback(async () => {
     if (isDeleted) return; // Prevent multiple deletions
@@ -494,10 +503,11 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
         }));
       }
       
-      // Only exit edit mode if we have content or if it's not a new input
+      // ✅ FIXED: Exit edit mode and preserve current size when saving
       if (trimmedValue || !isNew) {
         setIsEditing(false);
         setHasStartedEditing(false);
+        // Don't auto-resize when saving - keep current dimensions
       }
       
       // Ensure the component remains visible and selected after save
@@ -598,25 +608,9 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     };
   }, [webSocket, id, assignedUserId, isEditing, isDragging, isLocallyUpdating, setInputValue]);
 
-  // Handle drag stop - convert back to PDF coordinates and save to server
-  const handleDragStop = useCallback((e: any, data: any) => {
-    console.log('🖱️ handleDragStop called:', { id, isDeleted, data });
-    if (isDeleted) return;
-    
-    const newX = Math.round(data.x / scaleFactor);
-    const newY = Math.round(data.y / scaleFactor);
-    
-    console.log('🖱️ Drag stop - updating position:', { newX, newY });
-    
-    // Update position immediately for real-time feedback
-    setPosition({ x: newX, y: newY });
-    
-    if (onMove) {
-      onMove({ x: newX, y: newY });
-    }
-    
-    // 🚀 REAL-TIME SYNC: Save position to server with WebSocket broadcasting (fire and forget)
-    (async () => {
+  // Debounced save function for better performance - using useRef to avoid recreation
+  const debouncedSaveRef = useRef(
+    debounce(async (sessionId: string, id: string, x: number, y: number, width: number, height: number, pageNumber: number) => {
       try {
         const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${id}/position`, {
           method: 'PUT',
@@ -625,26 +619,67 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
             'Authorization': `Bearer ${localStorage.getItem('token')}`
           },
           body: JSON.stringify({
-            x: newX,
-            y: newY,
-            width: dimensions.width,
-            height: dimensions.height,
-            pageNumber: coordinates.pageNumber
+            x,
+            y,
+            width,
+            height,
+            pageNumber
           })
         });
         
         if (!response.ok && response.status !== 404) {
-          throw new Error(`Failed to save position: ${response.status}`);
+          throw new Error(`Failed to save: ${response.status}`);
         }
         
-        console.log(`✅ Text tag position saved: ${newX}, ${newY}`);
+        console.log(`✅ Text tag saved: ${width}x${height} at ${x}, ${y}`);
         
       } catch (error) {
-        console.error('❌ Failed to save text tag position:', error);
-        // Don't revert position on error - let user retry
+        console.error('❌ Failed to save text tag:', error);
       }
-    })();
-  }, [scaleFactor, sessionId, id, onMove, coordinates.pageNumber, dimensions.width, dimensions.height, isDeleted]);
+    }, 800) // Increased debounce time to 800ms for better performance
+  );
+
+  // ✅ FIXED: Simplified drag stop handling with better coordinate management
+  const handleDragStop = useCallback((e: any, data: any) => {
+    console.log('🖱️ handleDragStop called:', { id, isDeleted, data });
+    if (isDeleted) return;
+    
+    // Convert display coordinates back to PDF coordinates
+    const newX = Math.round(data.x / scaleFactor);
+    const newY = Math.round(data.y / scaleFactor);
+    
+    console.log('🖱️ Drag completed:', { 
+      displayCoords: { x: data.x, y: data.y }, 
+      pdfCoords: { x: newX, y: newY },
+      scaleFactor 
+    });
+    
+    // Update local position state immediately for responsive UI
+    setPosition({ x: newX, y: newY });
+    
+    // Notify parent component of position change
+    if (onMove) {
+      onMove({ x: newX, y: newY });
+    }
+    
+    // Save to server with debouncing (keep current dimensions)
+    debouncedSaveRef.current(sessionId, id, newX, newY, dimensions.width, dimensions.height, coordinates.pageNumber);
+
+    // 🚀 Live broadcast
+    if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+      webSocket.send(JSON.stringify({
+        type: 'text_input_position_updated',
+        payload: {
+          textInputId: id,
+          coordinates: { x: newX, y: newY, width: dimensions.width, height: dimensions.height },
+          fontSize: currentFontSize
+        },
+        userId: assignedUserId.toString(),
+        sessionId,
+        timestamp: Date.now()
+      }));
+    }
+  }, [scaleFactor, sessionId, id, onMove, dimensions.width, dimensions.height, isDeleted, coordinates.pageNumber, webSocket, assignedUserId, currentFontSize]);
 
   // ✅ ENHANCED: Improved resize handler with better constraints and sensitivity
   const handleResize = useCallback((
@@ -654,133 +689,52 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     delta: any,
     position: { x: number; y: number }
   ) => {
-    console.log('📏 handleResize called:', { id, isDeleted, direction, position });
     if (isDeleted) return;
-    
+
     const newWidth = parseInt(ref.style.width) / scaleFactor;
     const newHeight = parseInt(ref.style.height) / scaleFactor;
-    const newX = position.x / scaleFactor;
-    const newY = position.y / scaleFactor;
-    
-    // Get minimum dimensions based on current text content for tight fitting
-    const minDimensions = getExactTextDimensions();
-    const minWidth = minDimensions.width;
-    const minHeight = minDimensions.height;
-    
-    // Check if user is trying to resize below text size
-    const isTooSmall = newWidth < minWidth || newHeight < minHeight;
-    
-    if (isTooSmall) {
-      // Show visual feedback that size is too small for text
-      setResizeAttemptingTooSmall(true);
-      
-      // Use exact text dimensions to maintain tight fit
-      const constrainedWidth = Math.max(newWidth, minWidth);
-      const constrainedHeight = Math.max(newHeight, minHeight);
-      
-      // Update with constrained dimensions
-      setPosition({ x: newX, y: newY });
-      setDimensions({ width: constrainedWidth, height: constrainedHeight });
-      
-      // Update the actual element size to match constraints
-      ref.style.width = `${constrainedWidth * scaleFactor}px`;
-      ref.style.height = `${constrainedHeight * scaleFactor}px`;
-      
-      // Clear the warning after a short delay
-      setTimeout(() => setResizeAttemptingTooSmall(false), 1500);
-      
-      console.log(`📏 Resize constrained to text size: ${constrainedWidth}x${constrainedHeight} (text requires: ${minWidth}x${minHeight})`);
-      
-      // Save the constrained dimensions  
-      setCustomTagDimensions('T', { width: constrainedWidth, height: constrainedHeight });
-      
-      if (onResize) {
-        onResize({ x: newX, y: newY, width: constrainedWidth, height: constrainedHeight });
-      }
-      
-      // Save to server with constrained dimensions
-      (async () => {
-        try {
-          await fetch(`/api/editor/session/${sessionId}/text-tag/${id}/position`, {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
-            },
-            body: JSON.stringify({
-              x: newX,
-              y: newY,
-              width: constrainedWidth,
-              height: constrainedHeight,
-              pageNumber: coordinates.pageNumber
-            })
-          });
-        } catch (error) {
-          console.error('❌ Failed to save constrained dimensions:', error);
-        }
-      })();
-      
-      return;
-    }
-    
-    // Normal resize - no constraints needed
-    setResizeAttemptingTooSmall(false);
-    setPosition({ x: newX, y: newY });
+
+    // Directly update dimensions without font size adjustments here
     setDimensions({ width: newWidth, height: newHeight });
-    setLastValidSize({ width: newWidth, height: newHeight });
-    
-    // Calculate new font size based on new height with better scaling
-    const newFontSize = Math.max(10, Math.min(newHeight * 0.5, 22));
-    
-    // 💾 SAVE CUSTOM DIMENSIONS: Remember this size for future text tags
-    setCustomTagDimensions('T', { width: newWidth, height: newHeight });
-    console.log(`📏 Saved custom dimensions for text tags: ${newWidth}x${newHeight}`);
-    
-    if (onFontSizeChange) {
-      onFontSizeChange(newFontSize);
-    }
-    
+
+    console.log('✅ Text tag resized:', { 
+      id, 
+      newSize: `${newWidth}x${newHeight}`,
+    });
+
     if (onResize) {
-      onResize({ x: newX, y: newY, width: newWidth, height: newHeight });
+      onResize({ x: position.x, y: position.y, width: newWidth, height: newHeight });
     }
-    
-    // 🚀 REAL-TIME SYNC: Save dimensions to server with WebSocket broadcasting (fire and forget)
-    (async () => {
-      try {
-        const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${id}/position`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          },
-          body: JSON.stringify({
-            x: newX,
-            y: newY,
-            width: newWidth,
-            height: newHeight,
-            pageNumber: coordinates.pageNumber
-          })
-        });
-        
-        if (!response.ok && response.status !== 404) {
-          throw new Error(`Failed to save dimensions: ${response.status}`);
-        }
-        
-        console.log(`✅ Text tag dimensions saved: ${newWidth}x${newHeight} at ${newX}, ${newY}`);
-        
-      } catch (error) {
-        console.error('❌ Failed to save text tag dimensions:', error);
-        // Don't revert dimensions on error - let user retry
-      }
-    })();
-  }, [scaleFactor, sessionId, id, onResize, isDeleted, getMinimumDimensions, coordinates.pageNumber, setCustomTagDimensions, onFontSizeChange]);
+  }, [scaleFactor, id, onResize, isDeleted]);
 
   // ✅ ENHANCED: Handle resize stop with better feedback
-  const handleResizeStop = useCallback(() => {
+  const handleResizeStop = useCallback((e: any, direction: any, ref: HTMLElement, delta: any, positionParam: any) => {
     setIsResizing(false);
-    setResizeAttemptingTooSmall(false);
-    console.log('🔧 Text tag resize completed');
-  }, []);
+    const newWidth = parseInt(ref.style.width) / scaleFactor;
+    const newHeight = parseInt(ref.style.height) / scaleFactor;
+    const newX = positionParam.x / scaleFactor;
+    const newY = positionParam.y / scaleFactor;
+
+    setPosition({ x: newX, y: newY });
+    // Save final geometry
+    debouncedSaveRef.current(sessionId, id, newX, newY, newWidth, newHeight, coordinates.pageNumber);
+
+    // 🚀 Broadcast final geometry
+    if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+      webSocket.send(JSON.stringify({
+        type: 'text_input_position_updated',
+        payload: {
+          textInputId: id,
+          coordinates: { x: newX, y: newY, width: newWidth, height: newHeight },
+          fontSize: currentFontSize
+        },
+        userId: assignedUserId.toString(),
+        sessionId,
+        timestamp: Date.now()
+      }));
+    }
+    console.log('🔧 Resize stop. Saved geometry.');
+  }, [scaleFactor, sessionId, id, coordinates.pageNumber, webSocket, assignedUserId, currentFontSize]);
 
   // Handle click to select or start editing - FIXED to prevent duplication
   const handleClick = useCallback((e: React.MouseEvent) => {
@@ -888,20 +842,24 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       isNew
     });
     
+    // Tighten box to content on blur (shrink if necessary)
+    performAutoResize(inputValue, true);
+    
     // Small delay to allow for potential clicks on the same element
     setTimeout(() => {
       if (isDeleted) return;
       
-      // Save if content has changed
+      // Save if content has changed, but don't change dimensions
       if (isEditing && inputValue.trim() !== lastSavedContent) {
-        console.log('💾 Content changed, saving on blur');
+        console.log('💾 Content changed, saving on blur without resize');
         handleSave(inputValue);
       } else if (isEditing) {
         // Only exit edit mode if we have content OR if it's not a new input
         if (inputValue.trim() || !isNew) {
-          console.log('✅ Exiting edit mode on blur');
+          console.log('✅ Exiting edit mode on blur - keeping current size');
           setIsEditing(false);
           setHasStartedEditing(false);
+          // Explicitly preserve current dimensions to prevent size jumping
         } else {
           console.log('📝 Keeping new input in edit mode (no content)');
         }
@@ -1072,7 +1030,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     top: `${position.y * scaleFactor}px`,
     width: `${dimensions.width * scaleFactor}px`,
     minHeight: `${dimensions.height * scaleFactor}px`,
-    fontSize: `${fontSize * scaleFactor}px`,
+    fontSize: `${currentFontSize * scaleFactor}px`,
     fontFamily,
     color: textColor,
     lineHeight: '1.2',
@@ -1080,7 +1038,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     zIndex: isSelected ? 1000 : 100,
     pointerEvents: 'auto',
     userSelect: isEditing ? 'text' : 'none'
-  }), [position.x, position.y, dimensions.width, dimensions.height, scaleFactor, fontSize, fontFamily, textColor, isEditing, isSelected]);
+  }), [position.x, position.y, dimensions.width, dimensions.height, scaleFactor, fontFamily, textColor, isEditing, isSelected, currentFontSize]);
 
   if (!isVisible || isDeleted) {
     return null;
@@ -1208,166 +1166,41 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
           console.log('📏 onResizeStart called:', { id, isSelected, isEditing, direction });
           setIsResizing(true);
         }}
-        enableResizing={{
-          top: isSelected && !isEditing,
-          right: isSelected && !isEditing,
-          bottom: isSelected && !isEditing,
-          left: isSelected && !isEditing,
-          topRight: isSelected && !isEditing,
-          bottomRight: isSelected && !isEditing,
-          bottomLeft: isSelected && !isEditing,
-          topLeft: isSelected && !isEditing,
-        }}
+        enableResizing={isSelected ? {
+          top: false,
+          right: false,
+          bottom: false,
+          left: false,
+          topRight: false,
+          bottomRight: true, // Only bottom-right handle for cleaner look
+          bottomLeft: false,
+          topLeft: false,
+        } : false}
         disableDragging={isEditing}
-        minWidth={25 * scaleFactor}
-        minHeight={16 * scaleFactor}
+        minWidth={10 * scaleFactor}  // ✅ FIXED: Ultra-tight minimum constraints to match text sizing
+        minHeight={8 * scaleFactor}
         bounds="parent"
         className="streamlined-text-input"
         style={{
           zIndex: isSelected ? 1000 : 100,
           pointerEvents: 'auto',
+          transform: 'translateZ(0)', // Force hardware acceleration
         }}
-        resizeHandleStyles={{
+        resizeHandleStyles={isSelected ? {
           bottomRight: {
-            width: '20px',
-            height: '20px',
-            backgroundColor: '#007bff',
-            border: '2px solid #fff',
+            width: '8px',
+            height: '8px',
+            backgroundColor: '#2563eb',
+            border: 'none',
             borderRadius: '50%',
-            right: '-10px',
-            bottom: '-10px',
-            cursor: 'se-resize'
-          },
-          topRight: {
-            width: '20px',
-            height: '20px',
-            backgroundColor: '#007bff',
-            border: '2px solid #fff',
-            borderRadius: '50%',
-            right: '-10px',
-            top: '-10px',
-            cursor: 'ne-resize'
-          },
-          bottomLeft: {
-            width: '20px',
-            height: '20px',
-            backgroundColor: '#007bff',
-            border: '2px solid #fff',
-            borderRadius: '50%',
-            left: '-10px',
-            bottom: '-10px',
-            cursor: 'sw-resize'
-          },
-          topLeft: {
-            width: '20px',
-            height: '20px',
-            backgroundColor: '#007bff',
-            border: '2px solid #fff',
-            borderRadius: '50%',
-            left: '-10px',
-            top: '-10px',
-            cursor: 'nw-resize'
+            right: '-4px',
+            bottom: '-4px',
+            cursor: 'se-resize',
+            opacity: 1
           }
-        }}
+        } : {}}
       >
-        <div
-          data-text-input-id={id}
-          style={{
-            width: '100%',
-            height: '100%',
-            cursor: isEditing ? 'text' : (isSelected ? 'move' : 'pointer'),
-            pointerEvents: 'auto',
-            userSelect: isEditing ? 'text' : 'none',
-            border: isSelected ? 
-              (isEditing ? '3px solid #28a745' : '3px solid #007bff') : 
-              '2px solid transparent',
-            borderRadius: '6px',
-            backgroundColor: isSelected ? 
-              (isEditing ? 'rgba(40, 167, 69, 0.08)' : 'rgba(0, 123, 255, 0.08)') : 
-              'transparent',
-            boxShadow: isSelected ?
-              (isEditing ? '0 0 0 4px rgba(40, 167, 69, 0.25), 0 4px 12px rgba(40, 167, 69, 0.3)' : 
-                          '0 0 0 4px rgba(0, 123, 255, 0.25), 0 4px 16px rgba(0, 123, 255, 0.4)') :
-              'none',
-            transition: 'all 0.3s ease',
-            position: 'relative',
-            outline: 'none',
-            overflow: 'hidden'
-          }}
-          onMouseEnter={(e) => {
-            if (!isSelected && !isEditing) {
-              e.currentTarget.style.border = '2px dashed rgba(0, 123, 255, 0.5)';
-              e.currentTarget.style.backgroundColor = 'rgba(0, 123, 255, 0.03)';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (!isSelected && !isEditing) {
-              e.currentTarget.style.border = '2px solid transparent';
-              e.currentTarget.style.backgroundColor = 'transparent';
-            }
-          }}
-        tabIndex={0}
-      >
-        {/* ✅ ENHANCED: Resize mode indicator with better styling */}
-        {isSelected && !isEditing && (
-          <>
-            {/* Resize instruction tooltip */}
-            <div
-              style={{
-                position: 'absolute',
-                top: '-36px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                backgroundColor: resizeAttemptingTooSmall ? '#dc3545' : '#007bff',
-                color: 'white',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: '600',
-                whiteSpace: 'nowrap',
-                zIndex: 1002,
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-                animation: resizeAttemptingTooSmall ? 'pulse 0.8s infinite' : 'fadeIn 0.3s ease',
-                transition: 'all 0.3s ease'
-              }}
-            >
-              {resizeAttemptingTooSmall ? 
-                '⚠️ Cannot make smaller - background fits text exactly' : 
-                '↔️ Drag corners to resize - background will fit text'
-              }
-              {/* Arrow pointer */}
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: '-6px',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  width: 0,
-                  height: 0,
-                  borderLeft: '6px solid transparent',
-                  borderRight: '6px solid transparent',
-                  borderTop: `6px solid ${resizeAttemptingTooSmall ? '#dc3545' : '#007bff'}`
-                }}
-              />
-            </div>
-            
-            {/* Selection outline for better visibility */}
-            <div
-              style={{
-                position: 'absolute',
-                top: '-3px',
-                left: '-3px',
-                right: '-3px',
-                bottom: '-3px',
-                border: `2px dashed ${resizeAttemptingTooSmall ? '#dc3545' : '#007bff'}`,
-                borderRadius: '6px',
-                pointerEvents: 'none',
-                zIndex: 999,
-                animation: resizeAttemptingTooSmall ? 'pulse 1s infinite' : 'pulse 2s infinite'
-              }}
-            />
-          </>
-        )}
+        {/* No extra overlay while resizing – keep UI minimal */}
         
         {isEditing ? (
           // Editing mode - show input field
@@ -1394,10 +1227,13 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
                 broadcastTextChange(newValue);
               }
               
-              // Auto-resize as user types (debounced)
-              performAutoResize(newValue);
-              
-              // Auto-save when user stops typing (will be handled by blur event)
+              // 🔄 AUTO-EXPAND: Enlarge box in real-time if text exceeds current bounds (no shrink here)
+              const needed = getExactTextDimensions(newValue);
+              if (needed.width > dimensions.width || needed.height > dimensions.height) {
+                setDimensions({ width: needed.width, height: needed.height });
+              }
+               
+               // Auto-save when user stops typing (will be handled by blur event)
             }}
             onKeyDown={handleInputKeyDown}
             onBlur={handleBlur}
@@ -1411,9 +1247,9 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
               borderRadius: '3px',
               padding: '1px 2px', // ✅ MINIMAL PADDING to match display mode
               margin: 0,
-              fontSize: 'inherit',
-              fontFamily: 'inherit',
-              color: 'inherit',
+              fontSize: `${Math.max(dynamicFontSize, 8) * scaleFactor}px`,
+              fontFamily: fontFamily,
+              color: textColor,
               lineHeight: '1.1', // ✅ TIGHT line height to match display
               resize: 'none',
               overflow: 'visible', // ✅ Allow text to be fully visible
@@ -1445,7 +1281,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
                 display: 'block',
                 width: '100%',
                 textAlign: 'center',
-                fontSize: `${Math.max(dynamicFontSize, 10) * scaleFactor}px`,
+                fontSize: `${Math.max(dynamicFontSize, 8) * scaleFactor}px`,
                 fontFamily: fontFamily,
                 color: textColor,
                 lineHeight: '1.1', // ✅ TIGHT line height
@@ -1497,8 +1333,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
             )}
           </div>
         )}
-    </div>
-    </Rnd>
+      </Rnd>
     </>
   );
 }; 
