@@ -5,12 +5,24 @@ import { db } from '../db';
 import { documentTags, jobDocuments, documentVersions } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import { TAG_TYPES } from '../../shared/schema';
+import { DigitalSignatureService } from './digital-signature-service';
 
 export interface ProcessedDocument {
   buffer: Buffer;
   fileName: string;
   fileSize: number;
   pageCount: number;
+  digitalSignatures?: SignatureInfo[];
+  isDigitallySigned?: boolean;
+}
+
+export interface SignatureInfo {
+  signerName: string;
+  signerEmail: string;
+  signatureTime: Date;
+  certificateId: string;
+  signatureHash: string;
+  signatureType: 'user' | 'notary';
 }
 
 export interface TagPosition {
@@ -51,8 +63,9 @@ export class PDFProcessorService {
         throw new Error('No tags found for session');
       }
 
-      // Get original document
+      // Get original document and session info
       const originalDocument = await this.getOriginalDocument(sessionId);
+      const sessionInfo = await this.getSessionInfo(sessionId);
       console.log(`📄 Original document: ${originalDocument.fileName}`);
 
       // Load PDF
@@ -62,17 +75,48 @@ export class PDFProcessorService {
       // Apply tags to PDF
       await this.applyTagsToPDF(pdfDoc, tags);
       
-      // Generate final PDF buffer
-      const finalPdfBuffer = await pdfDoc.save();
-      const finalBuffer = Buffer.from(finalPdfBuffer);
+      // Generate PDF with visual content applied
+      const visuallyCompletePdfBuffer = await pdfDoc.save();
+      const visualBuffer = Buffer.from(visuallyCompletePdfBuffer);
 
-      console.log(`✅ Generated final PDF: ${finalBuffer.length} bytes`);
+      console.log(`✅ Generated visually complete PDF: ${visualBuffer.length} bytes`);
+
+      // Apply digital signatures to the completed PDF
+      let finalBuffer = visualBuffer;
+      let digitalSignatures: SignatureInfo[] = [];
+      let isDigitallySigned = false;
+
+      if (sessionInfo?.jobId) {
+        console.log(`🔐 Applying digital signatures for job ${sessionInfo.jobId}`);
+        
+        const digitalSignatureService = DigitalSignatureService.getInstance();
+        const signatureResult = await digitalSignatureService.signCompletedDocument(
+          visualBuffer,
+          sessionInfo.jobId,
+          sessionId
+        );
+
+        if (signatureResult.success && signatureResult.signedPdfBuffer) {
+          finalBuffer = signatureResult.signedPdfBuffer;
+          digitalSignatures = signatureResult.signatures || [];
+          isDigitallySigned = true;
+          
+          console.log(`✅ Digital signatures applied: ${digitalSignatures.length} signatures`);
+        } else {
+          console.warn(`⚠️ Digital signature application failed: ${signatureResult.error}`);
+          console.log('📄 Proceeding with visually complete PDF without digital signatures');
+        }
+      } else {
+        console.warn('⚠️ No job ID found for session, skipping digital signatures');
+      }
 
       return {
         buffer: finalBuffer,
         fileName: `completed_${originalDocument.fileName}`,
         fileSize: finalBuffer.length,
-        pageCount: pdfDoc.getPageCount()
+        pageCount: pdfDoc.getPageCount(),
+        digitalSignatures,
+        isDigitallySigned
       };
 
     } catch (error) {
@@ -655,11 +699,10 @@ export class PDFProcessorService {
   }
 
   /**
-   * Get original document info
+   * Get session information including job ID
    */
-  private async getOriginalDocument(sessionId: string): Promise<any> {
+  private async getSessionInfo(sessionId: string): Promise<any> {
     try {
-      // First get the session to find the job ID
       const { editorSessions } = await import('../../shared/schema');
       const [session] = await db
         .select()
@@ -667,7 +710,22 @@ export class PDFProcessorService {
         .where(eq(editorSessions.sessionId, sessionId))
         .limit(1);
 
-      if (!session) {
+      return session;
+    } catch (error) {
+      console.error('Failed to get session info:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get original document info
+   */
+  private async getOriginalDocument(sessionId: string): Promise<any> {
+    try {
+      // First get the session to find the job ID
+      const sessionInfo = await this.getSessionInfo(sessionId);
+
+      if (!sessionInfo) {
         throw new Error('Session not found');
       }
 
@@ -675,7 +733,7 @@ export class PDFProcessorService {
       const [document] = await db
         .select()
         .from(jobDocuments)
-        .where(eq(jobDocuments.jobId, session.jobId))
+        .where(eq(jobDocuments.jobId, sessionInfo.jobId))
         .limit(1);
 
       if (!document) {

@@ -66,6 +66,7 @@ interface PDFViewerProps {
   onTextInputSelect?: (textInputId: string | null) => void;
   onSaveTextContent?: (textInputId: string, content: string) => void;
   onDeleteTextInput?: (textInputId: string) => void;
+  onFontSizeChange?: (textInputId: string, fontSize: number) => void;
   // Sync functionality for live signing
   onSyncUsers?: () => void;
   currentUser?: SessionParticipant | null;
@@ -591,6 +592,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   onTextInputSelect,
   onSaveTextContent,
   onDeleteTextInput,
+  onFontSizeChange,
   onSyncUsers,
   currentUser,
   isSyncLoading = false,
@@ -1723,26 +1725,18 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                             };
 
                             try {
-                              webSocket.sendMessage({
-                                type: 'text_input_position_updated',
-                                payload: {
-                                  textInputId: textInput.id,
-                                  coordinates: {
-                                    x: newCoordinates.x,
-                                    y: newCoordinates.y,
-                                    width: newCoordinates.width,
-                                    height: newCoordinates.height,
-                                    pageNumber: textInput.coordinates.pageNumber
-                                  },
-                                  page: textInput.coordinates.pageNumber
-                                }
-                              });
+                              webSocket.webSocketInstance?.send(JSON.stringify(updateMessage));
                               console.log('✅ Text tag resize broadcasted via WebSocket');
                             } catch (error) {
                               console.error('❌ Failed to broadcast text tag resize:', error);
                             }
                           } else {
                             console.warn('⚠️ WebSocket not available for text tag resize broadcast');
+                          }
+                        }}
+                        onFontSizeChange={(fontSize) => {
+                          if (onFontSizeChange) {
+                            onFontSizeChange(textInput.id, fontSize);
                           }
                         }}
                         webSocket={webSocket?.webSocketInstance}

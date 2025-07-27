@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import CertificateStatusCard, { type JobCertificateVerification } from '@/components/certificate/CertificateStatusCard';
 import { 
   ArrowLeft, 
   FileText, 
@@ -22,7 +23,8 @@ import {
   AlertTriangle,
   Clock,
   CheckCircle,
-  Edit3
+  Edit3,
+  Shield
 } from 'lucide-react';
 import { getStatusColor, formatDate, isMobileDevice } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -33,6 +35,11 @@ export default function JobDetailsPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const jobId = params?.id ? parseInt(params.id) : null;
+
+  // Debug jobId
+  useEffect(() => {
+    console.log('🆔 JobDetailsPage - Current jobId:', jobId, 'params:', params);
+  }, [jobId, params]);
 
   const { data: job, isLoading, error } = useQuery({
     queryKey: ['job', jobId],
@@ -70,6 +77,53 @@ export default function JobDetailsPage() {
     },
     enabled: !!jobId
   });
+
+  const { data: certificateVerification, isLoading: isLoadingCertificates, refetch: refetchCertificates, error: certificateError } = useQuery({
+    queryKey: ['certificate-verification', jobId],
+    queryFn: async () => {
+      if (!jobId) {
+        console.log('❌ Certificate verification: jobId is null');
+        return null;
+      }
+      
+      console.log(`🔍 Fetching certificate verification for job ${jobId}`);
+      
+      const response = await fetch(`/api/certificate-verification/job/${jobId}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      console.log(`📡 Certificate verification API response: ${response.status} ${response.statusText}`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Certificate verification API failed:', response.status, errorText);
+        throw new Error(`API Error: ${response.status} - ${errorText}`);
+      }
+      
+      const result = await response.json();
+      console.log('📋 Certificate verification data:', result);
+      return result.data as JobCertificateVerification;
+    },
+    enabled: !!jobId,
+    retry: 3,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+    staleTime: 0, // Always fetch fresh data
+    gcTime: 0 // Don't cache old data
+  });
+
+  // Debug certificate verification query state
+  useEffect(() => {
+    console.log('🔒 Certificate verification query state:', {
+      jobId,
+      enabled: !!jobId,
+      isLoading: isLoadingCertificates,
+      hasData: !!certificateVerification,
+      hasError: !!certificateError,
+      error: certificateError?.message
+    });
+  }, [jobId, isLoadingCertificates, certificateVerification, certificateError]);
 
   const handleBackToJobs = () => {
     setLocation('/jobs');
@@ -117,11 +171,34 @@ export default function JobDetailsPage() {
   };
 
   const handleStartTagging = () => {
+    // Check certificate requirements first for notary
+    if (certificateVerification && certificateVerification.participantStatuses) {
+      const notaryStatus = certificateVerification.participantStatuses.find((p: any) => p.userRole === 'notary');
+      if (notaryStatus && !notaryStatus.canProceed) {
+        toast({
+          variant: "destructive",
+          title: "Cannot Start Tagging",
+          description: "The notary must have a valid digital certificate before starting the tagging session.",
+        });
+        return;
+      }
+    }
+
     // Navigate directly to editor page in new tab - session will be created there
     window.open(`/editor/${jobId}?mode=tagging`, '_blank');
   };
 
   const handleStartLiveSession = () => {
+    // Check certificate requirements first
+    if (certificateVerification && !certificateVerification.canStartJob) {
+      toast({
+        variant: "destructive",
+        title: "Cannot Start Session",
+        description: "All participants must have valid digital certificates before starting the live session.",
+      });
+      return;
+    }
+
     // Navigate immediately for better user experience
     const signingUrl = `/editor/${jobId}?mode=signing`;
     
@@ -132,6 +209,42 @@ export default function JobDetailsPage() {
     } else {
       // For desktop, open in new tab
       window.open(signingUrl, '_blank');
+    }
+  };
+
+  const handleGenerateCertificate = async (userId: number) => {
+    try {
+      const response = await fetch('/api/certificate-verification/generate-certificate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ userId })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to generate certificate');
+      }
+
+      const result = await response.json();
+      
+      toast({
+        title: "Success",
+        description: result.message,
+      });
+
+      // Refresh certificate verification
+      refetchCertificates();
+
+    } catch (error) {
+      console.error('Certificate generation failed:', error);
+      toast({
+        variant: "destructive",
+        title: "Certificate Generation Failed",
+        description: error instanceof Error ? error.message : "Unable to generate certificate.",
+      });
     }
   };
 
@@ -183,11 +296,40 @@ export default function JobDetailsPage() {
             </div>
           </div>
           <div className="flex items-center space-x-3">
-            <Button onClick={handleStartTagging} variant="outline" className="border-blue-600 text-blue-600 hover:bg-blue-50 transition-colors duration-150">
+            <Button 
+              onClick={handleStartTagging} 
+              variant="outline" 
+              disabled={
+                certificateVerification?.participantStatuses?.some((p: any) => p.userRole === 'notary' && !p.canProceed) || false
+              }
+              className={`transition-colors duration-150 ${
+                certificateVerification?.participantStatuses?.some((p: any) => p.userRole === 'notary' && !p.canProceed)
+                  ? 'border-gray-400 text-gray-400 cursor-not-allowed'
+                  : 'border-blue-600 text-blue-600 hover:bg-blue-50'
+              }`}
+              title={
+                certificateVerification?.participantStatuses?.some((p: any) => p.userRole === 'notary' && !p.canProceed)
+                  ? 'Notary needs a valid digital certificate to start tagging'
+                  : 'Start tagging documents'
+              }
+            >
               <Edit3 className="h-4 w-4 mr-2" />
               Start Tagging
             </Button>
-            <Button onClick={handleStartLiveSession} className="bg-green-600 hover:bg-green-700 transition-colors duration-150">
+            <Button 
+              onClick={handleStartLiveSession} 
+              disabled={Boolean(certificateVerification && !certificateVerification.canStartJob)}
+              className={`transition-colors duration-150 ${
+                certificateVerification && !certificateVerification.canStartJob
+                  ? 'bg-gray-400 hover:bg-gray-500 cursor-not-allowed'
+                  : 'bg-green-600 hover:bg-green-700'
+              }`}
+              title={
+                certificateVerification && !certificateVerification.canStartJob
+                  ? 'All participants need valid digital certificates to start'
+                  : 'Start the live signing session'
+              }
+            >
               <Video className="h-4 w-4 mr-2" />
               Start Live Session
             </Button>
@@ -318,6 +460,116 @@ export default function JobDetailsPage() {
             jobStatus={job.jobStatus} 
           />
         </div>
+
+        {/* Digital Certificate Status */}
+        {isLoadingCertificates && (
+          <Card className="border-blue-300 bg-blue-50">
+            <CardContent className="pt-6">
+              <div className="text-blue-800 flex items-center space-x-2">
+                <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                <p>🔄 <strong>Loading certificate verification...</strong></p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        
+        {certificateError && (
+          <Card className="border-red-300 bg-red-50">
+            <CardContent className="pt-6">
+              <div className="text-red-800">
+                <p>❌ <strong>Certificate Verification Error:</strong></p>
+                <p className="text-sm mt-1">{certificateError.message}</p>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => refetchCertificates()}
+                  className="mt-2"
+                >
+                  Retry
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        
+        {!isLoadingCertificates && !certificateError && !certificateVerification && (
+          <Card className="border-yellow-300 bg-yellow-50">
+            <CardContent className="pt-6">
+              <div className="text-yellow-800">
+                <p>🔍 <strong>DEBUG:</strong> Certificate verification data not loaded</p>
+                <p className="text-sm">jobId: {jobId}</p>
+                <p className="text-sm">API call succeeded but returned no data</p>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => refetchCertificates()}
+                  className="mt-2"
+                >
+                  Refresh
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        
+        {certificateVerification && (
+          <CertificateStatusCard
+            verification={certificateVerification}
+            onGenerateCertificate={handleGenerateCertificate}
+            onRefresh={refetchCertificates}
+            isLoading={isLoadingCertificates}
+          />
+        )}
+
+        {/* Debug Panel for Certificate Verification (remove in production) */}
+        <Card className="border-purple-300 bg-purple-50">
+          <CardContent className="pt-6">
+            <div className="text-purple-800">
+              <p>🐛 <strong>DEBUG - Certificate Verification Status:</strong></p>
+              <div className="text-sm space-y-1 mt-2">
+                <p>JobId: {jobId || 'null'}</p>
+                <p>Query Enabled: {!!jobId ? 'YES' : 'NO'}</p>
+                <p>Loading: {isLoadingCertificates ? 'YES' : 'NO'}</p>
+                <p>Has Data: {certificateVerification ? 'YES' : 'NO'}</p>
+                <p>Has Error: {certificateError ? 'YES' : 'NO'}</p>
+                {certificateError && <p>Error: {certificateError.message}</p>}
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => {
+                    console.log('🔄 Manual certificate verification refresh triggered');
+                    refetchCertificates();
+                  }}
+                  className="mt-2"
+                >
+                  Test Certificate API
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={async () => {
+                    console.log('🧪 Direct API test starting...');
+                    try {
+                      const response = await fetch(`/api/certificate-verification/job/${jobId}`, {
+                        headers: {
+                          'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        }
+                      });
+                      console.log('🧪 Direct API test response:', response.status, response.statusText);
+                      const data = await response.json();
+                      console.log('🧪 Direct API test data:', data);
+                    } catch (error) {
+                      console.error('🧪 Direct API test error:', error);
+                    }
+                  }}
+                  className="mt-2 ml-2"
+                >
+                  Direct API Test
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Documents */}
         <Card>

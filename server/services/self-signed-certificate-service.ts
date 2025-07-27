@@ -170,6 +170,8 @@ class SelfSignedCertificateService {
         privateKeyPath: keyFileName,
         publicKeyPath: pubKeyFileName,
         certificate: pems.cert,
+        privateKey: pems.private,
+        publicKey: pems.public,
         expirationDate,
         issuedAt: new Date(),
         userRole: user.role,
@@ -219,7 +221,7 @@ class SelfSignedCertificateService {
   async getUserCertificate(userId: number): Promise<any> {
     try {
       const result = await storage.executeQuery(`
-        SELECT * FROM user_certificates 
+        SELECT * FROM self_signed_certificates 
         WHERE user_id = $1 AND status = 'active'
         ORDER BY issued_at DESC 
         LIMIT 1
@@ -250,6 +252,8 @@ class SelfSignedCertificateService {
     privateKeyPath: string;
     publicKeyPath: string;
     certificate: string;
+    privateKey: string;
+    publicKey: string;
     expirationDate: Date;
     issuedAt: Date;
     userRole: string;
@@ -258,7 +262,7 @@ class SelfSignedCertificateService {
   }): Promise<void> {
     // Create table if it doesn't exist
     await storage.executeQuery(`
-      CREATE TABLE IF NOT EXISTS user_certificates (
+      CREATE TABLE IF NOT EXISTS self_signed_certificates (
         id SERIAL PRIMARY KEY,
         user_id INTEGER NOT NULL REFERENCES users(id),
         certificate_id VARCHAR(255) NOT NULL UNIQUE,
@@ -276,16 +280,17 @@ class SelfSignedCertificateService {
         updated_at TIMESTAMP DEFAULT NOW()
       );
 
-      CREATE INDEX IF NOT EXISTS idx_user_certificates_user_id ON user_certificates(user_id);
-      CREATE INDEX IF NOT EXISTS idx_user_certificates_status ON user_certificates(status);
-      CREATE INDEX IF NOT EXISTS idx_user_certificates_expires ON user_certificates(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_user_certificates_user_id ON self_signed_certificates(user_id);
+      CREATE INDEX IF NOT EXISTS idx_user_certificates_status ON self_signed_certificates(status);
+      CREATE INDEX IF NOT EXISTS idx_user_certificates_expires ON self_signed_certificates(expires_at);
     `);
 
     await storage.executeQuery(`
-      INSERT INTO user_certificates (
+      INSERT INTO self_signed_certificates (
         user_id, certificate_id, certificate_path, private_key_path, public_key_path,
-        certificate_content, common_name, user_role, user_email, issued_at, expires_at, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        certificate_content, private_key, public_key, common_name, user_role, user_email, 
+        issued_at, expires_at, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
     `, [
       record.userId,
       record.certificateId,
@@ -293,6 +298,8 @@ class SelfSignedCertificateService {
       record.privateKeyPath,
       record.publicKeyPath,
       record.certificate,
+      record.privateKey,
+      record.publicKey,
       record.commonName,
       record.userRole,
       record.userEmail,
@@ -381,7 +388,7 @@ class SelfSignedCertificateService {
           u.role,
           u.is_verified,
           u.verification_status
-        FROM user_certificates uc
+        FROM self_signed_certificates uc
         LEFT JOIN users u ON uc.user_id = u.id
         ORDER BY uc.issued_at DESC
       `);
@@ -420,7 +427,7 @@ class SelfSignedCertificateService {
   async revokeCertificate(userId: number, reason?: string): Promise<{ success: boolean; error?: string }> {
     try {
       await storage.executeQuery(`
-        UPDATE user_certificates 
+        UPDATE self_signed_certificates 
         SET status = 'revoked', updated_at = NOW()
         WHERE user_id = $1 AND status = 'active'
       `, [userId]);

@@ -54,6 +54,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn, isMobileDevice } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { SignerVerificationManager } from './SignerVerificationManager';
+import CertificateStatusCard, { type JobCertificateVerification } from '@/components/certificate/CertificateStatusCard';
 
 interface JobDetailsModalProps {
   job: any;
@@ -79,13 +80,15 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
     documents: boolean;
     completed: boolean;
     completionReport: boolean;
+    digitalCertificates: boolean;
   }>({
     jobInfo: true,
     schedule: true,
     signers: true,
     documents: true,
     completed: false,
-    completionReport: job?.jobStatus === 'completed' // Auto-expand for completed jobs
+    completionReport: job?.jobStatus === 'completed', // Auto-expand for completed jobs
+    digitalCertificates: true,
   });
   
   // Notary change functionality
@@ -100,6 +103,70 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
   const { data: currentUser } = useQuery<any>({
     queryKey: ['/api/auth/me'],
   });
+
+  const { data: certificateVerification, isLoading: isLoadingCertificates, refetch: refetchCertificates, error: certificateError } = useQuery<JobCertificateVerification | null>({
+    queryKey: ['certificate-verification', job?.id],
+    queryFn: async () => {
+      if (!job?.id) {
+        console.log('❌ Certificate verification: jobId is null in modal');
+        return null;
+      }
+      
+      const response = await fetch(`/api/certificate-verification/job/${job.id}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Certificate verification API failed in modal:', response.status, errorText);
+        throw new Error(`API Error: ${response.status} - ${errorText}`);
+      }
+      
+      const result = await response.json();
+      return result.data as JobCertificateVerification;
+    },
+    enabled: !!isOpen && !!job?.id,
+    staleTime: 0,
+    gcTime: 0
+  });
+
+  const handleGenerateCertificate = async (userId: number) => {
+    try {
+      const response = await fetch('/api/certificate-verification/generate-certificate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ userId })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to generate certificate');
+      }
+
+      const result = await response.json();
+      
+      toast({
+        title: "Success",
+        description: result.message,
+      });
+
+      // Refresh certificate verification
+      refetchCertificates();
+
+    } catch (error) {
+      console.error('Certificate generation failed in modal:', error);
+      toast({
+        variant: "destructive",
+        title: "Certificate Generation Failed",
+        description: error instanceof Error ? error.message : "Unable to generate certificate.",
+      });
+    }
+  };
   
   // Check if user can change notaries (only admins)
   const canChangeNotary = currentUser && (currentUser.role === 'admin');
@@ -920,6 +987,56 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
               )}
             </Card>
           )}
+
+          {/* Digital Certificate Status Section */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader 
+              className="cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg"
+              onClick={() => toggleSection('digitalCertificates')}
+            >
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-primary" />
+                  Digital Certificate Status
+                </CardTitle>
+                {expandedSections.digitalCertificates ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </div>
+            </CardHeader>
+            {expandedSections.digitalCertificates && (
+              <CardContent className="pt-4 space-y-4">
+                {isLoadingCertificates && (
+                  <div className="text-center py-8 text-gray-500">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
+                    Checking certificates...
+                  </div>
+                )}
+                
+                {certificateError && (
+                  <div className="text-red-600 bg-red-50 p-4 rounded-md">
+                    <p><strong>Error:</strong> {certificateError.message}</p>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => refetchCertificates()}
+                      className="mt-2"
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                )}
+                
+                {certificateVerification && (
+                  <CertificateStatusCard
+                    verification={certificateVerification}
+                    onGenerateCertificate={handleGenerateCertificate}
+                    onRefresh={refetchCertificates}
+                    isLoading={isLoadingCertificates}
+                  />
+                )}
+              </CardContent>
+            )}
+          </Card>
+
 
           {/* Documents Section */}
           <Card className="border-0 shadow-sm">

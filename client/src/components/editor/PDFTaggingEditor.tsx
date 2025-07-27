@@ -1316,6 +1316,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
             onTextInputSelect={selectTextInput}
             onSaveTextContent={saveTextContent}
             onDeleteTextInput={deleteTextInput}
+            onFontSizeChange={updateFontSize}
             onSyncUsers={onSyncUsers}
             currentUser={currentUser}
             isSyncLoading={isSyncLoading}

@@ -2058,3 +2058,25 @@ export const selfSignedCertificates = pgTable('self_signed_certificates', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull()
 });
+
+// Digital signatures table for tracking PDF signatures
+export const digitalSignatures = pgTable('digital_signatures', {
+  id: serial('id').primaryKey(),
+  jobId: integer('job_id').references(() => jobs.id).notNull(),
+  sessionId: varchar('session_id', { length: 255 }),
+  documentId: integer('document_id').references(() => jobDocuments.id),
+  signerId: integer('signer_id').references(() => users.id).notNull(),
+  signerName: varchar('signer_name', { length: 255 }).notNull(),
+  signerEmail: varchar('signer_email', { length: 255 }).notNull(),
+  signatureType: varchar('signature_type', { length: 50 }).notNull(), // 'user', 'notary'
+  certificateId: varchar('certificate_id', { length: 255 }).notNull(),
+  signatureHash: varchar('signature_hash', { length: 255 }).notNull(),
+  signatureData: text('signature_data'), // Base64 encoded signature
+  signedAt: timestamp('signed_at').defaultNow().notNull(),
+  isValid: boolean('is_valid').default(true).notNull(),
+  verificationStatus: varchar('verification_status', { length: 50 }).default('pending').notNull(), // pending, verified, failed
+  verifiedAt: timestamp('verified_at'),
+  metadata: jsonb('metadata'), // Additional signature metadata
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull()
+});

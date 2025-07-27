@@ -29,6 +29,7 @@ interface StreamlinedTextLayerProps {
   onTextInputSelect?: (textInputId: string | null) => void;
   onSaveContent?: (textInputId: string, content: string) => void;
   onDeleteTextInput?: (textInputId: string) => void;
+  onFontSizeChange?: (textInputId: string, fontSize: number) => void;
   debug?: boolean;
 }
 
@@ -43,6 +44,7 @@ export const StreamlinedTextLayer: React.FC<StreamlinedTextLayerProps> = ({
   onTextInputSelect,
   onSaveContent,
   onDeleteTextInput,
+  onFontSizeChange,
   debug = false
 }) => {
   const layerRef = useRef<HTMLDivElement>(null);
@@ -161,6 +163,11 @@ export const StreamlinedTextLayer: React.FC<StreamlinedTextLayerProps> = ({
           onResize={(newCoordinates) => {
             console.log(`📐 Text input ${textInput.id} resized:`, newCoordinates);
             // Handle resize - could update state or call parent handler
+          }}
+          onFontSizeChange={(fontSize) => {
+            if (onFontSizeChange) {
+              onFontSizeChange(textInput.id, fontSize);
+            }
           }}
         />
         );

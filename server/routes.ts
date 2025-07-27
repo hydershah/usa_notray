@@ -9,6 +9,8 @@ import { registerNotaryRoutes } from "./notary-registration-routes";
 import { registerCompanyAuthRoutes } from "./company-auth-routes";
 import { registerNotaryProfileRoutes } from "./notary-profile-routes";
 import { registerApprovalWorkflowRoutes } from "./approval-workflow-routes";
+import { registerDigitalSignatureRoutes } from "./routes/digital-signature-routes";
+import { registerCertificateVerificationRoutes } from "./routes/certificate-verification-routes";
 import { registerFeeRoutes } from "./fee-routes";
 import { registerTitleCompanyNotaryRoutes } from "./title-company-notary-routes";
 import { registerAdminVerificationRoutes } from "./routes/admin-verification-routes";
@@ -186,6 +188,2106 @@ import {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
+  // Basic route handlers to prevent 404 errors
+  // Only serve API response if we're not serving static files
+  app.get('/', (req, res, next) => {
+    // In production with static files, let the static middleware handle this
+    if (process.env.NODE_ENV === 'production' && process.env.SERVE_STATIC_FILES !== 'false') {
+      return next(); // Let static file middleware handle this
+    }
+    
+    // Otherwise serve API information
+    res.json({ 
+      status: 'ok', 
+      message: 'Notary API Server', 
+      version: '1.0.0',
+      endpoints: {
+        api: '/api',
+        health: '/health',
+        docs: '/api/docs'
+      }
+    });
+  });
+
+  app.get('/favicon.ico', (req, res) => {
+    res.status(204).send(); // No content
+  });
+
+
+
+  // Add audit logging middleware to all routes
+  app.use((req: any, res: any, next: any) => {
+    auditLoggingService.auditMiddleware()(req, res, next);
+  });
+
+  // Authentication routes
+  app.post('/api/auth/login', authLimiter, checkAccountLockout, async (req, res) => {
+    try {
+      const { email, password, twoFactorCode } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ message: 'Email and password are required' });
+      }
+
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        recordFailedLogin(email);
+        return res.status(401).json({ message: 'Invalid credentials' });
+      }
+
+      const isValidPassword = await bcrypt.compare(password, user.password);
+      if (!isValidPassword) {
+        recordFailedLogin(email);
+        return res.status(401).json({ message: 'Invalid credentials' });
+      }
+
+      // Check if 2FA is enabled for this user
+      if (user.mfaEnabled) {
+        if (!twoFactorCode) {
+          // Return without token, indicating 2FA is required
+          return res.json({
+            requiresTwoFactor: true,
+            message: 'Two-factor authentication is required'
+          });
+        }
+
+        // Verify 2FA code
+        if (!user.mfaSecret) {
+          return res.status(500).json({ message: '2FA configuration error' });
+        }
+
+        const verified = speakeasy.totp.verify({
+          secret: user.mfaSecret,
+          encoding: 'base32',
+          token: twoFactorCode,
+          window: 2 // Allow 2 time steps before/after for clock drift
+        });
+
+        if (!verified) {
+          recordFailedLogin(email);
+          return res.status(401).json({ message: 'Invalid two-factor authentication code' });
+        }
+      }
+
+      // Clear failed attempts on successful login
+      clearFailedAttempts(email);
+
+      // Generate token with privileges included
+      const token = jwt.sign(
+        { 
+          id: user.id, 
+          email: user.email, 
+          role: user.role,
+          privileges: user.privileges || []
+        },
+        JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+
+      // Check privileges for frontend
+      const isAdmin = hasAdminPrivileges(user);
+      const isNotary = hasNotaryPrivileges(user);
+
+      res.json({
+        token,
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          privileges: user.privileges,
+          // Include privilege flags for easy frontend checking
+          isAdmin,
+          isNotary
+        }
+      });
+    } catch (error) {
+      console.error('Login error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/auth/register', registrationLimiter, sanitizeHtml, preventSqlInjection, async (req, res) => {
+    try {
+      const userData = insertUserSchema.parse(req.body);
+      
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(userData.email);
+      if (existingUser) {
+        return res.status(400).json({ message: 'User already exists' });
+      }
+
+      // Hash password
+      const hashedPassword = await bcrypt.hash(userData.password, 10);
+      
+      const user = await storage.createUser({
+        ...userData,
+        password: hashedPassword
+      });
+
+      // Invalidate users cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`admin:*`); // Clear admin caches
+        await redisCache.delPattern(`user:*`); // Clear all user caches
+        await redisCache.delPattern(`api:*users*`); // Clear users API cache
+        console.log(`🧹 Invalidated user caches after registration of user ${user.id}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after user registration:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+
+      res.status(201).json({
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role
+      });
+    } catch (error) {
+      console.error('Registration error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.get('/api/auth/me', verifyToken, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Check privileges for frontend
+      const isAdmin = hasAdminPrivileges(user);
+      const isNotary = hasNotaryPrivileges(user);
+
+      // Get company information for title company users
+      let companyInfo = null;
+      if (user.role === 'title_company' && user.companyId) {
+        try {
+          companyInfo = await storage.getCompany(user.companyId);
+        } catch (error) {
+          console.warn('Failed to fetch company info for user:', user.id, error);
+        }
+      }
+
+      res.json({
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        privileges: user.privileges,
+        // Include privilege flags for easy frontend checking
+        isAdmin,
+        isNotary,
+        notaryType: user.notaryType,
+        // Include company information for title company users
+        companyId: user.companyId,
+        companyName: companyInfo?.companyName || null,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        // CRITICAL: Add verification status for signers/witnesses to show proper UI
+        isVerified: user.isVerified || false,
+        isVerificationBypassed: user.isVerificationBypassed || false,
+        notaryVerificationBypassed: user.notaryVerificationBypassed || false,
+        verificationStatus: user.verificationStatus || 'pending',
+        needsVerification: (user.role === 'signer' || user.role === 'witness') && 
+                          !user.isVerified && 
+                          !user.isVerificationBypassed && 
+                          !user.notaryVerificationBypassed,
+        accountSetupComplete: user.accountSetupComplete || false
+      });
+    } catch (error) {
+      console.error('Get user error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/auth/logout', verifyToken, async (req: any, res) => {
+    try {
+      // In a real application, you might want to:
+      // 1. Add the token to a blacklist
+      // 2. Update user's last logout time
+      // 3. Log the logout event for audit purposes
+      
+      // For now, we'll just return success
+      // The client will handle clearing localStorage
+      res.json({ message: 'Logged out successfully' });
+    } catch (error) {
+      console.error('Logout error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // ==========================================
+  // 2FA AUTHENTICATION ROUTES
+  // ==========================================
+
+  // Get 2FA status for current user
+  app.get('/api/auth/2fa/status', verifyToken, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      res.json({
+        enabled: user.mfaEnabled || false,
+        hasSecret: !!(user.mfaSecret)
+      });
+    } catch (error) {
+      console.error('2FA status error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Setup 2FA for current user
+  app.post('/api/auth/2fa/setup', verifyToken, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Generate secret for TOTP
+      const secret = speakeasy.generateSecret({
+        name: `USA Notary (${user.email})`,
+        issuer: 'USA Notary Platform',
+        length: 32
+      });
+
+      // Generate QR code
+      const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url || '');
+
+      // Store secret in database (not enabled yet)
+      await db.update(users)
+        .set({ 
+          mfaSecret: secret.base32 || '',
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, user.id));
+
+      res.json({
+        secret: secret.base32 || '',
+        qrCode: qrCodeUrl,
+        manualEntryKey: secret.base32 || '',
+        backupCodes: [] // Could implement backup codes later
+      });
+    } catch (error) {
+      console.error('2FA setup error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Verify 2FA token and enable 2FA
+  app.post('/api/auth/2fa/verify', verifyToken, async (req: any, res) => {
+    try {
+      const { token } = req.body;
+      
+      if (!token || token.length !== 6) {
+        return res.status(400).json({ message: 'Invalid token format' });
+      }
+
+      const user = await storage.getUser(req.user.id);
+      if (!user || !user.mfaSecret) {
+        return res.status(400).json({ message: 'No 2FA secret found' });
+      }
+
+      // Verify the token
+      const verified = speakeasy.totp.verify({
+        secret: user.mfaSecret,
+        encoding: 'base32',
+        token: token,
+        window: 2 // Allow 2 time steps before/after for clock drift
+      });
+
+      if (!verified) {
+        return res.status(400).json({ message: 'Invalid verification code' });
+      }
+
+      // Enable 2FA
+      await db.update(users)
+        .set({ 
+          mfaEnabled: true,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, user.id));
+
+      res.json({ 
+        message: '2FA enabled successfully',
+        enabled: true
+      });
+    } catch (error) {
+      console.error('2FA verification error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Disable 2FA
+  app.post('/api/auth/2fa/disable', verifyToken, async (req: any, res) => {
+    try {
+      const { token, password } = req.body;
+      
+      const user = await storage.getUser(req.user.id);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      if (!user.mfaEnabled) {
+        return res.status(400).json({ message: '2FA is not enabled' });
+      }
+
+      // Verify either 2FA token or password
+      let verified = false;
+      
+      if (token && token.length === 6) {
+        // Verify 2FA token
+        verified = speakeasy.totp.verify({
+          secret: user.mfaSecret,
+          encoding: 'base32',
+          token: token,
+          window: 2
+        });
+      } else if (password) {
+        // Verify password
+        verified = await bcrypt.compare(password, user.password);
+      }
+
+      if (!verified) {
+        return res.status(400).json({ message: 'Invalid verification code or password' });
+      }
+
+      // Disable 2FA
+      await db.update(users)
+        .set({ 
+          mfaEnabled: false,
+          mfaSecret: null,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, user.id));
+
+      res.json({ 
+        message: '2FA disabled successfully',
+        enabled: false
+      });
+    } catch (error) {
+      console.error('2FA disable error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Admin toggle 2FA for any user
+  app.patch('/api/users/:id/2fa/toggle', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const userId = parseInt(req.params.id);
+      const { enabled } = req.body;
+
+      if (typeof enabled !== 'boolean') {
+        return res.status(400).json({ message: 'enabled field must be a boolean' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Update user's 2FA status
+      await db.update(users)
+        .set({ 
+          mfaEnabled: enabled,
+          // If disabling 2FA, also clear the secret
+          mfaSecret: enabled ? user.mfaSecret : null,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, userId));
+
+      res.json({ 
+        message: `2FA ${enabled ? 'enabled' : 'disabled'} for user ${user.email}`,
+        enabled: enabled
+      });
+    } catch (error) {
+      console.error('Admin 2FA toggle error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // User management routes
+  app.get('/api/users', verifyToken, cacheAdminData(300), async (req: any, res) => {
+    try {
+      // Check for admin privileges using the utility function
+      const hasAdminAccess = hasAdminPrivileges(req.user);
+      
+      if (!hasAdminAccess) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+      const users = await storage.getUsers();
+      res.json(users);
+    } catch (error) {
+      console.error('Get users error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+
+  // Get comprehensive notary data for admin management
+  app.get('/api/users/notaries-comprehensive', verifyToken, async (req: any, res) => {
+    try {
+      // SECURITY RESTRICTION: Only allow admin access to comprehensive notary data
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ 
+          message: 'Admin access required',
+          error: 'Access denied to comprehensive notary data'
+        });
+      }
+      
+      const comprehensiveNotaries = await db
+        .select()
+        .from(users)
+        .where(eq(users.role, 'notary'))
+        .orderBy(users.firstName, users.lastName, users.username);
+      
+      res.json(comprehensiveNotaries);
+    } catch (error) {
+      console.error('Get comprehensive notaries error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.get('/api/users/notaries', verifyToken, async (req: any, res) => {
+    try {
+      // SECURITY RESTRICTION: Only allow admin access to notary listing
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ 
+          message: 'Admin access required',
+          error: 'Access denied to notary listing'
+        });
+      }
+      
+      const notaries = await storage.getNotaryUsers();
+      res.json(notaries.map(user => ({
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        notaryIdCode: user.notaryIdCode,
+        isActive: user.isActive,
+        notaryType: user.notaryType
+      })));
+    } catch (error) {
+      console.error('Get notaries error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Get users that can be signers (for job creation)
+  app.get('/api/users/signers', verifyToken, async (req: any, res) => {
+    try {
+      // Check if user has permission to access this endpoint
+      const userCanCreateJob = 
+        hasAdminPrivileges(req.user) ||
+        req.user.role === 'title_company' ||
+        req.user.role === 'client' ||
+        (req.user.role === 'notary' && req.user.notaryType === 'subscriber');
+
+      if (!userCanCreateJob) {
+        return res.status(403).json({ 
+          message: 'Access denied. Only administrators, title companies, clients, and subscriber notaries can access signers.' 
+        });
+      }
+
+      // Get users who can be signers and witnesses
+      const signerUsers = await db
+        .select({
+          id: users.id,
+          username: users.username,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+          phoneNumber: users.phoneNumber,
+          role: users.role,
+          isActive: users.isActive
+        })
+        .from(users)
+        .where(
+          and(
+            eq(users.isActive, true),
+            // Include only signer and witness roles
+            inArray(users.role, ['signer', 'witness'])
+          )
+        )
+        .orderBy(users.firstName, users.lastName, users.username);
+
+      res.json(signerUsers);
+    } catch (error) {
+      console.error('Get signer users error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.put('/api/users/:id', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const userId = parseInt(req.params.id);
+      const updateData = req.body;
+
+      if (updateData.password) {
+        updateData.password = await bcrypt.hash(updateData.password, 10);
+      }
+
+      const user = await storage.updateUser(userId, updateData);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Invalidate users cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`admin:*`); // Clear admin caches
+        await redisCache.delPattern(`user:*`); // Clear all user caches
+        await redisCache.delPattern(`api:*users*`); // Clear users API cache
+        console.log(`🧹 Invalidated user caches after updating user ${userId}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after user update:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+
+      res.json({
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        privileges: user.privileges
+      });
+    } catch (error) {
+      console.error('Update user error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.delete('/api/users/:id', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const userId = parseInt(req.params.id);
+      
+      // Validate userId
+      if (isNaN(userId) || userId <= 0) {
+        return res.status(400).json({ message: 'Invalid user ID' });
+      }
+
+      // Prevent self-deletion
+      if (req.user.id === userId) {
+        return res.status(400).json({ message: 'Cannot delete your own account' });
+      }
+
+      const deleted = await storage.deleteUser(userId);
+      
+      if (!deleted) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Invalidate users cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`admin:*`); // Clear admin caches
+        await redisCache.delPattern(`user:*`); // Clear all user caches
+        await redisCache.delPattern(`api:*users*`); // Clear users API cache
+        console.log(`🧹 Invalidated user caches after deleting user ${userId}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after user deletion:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+
+      res.json({ message: 'User deleted successfully' });
+    } catch (error) {
+      console.error('Delete user error:', error);
+      
+      // Provide more specific error messages
+      if (error instanceof Error) {
+        if (error.message.includes('foreign key constraint')) {
+          res.status(400).json({ 
+            message: 'Cannot delete user due to existing relationships. Please remove all associated records first.' 
+          });
+        } else if (error.message.includes('Failed to delete user')) {
+          res.status(500).json({ 
+            message: 'Failed to delete user. Please try again or contact support if the problem persists.' 
+          });
+        } else {
+          res.status(500).json({ message: 'Internal server error' });
+        }
+      } else {
+        res.status(500).json({ message: 'Internal server error' });
+      }
+    }
+  });
+
+  // Get user signatures endpoint
+  app.get('/api/users/:id/signatures', verifyToken, async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      
+      // Check if user can access these signatures
+      if (!req.user || (!hasAdminPrivileges(req.user) && req.user.id !== userId)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Get signatures from storage (in production, this would be a database query)
+      const signatures = await storage.getUserSignatures(userId);
+      
+      res.json(signatures);
+    } catch (error) {
+      console.error('Get user signatures error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Create new signature endpoint
+  app.post('/api/users/:id/signatures', verifyToken, 
+    upload.single('signature'), async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      
+      // Check if user can create signatures for this user
+      if (!req.user || (!hasAdminPrivileges(req.user) && req.user.id !== userId)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { name, type, text, fontFamily, fontSize } = req.body;
+      
+      if (!name || !type) {
+        return res.status(400).json({ message: 'Name and type are required' });
+      }
+
+      let imageUrl = '';
+      let metadata = {};
+
+      // VULTR ONLY - All signatures are stored in Vultr cloud storage
+      const { VultrUploadHandler } = await import('./vultr-upload-handler');
+
+      if (type === 'uploaded' && req.file) {
+        // Handle uploaded signature
+        const uploadResult = await VultrUploadHandler.handleSignatureUpload(
+          req.file.buffer,
+          req.file.originalname,
+          `user-${userId}`,
+          userId,
+          'signature'
+        );
+
+        if (!uploadResult.success) {
+          return res.status(500).json({ 
+            message: `Failed to upload signature: ${uploadResult.error}`,
+            error: 'vultr_upload_failed'
+          });
+        }
+
+        imageUrl = uploadResult.signedUrl || uploadResult.fileKey || '';
+        metadata = { originalName: req.file.originalname, vultrKey: uploadResult.fileKey };
+        
+      } else if (type === 'drawn') {
+        // Handle drawn signature from canvas
+        const { imageData } = req.body;
+        if (!imageData) {
+          return res.status(400).json({ message: 'Image data is required for drawn signatures' });
+        }
+        
+        const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+        
+        const filename = `drawn_${Date.now()}.png`;
+        const uploadResult = await VultrUploadHandler.handleSignatureUpload(
+          buffer,
+          filename,
+          `user-${userId}`,
+          userId,
+          'signature'
+        );
+
+        if (!uploadResult.success) {
+          return res.status(500).json({ 
+            message: `Failed to upload drawn signature: ${uploadResult.error}`,
+            error: 'vultr_upload_failed'
+          });
+        }
+
+        imageUrl = uploadResult.signedUrl || uploadResult.fileKey || '';
+        metadata = { style: 'handwritten', vultrKey: uploadResult.fileKey };
+        
+      } else if (type === 'generated') {
+        // Handle generated signature (now sent as image file from client)
+        if (req.file) {
+          // Client-generated signature image (preferred method)
+          const uploadResult = await VultrUploadHandler.handleSignatureUpload(
+            req.file.buffer,
+            req.file.originalname,
+            `user-${userId}`,
+            userId,
+            'signature'
+          );
+
+          if (!uploadResult.success) {
+            return res.status(500).json({ 
+              message: `Failed to upload generated signature: ${uploadResult.error}`,
+              error: 'vultr_upload_failed'
+            });
+          }
+
+          imageUrl = uploadResult.signedUrl || uploadResult.fileKey || '';
+          
+          // Parse metadata if provided
+          try {
+            const metadataFromBody = req.body.metadata ? JSON.parse(req.body.metadata) : {};
+            metadata = { 
+              type: 'generated',
+              vultrKey: uploadResult.fileKey,
+              ...metadataFromBody
+            };
+          } catch (e) {
+            metadata = { 
+              type: 'generated',
+              vultrKey: uploadResult.fileKey
+            };
+          }
+          
+        } else {
+          // Fallback: Server-side generation (legacy)
+          if (!text) {
+            return res.status(400).json({ message: 'Text is required for generated signatures' });
+          }
+          
+          try {
+            let buffer: Buffer;
+            let filename: string;
+            
+            try {
+              // Try to generate signature image using canvas (server-side)
+            const { createCanvas } = await import('canvas');
+            const canvas = createCanvas(400, 100);
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, 400, 100);
+            
+            ctx.fillStyle = 'black';
+            ctx.font = `${fontSize || 48}px ${fontFamily || 'serif'}`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 200, 50);
+            
+              buffer = canvas.toBuffer('image/png');
+              filename = `generated_${Date.now()}.png`;
+              
+              console.log(`✅ Successfully generated signature canvas for: ${text}`);
+            
+          } catch (canvasError) {
+              console.warn('Canvas generation failed, using SVG fallback:', canvasError);
+            
+            // Fallback: Create a simple SVG-based signature
+            const svgContent = `
+              <svg width="400" height="100" xmlns="http://www.w3.org/2000/svg">
+                <rect width="400" height="100" fill="white"/>
+                <text x="200" y="55" font-family="${fontFamily || 'serif'}" font-size="${fontSize || 48}" 
+                      text-anchor="middle" fill="black">${text}</text>
+              </svg>
+            `;
+            
+              filename = `generated_${Date.now()}.svg`;
+              buffer = Buffer.from(svgContent, 'utf8');
+            }
+            
+            const uploadResult = await VultrUploadHandler.handleSignatureUpload(
+              buffer,
+              filename,
+              `user-${userId}`,
+              userId,
+              'signature'
+            );
+
+            if (!uploadResult.success) {
+              return res.status(500).json({ 
+                message: `Failed to upload generated signature: ${uploadResult.error}`,
+                error: 'vultr_upload_failed'
+              });
+            }
+
+            imageUrl = uploadResult.signedUrl || uploadResult.fileKey || '';
+            metadata = { 
+              type: 'generated', 
+              text, 
+              fontFamily, 
+              fontSize,
+              vultrKey: uploadResult.fileKey 
+            };
+            
+          } catch (error) {
+            console.error('Generate signature error:', error);
+            return res.status(500).json({ 
+              message: 'Failed to generate signature',
+              error: 'signature_generation_failed'
+            });
+          }
+        }
+      }
+
+      // Create signature record
+      const signature = await storage.createUserSignature({
+        userId,
+        name,
+        type,
+        imageUrl,
+        metadata,
+        isDefault: false,
+        ipAddress: req.ip || req.connection?.remoteAddress,
+        userAgent: req.get('User-Agent')
+      });
+
+      res.json(signature);
+    } catch (error) {
+      console.error('Create signature error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Set default signature endpoint
+  app.put('/api/users/:id/signatures/:signatureId/default', verifyToken, async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      const signatureId = req.params.signatureId;
+      
+      // Check if user can modify signatures for this user
+      if (!req.user || (req.user.role !== 'admin' && req.user.id !== userId)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      await storage.setDefaultSignature(userId, signatureId);
+      
+      res.json({ message: 'Default signature set successfully' });
+    } catch (error) {
+      console.error('Set default signature error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Delete signature endpoint
+  app.delete('/api/users/:id/signatures/:signatureId', verifyToken, async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      const signatureId = req.params.signatureId;
+      
+      // Check if user can delete signatures for this user
+      if (!req.user || (req.user.role !== 'admin' && req.user.id !== userId)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      await storage.deleteUserSignature(userId, signatureId);
+      
+      res.json({ message: 'Signature deleted successfully' });
+    } catch (error) {
+      console.error('Delete signature error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Get user profile with notary details
+  app.get('/api/users/:id/profile', verifyToken, cacheUserData(600), async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      
+      // Check if user can access this profile
+      if (!req.user || (req.user.role !== 'admin' && req.user.id !== userId)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Get self-signed certificate information for signers and witnesses
+      let certificateInfo = null;
+      if (['signer', 'witness'].includes(user.role)) {
+        try {
+          const { selfSignedCertificateService } = await import('./services/self-signed-certificate-service');
+          const certificate = await selfSignedCertificateService.getUserCertificate(userId);
+          
+          if (certificate) {
+            const isExpired = new Date() > new Date(certificate.expires_at);
+            certificateInfo = {
+              hasCertificate: true,
+              certificateId: certificate.certificate_id,
+              commonName: certificate.common_name,
+              issuedAt: certificate.issued_at,
+              expiresAt: certificate.expires_at,
+              status: certificate.status,
+              isExpired,
+              certificateType: 'self-signed',
+              downloadUrl: `/api/user/certificate/download`
+            };
+          } else {
+            certificateInfo = {
+              hasCertificate: false,
+              eligibleForGeneration: user.isVerified || user.isVerificationBypassed,
+              reason: (user.isVerified || user.isVerificationBypassed) 
+                ? 'User is verified but no certificate generated yet' 
+                : 'User must complete ID verification first'
+            };
+          }
+        } catch (error) {
+          console.error('Error getting certificate info:', error);
+          certificateInfo = {
+            hasCertificate: false,
+            error: 'Failed to load certificate information'
+          };
+        }
+      }
+
+      // Return user profile with notary-specific fields
+      const profile = {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        fullName: user.fullName || '',
+        role: user.role,
+        title: user.title || 'Notary Public',
+        commissionNumber: user.commissionNumber || '',
+        commissionExpiration: user.commissionExpiration || '',
+        state: user.state || '',
+        county: user.county || '',
+        disclosure: user.disclosure || 'I acknowledge that this document was signed before me on this date.',
+        signatureData: user.signatureData || '',
+        initialData: user.initialData || '',
+        phoneNumber: user.phoneNumber || '',
+        address: user.address || '',
+        isActive: user.isActive,
+        isNotarySigningAgent: user.isNotarySigningAgent,
+        isSpanishSpeaking: user.isSpanishSpeaking,
+        notaryType: user.notaryType,
+        // Self-signed certificate information (NEW)
+        selfSignedCertificate: certificateInfo,
+      };
+
+      res.json(profile);
+    } catch (error) {
+      console.error('Get user profile error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Update user profile with notary details
+  app.put('/api/users/:id/profile', verifyToken, async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      
+      // Check if user can update this profile
+      if (!req.user || (req.user.role !== 'admin' && req.user.id !== userId)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const profileData = req.body;
+      
+      // Update user with new profile data
+      const updateData: any = {
+        firstName: profileData.firstName,
+        lastName: profileData.lastName,
+        title: profileData.title,
+        commissionNumber: profileData.commissionNumber,
+        commissionExpiration: profileData.commissionExpiration,
+        state: profileData.state,
+        county: profileData.county,
+        disclosure: profileData.disclosure,
+        phoneNumber: profileData.phoneNumber,
+        address: profileData.address, // Legacy single address field
+        // 🔧 FIX: Add separate address fields for compatibility
+        address1: profileData.address1,
+        address2: profileData.address2,
+        city: profileData.city,
+        zipCode: profileData.zipCode,
+        isActive: profileData.isActive,
+        isNotarySigningAgent: profileData.isNotarySigningAgent,
+        isSpanishSpeaking: profileData.isSpanishSpeaking,
+        notaryType: profileData.notaryType,
+      };
+
+      // Auto-generate fullName from firstName and lastName if provided
+      if (profileData.firstName || profileData.lastName) {
+        const fullName = [profileData.firstName, profileData.lastName].filter(Boolean).join(' ').trim();
+        if (fullName) {
+          updateData.fullName = fullName;
+        }
+      }
+
+      // 🔧 FIX: Automatically set accountSetupComplete if all required fields are present
+      const hasBasicInfo = updateData.firstName && updateData.lastName && updateData.phoneNumber;
+      const hasAddress = (updateData.address1 && updateData.city && updateData.state && updateData.zipCode) || updateData.address;
+      if (hasBasicInfo && hasAddress) {
+        updateData.accountSetupComplete = true;
+        console.log(`✅ Account setup marked complete for user ${userId}`);
+      }
+
+      const updatedUser = await storage.updateUser(userId, updateData);
+
+      if (!updatedUser) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Invalidate user-specific cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`user:${userId}:*`);
+        console.log(`🧹 Invalidated cache for user ${userId} after profile update`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after profile update:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+
+      res.json(updatedUser);
+    } catch (error) {
+      console.error('Update user profile error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Get notary stamps endpoint
+  app.get('/api/notary/:id/stamps', verifyToken, async (req: any, res) => {
+    try {
+      const notaryId = parseInt(req.params.id);
+      
+      // Check if user can access these stamps
+      if (!req.user || (!hasAdminPrivileges(req.user) && req.user.id !== notaryId && req.user.role !== 'notary')) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Get actual stamps from database using correct column names
+      let stamps;
+      try {
+        stamps = await db.execute(sql`
+          SELECT 
+            id,
+            notary_id as "notaryId",
+            stamp_name as "stampType",
+            stamp_image as "stampData", 
+            is_active as "isActive",
+            created_at as "createdAt",
+            updated_at as "updatedAt"
+          FROM notary_stamps 
+          WHERE notary_id = ${notaryId}
+          ORDER BY created_at DESC
+        `);
+      } catch (dbError) {
+        console.error('Database query failed for notary stamps:', dbError);
+        return res.status(500).json({ 
+          message: 'Failed to retrieve stamps from database',
+          error: 'database_query_failed'
+        });
+      }
+
+      // Transform stamps to include proper image URLs
+      const { cloudStorage } = await import('./lib/cloud-storage-service');
+      
+      const stampsWithUrls = await Promise.all((stamps.rows || []).map(async (stamp: any) => {
+        let imageUrl = '';
+        
+        if (stamp?.stampData && typeof stamp.stampData === 'string') {
+          // Check if it's a Vultr key (no base64 prefix) or base64 data
+          if (stamp.stampData.startsWith('data:image/')) {
+            // Already base64 data, use directly
+            imageUrl = stamp.stampData;
+          } else {
+            // Vultr key, generate signed URL
+            try {
+              const fileExists = await cloudStorage.fileExists(stamp.stampData);
+              if (fileExists) {
+                const signedUrl = await cloudStorage.getSignedUrl(stamp.stampData, 3600); // 1 hour expiry
+                imageUrl = signedUrl || '/api/placeholder/stamp-error';
+              } else {
+                console.warn(`Stamp image not found in Vultr: ${stamp.stampData}`);
+                imageUrl = '/api/placeholder/stamp-missing';
+              }
+            } catch (vultrError) {
+              console.warn(`Failed to get Vultr URL for stamp ${stamp.id}:`, vultrError);
+              imageUrl = '/api/placeholder/stamp-error';
+            }
+          }
+        } else {
+          imageUrl = '/api/placeholder/stamp-missing';
+        }
+
+        return {
+          id: stamp?.id || 0,
+          notaryId: stamp?.notaryId || notaryId,
+          stampType: stamp?.stampType || 'notary',
+          imageUrl,
+          isActive: stamp?.isActive || false,
+          uploadedAt: stamp?.createdAt ? new Date(stamp.createdAt).toISOString() : new Date().toISOString(),
+          createdAt: stamp?.createdAt ? new Date(stamp.createdAt).toISOString() : new Date().toISOString()
+        };
+      }));
+      
+      res.json(stampsWithUrls);
+    } catch (error) {
+      console.error('Get notary stamps error:', error);
+      
+      // Provide a fallback response with empty array if stamps loading fails
+      res.status(200).json([]);
+    }
+  });
+
+  // Title company routes - Updated to use enhanced companies table
+  app.get('/api/companies', verifyToken, cacheAdminData(300), async (req, res) => {
+    try {
+      const companies = await storage.getCompanies();
+      res.json(companies);
+    } catch (error) {
+      console.error('Get companies error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/companies', verifyToken, async (req: any, res) => {
+    try {
+      if (!req.user || !hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const companyData = insertCompanySchema.parse(req.body);
+      const company = await storage.createCompany(companyData);
+      
+      // Invalidate companies cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`admin:*`); // Clear admin caches
+        await redisCache.delPattern(`api:*companies*`); // Clear companies API cache
+        console.log(`🧹 Invalidated company caches after creating company ${company.id}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after company creation:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+      
+      res.status(201).json(company);
+    } catch (error) {
+      console.error('Create company error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.put('/api/companies/:id', verifyToken, async (req: any, res) => {
+    try {
+      if (!req.user || !hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const companyId = parseInt(req.params.id);
+      const updateData = req.body;
+
+      const company = await storage.updateCompany(companyId, updateData);
+      if (!company) {
+        return res.status(404).json({ message: 'Company not found' });
+      }
+
+      // Invalidate companies cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`admin:*`); // Clear admin caches
+        await redisCache.delPattern(`api:*companies*`); // Clear companies API cache
+        console.log(`🧹 Invalidated company caches after updating company ${companyId}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after company update:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+
+      res.json(company);
+    } catch (error) {
+      console.error('Update company error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.delete('/api/companies/:id', verifyToken, async (req: any, res) => {
+    try {
+      if (!req.user || !hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const companyId = parseInt(req.params.id);
+      const deleted = await storage.deleteCompany(companyId);
+      
+      if (!deleted) {
+        return res.status(404).json({ message: 'Company not found' });
+      }
+
+      // Invalidate companies cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`admin:*`); // Clear admin caches
+        await redisCache.delPattern(`api:*companies*`); // Clear companies API cache
+        console.log(`🧹 Invalidated company caches after deleting company ${companyId}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after company deletion:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+
+      res.json({ message: 'Company deleted successfully' });
+    } catch (error) {
+      console.error('Delete company error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Job routes with pagination
+  app.get('/api/jobs', verifyToken, async (req: any, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 100;
+      
+      // Ensure reasonable limits
+      const safeLimit = Math.min(Math.max(limit, 10), 200); // Between 10-200
+      const safePage = Math.max(page, 1); // At least page 1
+      
+      const result = await storage.getRoleBasedJobs(req.user.id, req.user.role, safePage, safeLimit);
+      
+      // Add pagination metadata to response
+      const response = {
+        ...result,
+        currentPage: safePage,
+        pageSize: safeLimit,
+        totalPages: Math.ceil(result.totalCount / safeLimit)
+      };
+      
+      res.json(response);
+    } catch (error) {
+      console.error('Get jobs error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Get jobs where user is invited as signer/witness
+  app.get('/api/jobs/invited', verifyToken, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      
+      // Get jobs where this user is a signer
+      const invitedJobs = await db
+        .select({
+          // Job fields
+          id: jobs.id,
+          titleCompany: jobs.titleCompany,
+          closingType: jobs.closingType,
+          propertyAddressOne: jobs.propertyAddressOne,
+          propertyCity: jobs.propertyCity,
+          propertyState: jobs.propertyState,
+          selectedDate: jobs.selectedDate,
+          selectedTime: jobs.selectedTime,
+          jobStatus: jobs.jobStatus,
+          notaryApprovalStatus: jobs.notaryApprovalStatus,
+          createdAt: jobs.createdAt,
+          // Signer specific fields
+          signerRole: signers.signerRole,
+          signingStatus: signers.signingStatus,
+          invitationToken: signers.invitationToken,
+          invitationSentAt: signers.invitationSentAt
+        })
+        .from(signers)
+        .innerJoin(jobs, eq(signers.jobId, jobs.id))
+        .where(eq(signers.userId, userId))
+        .orderBy(desc(jobs.createdAt));
+
+      res.json(invitedJobs);
+    } catch (error) {
+      console.error('Get invited jobs error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.get('/api/jobs/:id', verifyToken, cacheJobData(180), async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      const job = await storage.getJob(jobId);
+      
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      // Check if user has access to this job
+      // Admin, job creator, assigned notary, OR anyone with session access (includes signers)
+      const hasBasicAccess = req.user.role === 'admin' || 
+                           job.userId === req.user.id || 
+                           job.selectedNotary === req.user.id.toString();
+      
+      if (!hasBasicAccess) {
+        // Check if user has session access (includes signers)
+        const hasSessionAccess = await storage.verifySessionAccess(jobId, req.user.id);
+        if (!hasSessionAccess) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      }
+
+      const signers = await storage.getSignersByJobId(jobId);
+      
+      // Map database fields to frontend expected format
+      const jobResponse = {
+        ...job,
+        uploadedFile: job.uploadedFile,
+        notarizedFile: job.notarizedFile,
+        signers
+      };
+      
+      res.json(jobResponse);
+    } catch (error) {
+      console.error('Get job error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // 🚀 OPTIMIZATION: Helper function for parallel signer data preparation
+  async function prepareSignerDataForParallel(signersJson: string) {
+    const signers = JSON.parse(signersJson);
+    
+    // Get existing users in single batch query
+    const signerEmails = signers.map((s: any) => s.signerEmail);
+    const existingUsers = await db.select()
+      .from(users)
+      .where(inArray(users.email, signerEmails));
+    
+    const existingUserMap = new Map(existingUsers.map(u => [u.email, u]));
+    
+    // Prepare data for batch operations
+    const signersToProcess = [];
+    
+    for (const signerData of signers) {
+      const existingUser = existingUserMap.get(signerData.signerEmail);
+      
+      if (existingUser) {
+        // Validate existing user
+        if (existingUser.role === 'notary') {
+          throw new Error(`Cannot add ${signerData.signerEmail} as a signer. This user is registered as a notary.`);
+        }
+        if (existingUser.role !== 'signer' && existingUser.role !== 'witness') {
+          throw new Error(`Cannot add ${signerData.signerEmail} as a signer. This user has a different role.`);
+        }
+      }
+      
+      signersToProcess.push({
+        signerData,
+        existingUser,
+        needsNewUser: !existingUser
+      });
+    }
+    
+    return { signersToProcess };
+  }
+
+  app.post('/api/jobs', verifyToken, upload.array('documents', 10), async (req: any, res) => {
+    try {
+      // Define privilege checks once at the top using proper functions
+      const hasAdminAccess = hasAdminPrivileges(req.user);
+      const hasNotaryAccess = hasNotaryPrivileges(req.user);
+      
+      // Check if user has permission to create jobs
+      const userCanCreateJob = 
+        hasAdminAccess ||
+        req.user.role === 'title_company' ||
+        (req.user.role === 'notary' && req.user.notaryType === 'subscriber');
+
+      if (!userCanCreateJob) {
+        return res.status(403).json({ 
+          message: 'Access denied. Only administrators, title companies, and subscriber notaries can create jobs.' 
+        });
+      }
+
+      const jobData = {
+        ...req.body,
+        userId: req.user.id,
+        kbaRequired: req.body.kbaRequired === 'true'
+      };
+
+      // Remove the old single file fields from job data
+      delete jobData.uploadedFile;
+      delete jobData.notarizedFile;
+
+      // CRITICAL FIX: Ensure constraint compliance for notary assignments
+      console.log(`🔧 Job creation - notaryOption: ${jobData.notaryOption}, selectedNotary: ${jobData.selectedNotary}, notaryId: ${jobData.notaryId}`);
+      
+      // Handle notary ID code assignments where selectedNotary contains the actual notary ID
+      if (jobData.notaryOption === 'id_code' && jobData.selectedNotary) {
+        // For ID code assignments, selectedNotary contains the actual notary ID
+        const parsedNotaryId = parseInt(jobData.selectedNotary);
+        if (isNaN(parsedNotaryId)) {
+          console.error(`❌ Invalid notary ID for id_code assignment: ${jobData.selectedNotary}`);
+          return res.status(400).json({ message: 'Invalid notary ID for ID code assignment' });
+        }
+        jobData.notaryId = parsedNotaryId;
+        jobData.selectedNotary = parsedNotaryId.toString(); // Ensure string representation
+        console.log(`✅ ID code assignment: notaryId=${jobData.notaryId}, selectedNotary=${jobData.selectedNotary}`);
+      } else if (jobData.notaryOption === 'assign' && jobData.selectedNotary) {
+        // For manual assignments, ensure both notaryId and selectedNotary are set consistently
+        const parsedNotaryId = parseInt(jobData.selectedNotary);
+        if (isNaN(parsedNotaryId)) {
+          console.error(`❌ Invalid notary ID for manual assignment: ${jobData.selectedNotary}`);
+          return res.status(400).json({ message: 'Invalid notary ID for manual assignment' });
+        }
+        jobData.notaryId = parsedNotaryId;
+        jobData.selectedNotary = parsedNotaryId.toString(); // Ensure string representation
+        console.log(`✅ Manual assignment: notaryId=${jobData.notaryId}, selectedNotary=${jobData.selectedNotary}`);
+      } else if (jobData.notaryId && !jobData.selectedNotary) {
+        jobData.selectedNotary = jobData.notaryId.toString();
+        console.log(`✅ Set selectedNotary from notaryId: ${jobData.selectedNotary}`);
+      } else if (jobData.notaryId && jobData.selectedNotary && jobData.selectedNotary !== jobData.notaryId.toString()) {
+        // Ensure consistency - if both are set, they must match
+        jobData.selectedNotary = jobData.notaryId.toString();
+        console.log(`✅ Fixed notary consistency: selectedNotary=${jobData.selectedNotary}`);
+      }
+
+      // For initial job creation, ensure no constraint violations
+      // Only clear notary data for unhandled cases (auto assignment will be handled later)
+      if (!jobData.notaryId && jobData.selectedNotary && 
+          jobData.notaryOption !== 'id_code' && jobData.notaryOption !== 'assign') {
+        console.log(`🔧 Clearing inconsistent notary data: selectedNotary=${jobData.selectedNotary}, notaryOption=${jobData.notaryOption}`);
+        delete jobData.selectedNotary;
+        delete jobData.notaryId;
+      }
+      
+      console.log(`🔧 Final job data - notaryId: ${jobData.notaryId}, selectedNotary: ${jobData.selectedNotary}`);
+
+      // 🚀 PERFORMANCE OPTIMIZATION: Parallel Core Operations
+      const jobCreationStartTime = Date.now();
+      console.log('🚀 Starting parallel job creation operations...');
+
+      // Step 1: Prepare operations that can run in parallel
+      const parallelOperations = [
+        // Primary: Create job in database
+        storage.createJob(jobData)
+      ];
+
+      // Add signer preparation if signers exist
+      if (req.body.signers) {
+        parallelOperations.push(prepareSignerDataForParallel(req.body.signers));
+      }
+
+      const results = await Promise.all(parallelOperations);
+      const job = results[0];
+      const preparedSignerData = results[1] || null;
+      
+      console.log(`✅ Parallel job creation completed in ${Date.now() - jobCreationStartTime}ms`);
+
+      // Handle automatic notary assignment based on who creates the job
+      let assignedNotary = null;
+      
+      // FUNDAMENTAL ASSIGNMENT LOGIC: Assign notary based on creator role
+      if (req.user.role === 'notary' && req.user.notaryType === 'subscriber') {
+        // Subscriber notary creates job → They are the notary for their own job
+        assignedNotary = req.user;
+        console.log(`🔧 Subscriber notary created job ${job.id} - auto-assigning themselves as notary`);
+        
+      } else if (hasAdminAccess && hasNotaryAccess && (!jobData.notaryOption || jobData.notaryOption === 'admin_self')) {
+        // Admin with notary privileges creates job → Admin as notary
+        assignedNotary = req.user;
+        console.log(`🔧 Admin-notary created job ${job.id} - assigning admin as notary (option: ${jobData.notaryOption || 'default'})`);
+        
+      } else if (hasAdminAccess || req.user.role === 'title_company') {
+        // Admin or Title company creates job → Use assignment flow based on notaryOption
+        console.log(`🔧 ${hasAdminAccess ? 'Admin' : req.user.role} created job ${job.id} with notaryOption: ${jobData.notaryOption} - will use assignment flow`);
+      }
+
+      // 🚀 OPTIMIZATION: Parallel notary assignment and logging
+      if (assignedNotary) {
+        const assignmentType = hasAdminAccess && hasNotaryAccess ? 'subscriber_self' :
+                              hasAdminAccess ? 'manual' : 'subscriber_self';
+        
+                 await Promise.all([
+           storage.updateJob(job.id, {
+             notaryId: assignedNotary.id,
+             selectedNotary: assignedNotary.id.toString(),
+             jobStatus: 'open',
+             notaryApprovalStatus: 'approved' // Auto-approve since it's their own job or admin
+           }),
+           db.insert(notaryAssignmentLog).values({
+             jobId: job.id,
+             notaryId: assignedNotary.id,
+             assignmentType,
+             assignmentStatus: 'assigned'
+           })
+         ]);
+
+        console.log(`✅ Auto-assigned notary ${assignedNotary.firstName} ${assignedNotary.lastName} to job ${job.id}`);
+        
+        // Note: Signer invitations will be sent after signers are created (moved below)
+      }
+
+      // Handle additional notary assignment logic for title companies
+      if (!assignedNotary && jobData.notaryOption === 'auto' && !jobData.selectedNotary) {
+        // Check if title company has a preferred notary
+        const titleCompany = await db
+          .select()
+          .from(companies)
+          .where(eq(companies.companyName, jobData.titleCompany))
+          .limit(1);
+
+        if (titleCompany.length > 0) {
+          // Check new assignment system first for preferred notary
+          let preferredNotary: any = null;
+
+          const [assignedNotaryRecord] = await db
+            .select({
+              notary: users
+            })
+            .from(titleCompanyNotaryAssignments)
+            .innerJoin(users, eq(titleCompanyNotaryAssignments.notaryId, users.id))
+            .where(
+              and(
+                eq(titleCompanyNotaryAssignments.titleCompanyId, titleCompany[0].id),
+                eq(titleCompanyNotaryAssignments.isDefault, true),
+                eq(titleCompanyNotaryAssignments.status, 'active'),
+                eq(users.role, 'notary'),
+                eq(users.notaryType, 'contractor'),
+                eq(users.isActive, true)
+              )
+            )
+            .limit(1);
+
+          if (assignedNotaryRecord) {
+            preferredNotary = assignedNotaryRecord.notary;
+            console.log(`✅ Found preferred notary via new assignment system: ${preferredNotary.firstName} ${preferredNotary.lastName}`);
+          }
+
+          // Fallback to legacy preferred notary system
+          if (!preferredNotary && titleCompany[0].preferredNotaryId) {
+            const legacyPreferredNotary = await db
+              .select()
+              .from(users)
+              .where(
+                and(
+                  eq(users.id, titleCompany[0].preferredNotaryId),
+                  eq(users.isActive, true),
+                  eq(users.role, 'notary'),
+                  eq(users.notaryType, 'contractor')
+                )
+              )
+              .limit(1);
+
+            if (legacyPreferredNotary.length > 0) {
+              preferredNotary = legacyPreferredNotary[0];
+              console.log(`✅ Found preferred notary via legacy system: ${preferredNotary.firstName} ${preferredNotary.lastName}`);
+            }
+          }
+
+          if (preferredNotary) {
+            assignedNotary = preferredNotary;
+            await storage.updateJob(job.id, {
+              notaryId: assignedNotary.id,
+              selectedNotary: assignedNotary.id.toString(),
+              jobStatus: 'open', // Keep as open until notary approves
+              notaryApprovalStatus: 'assigned_pending_approval'
+            });
+
+            // Log the preferred assignment
+            await db.insert(notaryAssignmentLog).values({
+              jobId: job.id,
+              notaryId: assignedNotary.id,
+              assignmentType: 'preferred',
+              assignmentStatus: 'assigned'
+            });
+
+            console.log(`✅ Assigned preferred notary ${assignedNotary.firstName} ${assignedNotary.lastName} to job ${job.id} for ${jobData.titleCompany}`);
+
+            // Send job assignment notification to notary (requires approval)
+            try {
+              await notificationService.sendJobAssignmentNotification(job.id, assignedNotary.id);
+            } catch (notificationError) {
+              console.error('Failed to send job assignment notification:', notificationError);
+            }
+
+            // Create calendar event for the assigned notary if date and time are provided
+            if (jobData.selectedDate && jobData.selectedTime) {
+              try {
+                const startDateTime = new Date(`${jobData.selectedDate} ${jobData.selectedTime}`);
+                const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour duration
+                
+                await db.insert(calendarEvents).values({
+                  notaryId: assignedNotary.id,
+                  title: `Notarization Job #${job.id}`,
+                  description: `Job for ${jobData.titleCompany} - ${jobData.closingType}\nProperty: ${jobData.propertyAddressOne}, ${jobData.propertyCity}, ${jobData.propertyState}`,
+                  startDateTime,
+                  endDateTime,
+                  location: `${jobData.propertyAddressOne}, ${jobData.propertyCity}, ${jobData.propertyState} ${jobData.propertyZipCode}`,
+                  eventType: 'job',
+                  jobId: job.id,
+                  isAllDay: false
+                });
+              } catch (error) {
+                console.warn('Failed to create calendar event for preferred notary assignment:', error);
+              }
+            }
+          }
+        }
+
+        // If no preferred notary available, perform immediate auto assignment
+        if (!assignedNotary) {
+          console.log(`🎲 No preferred notary available for ${jobData.titleCompany}, attempting immediate random assignment...`);
+          
+          // Use the enhanced assignment service for immediate auto assignment
+          const { EnhancedAssignmentService } = await import('./enhanced-assignment-service');
+          const assignmentResult = await EnhancedAssignmentService.performAutoAssignment(job.id, jobData.titleCompany);
+          
+          if (assignmentResult.success && assignmentResult.notaryId) {
+            console.log(`✅ Successfully assigned random notary ${assignmentResult.notaryName} to job ${job.id}`);
+            
+            // Update job with the assigned notary
+            await storage.updateJob(job.id, {
+              notaryId: assignmentResult.notaryId,
+              selectedNotary: assignmentResult.notaryId.toString(),
+              isRandomAssignment: true,
+              requiresNSA: jobData.requiresNSA === 'true' || false,
+              requiresSpanishSpeaking: jobData.requiresSpanishSpeaking === 'true' || false,
+              notaryApprovalStatus: assignmentResult.requiresApproval ? 'assigned_pending_approval' : 'approved'
+            });
+            
+            assignedNotary = assignmentResult.notaryId;
+            
+            // Send job assignment notification to notary
+            try {
+              const notificationService = new (await import('./notification-service')).NotificationService();
+              await notificationService.sendJobAssignmentNotification(job.id, assignmentResult.notaryId);
+            } catch (notificationError) {
+              console.error('Failed to send job assignment notification:', notificationError);
+            }
+          } else {
+            console.log(`❌ Auto assignment failed for job ${job.id}: ${assignmentResult.error || 'No available notaries'}`);
+            // Fallback to marking for later assignment
+            await storage.updateJob(job.id, {
+              isRandomAssignment: true,
+              requiresNSA: jobData.requiresNSA === 'true' || false,
+              requiresSpanishSpeaking: jobData.requiresSpanishSpeaking === 'true' || false,
+              notaryApprovalStatus: 'pending_assignment'
+            });
+            console.log(`🎯 Marked job ${job.id} for manual assignment - no available notaries found`);
+          }
+        }
+      } else if (!assignedNotary && jobData.notaryOption === 'assign' && jobData.selectedNotary) {
+        // Manual assignment for title companies
+        const selectedNotaryId = parseInt(jobData.selectedNotary);
+        await storage.updateJob(job.id, {
+          notaryId: selectedNotaryId,
+          selectedNotary: selectedNotaryId.toString(), // This was missing!
+          jobStatus: 'open', // Keep as open until notary approves
+          notaryApprovalStatus: 'assigned_pending_approval'
+        });
+
+        // Log the manual assignment
+        await db.insert(notaryAssignmentLog).values({
+          jobId: job.id,
+          notaryId: selectedNotaryId,
+          assignmentType: 'manual',
+          assignmentStatus: 'assigned'
+        });
+
+        // Send job assignment notification to notary (requires approval)
+        try {
+          await notificationService.sendJobAssignmentNotification(job.id, selectedNotaryId);
+        } catch (notificationError) {
+          console.error('Failed to send job assignment notification:', notificationError);
+        }
+
+        // Create calendar event for the assigned notary if date and time are provided
+        if (jobData.selectedDate && jobData.selectedTime) {
+          try {
+            const startDateTime = new Date(`${jobData.selectedDate} ${jobData.selectedTime}`);
+            const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour duration
+            
+            await db.insert(calendarEvents).values({
+              notaryId: selectedNotaryId,
+              title: `Notarization Job #${job.id}`,
+              description: `Job for ${jobData.titleCompany} - ${jobData.closingType}\nProperty: ${jobData.propertyAddressOne}, ${jobData.propertyCity}, ${jobData.propertyState}`,
+              startDateTime,
+              endDateTime,
+              location: `${jobData.propertyAddressOne}, ${jobData.propertyCity}, ${jobData.propertyState} ${jobData.propertyZipCode}`,
+              eventType: 'job',
+              jobId: job.id,
+              isAllDay: false
+            });
+          } catch (error) {
+            console.warn('Failed to create calendar event for manual notary assignment:', error);
+          }
+        }
+      } else if (!assignedNotary && jobData.notaryOption === 'id_code' && jobData.notaryId) {
+        // Notary ID Code assignment - notary already assigned during initial creation
+        // Just need to update the approval status and log the assignment
+        await storage.updateJob(job.id, {
+          jobStatus: 'open', // Keep as open until notary approves
+          notaryApprovalStatus: 'assigned_pending_approval'
+        });
+
+        // Log the ID code assignment (using 'manual' since ID code is a manual assignment method)
+        await db.insert(notaryAssignmentLog).values({
+          jobId: job.id,
+          notaryId: jobData.notaryId,
+          assignmentType: 'manual',
+          assignmentStatus: 'assigned'
+        });
+
+        // Send job assignment notification to notary (requires approval)
+        try {
+          await notificationService.sendJobAssignmentNotification(job.id, jobData.notaryId);
+        } catch (notificationError) {
+          console.error('Failed to send job assignment notification:', notificationError);
+        }
+
+        // Create calendar event for the assigned notary if date and time are provided
+        if (jobData.selectedDate && jobData.selectedTime) {
+          try {
+            const startDateTime = new Date(`${jobData.selectedDate} ${jobData.selectedTime}`);
+            const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour duration
+            
+            await db.insert(calendarEvents).values({
+              notaryId: jobData.notaryId,
+              title: `Notarization Job #${job.id}`,
+              description: `Job for ${jobData.titleCompany} - ${jobData.closingType}\nProperty: ${jobData.propertyAddressOne}, ${jobData.propertyCity}, ${jobData.propertyState}`,
+              startDateTime,
+              endDateTime,
+              location: `${jobData.propertyAddressOne}, ${jobData.propertyCity}, ${jobData.propertyState} ${jobData.propertyZipCode}`,
+              eventType: 'job',
+              jobId: job.id,
+              isAllDay: false
+            });
+          } catch (error) {
+            console.warn('Failed to create calendar event for ID code notary assignment:', error);
+          }
+        }
+      }
+
+      // 🚀 OPTIMIZED: Handle multiple document uploads to Vultr in PARALLEL
+      if (req.files && req.files.length > 0) {
+        const { VultrUploadHandler } = await import('./vultr-upload-handler');
+        
+        // Create all upload promises in parallel
+        const uploadPromises = req.files.map(async (file: any, i: number) => {
+          const metadataKey = `documentMetadata_${i}`;
+          let metadata = { isRequired: false, documentType: 'original', originalName: file.originalname };
+          
+          if (req.body[metadataKey]) {
+            try {
+              metadata = { ...metadata, ...JSON.parse(req.body[metadataKey]) };
+            } catch (e) {
+              console.warn('Failed to parse document metadata:', e);
+            }
+          }
+
+          // Upload to Vultr with intelligent organization
+          const fileBuffer = Buffer.from(file.buffer || await fs.promises.readFile(file.path));
+          
+          return VultrUploadHandler.handleJobDocumentUpload(
+            fileBuffer,
+            file.originalname,
+            job.id,
+            req.user.id,
+            {
+              ...metadata,
+              userRole: req.user.role,
+              titleCompany: jobData.titleCompany
+            }
+          );
+        });
+
+        // Wait for all uploads to complete in parallel
+        const uploadResults = await Promise.all(uploadPromises);
+        
+        // Check if any uploads failed
+        const failedUpload = uploadResults.find(result => !result.success);
+        if (failedUpload) {
+          console.error(`Failed to upload document to Vultr: ${failedUpload.error}`);
+          return res.status(500).json({ 
+            message: `Failed to upload document: ${failedUpload.error}`,
+            error: 'vultr_upload_failed'
+          });
+        }
+        
+        console.log(`✅ Successfully uploaded ${uploadResults.length} documents in parallel`);
+      }
+
+      // 🚀 OPTIMIZED: Create signers in BATCH operations (much faster)
+      if (req.body.signers) {
+        const signers = JSON.parse(req.body.signers);
+        
+        // 🚀 STEP 1: Check all existing users in one query
+        const signerEmails = signers.map((s: any) => s.signerEmail);
+        const existingUsers = await db.select()
+          .from(users)
+          .where(inArray(users.email, signerEmails));
+        
+        const existingUserMap = new Map(existingUsers.map(u => [u.email, u]));
+        
+        // 🚀 STEP 2: Validate and prepare new users with PARALLEL BCRYPT
+        const newUsersData = [];
+        const bcryptPromises = [];
+        const signerUserMapping = [];
+        
+        // First pass: validate and prepare bcrypt promises
+        for (const signerData of signers) {
+          const existingUser = existingUserMap.get(signerData.signerEmail);
+          
+          if (!existingUser) {
+            // Prepare bcrypt promise for parallel execution (reduced from 10 to 8 rounds = 4x faster)
+            const tempPassword = crypto.randomBytes(32).toString('hex');
+            bcryptPromises.push(bcrypt.hash(tempPassword, 8));
+            
+            newUsersData.push({
+              username: signerData.signerEmail,
+              email: signerData.signerEmail,
+              // password will be set after parallel bcrypt completes
+              role: 'signer',
+              firstName: signerData.signerName.split(' ')[0] || '',
+              lastName: signerData.signerName.split(' ').slice(1).join(' ') || '',
+              phoneNumber: signerData.signerPhoneNumber || '',
+              isVerified: false,
+              verificationStatus: 'pending',
+              accountSetupComplete: false,
+              approvalStatus: 'approved',
+              isActive: true,
+              createdAt: new Date()
+            });
+            signerUserMapping.push({ signerData, isNew: true, index: newUsersData.length - 1 });
+          } else {
+            // Validate existing user
+            if (existingUser.role === 'notary') {
+              console.error(`❌ Cannot add notary ${existingUser.email} as a signer - conflict of interest`);
+              return res.status(400).json({ 
+                message: `Cannot add ${signerData.signerEmail} as a signer. This user is registered as a notary and cannot participate as a signer.` 
+              });
+            }
+            
+            if (existingUser.role !== 'signer' && existingUser.role !== 'witness') {
+              console.error(`❌ Cannot add ${existingUser.role} ${existingUser.email} as a signer`);
+              return res.status(400).json({ 
+                message: `Cannot add ${signerData.signerEmail} as a signer. This user has a different role (${existingUser.role}) in the system.` 
+              });
+            }
+            
+            signerUserMapping.push({ signerData, isNew: false, userId: existingUser.id });
+          }
+        }
+        
+        // 🚀 STEP 3: Execute bcrypt operations in parallel and create users
+        let newUsers = [];
+        if (bcryptPromises.length > 0) {
+          console.log(`🔐 Executing ${bcryptPromises.length} bcrypt operations in parallel...`);
+          const bcryptStartTime = Date.now();
+          
+          // Execute all bcrypt operations in parallel
+          const hashedPasswords = await Promise.all(bcryptPromises);
+          
+          console.log(`✅ Parallel bcrypt completed in ${Date.now() - bcryptStartTime}ms`);
+          
+          // Set the hashed passwords
+          const newUsersToCreate = newUsersData.map((userData, index) => ({
+            ...userData,
+            password: hashedPasswords[index]
+          }));
+          
+          // Create users in batch
+          newUsers = await db.insert(users).values(newUsersToCreate).returning();
+        }
+        
+        // 🚀 STEP 4: Create signers and password reset tokens in batch
+        const signersToCreate = [];
+        const tokensToCreate = [];
+        
+        for (const mapping of signerUserMapping) {
+          const userId = mapping.isNew ? newUsers[mapping.index].id : mapping.userId;
+          const invitationToken = crypto.randomUUID();
+          
+          signersToCreate.push({
+            ...mapping.signerData,
+            jobId: job.id,
+            userId: userId,
+            invitationToken
+          });
+          
+          const tokenExpiry = new Date();
+          tokenExpiry.setHours(tokenExpiry.getHours() + 24);
+          
+          tokensToCreate.push({
+            userId: userId,
+            token: crypto.randomUUID(),
+            expiresAt: tokenExpiry,
+            used: false
+          });
+        }
+        
+        // 🚀 STEP 5: Insert signers and tokens in parallel
+        await Promise.all([
+          Promise.all(signersToCreate.map(signer => storage.createSigner(signer))),
+          db.insert(passwordResetTokens).values(tokensToCreate)
+        ]);
+        
+        console.log(`✅ Created ${signers.length} signers in batch (${newUsers.length} new users, ${signers.length - newUsers.length} existing)`);
+      }
+
+      // SEND SIGNER INVITATIONS FOR AUTO-APPROVED JOBS (after signers are created)
+      const updatedJob = await storage.getJob(job.id);
+      if (updatedJob && updatedJob.notaryApprovalStatus === 'approved' && req.body.signers) {
+        try {
+          console.log(`📧 Sending invitations for auto-approved job ${job.id}`);
+          
+          // Get the signers we just created
+          const jobSigners = await db
+            .select()
+            .from(signers)
+            .where(eq(signers.jobId, job.id));
+          
+          console.log(`   Found ${jobSigners.length} signers to invite`);
+          
+          // 🚀 OPTIMIZED: Send all invitations in PARALLEL
+          const invitationPromises = jobSigners.map(async (signer) => {
+            try {
+              // Generate invitation token if not exists
+              let invitationToken = signer.invitationToken;
+              if (!invitationToken) {
+                invitationToken = crypto.randomUUID();
+                await db.update(signers)
+                  .set({ 
+                    invitationToken,
+                    invitationSentAt: new Date()
+                  })
+                  .where(eq(signers.id, signer.id));
+              } else {
+                await db.update(signers)
+                  .set({ invitationSentAt: new Date() })
+                  .where(eq(signers.id, signer.id));
+              }
+
+              // Send email directly using emailService (like resend does)
+              await emailService.sendSignerInvitation({
+                signerName: signer.signerName,
+                signerEmail: signer.signerEmail,
+                signerRole: signer.signerRole,
+                invitationToken,
+                titleCompany: updatedJob.titleCompany,
+                closingType: updatedJob.closingType,
+                propertyAddress: updatedJob.propertyAddressOne ? 
+                  `${updatedJob.propertyAddressOne}, ${updatedJob.propertyCity}, ${updatedJob.propertyState} ${updatedJob.propertyZipCode}` : 
+                  undefined,
+                scheduledDate: updatedJob.selectedDate || undefined,
+                scheduledTime: updatedJob.selectedTime || undefined
+              });
+
+              return { success: true, signerEmail: signer.signerEmail };
+            } catch (error) {
+              console.error(`Failed to send invitation to ${signer.signerEmail}:`, error);
+              return { success: false, signerEmail: signer.signerEmail, error };
+            }
+          });
+
+          // Wait for all invitations to be sent in parallel
+          const invitationResults = await Promise.all(invitationPromises);
+          
+          // Log results
+          const successCount = invitationResults.filter(r => r.success).length;
+          const failCount = invitationResults.filter(r => !r.success).length;
+          
+          if (successCount > 0) {
+            console.log(`✅ Successfully sent ${successCount} invitations in parallel`);
+          }
+          if (failCount > 0) {
+            console.error(`❌ Failed to send ${failCount} invitations`);
+            invitationResults.filter(r => !r.success).forEach(result => {
+              console.error(`   - ${result.signerEmail}: ${result.error}`);
+            });
+          }
+
+          // Mark job as having notifications sent
+          await db.update(jobs)
+            .set({
+              signerNotificationsSent: true,
+              signerNotificationsSentAt: new Date()
+            })
+            .where(eq(jobs.id, job.id));
+
+        } catch (notificationError) {
+          console.error('Failed to send signer invitations for auto-approved job:', notificationError);
+        }
+      }
+
+      // Get the updated job with assigned notary before returning
+      const finalJob = await storage.getJob(job.id);
+      const documentCount = req.files ? req.files.length : 0;
+      
+      // 🚀 PERFORMANCE OPTIMIZATION: Non-blocking cache invalidation
+      // Move cache invalidation to background to improve response time
+      setImmediate(async () => {
+        try {
+          console.log(`🧹 Background cache invalidation for job ${job.id}...`);
+          const { cacheInvalidation } = await import('./services/cache-manager');
+          await cacheInvalidation.onJobCreated(job.id, finalJob?.notaryId, req.user.id);
+          console.log(`✅ Background cache invalidation completed for job ${job.id}`);
+        } catch (cacheError) {
+          console.error('Background cache invalidation failed:', cacheError);
+        }
+      });
+      
+      // 📊 PERFORMANCE TRACKING
+      const totalJobCreationTime = Date.now() - jobCreationStartTime;
+      const performanceImprovement = Math.round(((15000 - totalJobCreationTime) / 15000) * 100);
+      
+      console.log(`🎉 OPTIMIZED JOB CREATION COMPLETED!`);
+      console.log(`   Total Time: ${totalJobCreationTime}ms (vs previous ~15-20s)`);
+      console.log(`   Performance Improvement: ${performanceImprovement}% faster`);
+      console.log(`   Documents: ${documentCount}`);
+      console.log(`   Assigned Notary: ${finalJob?.notaryId ? 'Yes' : 'No'}`);
+      
+      res.status(201).json({
+        ...finalJob, // Return the updated job with assigned notary
+        documentCount,
+        message: `Job created successfully in ${totalJobCreationTime}ms with ${documentCount} document${documentCount !== 1 ? 's' : ''}${finalJob?.assignedNotary ? ` and assigned to ${finalJob.assignedNotary.name}` : ''}`,
+        performance: {
+          totalTime: totalJobCreationTime,
+          improvementPercentage: performanceImprovement,
+          isOptimized: true
+        }
+      });
+    } catch (error) {
+      console.error('Create job error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.put('/api/jobs/:id/status', verifyToken, async (req: any, res) => {
+    try {
+      const jobIdParam = req.params.id;
+      const jobId = parseInt(jobIdParam);
+      
+      // Validate job ID
+      if (isNaN(jobId) || jobId <= 0) {
+        console.error('Invalid job ID provided:', jobIdParam);
+        return res.status(400).json({ 
+          message: 'Invalid job ID provided',
+          providedId: jobIdParam,
+          error: 'invalid_job_id'
+        });
+      }
+      
+      const { status } = req.body;
+
+      const job = await storage.getJob(jobId);
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      // Check if user has access to update this job
+      if (req.user.role !== 'admin' && job.userId !== req.user.id && job.selectedNotary !== req.user.id.toString()) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const updatedJob = await storage.updateJob(jobId, { jobStatus: status });
+      res.json(updatedJob);
+    } catch (error) {
+      console.error('Update job status error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
   // Basic route handlers to prevent 404 errors
   // Only serve API response if we're not serving static files
   app.get('/', (req, res, next) => {
@@ -6436,6 +8538,8 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   registerCompanyAuthRoutes(app);
   registerTitleCompanyNotaryRoutes(app);
   registerApprovalWorkflowRoutes(app);
+  registerDigitalSignatureRoutes(app);
+  registerCertificateVerificationRoutes(app);
   registerNotaryProfileRoutes(app);
   registerFeeRoutes(app);
   registerAdminVerificationRoutes(app);

@@ -312,7 +312,8 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
     const tempId = `text_temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     // Create optimistic text input for immediate editing
-    const inheritedFontSize = textInputs.length > 0 ? textInputs[textInputs.length - 1].fontSize : 12;
+    // Default font size set to 16px for new tags, or inherit last used size if larger
+    const inheritedFontSize = textInputs.length > 0 ? textInputs[textInputs.length - 1].fontSize : 16;
     const optimisticTextInput: StreamlinedTextInput = {
       id: tempId,
       coordinates: command.coordinates,
