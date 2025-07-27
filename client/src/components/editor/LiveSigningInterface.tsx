@@ -78,12 +78,19 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   const [showParticipants, setShowParticipants] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [videoAutoStarted, setVideoAutoStarted] = useState(false);
-
+  
+  // Track WebSocket connection state for UI feedback
+  const [wsConnectionState, setWsConnectionState] = useState({
+    isConnected: false,
+    isConnecting: false,
+    isReady: false
+  });
+  
   // User role detection
-  const currentUser = useMemo(() => participants.find(p => p.userId === currentUserId), [participants, currentUserId]);
+  const currentUser = participants.find(p => p.userId === currentUserId);
   const isNotary = currentUser?.userType === 'notary';
   const isSigner = currentUser?.userType === 'signer';
-  const canControlSession = isNotary;
+  const canControlSession = isNotary; // Only notary can control live session
 
   // WebSocket connection for real-time sync
   const webSocket = useWebSocket({
@@ -93,6 +100,28 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     reconnectInterval: 3000,
     maxReconnectAttempts: 10
   });
+  
+  // Update WebSocket connection state tracking
+  useEffect(() => {
+    if (webSocket?.connectionState) {
+      const newState = {
+        isConnected: webSocket.connectionState.isConnected || false,
+        isConnecting: webSocket.connectionState.isConnecting || false,
+        isReady: webSocket.connectionState.isConnected && !webSocket.connectionState.isConnecting
+      };
+      setWsConnectionState(newState);
+      console.log('🔗 LiveSigning WebSocket state:', newState);
+    } else if (webSocket) {
+      // Use the hook's direct properties if connectionState is not available
+      const newState = {
+        isConnected: webSocket.isConnected || false,
+        isConnecting: webSocket.isConnecting || false,
+        isReady: webSocket.isReady || false
+      };
+      setWsConnectionState(newState);
+      console.log('🔗 LiveSigning WebSocket state (direct):', newState);
+    }
+  }, [webSocket?.connectionState?.isConnected, webSocket?.connectionState?.isConnecting, webSocket?.isConnected, webSocket?.isConnecting, webSocket?.isReady]);
 
   // Log WebSocket connection status
   useEffect(() => {
@@ -151,6 +180,92 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     }
   };
 
+  // Session completion with retry logic and status polling
+  const completeSessionWithRetry = async (targetSessionId: string) => {
+    let attempt = 1;
+    const maxAttempts = 3;
+    
+    while (attempt <= maxAttempts) {
+      try {
+        console.log(`🔄 Session completion attempt ${attempt}/${maxAttempts}...`);
+        
+        // Try to complete the session with a shorter initial timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+        
+        const response = await authenticatedFetch(`/api/session/${targetSessionId}/complete`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+          const result = await response.json();
+          console.log('✅ Session completion successful:', result);
+          return result;
+        } else {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to complete session');
+        }
+        
+      } catch (error: any) {
+        console.log(`❌ Attempt ${attempt} failed:`, error?.message);
+        
+        // If it's a timeout or network error, check if the session was actually completed
+        if (error?.name === 'AbortError' || error?.message?.includes('Failed to fetch') || 
+            error?.message?.includes('ERR_EMPTY_RESPONSE')) {
+          
+          console.log('🔍 Checking session status after network error...');
+          
+          // Poll session status to see if it completed successfully
+          const isCompleted = await checkSessionStatus(targetSessionId);
+          if (isCompleted) {
+            console.log('✅ Session was actually completed successfully!');
+            return { success: true, message: 'Session completed successfully' };
+          }
+        }
+        
+        // If this was the last attempt, throw the error
+        if (attempt === maxAttempts) {
+          // Check one final time if the session completed during our retries
+          const finalCheck = await checkSessionStatus(targetSessionId);
+          if (finalCheck) {
+            console.log('✅ Session completed during retries!');
+            return { success: true, message: 'Session completed successfully' };
+          }
+          
+          throw new Error(`Session completion failed after ${maxAttempts} attempts. ${error?.message || 'Unknown error'}`);
+        }
+        
+        // Wait before retrying
+        const delay = attempt * 2000; // 2s, 4s delays
+        console.log(`⏳ Waiting ${delay}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        attempt++;
+      }
+    }
+  };
+  
+  // Check if session has been completed
+  const checkSessionStatus = async (targetSessionId: string): Promise<boolean> => {
+    try {
+      const response = await authenticatedFetch(`/api/session/${targetSessionId.replace('live_', '')}/state`);
+      if (response.ok) {
+        const data = await response.json();
+        const isCompleted = data?.data?.status === 'completed';
+        console.log('📊 Session status check:', { status: data?.data?.status, isCompleted });
+        return isCompleted;
+      }
+    } catch (error) {
+      console.log('⚠️ Could not check session status:', error);
+    }
+    return false;
+  };
+
   // Session control functions
   const handleSessionAction = async (action: 'start' | 'pause' | 'resume' | 'complete') => {
     if (isLoading) return;
@@ -158,6 +273,32 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     
     try {
       const targetSessionId = liveSessionId || sessionId;
+      
+      // Use specialized completion handler for 'complete' action
+      if (action === 'complete') {
+        console.log('🎯 Initiating session completion...');
+        
+        // Show progress indication for long-running completion
+        toast({
+          title: "Processing",
+          description: "Completing session... This may take a few moments."
+        });
+        
+        await completeSessionWithRetry(targetSessionId);
+        
+        toast({
+          title: "Success",
+          description: "Session completed successfully"
+        });
+        
+        if (onSessionComplete) {
+          console.log('🚀 Calling onSessionComplete callback');
+          onSessionComplete();
+        }
+        return;
+      }
+      
+      // Handle other actions normally
       const endpoint = action === 'start' ? 'start-signing' : action;
       
       const response = await authenticatedFetch(`/api/session/${targetSessionId}/${endpoint}`, {
@@ -171,30 +312,35 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         const messages = {
           start: 'Session started successfully',
           pause: 'Session paused',
-          resume: 'Session resumed',
-          complete: 'Session completed successfully'
+          resume: 'Session resumed'
         };
         
         toast({
           title: "Success",
-          description: messages[action]
+          description: messages[action as keyof typeof messages]
         });
         
-        if (action === 'complete' && onSessionComplete) {
-          onSessionComplete();
-        } else {
-          await loadLiveSessionState();
-        }
+        await loadLiveSessionState();
       } else {
         const errorData = await response.json();
         throw new Error(errorData.message || `Failed to ${action} session`);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Failed to ${action} session:`, error);
+      
+      // Provide more specific error messages
+      let errorMessage = `Failed to ${action} session. Please try again.`;
+      
+      if (action === 'complete') {
+        if (error?.message?.includes('Connection lost') || error?.message?.includes('longer than expected')) {
+          errorMessage = error.message + ' Please refresh the page to check the session status.';
+        }
+      }
+      
       toast({
         variant: "destructive",
         title: "Error",
-        description: `Failed to ${action} session. Please try again.`
+        description: errorMessage
       });
     } finally {
       setIsLoading(false);
@@ -294,17 +440,45 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   const renderSessionControls = () => {
     if (!canControlSession) return null;
 
+    // Check if WebSocket is ready for session control
+    const isWebSocketReady = wsConnectionState.isReady;
+    const buttonDisabled = isLoading || !isWebSocketReady;
+
     return (
       <div className="flex items-center gap-2">
         {liveSession.state === 'waiting' && (
-          <Button 
-            onClick={() => handleSessionAction('start')} 
-            size="sm"
-            className="bg-green-600 hover:bg-green-700"
-            disabled={isLoading}
-          >
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button 
+              onClick={() => handleSessionAction('start')} 
+              size="sm"
+              className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400"
+              disabled={buttonDisabled}
+              title={!isWebSocketReady ? 'Waiting for connection...' : 'Start live signing session'}
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : wsConnectionState.isConnecting ? (
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+                  <span className="text-xs">Connecting...</span>
+                </div>
+              ) : !isWebSocketReady ? (
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 bg-red-400 rounded-full"></div>
+                  <span className="text-xs">Not Ready</span>
+                </div>
+              ) : (
+                <Play className="h-4 w-4" />
+              )}
+            </Button>
+            
+            {/* Connection Status Indicator */}
+            {!isWebSocketReady && (
+              <div className="text-xs text-gray-500 px-2">
+                {wsConnectionState.isConnecting ? 'Establishing connection...' : 'Connection required'}
+              </div>
+            )}
+          </div>
         )}
         
         {liveSession.state === 'active' && (
@@ -313,7 +487,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
               onClick={() => handleSessionAction('pause')} 
               size="sm"
               variant="outline"
-              disabled={isLoading}
+              disabled={buttonDisabled}
             >
               {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pause className="h-4 w-4" />}
             </Button>
@@ -322,29 +496,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
               onClick={() => handleSessionAction('complete')} 
               size="sm"
               className="bg-purple-600 hover:bg-purple-700"
-              disabled={isLoading}
-            >
-              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-            </Button>
-          </>
-        )}
-        
-        {liveSession.state === 'paused' && (
-          <>
-            <Button 
-              onClick={() => handleSessionAction('resume')} 
-              size="sm"
-              className="bg-blue-600 hover:bg-blue-700"
-              disabled={isLoading}
-            >
-              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            </Button>
-            
-            <Button 
-              onClick={() => handleSessionAction('complete')} 
-              size="sm"
-              className="bg-purple-600 hover:bg-purple-700"
-              disabled={isLoading}
+              disabled={buttonDisabled}
             >
               {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
             </Button>
@@ -451,7 +603,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
                   sessionId={sessionId}
                   jobId={parseInt(sessionId.split('_')[1]) || parseInt(sessionId) || 1}
                   currentUser={{
-                    id: currentUserId,
+                    id: parseInt(currentUserId),
                     name: currentUser?.displayName || 'Unknown User',
                     email: currentUser?.email || '',
                     role: currentUser?.userType || 'signer'
@@ -460,7 +612,8 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
                     userId: p.userId,
                     displayName: p.displayName,
                     email: p.email || '',
-                    userType: p.userType
+                    userType: p.userType,
+                    role: p.userType // Add missing role property
                   }))}
                   autoStart={true}
                   className="h-full"

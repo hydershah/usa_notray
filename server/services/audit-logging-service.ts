@@ -11,6 +11,18 @@ interface User {
   username?: string;
 }
 
+interface LocationContext {
+  latitude?: number;
+  longitude?: number;
+  locationAccuracy?: number;
+  city?: string;
+  state?: string;
+  country?: string;
+  timezone?: string;
+  ispName?: string;
+  connectionType?: string;
+}
+
 interface LogContext {
   user?: User;
   action: string;
@@ -26,6 +38,8 @@ interface LogContext {
   isSystemAction?: boolean;
   isSuccessful?: boolean;
   errorMessage?: string;
+  // Location data (can be provided by client or detected server-side)
+  location?: LocationContext;
 }
 
 class AuditLoggingService {
@@ -70,6 +84,17 @@ class AuditLoggingService {
         ipAddress: this.getClientIP(request),
         userAgent: request?.get('user-agent'),
         sessionId: request?.sessionID,
+        
+        // Location and geolocation data
+        latitude: logContext.location?.latitude,
+        longitude: logContext.location?.longitude,
+        locationAccuracy: logContext.location?.locationAccuracy,
+        city: logContext.location?.city,
+        state: logContext.location?.state,
+        country: logContext.location?.country,
+        timezone: logContext.location?.timezone || this.getTimezoneFromRequest(request),
+        ispName: logContext.location?.ispName,
+        connectionType: logContext.location?.connectionType,
         
         // Status and flags
         severity: logContext.severity || LOG_SEVERITIES.INFO,
@@ -311,6 +336,62 @@ class AuditLoggingService {
   private getClientIP(req?: Request): string | undefined {
     if (!req) return undefined;
     return req.ip || req.connection?.remoteAddress || req.get('x-forwarded-for')?.split(',')[0];
+  }
+
+  /**
+   * Extract timezone from request headers
+   */
+  private getTimezoneFromRequest(req?: Request): string | undefined {
+    if (!req) return undefined;
+    
+    // Try to get timezone from custom header (if client sends it)
+    const timezoneHeader = req.get('x-timezone') || req.get('timezone');
+    if (timezoneHeader) return timezoneHeader;
+    
+    // Try to extract from Accept-Language header (basic fallback)
+    const acceptLanguage = req.get('accept-language');
+    if (acceptLanguage) {
+      // This is a very basic extraction - in production you'd want a proper timezone mapping
+      if (acceptLanguage.includes('en-US')) return 'America/New_York';
+      if (acceptLanguage.includes('en-GB')) return 'Europe/London';
+      if (acceptLanguage.includes('en-AU')) return 'Australia/Sydney';
+    }
+    
+    return undefined;
+  }
+
+  /**
+   * Detect connection type from User-Agent
+   */
+  private getConnectionTypeFromUserAgent(userAgent?: string): string | undefined {
+    if (!userAgent) return undefined;
+    
+    // Basic mobile detection
+    if (/Mobile|Android|iPhone|iPad/i.test(userAgent)) {
+      return 'mobile';
+    }
+    
+    return 'broadband';
+  }
+
+  /**
+   * Enhanced location detection for server-side logging
+   */
+  private async getServerSideLocation(req?: Request): Promise<LocationContext> {
+    const location: LocationContext = {};
+    
+    if (!req) return location;
+    
+    // Get basic info from request
+    location.timezone = this.getTimezoneFromRequest(req);
+    location.connectionType = this.getConnectionTypeFromUserAgent(req.get('user-agent'));
+    
+    // In a production environment, you could:
+    // 1. Use a premium IP geolocation service
+    // 2. Cache location data for IP addresses
+    // 3. Use GeoIP databases for offline lookup
+    
+    return location;
   }
 
   async logUserAction(

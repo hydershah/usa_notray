@@ -266,66 +266,32 @@ const EditorPage: React.FC<EditorPageProps> = () => {
 
     try {
       setIsCompletingSession(true);
-      console.log('🔄 Completing session:', sessionData.session.id);
+      console.log('🔄 Session completion callback triggered');
+      console.log('🎯 Current jobId for navigation:', jobId);
+      console.log('🔍 Session data:', sessionData?.session?.id);
       
-      // Use the correct completion endpoint based on mode
-      const completionEndpoint = mode === 'signing' 
-        ? `/api/session/${sessionData.session.id}/complete`
-        : `/api/editor/session/${sessionData.session.id}/complete`;
+      // Small delay to ensure any pending operations complete
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
-      const response = await authenticatedFetch(completionEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ force: false })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        
-        // Handle already completed sessions gracefully
-        if (errorData.alreadyCompleted) {
-          console.log('✅ Session was already completed, redirecting...');
-          toast({
-            title: "Session Already Completed",
-            description: "This session was already completed successfully!"
-          });
-          setLocation(`/jobs/${jobId}`);
-          return;
-        }
-        
-        throw new Error(errorData.message || `Failed to complete session: ${response.status}`);
-      }
-
-      const result = await response.json();
-      console.log('✅ Session completed successfully:', result);
-
-      // Handle already completed sessions from successful response
-      if (result.alreadyCompleted) {
-        toast({
-          title: "Session Already Completed",
-          description: "This session was already completed successfully!"
-        });
+      console.log('🚀 Navigating to job details page...');
+      
+      // Navigate to job details with success indicator
+      if (jobId) {
+        const targetUrl = `/job/${jobId}?completed=true`;
+        console.log('🎯 Navigating to:', targetUrl);
+        setLocation(targetUrl);
       } else {
-        toast({
-          title: "Session Completed",
-          description: `${mode === 'tagging' ? 'Tagging' : mode === 'signing' ? 'Live signing' : 'Notary'} session completed successfully!`
-        });
+        console.warn('⚠️ No jobId available, navigating to jobs list');
+        setLocation('/jobs');
       }
-
-      // Navigate back to job details
-      setLocation(`/jobs/${jobId}`);
       
     } catch (error) {
-      console.error('Failed to complete session:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to complete session. Please try again."
-      });
+      console.error('❌ Error in session completion callback:', error);
+      // Still try to navigate even if there's an error
+      setLocation('/jobs');
     } finally {
-      setIsCompletingSession(false);
+      // Don't reset isCompletingSession here since we're navigating away
+      console.log('✅ Session completion callback finished');
     }
   };
 

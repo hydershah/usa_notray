@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, unique, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, unique, index, decimal } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -1887,6 +1887,17 @@ export const systemActivityLogs = pgTable("system_activity_logs", {
   userAgent: text("user_agent"),
   sessionId: text("session_id"),
   
+  // Location and geolocation data
+  latitude: decimal("latitude", { precision: 10, scale: 8 }), // GPS latitude coordinate (when available)
+  longitude: decimal("longitude", { precision: 11, scale: 8 }), // GPS longitude coordinate (when available)
+  locationAccuracy: decimal("location_accuracy", { precision: 6, scale: 2 }), // Location accuracy in meters
+  city: varchar("city", { length: 100 }), // City name from IP geolocation or GPS
+  state: varchar("state", { length: 50 }), // State/province from geolocation
+  country: varchar("country", { length: 50 }), // Country from geolocation
+  ispName: varchar("isp_name", { length: 200 }), // Internet Service Provider name
+  connectionType: varchar("connection_type", { length: 50 }), // Connection type (mobile/broadband/corporate)
+  timezone: varchar("timezone", { length: 50 }), // User timezone
+  
   // Status and flags
   severity: text("severity").default("info").notNull(), // 'info', 'warning', 'error', 'critical'
   isSystemAction: boolean("is_system_action").default(false), // True for automated system actions
@@ -1905,6 +1916,11 @@ export const systemActivityLogs = pgTable("system_activity_logs", {
   jobIdIdx: index("idx_system_activity_logs_job_id").on(table.jobId),
   companyIdIdx: index("idx_system_activity_logs_company_id").on(table.companyId),
   severityIdx: index("idx_system_activity_logs_severity").on(table.severity),
+  // Location-based indexes
+  locationIdx: index("idx_system_activity_logs_location").on(table.latitude, table.longitude),
+  cityIdx: index("idx_system_activity_logs_city").on(table.city),
+  countryIdx: index("idx_system_activity_logs_country").on(table.country),
+  timezoneIdx: index("idx_system_activity_logs_timezone").on(table.timezone),
 }));
 
 // System Activity Log Relations

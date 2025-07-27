@@ -9,7 +9,15 @@ import { Badge } from '../ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useTagOperations } from '../../hooks/editor/useTagOperations';
 import { useStreamlinedTextInputs } from '../../hooks/editor/useStreamlinedTextInputs';
-import type { SessionDocument, SessionParticipant, DocumentTag, TagType, TagCoordinates } from '../../types/editor';
+import type { 
+  EditorSession, 
+  SessionDocument, 
+  SessionParticipant,
+  DocumentTag,
+  TagType,
+  TagCoordinates
+} from '@/types/editor';
+import type { WebSocketConnection } from '@/hooks/editor/useWebSocket';
 
 interface PDFTaggingEditorProps {
   sessionId: string;
@@ -24,7 +32,7 @@ interface PDFTaggingEditorProps {
   onSetActiveUser?: (userId: number) => void;
   onSyncUsers?: () => void;
   isSyncLoading?: boolean;
-  webSocket?: any;
+  webSocket?: WebSocketConnection;
 }
 
 export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
@@ -58,6 +66,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
   const [showSealDialog, setShowSealDialog] = useState(false);
   const [selectedSealTag, setSelectedSealTag] = useState<DocumentTag | null>(null);
   const [sealDialogLoading, setSealDialogLoading] = useState(false);
+  const [isCompleting, setIsCompleting] = useState(false);
   
   const { toast } = useToast();
 
@@ -106,7 +115,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     setCurrentUser,
     setMode,
     setZoomLevel,
-    setWebSocket
+    setWebSocket,
+    setConnectionStatus
   } = useEditorStore();
 
   // Handle page load from PDFViewer to get canvas element
@@ -185,9 +195,18 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
 
   // Store WebSocket instance in editor store for global access - stabilized to prevent infinite loops
   const stableWebSocket = useMemo(() => {
-    // Only return the webSocket if it's connected, otherwise return null
-    return webSocket?.connectionState?.isConnected ? webSocket : null;
-  }, [webSocket?.connectionState?.isConnected]);
+    // Return webSocket instance with connection state info
+    if (webSocket?.connectionState?.isConnected) {
+      console.log('✅ WebSocket ready for global access');
+      return webSocket;
+    } else if (webSocket?.connectionState?.isConnecting) {
+      console.log('🔌 WebSocket connecting...');
+      return null; // Don't expose until connected
+    } else {
+      console.log('❌ WebSocket not available');
+      return null;
+    }
+  }, [webSocket?.connectionState?.isConnected, webSocket?.connectionState?.isConnecting]);
   
   useEffect(() => {
     if (stableWebSocket) {
@@ -197,7 +216,33 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       console.log('📡 Clearing WebSocket instance from editor store');
       setWebSocket(null);
     }
-  }, [stableWebSocket, setWebSocket]);
+    
+    // Update connection status in store for UI feedback
+    setConnectionStatus(!!stableWebSocket);
+  }, [stableWebSocket, setWebSocket, setConnectionStatus]);
+
+  // Track WebSocket connection state for UI feedback
+  const [wsConnectionState, setWsConnectionState] = useState<{
+    isConnected: boolean;
+    isConnecting: boolean;
+    isReady: boolean;
+  }>({
+    isConnected: false,
+    isConnecting: false,
+    isReady: false
+  });
+  
+  useEffect(() => {
+    const newState = {
+      isConnected: webSocket?.connectionState?.isConnected || false,
+      isConnecting: webSocket?.connectionState?.isConnecting || false,
+      isReady: !!(webSocket?.connectionState?.isConnected && stableWebSocket)
+    };
+    
+    setWsConnectionState(newState);
+    
+    console.log('🔗 WebSocket connection state:', newState);
+  }, [webSocket?.connectionState?.isConnected, webSocket?.connectionState?.isConnecting, stableWebSocket]);
 
   // Initialize session on mount
   useEffect(() => {
@@ -1191,8 +1236,9 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
             {mode === 'tagging' && (
               <button
                 onClick={async () => {
-                  if (!sessionId) return;
+                  if (!sessionId || isCompleting) return;
                   
+                  setIsCompleting(true);
                   try {
                     const response = await fetch(`/api/editor/session/${sessionId}/complete`, {
                       method: 'POST',
@@ -1220,22 +1266,27 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
                           
                           if (forceResponse.ok) {
                             handleSessionComplete();
+                          } else {
+                            throw new Error('Failed to force complete session');
                           }
                         }
                       } else {
-                        alert(result.message || 'Failed to complete session');
+                        throw new Error(result.message || 'Failed to complete session');
                       }
                     } else {
                       handleSessionComplete();
                     }
                   } catch (error) {
                     console.error('❌ Failed to complete session:', error);
-                    alert('Failed to complete session');
+                    alert(error instanceof Error ? error.message : 'Failed to complete session');
+                  } finally {
+                    setIsCompleting(false);
                   }
                 }}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                disabled={isCompleting}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
               >
-                Complete Tagging
+                {isCompleting ? 'Completing...' : 'Complete Tagging'}
               </button>
             )}
           </div>

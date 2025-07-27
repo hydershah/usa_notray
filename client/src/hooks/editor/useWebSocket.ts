@@ -2,6 +2,29 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useEditorStore } from './useEditorStore';
 import { useToast } from '@/hooks/use-toast';
 import type { CollaborationUpdate, UserCursor } from '../../types/editor';
+import type { DocumentTag } from '../../types/editor';
+
+export interface WebSocketConnection {
+  connectionState: ConnectionState;
+  sendMessage: (message: Omit<WSMessage, 'userId' | 'sessionId' | 'timestamp'>) => boolean;
+  connect: () => void;
+  disconnect: () => void;
+  reconnect: () => void;
+  // WebSocket instance and state
+  webSocketInstance: WebSocket | null;
+  readyState?: number;
+  isConnected: boolean;
+  isConnecting: boolean;
+  isReady: boolean;
+  // Collaboration actions
+  tagPlaced: (tag: any) => void;
+  tagUpdated: (tagId: string, updates: any) => void;
+  tagDeleted: (tagId: string) => void;
+  tagSelected: (tagId: string, userId: string) => void;
+  cursorMoved: (x: number, y: number, page: number, documentId: string) => void;
+  pageChanged: (page: number, documentId: string) => void;
+  documentChanged: (documentId: string) => void;
+}
 
 interface WebSocketConfig {
   sessionId: string;
@@ -27,7 +50,7 @@ interface ConnectionState {
   lastError?: string;
 }
 
-export const useWebSocket = (config: WebSocketConfig) => {
+export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
   const { toast } = useToast();
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -557,6 +580,12 @@ export const useWebSocket = (config: WebSocketConfig) => {
     connect,
     disconnect,
     reconnect,
+    // Expose WebSocket instance and readyState for component access
+    webSocketInstance: wsRef.current,
+    readyState: wsRef.current?.readyState,
+    isConnected: connectionState.isConnected,
+    isConnecting: connectionState.isConnecting,
+    isReady: connectionState.isConnected && !connectionState.isConnecting,
     ...collaborationActions
   };
 };

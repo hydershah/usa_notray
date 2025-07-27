@@ -3,7 +3,15 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { Rnd } from 'react-rnd';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
 import { initializePDFWorker, isPDFWorkerReady } from '../../lib/pdf-worker';
-import type { TagCoordinates, DocumentTag, SessionParticipant } from '../../types/editor';
+import type { 
+  DocumentTag, 
+  TagCoordinates, 
+  TagType, 
+  PDFViewerState, 
+  SessionParticipant,
+  SessionDocument
+} from '@/types/editor';
+import type { WebSocketConnection } from '@/hooks/editor/useWebSocket';
 import { TAG_TYPE_INFO } from '../../types/editor';
 import { StreamlinedTextInput } from './StreamlinedTextInput';
 import { Button } from '@/components/ui/button';
@@ -62,7 +70,7 @@ interface PDFViewerProps {
   onSyncUsers?: () => void;
   currentUser?: SessionParticipant | null;
   isSyncLoading?: boolean;
-  webSocket?: WebSocket | null; // Add WebSocket for real-time updates
+  webSocket?: WebSocketConnection | null; // Add WebSocket for real-time updates
 }
 
 interface TagRendererProps {
@@ -901,14 +909,17 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     // Check if already rendered (unless force render)
     if (!forceRender && renderedPages.has(pageNumber)) return;
 
-    // Cancel any existing render task for this page
+    // Cancel any existing render task for this page to prevent conflicts
     const existingTask = renderTasksRef.current.get(pageNumber);
     if (existingTask && typeof existingTask.cancel === 'function') {
       try {
-        existingTask.cancel();
+        await existingTask.cancel();
         console.log(`🚫 Cancelled existing render task for page ${pageNumber}`);
+        // Small delay to ensure cancellation is processed
+        await new Promise(resolve => setTimeout(resolve, 10));
       } catch (e) {
         // Ignore cancellation errors
+        console.log(`⚠️ Cancellation error (safe to ignore):`, e);
       }
     }
     renderTasksRef.current.delete(pageNumber);
@@ -934,8 +945,11 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         return;
       }
 
-      // Clear any existing content to prevent render conflicts
+      // Clear any existing content and reset transform to prevent render conflicts
+      context.save();
+      context.setTransform(1, 0, 0, 1, 0, 0);
       context.clearRect(0, 0, canvas.width, canvas.height);
+      context.restore();
 
       // Calculate optimal scale based on container width - improved with better fallback
       let containerWidth = containerRef.current?.clientWidth || 800;
@@ -950,40 +964,54 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       const baseScale = Math.min((containerWidth - 120) / viewport.width, 1.0); // Reduced to 1.0x max scale for better fit
       const finalScale = baseScale * viewer.zoomLevel;
 
-      console.log(`�� Page ${pageNumber} scale calculation:`, { containerWidth, baseScale, zoomLevel: viewer.zoomLevel, finalScale });
+      console.log(`🔍 Page ${pageNumber} scale calculation:`, { containerWidth, baseScale, zoomLevel: viewer.zoomLevel, finalScale });
 
       // Store scale factor for coordinate conversion
       setScaleFactors(prev => new Map(prev.set(pageNumber, finalScale)));
 
       const scaledViewport = page.getViewport({ scale: finalScale });
 
-      // Set canvas dimensions
-      canvas.width = scaledViewport.width;
-      canvas.height = scaledViewport.height;
+      // Set canvas dimensions with proper device pixel ratio handling
+      const devicePixelRatio = window.devicePixelRatio || 1;
+      canvas.width = scaledViewport.width * devicePixelRatio;
+      canvas.height = scaledViewport.height * devicePixelRatio;
       canvas.style.width = `${scaledViewport.width}px`;
       canvas.style.height = `${scaledViewport.height}px`;
+      
+      // Scale context for device pixel ratio
+      context.scale(devicePixelRatio, devicePixelRatio);
 
       // Set page container size for proper tag positioning
       pageContainer.style.width = `${scaledViewport.width}px`;
       pageContainer.style.height = `${scaledViewport.height}px`;
 
-      console.log(`🎨 Canvas ${pageNumber} dimensions set:`, { width: scaledViewport.width, height: scaledViewport.height });
+      console.log(`🎨 Canvas ${pageNumber} dimensions set:`, { width: scaledViewport.width, height: scaledViewport.height, devicePixelRatio });
 
-      // Render page with high quality
+      // Render page with high quality and proper scaling
       const renderContext = {
         canvasContext: context,
         viewport: scaledViewport,
-        intent: 'display'
+        intent: 'display',
+        enableWebGL: false, // Disable WebGL to prevent conflicts
+        renderInteractiveForms: false // Disable forms to improve performance
       };
 
       // Final mount check before rendering
       if (!isMountedRef.current) return;
       
-      // Create and track render task
+      // Create and track render task with timeout protection
       const renderTask = page.render(renderContext);
       renderTasksRef.current.set(pageNumber, renderTask);
       
-      await renderTask.promise;
+      // Add timeout to prevent hanging renders
+      const renderPromise = Promise.race([
+        renderTask.promise,
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Render timeout')), 10000)
+        )
+      ]);
+      
+      await renderPromise;
       
       // Check mount status after render completes
       if (!isMountedRef.current) return;
@@ -1000,6 +1028,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       // Check if it was a cancellation
       if (err?.name === 'RenderingCancelledException') {
         console.log(`🛑 Page ${pageNumber} rendering was cancelled`);
+      } else if (err?.message === 'Render timeout') {
+        console.warn(`⏰ Page ${pageNumber} rendering timed out`);
       } else {
         console.error(`❌ Error rendering page ${pageNumber}:`, err);
       }
@@ -1286,71 +1316,63 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     onTagUpdate?.(tagId, coordinates);
     
     // 🚀 REAL-TIME SYNC: Broadcast tag update via WebSocket
-    if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+    if (webSocket && webSocket.isConnected && webSocket.isReady) {
       console.log('📡 Broadcasting tag update via WebSocket:', {
         tagId,
         coordinates
       });
       
       try {
-        webSocket.send(JSON.stringify({
+        webSocket.sendMessage({
           type: 'tag_updated',
           payload: {
             tagId,
             coordinates,
-            sessionId
-          },
-          sessionId,
-          timestamp: Date.now()
-        }));
+            page: coordinates.pageNumber || 1
+          }
+        });
       } catch (error) {
-        console.error('❌ Failed to broadcast tag update via WebSocket:', error);
+        console.error('❌ Failed to send tag update via WebSocket:', error);
       }
     } else {
       console.warn('⚠️ WebSocket not available for tag update broadcast, state:', webSocket?.readyState);
     }
   }, [onTagUpdate, webSocket, sessionId]);
 
-  const handleTagSave = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {
-    if (!onTagResize) return;
-    
-    // Find the tag to get its full coordinates
-    const tag = tags.find(t => t.id === tagId);
-    if (!tag) return;
-    
-    // Merge partial updates with existing coordinates
-    const fullCoordinates: TagCoordinates = {
-      ...tag.coordinates,
-      ...coordinates
-    };
-    
-    onTagResize(tagId, fullCoordinates);
-    
-    // 🚀 REAL-TIME SYNC: Broadcast tag save via WebSocket
-    if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+  // ✅ ENHANCED: Broadcasting tag save changes via WebSocket with detailed info
+  const broadcastTagSave = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {
+    if (webSocket?.isConnected && webSocket?.isReady) {
+      // Find the tag to get its full coordinates if needed
+      const tag = tags?.find(t => t.id === tagId);
+      const fullCoordinates = {
+        x: coordinates.x ?? tag?.coordinates.x ?? 0,
+        y: coordinates.y ?? tag?.coordinates.y ?? 0,
+        width: coordinates.width ?? tag?.coordinates.width ?? 100,
+        height: coordinates.height ?? tag?.coordinates.height ?? 50,
+        pageNumber: coordinates.pageNumber ?? tag?.coordinates.pageNumber ?? 1
+      };
+
       console.log('📡 Broadcasting tag save via WebSocket:', {
         tagId,
         coordinates: fullCoordinates
       });
       
       try {
-        webSocket.send(JSON.stringify({
+        webSocket.sendMessage({
           type: 'tag_saved',
           payload: {
             tagId,
             coordinates: fullCoordinates,
-            sessionId
-          },
-          sessionId,
-          timestamp: Date.now()
-        }));
+            page: fullCoordinates.pageNumber || 1
+          }
+        });
       } catch (error) {
         console.error('❌ Failed to broadcast tag save via WebSocket:', error);
       }
     } else {
       console.warn('⚠️ WebSocket not available for tag save broadcast, state:', webSocket?.readyState);
     }
-  }, [onTagResize, tags, webSocket, sessionId]);
+  }, [webSocket, sessionId, tags]);
 
   const handleTagDelete = useCallback((tagId: string) => {
     onTagDelete?.(tagId);
@@ -1366,9 +1388,24 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   useEffect(() => {
     if (!webSocket) return;
     
-    // Check WebSocket connection state
-    if (webSocket.readyState !== WebSocket.OPEN) {
-      console.warn('⚠️ WebSocket not ready for message handling, state:', webSocket.readyState);
+    // Type assertion to access WebSocketConnection properties
+    const wsConnection = webSocket as WebSocketConnection;
+    
+    // Check WebSocket connection state using the hook's connection state
+    if (!wsConnection.isConnected || !wsConnection.isReady) {
+      console.log('🔌 WebSocket not ready yet, waiting for connection...', {
+        exists: !!webSocket,
+        isConnected: wsConnection.isConnected,
+        isConnecting: wsConnection.isConnecting,
+        isReady: wsConnection.isReady,
+        readyState: wsConnection.readyState,
+        nativeStates: {
+          CONNECTING: WebSocket.CONNECTING,
+          OPEN: WebSocket.OPEN,
+          CLOSING: WebSocket.CLOSING,
+          CLOSED: WebSocket.CLOSED
+        }
+      });
       return;
     }
     
@@ -1393,32 +1430,35 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       }
     };
     
-    // Add WebSocket event listeners
-    webSocket.addEventListener('message', handleWebSocketMessage);
-    
-    // Add connection state monitoring
-    const handleWebSocketError = (error: Event) => {
-      console.error('❌ WebSocket error in PDFViewer:', error);
-    };
-    
-    const handleWebSocketClose = (event: CloseEvent) => {
-      console.warn('⚠️ WebSocket closed in PDFViewer:', event.code, event.reason);
-    };
-    
-    const handleWebSocketOpen = (event: Event) => {
-      console.log('✅ WebSocket connected in PDFViewer');
-    };
-    
-    webSocket.addEventListener('error', handleWebSocketError);
-    webSocket.addEventListener('close', handleWebSocketClose);
-    webSocket.addEventListener('open', handleWebSocketOpen);
-    
-    return () => {
-      webSocket.removeEventListener('message', handleWebSocketMessage);
-      webSocket.removeEventListener('error', handleWebSocketError);
-      webSocket.removeEventListener('close', handleWebSocketClose);  
-      webSocket.removeEventListener('open', handleWebSocketOpen);
-    };
+    // Add WebSocket event listeners using the raw WebSocket instance
+    const rawWebSocket = wsConnection.webSocketInstance;
+    if (rawWebSocket) {
+      rawWebSocket.addEventListener('message', handleWebSocketMessage);
+      
+      // Add connection state monitoring
+      const handleWebSocketError = (error: Event) => {
+        console.error('❌ WebSocket error in PDFViewer:', error);
+      };
+      
+      const handleWebSocketClose = (event: CloseEvent) => {
+        console.warn('⚠️ WebSocket closed in PDFViewer:', event.code, event.reason);
+      };
+      
+      const handleWebSocketOpen = (event: Event) => {
+        console.log('✅ WebSocket connected in PDFViewer');
+      };
+      
+      rawWebSocket.addEventListener('error', handleWebSocketError);
+      rawWebSocket.addEventListener('close', handleWebSocketClose);
+      rawWebSocket.addEventListener('open', handleWebSocketOpen);
+      
+      return () => {
+        rawWebSocket.removeEventListener('message', handleWebSocketMessage);
+        rawWebSocket.removeEventListener('error', handleWebSocketError);
+        rawWebSocket.removeEventListener('close', handleWebSocketClose);  
+        rawWebSocket.removeEventListener('open', handleWebSocketOpen);
+      };
+    }
   }, [webSocket]);
 
   // Zoom controls
@@ -1598,7 +1638,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                           isSelected={selectedTag?.id === tag.id}
                           canEdit={canEditTags}
                           onUpdate={(coords) => handleTagUpdate(tag.id, coords)}
-                          onSave={(coords) => handleTagSave(tag.id, coords)}
+                          onSave={(coords) => broadcastTagSave(tag.id, coords)}
                           onDelete={() => handleTagDelete(tag.id)}
                           onSelect={() => handleTagSelect(tag)}
                           onTagClick={onTagClick}
@@ -1663,7 +1703,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                           }
 
                           // 🚀 REAL-TIME SYNC: Broadcast text tag resize via WebSocket
-                          if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+                          if (webSocket && webSocket.isConnected && webSocket.isReady) {
                             const updateMessage = {
                               type: 'text_input_position_updated',
                               payload: {
@@ -1683,8 +1723,21 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                             };
 
                             try {
-                              webSocket.send(JSON.stringify(updateMessage));
-                              console.log('✅ Text tag resize broadcasted via WebSocket:', updateMessage);
+                              webSocket.sendMessage({
+                                type: 'text_input_position_updated',
+                                payload: {
+                                  textInputId: textInput.id,
+                                  coordinates: {
+                                    x: newCoordinates.x,
+                                    y: newCoordinates.y,
+                                    width: newCoordinates.width,
+                                    height: newCoordinates.height,
+                                    pageNumber: textInput.coordinates.pageNumber
+                                  },
+                                  page: textInput.coordinates.pageNumber
+                                }
+                              });
+                              console.log('✅ Text tag resize broadcasted via WebSocket');
                             } catch (error) {
                               console.error('❌ Failed to broadcast text tag resize:', error);
                             }
@@ -1692,7 +1745,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                             console.warn('⚠️ WebSocket not available for text tag resize broadcast');
                           }
                         }}
-                        webSocket={webSocket}
+                        webSocket={webSocket?.webSocketInstance}
                       />
                     </div>
                     );
