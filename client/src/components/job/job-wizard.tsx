@@ -34,6 +34,7 @@ import { ArrowLeft, ArrowRight, Plus, Trash2, Upload, FileText, CheckCircle, Ale
 import { type TitleCompany, type ClosingType, type User } from '@shared/types';
 import { NotaryAvailabilitySelector } from './notary-availability-selector';
 import { MainLayout } from '@/components/layout/main-layout';
+import { JobCreationProgress } from './JobCreationProgress';
 
 // Error Boundary component to catch crashes
 class JobWizardErrorBoundary extends React.Component<
@@ -165,6 +166,13 @@ function JobWizardInternal() {
     error: null
   });
 
+  // Job creation progress state
+  const [showProgressModal, setShowProgressModal] = useState(false);
+  const [progressStep, setProgressStep] = useState('preparing');
+  const [completedSteps, setCompletedSteps] = useState<string[]>([]);
+  const [progressError, setProgressError] = useState<string | null>(null);
+  const [creationProgress, setCreationProgress] = useState(0);
+
   // CRITICAL FIX: Move all hooks to the top and never conditionally call them
   // Get current user data to check permissions
   const { data: currentUser, isLoading: isUserLoading, error: userError } = useQuery<User & { 
@@ -274,11 +282,6 @@ function JobWizardInternal() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/jobs'] });
-      toast({
-        title: "Success",
-        description: "Job created successfully with all documents!",
-      });
-      setLocation('/jobs');
     },
     onError: (error: any) => {
       console.error('Create job mutation error:', error);
@@ -822,6 +825,76 @@ function JobWizardInternal() {
     ));
   };
 
+  const submitJobWithProgress = async (data: JobFormData) => {
+    const updateProgress = (step: string, progress: number, completed: string[] = []) => {
+      setProgressStep(step);
+      setCreationProgress(progress);
+      setCompletedSteps(completed);
+    };
+
+    // Step 1: Preparing Job (20%)
+    updateProgress('preparing', 20);
+    await new Promise(resolve => setTimeout(resolve, 500)); // Small delay for UX
+
+    const formData = new FormData();
+    
+    // Add job data
+    Object.entries(data).forEach(([key, value]) => {
+      if (value !== undefined) {
+        formData.append(key, value.toString());
+      }
+    });
+    
+    // Add signers
+    formData.append('signers', JSON.stringify(signers));
+    
+    // Step 2: Uploading Documents (40%)
+    updateProgress('uploading', 40, ['preparing']);
+    
+    // Add multiple documents
+    documents.forEach((doc, index) => {
+      formData.append(`documents`, doc.file);
+      formData.append(`documentMetadata_${index}`, JSON.stringify({
+        originalName: doc.name,
+        isRequired: doc.isRequired,
+        documentType: doc.documentType,
+      }));
+    });
+
+    // Step 3: Creating Participants (60%)
+    updateProgress('creating-signers', 60, ['preparing', 'uploading']);
+    
+    try {
+      // Call the actual API
+      const result = await createJobMutation.mutateAsync(formData);
+      
+      // Step 4: Sending Invitations (80%)
+      updateProgress('sending-invites', 80, ['preparing', 'uploading', 'creating-signers']);
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for background processing
+      
+      // Step 5: Finalizing (100%)
+      updateProgress('finalizing', 100, ['preparing', 'uploading', 'creating-signers', 'sending-invites']);
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Job created successfully - redirect to job details
+      setShowProgressModal(false);
+      setIsSubmitting(false);
+      
+      toast({
+        title: "Success",
+        description: "Job created successfully with all documents!",
+      });
+      
+      // Redirect to the job details page
+      setLocation(`/jobs/${result.id}`);
+      
+    } catch (error: any) {
+      setProgressError(error.message || 'Failed to create job');
+      setProgressStep('preparing'); // Reset to first step on error
+      throw error;
+    }
+  };
+
   const handleSubmit = async (data: JobFormData) => {
     // Prevent double submission
     if (isSubmitting) return;
@@ -875,33 +948,19 @@ function JobWizardInternal() {
     }
     
     setIsSubmitting(true);
-    
-    const formData = new FormData();
-    
-    // Add job data
-    Object.entries(data).forEach(([key, value]) => {
-      if (value !== undefined) {
-        formData.append(key, value.toString());
-      }
-    });
-    
-    // Add signers
-    formData.append('signers', JSON.stringify(signers));
-    
-    // Add multiple documents
-    documents.forEach((doc, index) => {
-      formData.append(`documents`, doc.file);
-      formData.append(`documentMetadata_${index}`, JSON.stringify({
-        originalName: doc.name,
-        isRequired: doc.isRequired,
-        documentType: doc.documentType,
-      }));
-    });
+    setShowProgressModal(true);
+    setProgressError(null);
+    setCompletedSteps([]);
+    setCreationProgress(0);
     
     try {
-      await createJobMutation.mutateAsync(formData);
+      await submitJobWithProgress(data);
     } catch (error) {
       setIsSubmitting(false);
+      setShowProgressModal(false);
+      setProgressError(null);
+      setCompletedSteps([]);
+      setCreationProgress(0);
     }
   };
 
@@ -2325,6 +2384,15 @@ function JobWizardInternal() {
             </Form>
           </CardContent>
         </Card>
+
+        {/* Job Creation Progress Modal */}
+        <JobCreationProgress
+          isOpen={showProgressModal}
+          currentStep={progressStep}
+          completedSteps={completedSteps}
+          error={progressError}
+          progress={creationProgress}
+        />
       </div>
     </div>
   );
