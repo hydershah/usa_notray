@@ -262,7 +262,7 @@ export default function Login() {
                 <h4 className="text-lg font-semibold text-gray-900 mb-1">I need documents notarized</h4>
                 <p className="text-sm text-gray-600 mb-4">Get your documents notarized quickly and securely</p>
                 <Button 
-                  onClick={() => setLocation('/register-user')}
+                  onClick={() => setLocation('/signup/client')}
                   className="w-full h-11 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium rounded-lg shadow-md transition-all duration-200 transform group-hover:scale-[1.02]"
                 >
                   Sign Up as User
@@ -286,7 +286,7 @@ export default function Login() {
                 <h4 className="text-lg font-semibold text-gray-900 mb-1">I'm a notary</h4>
                 <p className="text-sm text-gray-600 mb-4">Join our network of professional notaries</p>
                 <Button 
-                  onClick={() => setLocation('/register-notary')}
+                  onClick={() => setLocation('/signup/notary')}
                   className="w-full h-11 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-medium rounded-lg shadow-md transition-all duration-200 transform group-hover:scale-[1.02]"
                 >
                   Sign Up as Notary
@@ -320,7 +320,7 @@ export default function Login() {
                 <h4 className="text-lg font-semibold text-gray-900 mb-1">Register Your Title Company</h4>
                 <p className="text-sm text-gray-600 mb-4">Create an account for your title company and manage your team</p>
                 <Button 
-                  onClick={() => setLocation('/register-company')}
+                  onClick={() => setLocation('/signup/company')}
                   className="w-full h-11 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-medium rounded-lg shadow-md transition-all duration-200 transform group-hover:scale-[1.02]"
                 >
                   Register Title Company

@@ -842,6 +842,149 @@ class EmailService {
     await this.loadSettings();
   }
 
+  async sendEmailVerificationOtp(data: {
+    userEmail: string;
+    otpCode: string;
+    expirationMinutes: number;
+  }): Promise<void> {
+    const content = `
+        <h2 style="color: #1e40af; margin-bottom: 20px;">🔐 Email Verification Required</h2>
+        
+        <p>Welcome to Sharp Note! To complete your account registration, please verify your email address using the code below:</p>
+        
+        <div style="text-align: center; 
+                    background: #f8fafc; 
+                    border: 2px solid #e2e8f0; 
+                    border-radius: 12px; 
+                    padding: 30px; 
+                    margin: 30px 0;
+                    font-family: 'Courier New', monospace;">
+            <p style="font-size: 14px; color: #64748b; margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">
+                Your Verification Code
+            </p>
+            <div style="font-size: 36px; 
+                        font-weight: bold; 
+                        color: #1e40af; 
+                        letter-spacing: 8px; 
+                        margin: 15px 0;
+                        text-shadow: 0 2px 4px rgba(30, 64, 175, 0.1);">
+                ${data.otpCode}
+            </div>
+            <p style="font-size: 12px; color: #64748b; margin: 10px 0 0 0;">
+                This code expires in ${data.expirationMinutes} minutes
+            </p>
+        </div>
+        
+        <div class="warning-box">
+            <h4 style="margin-top: 0;">📋 Next Steps:</h4>
+            <ol style="margin: 10px 0;">
+                <li><strong>Enter the code above</strong> in the verification form</li>
+                <li><strong>Complete your registration</strong> to access your account</li>
+                <li><strong>Start using Sharp Note</strong> for professional notarization</li>
+            </ol>
+        </div>
+        
+        <div class="info-box">
+            <h4 style="margin-top: 0;">🔒 Security Information:</h4>
+            <p>For your security:</p>
+            <ul style="margin: 10px 0;">
+                <li>This verification code expires in ${data.expirationMinutes} minutes</li>
+                <li>Never share this code with anyone</li>
+                <li>If you didn't create this account, please ignore this email</li>
+                <li>You can request a new code if this one expires</li>
+            </ul>
+        </div>
+        
+        <p>Having trouble? Contact our support team at <a href="mailto:support@sharpnote.com">support@sharpnote.com</a> for assistance.</p>
+        
+        <p style="margin-top: 30px;">
+            Best regards,<br>
+            <strong>The Sharp Note Team</strong><br>
+            <em>Professional Digital Notarization</em>
+        </p>
+    `;
+
+    await this.sendEmail({
+      to: data.userEmail,
+      subject: `🔐 Verify Your Email - Sharp Note (Code: ${data.otpCode})`,
+      html: this.getBaseTemplate(content),
+      text: `Verify your Sharp Note account with this code: ${data.otpCode}. This code expires in ${data.expirationMinutes} minutes.`
+    });
+  }
+
+  async sendEmailVerificationLink(data: {
+    userEmail: string;
+    verificationToken: string;
+    userName: string;
+  }): Promise<void> {
+    const verificationLink = `${this.getClientUrl()}/api/auth/verify-email/${data.verificationToken}`;
+    
+    const content = `
+        <h2 style="color: #1e40af; margin-bottom: 20px;">🎉 Welcome to Sharp Note!</h2>
+        
+        <p>Hi ${data.userName},</p>
+        
+        <p>Thank you for registering with Sharp Note. To complete your account setup and start using our professional notarization services, please verify your email address by clicking the button below:</p>
+        
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="${verificationLink}" 
+               style="display: inline-block; 
+                      background: #1e40af; 
+                      color: white; 
+                      padding: 15px 30px; 
+                      text-decoration: none; 
+                      border-radius: 8px; 
+                      font-weight: 600;
+                      font-size: 16px;
+                      margin: 20px 0;
+                      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+                ✅ Verify My Email Address
+            </a>
+        </div>
+        
+        <div class="info-box">
+            <h4 style="margin-top: 0;">🚀 What happens next?</h4>
+            <ol style="margin: 10px 0;">
+                <li><strong>Click the verification button above</strong></li>
+                <li><strong>Your account will be instantly activated</strong></li>
+                <li><strong>You'll be redirected to your dashboard</strong></li>
+                <li><strong>Start using Sharp Note for professional notarization</strong></li>
+            </ol>
+        </div>
+        
+        <div class="warning-box">
+            <h4 style="margin-top: 0;">🔒 Security Information:</h4>
+            <p>For your security:</p>
+            <ul style="margin: 10px 0;">
+                <li>This verification link expires in 24 hours</li>
+                <li>This link can only be used once</li>
+                <li>If you didn't create this account, please ignore this email</li>
+                <li>Never share this verification link with anyone</li>
+            </ul>
+        </div>
+        
+        <p>If the button doesn't work, you can copy and paste this link into your browser:</p>
+        <p style="word-break: break-all; font-family: monospace; background: #f1f5f9; padding: 10px; border-radius: 4px; font-size: 12px;">
+            ${verificationLink}
+        </p>
+        
+        <p>Having trouble? Contact our support team at <a href="mailto:support@sharpnote.com">support@sharpnote.com</a> for assistance.</p>
+        
+        <p style="margin-top: 30px;">
+            Best regards,<br>
+            <strong>The Sharp Note Team</strong><br>
+            <em>Professional Digital Notarization</em>
+        </p>
+    `;
+
+    await this.sendEmail({
+      to: data.userEmail,
+      subject: `🎉 Welcome to Sharp Note - Verify Your Email`,
+      html: this.getBaseTemplate(content),
+      text: `Welcome to Sharp Note! Please verify your email by visiting: ${verificationLink}`
+    });
+  }
+
   async testConfiguration(testEmail: string): Promise<string> {
     // Clear cache to ensure we use the latest settings from database
     this.clearCache();

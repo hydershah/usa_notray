@@ -329,37 +329,19 @@ export class RandomNotaryService {
             assignmentType,
             assignmentStatus: 'assigned'
           });
-
-        // Create calendar event for the assigned notary
-        try {
-          // Get job details for calendar event
-          const jobDetails = await tx
-            .select()
-            .from(jobs)
-            .where(eq(jobs.id, jobId))
-            .limit(1);
-
-          if (jobDetails.length > 0) {
-            const job = jobDetails[0];
-            const startDateTime = new Date(`${timeSlot.date} ${timeSlot.startTime}`);
-            const endDateTime = new Date(`${timeSlot.date} ${timeSlot.endTime}`);
-            
-            await tx.insert(calendarEvents).values({
-              notaryId,
-              title: `Notarization Job #${jobId}`,
-              description: `Job for ${job.titleCompany} - ${job.closingType}\nProperty: ${job.propertyAddressOne}, ${job.propertyCity}, ${job.propertyState}`,
-              startDateTime,
-              endDateTime,
-              location: `${job.propertyAddressOne}, ${job.propertyCity}, ${job.propertyState} ${job.propertyZipCode}`,
-              eventType: 'job',
-              jobId: jobId,
-              isAllDay: false
-            });
-          }
-        } catch (calendarError) {
-          console.warn('Failed to create calendar event for notary assignment:', calendarError);
-        }
       });
+
+      // 🔧 CRITICAL FIX: Invalidate calendar cache after booking slot via random assignment
+      try {
+        const { redisCache } = await import('./services/redis-cache');
+        await redisCache.delPattern(`user:${notaryId}:*calendar*`);
+        await redisCache.delPattern(`*calendar*`);
+        await redisCache.delPattern(`*notary-availability*`);
+        console.log(`🧹 Invalidated calendar cache for notary ${notaryId} after random assignment to job ${jobId}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate calendar cache:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
 
       return true;
     } catch (error) {

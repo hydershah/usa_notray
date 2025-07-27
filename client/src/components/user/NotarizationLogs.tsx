@@ -92,7 +92,7 @@ interface NotarizationSession {
   status: string;
   startedAt: string;
   completedAt?: string;
-  videoUrl?: string;
+  videoSessionId?: string;
   documents: string[];
 }
 
@@ -189,6 +189,21 @@ export function NotarizationLogs() {
     }
   };
 
+  const createSampleData = async () => {
+    try {
+      const response = await apiRequest('POST', '/api/dev/create-sample-logs');
+      const result = await response.json();
+      if (result.success) {
+        // Refresh all data after creating samples
+        refreshAllData();
+        alert('Sample data created successfully! Refresh the page to see the new logs.');
+      }
+    } catch (error) {
+      console.error('Failed to create sample data:', error);
+      alert('Failed to create sample data. Check console for details.');
+    }
+  };
+
   const filteredNotaryLogs = notaryLogs.filter((log: NotaryLogEntry) => {
     const matchesSearch = 
       log.jobTitle?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -254,6 +269,10 @@ export function NotarizationLogs() {
           <Button onClick={refreshAllData} size="sm" variant="outline">
             <RefreshCw className="w-4 h-4 mr-2" />
             Refresh
+          </Button>
+          <Button onClick={createSampleData} size="sm" variant="outline">
+            <Activity className="w-4 h-4 mr-2" />
+            Create Sample Data
           </Button>
           <Button onClick={() => downloadAuditReport('activity')} size="sm">
             <Download className="w-4 h-4 mr-2" />
@@ -434,16 +453,14 @@ export function NotarizationLogs() {
                                 </div>
                               </div>
                               
-                              {session.videoUrl && (
+                              {session.videoSessionId && (
                                 <div>
-                                  <span className="font-medium text-sm">Video Recording:</span>
+                                  <span className="font-medium text-sm">Video Session:</span>
                                   <div className="mt-2">
-                                    <Button size="sm" variant="outline" asChild>
-                                      <a href={session.videoUrl} target="_blank" rel="noopener noreferrer">
-                                        <Video className="w-4 h-4 mr-2" />
-                                        View Recording
-                                      </a>
-                                    </Button>
+                                    <Badge variant="outline" className="text-xs">
+                                      <Video className="w-3 h-3 mr-1" />
+                                      Session ID: {session.videoSessionId}
+                                    </Badge>
                                   </div>
                                 </div>
                               )}
@@ -451,12 +468,10 @@ export function NotarizationLogs() {
                           </DialogContent>
                         </Dialog>
                         
-                        {session.videoUrl && (
-                          <Button size="sm" variant="outline" asChild>
-                            <a href={session.videoUrl} target="_blank" rel="noopener noreferrer">
-                              <Video className="w-4 h-4 mr-2" />
-                              Watch Video
-                            </a>
+                        {session.videoSessionId && (
+                          <Button size="sm" variant="outline" disabled>
+                            <Video className="w-4 h-4 mr-2" />
+                            Video Session
                           </Button>
                         )}
                       </div>

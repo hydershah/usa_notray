@@ -24,8 +24,8 @@ import {
 
 interface PendingUser {
   id: number;
-  fullName: string;
-  email: string;
+  fullName: string | null;
+  email: string | null;
   role: string;
   notaryType?: string;
   phoneNumber: string;
@@ -42,8 +42,8 @@ interface PendingUser {
 
 interface PendingCompany {
   id: number;
-  companyName: string;
-  contactEmail: string;
+  companyName: string | null;
+  contactEmail: string | null;
   status: string;
   createdAt: string;
   licenseNumber?: string;
@@ -60,6 +60,7 @@ export function AdminApprovals() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
+  const [processingIds, setProcessingIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     fetchPendingApprovals();
@@ -72,13 +73,17 @@ export function AdminApprovals() {
         fetch('/api/admin/users/pending-approval', {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
           }
         }),
         fetch('/api/admin/companies/pending', {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
           }
         })
       ]);
@@ -101,90 +106,141 @@ export function AdminApprovals() {
 
   const approveUser = async (userId: number) => {
     try {
+      setProcessingIds(prev => new Set(prev).add(userId));
       const response = await fetch(`/api/admin/users/${userId}/approve`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
         },
         body: JSON.stringify({ notes: 'Approved by admin dashboard' })
       });
 
       if (response.ok) {
+        // Add a small delay to ensure backend processing is complete
+        await new Promise(resolve => setTimeout(resolve, 500));
         await fetchPendingApprovals();
+      } else {
+        console.error('Failed to approve user:', response.status, response.statusText);
       }
     } catch (error) {
       console.error('Error approving user:', error);
+    } finally {
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(userId);
+        return newSet;
+      });
     }
   };
 
   const rejectUser = async (userId: number) => {
     try {
+      setProcessingIds(prev => new Set(prev).add(userId));
       const response = await fetch(`/api/admin/users/${userId}/reject`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
         },
         body: JSON.stringify({ notes: 'Rejected by admin dashboard' })
       });
 
       if (response.ok) {
+        await new Promise(resolve => setTimeout(resolve, 500));
         await fetchPendingApprovals();
+      } else {
+        console.error('Failed to reject user:', response.status, response.statusText);
       }
     } catch (error) {
       console.error('Error rejecting user:', error);
+    } finally {
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(userId);
+        return newSet;
+      });
     }
   };
 
   const approveCompany = async (companyId: number) => {
     try {
+      setProcessingIds(prev => new Set(prev).add(companyId));
       const response = await fetch(`/api/admin/companies/${companyId}/approve`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
         },
         body: JSON.stringify({ notes: 'Approved by admin dashboard' })
       });
 
       if (response.ok) {
+        await new Promise(resolve => setTimeout(resolve, 500));
         await fetchPendingApprovals();
+      } else {
+        console.error('Failed to approve company:', response.status, response.statusText);
       }
     } catch (error) {
       console.error('Error approving company:', error);
+    } finally {
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(companyId);
+        return newSet;
+      });
     }
   };
 
   const rejectCompany = async (companyId: number) => {
     try {
+      setProcessingIds(prev => new Set(prev).add(companyId));
       const response = await fetch(`/api/admin/companies/${companyId}/reject`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
         },
         body: JSON.stringify({ reason: 'Rejected by admin dashboard' })
       });
 
       if (response.ok) {
+        await new Promise(resolve => setTimeout(resolve, 500));
         await fetchPendingApprovals();
+      } else {
+        console.error('Failed to reject company:', response.status, response.statusText);
       }
     } catch (error) {
       console.error('Error rejecting company:', error);
+    } finally {
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(companyId);
+        return newSet;
+      });
     }
   };
 
   const filteredUsers = pendingUsers.filter(user => {
-    const matchesSearch = user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         user.email.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (user.fullName?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+                         (user.email?.toLowerCase() || '').includes(searchTerm.toLowerCase());
+    // Only show notary and title_company users, exclude clients/signers
+    const isApprovalRole = user.role === 'notary' || user.role === 'title_company';
     const matchesRole = roleFilter === 'all' || user.role === roleFilter;
-    return matchesSearch && matchesRole;
+    return matchesSearch && matchesRole && isApprovalRole;
   });
 
   const filteredCompanies = pendingCompanies.filter(company => {
-    const matchesSearch = company.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         company.contactEmail.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (company.companyName?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+                         (company.contactEmail?.toLowerCase() || '').includes(searchTerm.toLowerCase());
     return matchesSearch;
   });
 
@@ -202,12 +258,12 @@ export function AdminApprovals() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Pending Approvals</h1>
-          <p className="text-gray-600 mt-2">Review and approve user and company registrations</p>
+          <p className="text-gray-600 mt-2">Review and approve notary and title company registrations</p>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
             <Clock className="h-3 w-3 mr-1" />
-            {pendingUsers.length + pendingCompanies.length} pending
+            {pendingUsers.filter(user => user.role === 'notary' || user.role === 'title_company').length + pendingCompanies.length} pending
           </Badge>
         </div>
       </div>
@@ -224,7 +280,7 @@ export function AdminApprovals() {
         >
           <div className="flex items-center gap-2">
             <Users className="h-4 w-4" />
-            Users ({pendingUsers.length})
+            Professionals ({pendingUsers.filter(user => user.role === 'notary' || user.role === 'title_company').length})
           </div>
         </button>
         <button
@@ -263,7 +319,6 @@ export function AdminApprovals() {
             <option value="all">All Roles</option>
             <option value="notary">Notary</option>
             <option value="title_company">Title Company</option>
-            <option value="client">Client</option>
           </select>
         )}
       </div>
@@ -289,7 +344,7 @@ export function AdminApprovals() {
                           <User className="h-5 w-5 text-blue-600" />
                         </div>
                         <div>
-                          <h3 className="text-lg font-semibold text-gray-900">{user.fullName}</h3>
+                          <h3 className="text-lg font-semibold text-gray-900">{user.fullName || 'No name provided'}</h3>
                           <div className="flex items-center gap-2">
                             <Badge variant="outline" className="text-xs">
                               {user.role}
@@ -307,7 +362,7 @@ export function AdminApprovals() {
                         <div className="space-y-2">
                           <div className="flex items-center gap-2 text-sm text-gray-600">
                             <Mail className="h-4 w-4" />
-                            {user.email}
+                            {user.email || 'No email provided'}
                           </div>
                           <div className="flex items-center gap-2 text-sm text-gray-600">
                             <Phone className="h-4 w-4" />
@@ -372,17 +427,27 @@ export function AdminApprovals() {
                         onClick={() => approveUser(user.id)}
                         className="bg-green-500 hover:bg-green-600 text-white"
                         size="sm"
+                        disabled={processingIds.has(user.id)}
                       >
-                        <CheckCircle className="h-4 w-4 mr-1" />
-                        Approve
+                        {processingIds.has(user.id) ? (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-1"></div>
+                        ) : (
+                          <CheckCircle className="h-4 w-4 mr-1" />
+                        )}
+                        {processingIds.has(user.id) ? 'Processing...' : 'Approve'}
                       </Button>
                       <Button
                         onClick={() => rejectUser(user.id)}
                         variant="destructive"
                         size="sm"
+                        disabled={processingIds.has(user.id)}
                       >
-                        <XCircle className="h-4 w-4 mr-1" />
-                        Reject
+                        {processingIds.has(user.id) ? (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-1"></div>
+                        ) : (
+                          <XCircle className="h-4 w-4 mr-1" />
+                        )}
+                        {processingIds.has(user.id) ? 'Processing...' : 'Reject'}
                       </Button>
                     </div>
                   </div>
@@ -411,7 +476,7 @@ export function AdminApprovals() {
                           <Building2 className="h-5 w-5 text-purple-600" />
                         </div>
                         <div>
-                          <h3 className="text-lg font-semibold text-gray-900">{company.companyName}</h3>
+                          <h3 className="text-lg font-semibold text-gray-900">{company.companyName || 'No company name provided'}</h3>
                           <Badge variant="outline" className="text-xs">
                             {company.status}
                           </Badge>
@@ -422,7 +487,7 @@ export function AdminApprovals() {
                         <div className="space-y-2">
                           <div className="flex items-center gap-2 text-sm text-gray-600">
                             <Mail className="h-4 w-4" />
-                            {company.contactEmail}
+                            {company.contactEmail || 'No email provided'}
                           </div>
                           {company.phoneNumber && (
                             <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -472,17 +537,27 @@ export function AdminApprovals() {
                         onClick={() => approveCompany(company.id)}
                         className="bg-green-500 hover:bg-green-600 text-white"
                         size="sm"
+                        disabled={processingIds.has(company.id)}
                       >
-                        <CheckCircle className="h-4 w-4 mr-1" />
-                        Approve
+                        {processingIds.has(company.id) ? (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-1"></div>
+                        ) : (
+                          <CheckCircle className="h-4 w-4 mr-1" />
+                        )}
+                        {processingIds.has(company.id) ? 'Processing...' : 'Approve'}
                       </Button>
                       <Button
                         onClick={() => rejectCompany(company.id)}
                         variant="destructive"
                         size="sm"
+                        disabled={processingIds.has(company.id)}
                       >
-                        <XCircle className="h-4 w-4 mr-1" />
-                        Reject
+                        {processingIds.has(company.id) ? (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-1"></div>
+                        ) : (
+                          <XCircle className="h-4 w-4 mr-1" />
+                        )}
+                        {processingIds.has(company.id) ? 'Processing...' : 'Reject'}
                       </Button>
                     </div>
                   </div>

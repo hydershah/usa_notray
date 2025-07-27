@@ -218,7 +218,7 @@ export const circuitBreakers = {
     failureThreshold: 5,
     resetTimeout: 30000,        // 30 seconds
     monitoringWindow: 60000,    // 1 minute
-    responseTimeThreshold: 5000 // 5 seconds
+    responseTimeThreshold: 15000 // 15 seconds - Fixed to allow slow session queries
   }),
 
   redis: new CircuitBreaker('REDIS', {
@@ -254,7 +254,7 @@ export const circuitBreakers = {
     failureThreshold: 5,
     resetTimeout: 30000,        // 30 seconds
     monitoringWindow: 60000,    // 1 minute
-    responseTimeThreshold: 5000 // 5 seconds
+    responseTimeThreshold: 15000 // 15 seconds - Fixed to allow slow session queries
   }),
 
   REDIS: new CircuitBreaker('REDIS', {

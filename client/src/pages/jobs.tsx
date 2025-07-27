@@ -24,6 +24,16 @@ import {
 } from 'lucide-react';
 import { type Job } from '@shared/types';
 
+// Type for paginated response
+interface JobsResponse {
+  jobs: Job[];
+  totalCount: number;
+  hasMore: boolean;
+  currentPage: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export default function Jobs() {
   const [, setLocation] = useLocation();
 
@@ -31,18 +41,21 @@ export default function Jobs() {
     setLocation('/create-job');
   };
 
-  // Get jobs data for stats (only when authenticated)
-  const { data: jobs = [] } = useAuthenticatedQuery<Job[]>(['/api/jobs']);
+  // Get jobs data with pagination (only when authenticated)
+  const { data: jobsResponse } = useAuthenticatedQuery<JobsResponse>(['/api/jobs']);
+  
+  // Extract jobs array from pagination response, with fallback to empty array
+  const jobs = jobsResponse?.jobs || [];
 
   // Calculate statistics
   const stats = {
     total: jobs.length,
-    open: jobs.filter(job => job.jobStatus === 'open').length,
-    pending: jobs.filter(job => job.jobStatus === 'pending').length,
-    completed: jobs.filter(job => job.jobStatus === 'completed').length,
+    open: jobs.filter(job => job.status === 'open').length,
+    pending: jobs.filter(job => job.status === 'pending').length,
+    completed: jobs.filter(job => job.status === 'completed').length,
     unassigned: jobs.filter(job => !job.notaryId && !job.selectedNotary).length,
-    pendingApproval: jobs.filter(job => job.notaryApprovalStatus === 'assigned_pending_approval').length,
-    approved: jobs.filter(job => job.notaryApprovalStatus === 'approved').length,
+    pendingApproval: jobs.filter(job => job.approvalStatus === 'assigned_pending_approval').length,
+    approved: jobs.filter(job => job.approvalStatus === 'approved').length,
     thisWeek: jobs.filter(job => {
       const jobDate = new Date(job.createdAt || '');
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -184,6 +197,27 @@ export default function Jobs() {
           </div>
 
 
+
+          {/* Pagination Information */}
+          {jobsResponse && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+              <div className="flex items-center justify-between text-sm text-blue-700">
+                <span>
+                  Showing {jobs.length} of {jobsResponse.totalCount} jobs
+                  {jobsResponse.totalPages > 1 && (
+                    <span className="ml-2">
+                      (Page {jobsResponse.currentPage} of {jobsResponse.totalPages})
+                    </span>
+                  )}
+                </span>
+                {jobsResponse.hasMore && (
+                  <Badge variant="outline" className="text-blue-600 border-blue-300">
+                    More pages available
+                  </Badge>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Enhanced Job Table */}
           <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">

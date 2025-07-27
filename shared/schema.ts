@@ -367,8 +367,23 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   userId: integer("user_id").references(() => users.id).notNull(),
   token: text("token").notNull().unique(),
   expiresAt: timestamp("expires_at").notNull(),
-  used: boolean("used").default(false),
+  used: boolean("used").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// OTP Verification table for email verification during registration
+export const otpVerifications = pgTable("otp_verifications", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull(),
+  otpCode: text("otp_code").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  verified: boolean("verified").default(false).notNull(),
+  attempts: integer("attempts").default(0).notNull(),
+  lockedUntil: timestamp("locked_until"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  verifiedAt: timestamp("verified_at"),
+  userAgent: text("user_agent"),
+  ipAddress: text("ip_address"),
 });
 
 // User signatures table - for tracking signature history

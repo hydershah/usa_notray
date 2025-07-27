@@ -245,6 +245,47 @@ function Router() {
         }
       </Route>
 
+      {/* New specialized signup routes - public */}
+      <Route path="/signup/client">
+        {(isAuthenticated && !isLoggingOut) ? <Redirect to="/dashboard" /> : 
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/signup-client")))}
+            </React.Suspense>
+          </ErrorBoundary>
+        }
+      </Route>
+
+      <Route path="/signup/notary">
+        {(isAuthenticated && !isLoggingOut) ? <Redirect to="/dashboard" /> : 
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/signup-notary")))}
+            </React.Suspense>
+          </ErrorBoundary>
+        }
+      </Route>
+
+      <Route path="/signup/company">
+        {(isAuthenticated && !isLoggingOut) ? <Redirect to="/dashboard" /> : 
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/signup-company")))}
+            </React.Suspense>
+          </ErrorBoundary>
+        }
+      </Route>
+
+      <Route path="/signup-success">
+        {(isAuthenticated && !isLoggingOut) ? <Redirect to="/dashboard" /> : 
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/signup-success")))}
+            </React.Suspense>
+          </ErrorBoundary>
+        }
+      </Route>
+
       {/* Protected routes */}
       <Route path="/notary/profile/complete">
         <ProtectedRoute allowedRoles={['notary']}>

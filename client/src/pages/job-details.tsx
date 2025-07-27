@@ -116,39 +116,22 @@ export default function JobDetailsPage() {
     window.open(previewUrl, '_blank');
   };
 
-  const handleStartTagging = async () => {
-    try {
-      // Navigate directly to editor page in new tab - session will be created there
-      window.open(`/editor/${jobId}?mode=tagging`, '_blank');
-    } catch (error) {
-      console.error('Failed to start tagging:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to start tagging session. Please try again.",
-      });
-    }
+  const handleStartTagging = () => {
+    // Navigate directly to editor page in new tab - session will be created there
+    window.open(`/editor/${jobId}?mode=tagging`, '_blank');
   };
 
-  const handleStartLiveSession = async () => {
-    try {
-      const signingUrl = `/editor/${jobId}?mode=signing`;
-      
-      // Navigate based on device type
-      if (isMobileDevice()) {
-        // For mobile devices, navigate in the same tab
-        window.location.href = signingUrl;
-      } else {
-        // For desktop, open in new tab
-        window.open(signingUrl, '_blank');
-      }
-    } catch (error) {
-      console.error('Failed to start live session:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to start live signing session. Please try again.",
-      });
+  const handleStartLiveSession = () => {
+    // Navigate immediately for better user experience
+    const signingUrl = `/editor/${jobId}?mode=signing`;
+    
+    // Navigate based on device type
+    if (isMobileDevice()) {
+      // For mobile devices, navigate in the same tab
+      window.location.href = signingUrl;
+    } else {
+      // For desktop, open in new tab
+      window.open(signingUrl, '_blank');
     }
   };
 
@@ -200,11 +183,11 @@ export default function JobDetailsPage() {
             </div>
           </div>
           <div className="flex items-center space-x-3">
-            <Button onClick={handleStartTagging} variant="outline" className="border-blue-600 text-blue-600 hover:bg-blue-50">
+            <Button onClick={handleStartTagging} variant="outline" className="border-blue-600 text-blue-600 hover:bg-blue-50 transition-colors duration-150">
               <Edit3 className="h-4 w-4 mr-2" />
               Start Tagging
             </Button>
-            <Button onClick={handleStartLiveSession} className="bg-green-600 hover:bg-green-700">
+            <Button onClick={handleStartLiveSession} className="bg-green-600 hover:bg-green-700 transition-colors duration-150">
               <Video className="h-4 w-4 mr-2" />
               Start Live Session
             </Button>

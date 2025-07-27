@@ -23,7 +23,7 @@ export const authLimiter = rateLimit({
     res.status(429).json({
       error: 'Too many login attempts',
       message: 'Please try again later',
-      retryAfter: Math.round(req.rateLimit?.resetTime || 0)
+      retryAfter: 15 * 60
     });
   }
 });
@@ -45,6 +45,31 @@ export const apiLimiter = rateLimit({
   message: {
     error: 'Too many requests',
     message: 'Please slow down'
+  }
+});
+
+// OTP verification rate limiting
+export const otpLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 10, // 10 attempts per window per IP/email
+  message: {
+    error: 'Too many OTP attempts',
+    message: 'Please wait 5 minutes before trying again',
+    retryAfter: 5 * 60
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => {
+    return req.ip + ':' + (req.body?.email || 'unknown');
+  },
+  skipSuccessfulRequests: true,
+  handler: (req: Request, res: Response) => {
+    console.log(`OTP rate limit exceeded for ${req.ip} - ${req.body?.email}`);
+    res.status(429).json({
+      error: 'Too many OTP attempts',
+      message: 'Please wait before requesting another verification code',
+      retryAfter: 5 * 60
+    });
   }
 });
 

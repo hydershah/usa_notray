@@ -607,7 +607,7 @@ export default function Payments() {
                     <SelectValue placeholder="Select job" />
                   </SelectTrigger>
                   <SelectContent>
-                    {jobs.map((job: any) => (
+                    {Array.isArray(jobs) && jobs.map((job: any) => (
                       <SelectItem key={job.id} value={job.id.toString()}>
                         {job.titleCompany} - {job.propertyAddressOne}
                       </SelectItem>
@@ -714,7 +714,7 @@ export default function Payments() {
                     <SelectValue placeholder="Select job" />
                   </SelectTrigger>
                   <SelectContent>
-                    {jobs.map((job: any) => (
+                    {Array.isArray(jobs) && jobs.map((job: any) => (
                       <SelectItem key={job.id} value={job.id.toString()}>
                         {job.titleCompany} - {job.propertyAddressOne}
                       </SelectItem>

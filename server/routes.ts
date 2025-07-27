@@ -4,6 +4,9 @@ import { storage } from "./storage";
 import { db } from "./db";
 import { registerCompanyRoutes } from "./company-routes";
 import { registerUserManagementRoutes } from "./user-management-routes";
+import { registerClientRoutes } from "./client-registration-routes";
+import { registerNotaryRoutes } from "./notary-registration-routes";
+import { registerCompanyAuthRoutes } from "./company-auth-routes";
 import { registerNotaryProfileRoutes } from "./notary-profile-routes";
 import { registerApprovalWorkflowRoutes } from "./approval-workflow-routes";
 import { registerFeeRoutes } from "./fee-routes";
@@ -1432,11 +1435,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Job routes
-  app.get('/api/jobs', verifyToken, cacheUserData(180), async (req: any, res) => {
+  // Job routes with pagination
+  app.get('/api/jobs', verifyToken, async (req: any, res) => {
     try {
-      const jobs = await storage.getRoleBasedJobs(req.user.id, req.user.role);
-      res.json(jobs);
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 100;
+      
+      // Ensure reasonable limits
+      const safeLimit = Math.min(Math.max(limit, 10), 200); // Between 10-200
+      const safePage = Math.max(page, 1); // At least page 1
+      
+      const result = await storage.getRoleBasedJobs(req.user.id, req.user.role, safePage, safeLimit);
+      
+      // Add pagination metadata to response
+      const response = {
+        ...result,
+        currentPage: safePage,
+        pageSize: safeLimit,
+        totalPages: Math.ceil(result.totalCount / safeLimit)
+      };
+      
+      res.json(response);
     } catch (error) {
       console.error('Get jobs error:', error);
       res.status(500).json({ message: 'Internal server error' });
@@ -4629,27 +4648,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'You do not have permission to view this document.' });
       }
 
-      // VULTR ONLY - All documents are stored in Vultr cloud storage
+      // 🚀 ENTERPRISE OPTIMIZATION: Aggressive document preview caching
       const filePath = document.filePath;
+      const cacheKey = `doc_preview:${jobId}:${documentId}:v2`;
       
       try {
-        const { cloudStorage } = await import('./lib/cloud-storage-service');
+        // 💰 STEP 1: Check Redis cache first (1-5ms vs 2200ms!)
+        const { redisCache } = await import('./services/redis-cache');
+        const cachedPreview = await redisCache.get(cacheKey);
         
-        // Check if file exists in Vultr
-        const fileExists = await cloudStorage.fileExists(filePath);
-        if (!fileExists) {
-          return res.status(404).json({ message: 'File not found in cloud storage' });
+        if (cachedPreview && cachedPreview.signedUrl && cachedPreview.expires > Date.now()) {
+          console.log(`⚡ ENTERPRISE CACHE HIT: ${document.originalName} (${Date.now() - cachedPreview.timestamp}ms old)`);
+          
+          // INSTANT redirect - NO database/network calls needed!
+          res.setHeader('Content-Type', document.mimeType);
+          res.setHeader('Cache-Control', 'private, max-age=1800'); // 30 minute browser cache
+          res.setHeader('X-Cache', 'HIT-ENTERPRISE');
+          res.setHeader('X-Cache-Age', Math.floor((Date.now() - cachedPreview.timestamp) / 1000).toString());
+          
+          return res.redirect(302, cachedPreview.signedUrl);
         }
         
-        // Generate signed URL for preview (valid for 1 hour)
-        const signedUrl = await cloudStorage.getSignedUrl(filePath, 3600);
+        // 💥 STEP 2: Generate new signed URL (only when cache miss)
+        console.log(`🔍 CACHE MISS: Generating new signed URL for ${document.originalName}`);
         
-        // Set appropriate headers for inline viewing
+        const { cloudStorage } = await import('./lib/cloud-storage-service');
+        
+        // 🚀 OPTIMIZATION: Skip file existence check - saves 1 network call
+        // If file doesn't exist, Vultr signed URL will return 404 anyway
+        
+        // Generate signed URL for preview (valid for 2 hours for better caching)
+        const signedUrl = await cloudStorage.getSignedUrl(filePath, 7200);
+        
+        // 💾 STEP 3: Cache aggressively in Redis (30 minutes)
+        const cacheData = {
+          signedUrl,
+          mimeType: document.mimeType,
+          fileName: document.originalName,
+          timestamp: Date.now(),
+          expires: Date.now() + (30 * 60 * 1000), // 30 minutes
+          jobId,
+          documentId
+        };
+        
+        try {
+          await redisCache.set(cacheKey, cacheData, 1800); // 30 minutes
+          console.log(`💰 ENTERPRISE CACHE: Stored ${document.originalName} for 30min - Future requests will be <5ms!`);
+        } catch (cacheError) {
+          console.warn('Failed to cache document preview:', cacheError.message);
+        }
+        
+        // Set headers for inline viewing with aggressive caching
         res.setHeader('Content-Type', document.mimeType);
-        res.setHeader('Cache-Control', 'private, max-age=300'); // 5 minute cache
+        res.setHeader('Cache-Control', 'private, max-age=1800'); // 30 minute browser cache
+        res.setHeader('X-Cache', 'MISS-GENERATED');
+        res.setHeader('X-Vultr-URL-TTL', '7200'); // Vultr URL valid for 2 hours
         
         // Redirect to Vultr signed URL for inline viewing
-        console.log(`Redirecting to Vultr preview: ${document.originalName}`);
+        console.log(`🔗 NEW ENTERPRISE SIGNED URL: ${document.originalName} (cached for 30min)`);
         res.redirect(302, signedUrl);
         
       } catch (vultrError) {
@@ -5252,12 +5308,14 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       const defaultStartDate = new Date().toISOString().split('T')[0];
       const defaultEndDate = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
+      // 🔧 CRITICAL FIX: Only return available time slots, not booked ones
       const timeSlots = await db
         .select()
         .from(notaryTimeSlots)
         .where(
           and(
             eq(notaryTimeSlots.notaryId, notaryId),
+            eq(notaryTimeSlots.status, 'available'), // Only show available slots
             gte(notaryTimeSlots.date, (startDate as string) || defaultStartDate),
             lte(notaryTimeSlots.date, (endDate as string) || defaultEndDate)
           )
@@ -5364,6 +5422,18 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           jobId,
           isAllDay: false
         });
+
+      // 🔧 CRITICAL FIX: Invalidate calendar cache after booking slot
+      try {
+        const { redisCache } = await import('./services/redis-cache');
+        await redisCache.delPattern(`user:${slot[0].notaryId}:*calendar*`);
+        await redisCache.delPattern(`*calendar*`);
+        await redisCache.delPattern(`*notary-availability*`);
+        console.log(`🧹 Invalidated calendar cache for notary ${slot[0].notaryId} after booking slot ${slotId}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate calendar cache:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
 
       res.json({ success: true, message: 'Time slot booked successfully' });
     } catch (error) {
@@ -6267,6 +6337,11 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   // Register enhanced user management and company routes
   registerUserManagementRoutes(app);
   registerCompanyRoutes(app);
+  
+  // Register new specialized signup routes
+  registerClientRoutes(app);
+  registerNotaryRoutes(app);
+  registerCompanyAuthRoutes(app);
   registerTitleCompanyNotaryRoutes(app);
   registerApprovalWorkflowRoutes(app);
   registerNotaryProfileRoutes(app);
@@ -9514,31 +9589,33 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     try {
       const userId = req.user.id;
       
-      // For now, return empty array until notary log entries table has data
-      const logs: any[] = [];
-      
-      // TODO: Uncomment when notary_log_entries table has data
-      // const logs = await db
-      //   .select({
-      //     id: notaryLogEntries.id,
-      //     sessionId: notaryLogEntries.sessionId,
-      //     notaryId: notaryLogEntries.notaryId,
-      //     signerId: notaryLogEntries.signerId,
-      //     documentId: notaryLogEntries.documentId,
-      //     notarizationType: notaryLogEntries.notarizationType,
-      //     pageNumber: notaryLogEntries.pageNumber,
-      //     timestamp: notaryLogEntries.timestamp,
-      //     createdAt: notaryLogEntries.createdAt,
-      //   })
-      //   .from(notaryLogEntries)
-      //   .where(
-      //     or(
-      //       eq(notaryLogEntries.notaryId, userId), // User was the notary
-      //       eq(notaryLogEntries.signerId, userId)  // User was the signer
-      //     )
-      //   )
-      //   .orderBy(desc(notaryLogEntries.timestamp))
-      //   .limit(100);
+      const logs = await db
+        .select({
+          id: notaryLogEntries.id,
+          sessionId: notaryLogEntries.sessionId,
+          notaryId: notaryLogEntries.notaryId,
+          signerId: notaryLogEntries.signerId,
+          documentId: notaryLogEntries.documentId,
+          notarizationType: notaryLogEntries.notarizationType,
+          pageNumber: notaryLogEntries.pageNumber,
+          timestamp: notaryLogEntries.timestamp,
+          createdAt: notaryLogEntries.createdAt,
+          // Additional fields for better display
+          notaryName: sql<string>`(SELECT username FROM users WHERE id = ${notaryLogEntries.notaryId})`.as('notaryName'),
+          signerName: sql<string>`(SELECT username FROM users WHERE id = ${notaryLogEntries.signerId})`.as('signerName'),
+          documentName: sql<string>`(SELECT file_name FROM job_documents WHERE id = ${notaryLogEntries.documentId})`.as('documentName'),
+          jobTitle: sql<string>`(SELECT title_company FROM jobs WHERE id = (SELECT job_id FROM job_documents WHERE id = ${notaryLogEntries.documentId}))`.as('jobTitle'),
+          jobId: sql<number>`(SELECT job_id FROM job_documents WHERE id = ${notaryLogEntries.documentId})`.as('jobId'),
+        })
+        .from(notaryLogEntries)
+        .where(
+          or(
+            eq(notaryLogEntries.notaryId, userId), // User was the notary
+            eq(notaryLogEntries.signerId, userId)  // User was the signer
+          )
+        )
+        .orderBy(desc(notaryLogEntries.timestamp))
+        .limit(100);
 
       res.json(logs);
     } catch (error) {
@@ -9552,16 +9629,25 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     try {
       const userId = req.user.id;
       
-      // For now, return empty array until audit trail table has data
-      const auditEntries: any[] = [];
-      
-      // TODO: Uncomment when audit_trail table has data
-      // const auditEntries = await db
-      //   .select()
-      //   .from(auditTrail)
-      //   .where(eq(auditTrail.userId, userId))
-      //   .orderBy(desc(auditTrail.timestamp))
-      //   .limit(200);
+      const auditEntries = await db
+        .select({
+          id: auditTrail.id,
+          sessionId: auditTrail.sessionId,
+          userId: auditTrail.userId,
+          action: auditTrail.action,
+          details: auditTrail.details,
+          documentId: auditTrail.documentId,
+          pageNumber: auditTrail.pageNumber,
+          timestamp: auditTrail.timestamp,
+          // Additional fields for better display
+          userName: sql<string>`(SELECT username FROM users WHERE id = ${auditTrail.userId})`.as('userName'),
+          documentName: sql<string>`(SELECT file_name FROM job_documents WHERE id = ${auditTrail.documentId})`.as('documentName'),
+          jobTitle: sql<string>`(SELECT title_company FROM jobs WHERE id = (SELECT job_id FROM job_documents WHERE id = ${auditTrail.documentId}))`.as('jobTitle'),
+        })
+        .from(auditTrail)
+        .where(eq(auditTrail.userId, userId))
+        .orderBy(desc(auditTrail.timestamp))
+        .limit(200);
 
       res.json(auditEntries);
     } catch (error) {
@@ -9594,21 +9680,205 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     try {
       const userId = req.user.id;
       
-      // For now, return empty array until editor sessions table has data
-      const sessions: any[] = [];
-      
-      // TODO: Uncomment when editor_sessions table has data
-      // const sessions = await db
-      //   .select()
-      //   .from(editorSessions)
-      //   .where(eq(editorSessions.notaryId, userId))
-      //   .orderBy(desc(editorSessions.startedAt))
-      //   .limit(50);
+      const sessions = await db
+        .select({
+          id: editorSessions.id,
+          jobId: editorSessions.jobId,
+          notaryId: editorSessions.notaryId,
+          status: editorSessions.status,
+          startedAt: editorSessions.startedAt,
+          completedAt: editorSessions.completedAt,
+          createdAt: editorSessions.createdAt,
+          videoSessionId: editorSessions.videoSessionId,
+          // Additional fields for better display
+          jobTitle: sql<string>`(SELECT title_company FROM jobs WHERE id = ${editorSessions.jobId})`.as('jobTitle'),
+          titleCompany: sql<string>`(SELECT title_company FROM jobs WHERE id = ${editorSessions.jobId})`.as('titleCompany'),
+          notaryName: sql<string>`(SELECT username FROM users WHERE id = ${editorSessions.notaryId})`.as('notaryName'),
+          participantCount: sql<number>`(SELECT COUNT(*) FROM session_participants WHERE session_id = ${editorSessions.id})`.as('participantCount'),
+          documents: sql<string[]>`(SELECT ARRAY(SELECT file_name FROM job_documents WHERE job_id = ${editorSessions.jobId}))`.as('documents'),
+        })
+        .from(editorSessions)
+        .where(
+          or(
+            eq(editorSessions.notaryId, userId), // User was the notary
+            sql`${editorSessions.id} IN (SELECT session_id FROM session_participants WHERE user_id = ${userId})` // User was a participant
+          )
+        )
+        .orderBy(desc(editorSessions.startedAt))
+        .limit(50);
 
       res.json(sessions);
     } catch (error) {
       console.error('Error fetching user notarization sessions:', error);
       res.status(500).json({ error: 'Failed to fetch notarization sessions' });
+    }
+  });
+
+  // Create sample log data for testing (dev only)
+  app.post('/api/dev/create-sample-logs', verifyToken, async (req: any, res) => {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({ error: 'Not available in production' });
+    }
+
+    try {
+      const userId = req.user.id;
+
+      // Get existing data to work with
+      const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      const [job] = await db.select().from(jobs).limit(1);
+      const [document] = await db.select().from(jobDocuments).limit(1);
+      const [session] = await db.select().from(editorSessions).limit(1);
+
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      let finalJob = job;
+      let finalDocument = document;
+      let finalSession = session;
+
+      // Create basic job if none exists
+      if (!finalJob) {
+        const [newJob] = await db.insert(jobs).values({
+          titleCompany: 'Sample Title Company',
+          closingType: 'Purchase',
+          propertyAddressOne: '123 Main St',
+          propertyCity: 'Sample City',
+          propertyState: 'CA',
+          propertyZipCode: '12345',
+          userId: userId,
+          jobStatus: 'completed',
+          completedAt: new Date(),
+        }).returning();
+        finalJob = newJob;
+      }
+
+      // Create basic document if none exists
+      if (!finalDocument) {
+        const [newDocument] = await db.insert(jobDocuments).values({
+          jobId: finalJob.id,
+          fileName: 'sample-purchase-agreement.pdf',
+          filePath: '/uploads/sample-purchase-agreement.pdf',
+          fileSize: 1024000,
+          uploadedBy: userId,
+        }).returning();
+        finalDocument = newDocument;
+      }
+
+      // Create basic session if none exists
+      if (!finalSession) {
+        const [newSession] = await db.insert(editorSessions).values({
+          jobId: finalJob.id,
+          sessionId: 'sample-session-' + Date.now(),
+          notaryId: userId,
+          status: 'completed',
+          completedAt: new Date(),
+        }).returning();
+        finalSession = newSession;
+      }
+
+      // Create sample notary log entries
+      const sampleNotaryLogs = [
+        {
+          sessionId: finalSession.id,
+          notaryId: userId,
+          signerId: userId, // Same user for demo
+          documentId: finalDocument.id,
+          notarizationType: 'jurat',
+          pageNumber: 1,
+          timestamp: new Date(Date.now() - 3600000), // 1 hour ago
+        },
+        {
+          sessionId: finalSession.id,
+          notaryId: userId,
+          signerId: userId,
+          documentId: finalDocument.id,
+          notarizationType: 'acknowledgment',
+          pageNumber: 2,
+          timestamp: new Date(Date.now() - 1800000), // 30 minutes ago
+        },
+        {
+          sessionId: finalSession.id,
+          notaryId: userId,
+          signerId: userId,
+          documentId: finalDocument.id,
+          notarizationType: 'copy_certification',
+          pageNumber: 3,
+          timestamp: new Date(Date.now() - 900000), // 15 minutes ago
+        },
+      ];
+
+      await db.insert(notaryLogEntries).values(sampleNotaryLogs);
+
+      // Create sample audit trail entries
+      const sampleAuditEntries = [
+        {
+          sessionId: finalSession.id,
+          userId: userId,
+          action: 'session_started',
+          details: { message: 'Notarization session started' },
+          timestamp: new Date(Date.now() - 4200000), // 70 minutes ago
+        },
+        {
+          sessionId: finalSession.id,
+          userId: userId,
+          action: 'document_opened',
+          details: { documentName: finalDocument.fileName },
+          documentId: finalDocument.id,
+          timestamp: new Date(Date.now() - 3900000), // 65 minutes ago
+        },
+        {
+          sessionId: finalSession.id,
+          userId: userId,
+          action: 'signature_placed',
+          details: { pageNumber: 1, signatureType: 'digital' },
+          documentId: finalDocument.id,
+          pageNumber: 1,
+          timestamp: new Date(Date.now() - 3600000), // 60 minutes ago
+        },
+        {
+          sessionId: finalSession.id,
+          userId: userId,
+          action: 'seal_placed',
+          details: { pageNumber: 1, sealType: 'notary_seal' },
+          documentId: finalDocument.id,
+          pageNumber: 1,
+          timestamp: new Date(Date.now() - 3300000), // 55 minutes ago
+        },
+        {
+          sessionId: finalSession.id,
+          userId: userId,
+          action: 'document_saved',
+          details: { version: 'final', documentName: finalDocument.fileName },
+          documentId: finalDocument.id,
+          timestamp: new Date(Date.now() - 1200000), // 20 minutes ago
+        },
+        {
+          sessionId: finalSession.id,
+          userId: userId,
+          action: 'session_completed',
+          details: { duration: '45 minutes', documentsProcessed: 1 },
+          timestamp: new Date(Date.now() - 600000), // 10 minutes ago
+        },
+      ];
+
+      await db.insert(auditTrail).values(sampleAuditEntries);
+
+      res.json({ 
+        success: true, 
+        message: 'Sample log data created successfully',
+        data: {
+          notaryLogs: sampleNotaryLogs.length,
+          auditEntries: sampleAuditEntries.length,
+          sessionId: finalSession.id,
+          documentId: finalDocument.id,
+          jobId: finalJob.id
+        }
+      });
+
+    } catch (error) {
+      console.error('Error creating sample log data:', error);
+      res.status(500).json({ error: 'Failed to create sample log data' });
     }
   });
 

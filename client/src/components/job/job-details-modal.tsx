@@ -69,6 +69,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [completedDocuments, setCompletedDocuments] = useState<any[]>([]);
   const [loadingCompleted, setLoadingCompleted] = useState(false);
+  const [isStartingLiveSession, setIsStartingLiveSession] = useState(false);
   
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<{
@@ -516,7 +517,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                 <FileCheck className="h-5 w-5 text-primary" />
                 Job Details
               </DialogTitle>
-              <p className="text-sm text-gray-600 mt-1">
+              <p id="job-details-description" className="text-sm text-gray-600 mt-1">
                 Comprehensive view of job #{job.id} information
               </p>
             </div>
@@ -1256,66 +1257,75 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                   onClick={() => {
                     window.open(`/editor/${job.id}?mode=tagging`, '_blank');
                   }}
-                  className="bg-orange-50 text-orange-600 border-orange-300 hover:bg-orange-100"
+                  className="bg-orange-50 text-orange-600 border-orange-300 hover:bg-orange-100 transition-colors duration-150"
                 >
                   <Tag className="h-4 w-4 mr-2" />
                   Start Tagging
                 </Button>
                 <Button
                   onClick={async () => {
+                    if (isStartingLiveSession) return; // Prevent double clicks
+                    
+                    setIsStartingLiveSession(true);
+                    
                     try {
-                      // First, start the live signing session
-                      const response = await fetch(`/api/session/${job.sessionId || job.id}/start-signing`, {
+                      // Navigate immediately for better UX
+                      const signingUrl = `/editor/${job.id}?mode=signing&session=${job.sessionId || job.id}`;
+                      
+                      if (isMobileDevice()) {
+                        window.location.href = signingUrl;
+                      } else {
+                        window.open(signingUrl, '_blank');
+                      }
+
+                      // Start session in background (non-blocking)
+                      fetch(`/api/session/${job.sessionId || job.id}/start-signing`, {
                         method: 'POST',
                         headers: {
                           'Authorization': `Bearer ${localStorage.getItem('token')}`,
                           'Content-Type': 'application/json'
                         }
+                      }).then(async (response) => {
+                        if (response.ok) {
+                          const result = await response.json();
+                          console.log('✅ Live signing session started:', result);
+                          toast({
+                            title: "Live Signing Session Started",
+                            description: "Session is now active for signing",
+                          });
+                        } else {
+                          console.warn('Session start failed, but user already navigated');
+                        }
+                      }).catch((error) => {
+                        console.warn('Background session start failed:', error);
+                      }).finally(() => {
+                        setIsStartingLiveSession(false);
                       });
-
-                      if (!response.ok) {
-                        const errorData = await response.json();
-                        throw new Error(errorData.message || 'Failed to start live signing session');
-                      }
-
-                      const result = await response.json();
-                      console.log('✅ Live signing session started:', result);
-
-                      // **CRITICAL FIX**: Use the actual session ID returned from backend
-                      const actualSessionId = result.data?.actualSessionId || result.data?.sessionId || job.sessionId || job.id;
-                      
-                      console.log(`🔄 Navigating to live signing session: ${actualSessionId}`);
-
-                      // Show success toast
-                      toast({
-                        title: "Live Signing Session Started",
-                        description: "Session is now active for signing with existing tags preserved",
-                      });
-
-                      // Navigate to editor in signing mode with the correct session ID
-                      const signingUrl = `/editor/${job.id}?mode=signing&session=${actualSessionId}`;
-                      
-                      if (isMobileDevice()) {
-                        // For mobile devices, navigate in the same tab
-                        window.location.href = signingUrl;
-                      } else {
-                        // For desktop, open in new tab
-                        window.open(signingUrl, '_blank');
-                      }
 
                     } catch (error) {
-                      console.error('❌ Failed to start live signing session:', error);
+                      console.error('❌ Navigation failed:', error);
+                      setIsStartingLiveSession(false);
                       toast({
                         variant: "destructive",
-                        title: "Failed to Start Session",
-                        description: error instanceof Error ? error.message : "Unable to start live signing session. Please try again.",
+                        title: "Navigation Failed", 
+                        description: "Unable to open signing session. Please try again.",
                       });
                     }
                   }}
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  disabled={isStartingLiveSession}
+                  className="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
                 >
-                  <Video className="h-4 w-4 mr-2" />
-                  Start Live Signing
+                  {isStartingLiveSession ? (
+                    <>
+                      <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2" />
+                      Opening...
+                    </>
+                  ) : (
+                    <>
+                      <Video className="h-4 w-4 mr-2" />
+                      Start Live Signing
+                    </>
+                  )}
                 </Button>
               </>
             )}

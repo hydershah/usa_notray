@@ -536,6 +536,13 @@ export class LiveSigningSessionService {
       
       if (participantsData.length === 0) {
         console.log(`📭 No participants found for session ${sessionDbId}`);
+        // PERFORMANCE FIX: Aggressively cache empty results to prevent repeated slow queries
+        try {
+          await redisCache.set(cacheKey, [], 1800); // Cache empty result for 30 minutes
+          console.log(`💾 Cached empty participants for session ${sessionDbId} (30min TTL)`);
+        } catch (cacheError) {
+          console.warn('Failed to cache empty participants:', cacheError);
+        }
         return [];
       }
 

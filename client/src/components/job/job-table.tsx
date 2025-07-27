@@ -76,6 +76,16 @@ import {
 } from 'lucide-react';
 import { type Job } from '@shared/types';
 
+// Type for paginated response
+interface JobsResponse {
+  jobs: Job[];
+  totalCount: number;
+  hasMore: boolean;
+  currentPage: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 interface JobTableProps {
   onCreateJob: () => void;
 }
@@ -113,9 +123,12 @@ export function JobTable({ onCreateJob }: JobTableProps) {
     (currentUser.role === 'notary' && currentUser.notaryType === 'subscriber')
   );
 
-  const { data: jobs = [], isLoading } = useQuery<Job[]>({
+  const { data: jobsResponse, isLoading } = useQuery<JobsResponse>({
     queryKey: ['/api/jobs'],
   });
+  
+  // Extract jobs array from pagination response, with fallback to empty array
+  const jobs = jobsResponse?.jobs || [];
 
   // Enhanced filtering and sorting
   const filteredAndSortedJobs = useMemo(() => {
@@ -125,10 +138,10 @@ export function JobTable({ onCreateJob }: JobTableProps) {
       const matchesSearch = searchTerm === '' || 
         job.internalReference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         job.titleCompany?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.propertyAddressOne?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        job.propertyAddress?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         job.closingType?.toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesStatus = statusFilter === 'all' || job.jobStatus === statusFilter;
+      const matchesStatus = statusFilter === 'all' || job.status === statusFilter;
       const matchesCompany = companyFilter === 'all' || job.titleCompany === companyFilter;
       
       // Assignment status filter
@@ -139,13 +152,13 @@ export function JobTable({ onCreateJob }: JobTableProps) {
             matchesAssignment = !job.notaryId && !job.selectedNotary;
             break;
           case 'pending_approval':
-            matchesAssignment = job.notaryApprovalStatus === 'assigned_pending_approval';
+            matchesAssignment = job.approvalStatus === 'assigned_pending_approval';
             break;
-          case 'approved':
-            matchesAssignment = job.notaryApprovalStatus === 'approved';
-            break;
-          case 'rejected':
-            matchesAssignment = job.notaryApprovalStatus === 'rejected';
+                      case 'approved':
+              matchesAssignment = job.approvalStatus === 'approved';
+              break;
+            case 'rejected':
+              matchesAssignment = job.approvalStatus === 'rejected';
             break;
           case 'assigned':
             matchesAssignment = !!(job.notaryId || job.selectedNotary);
@@ -308,19 +321,26 @@ export function JobTable({ onCreateJob }: JobTableProps) {
     },
   });
 
-  const handleViewDetails = async (job: Job) => {
-    try {
-      const response = await apiRequest('GET', `/api/jobs/${job.id}`);
-      const jobDetails = await response.json();
-      setSelectedJob(jobDetails);
-      setIsModalOpen(true);
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message || "Failed to load job details.",
+  const handleViewDetails = (job: Job) => {
+    // Open modal immediately with existing job data for better UX
+    setSelectedJob(job);
+    setIsModalOpen(true);
+    
+    // Fetch detailed data in background and update
+    apiRequest('GET', `/api/jobs/${job.id}`)
+      .then(response => response.json())
+      .then(jobDetails => {
+        setSelectedJob(jobDetails);
+      })
+      .catch((error: any) => {
+        console.warn('Failed to load detailed job data:', error);
+        // Modal already open, just show warning without blocking
+        toast({
+          variant: "destructive",
+          title: "Warning",
+          description: "Some job details may be outdated. Refresh to see latest data.",
+        });
       });
-    }
   };
 
   const handleDownload = async (jobId: number, type: 'original' | 'notarized') => {
@@ -843,7 +863,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                         variant="outline"
                         size="sm"
                         onClick={() => handleViewDetails(job)}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-blue-50 hover:border-blue-300"
                       >
                         <Eye className="h-4 w-4 mr-2" />
                         Job Details
