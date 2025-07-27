@@ -277,7 +277,7 @@ const EditorPage: React.FC<EditorPageProps> = () => {
       
       // Navigate to job details with success indicator
       if (jobId) {
-        const targetUrl = `/job/${jobId}?completed=true`;
+        const targetUrl = `/jobs/${jobId}?completed=true`;
         console.log('🎯 Navigating to:', targetUrl);
         setLocation(targetUrl);
       } else {
