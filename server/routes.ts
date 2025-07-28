@@ -14,6 +14,7 @@ import { registerCertificateVerificationRoutes } from "./routes/certificate-veri
 import { registerFeeRoutes } from "./fee-routes";
 import { registerTitleCompanyNotaryRoutes } from "./title-company-notary-routes";
 import { registerAdminVerificationRoutes } from "./routes/admin-verification-routes";
+import { registerJobEditingRoutes } from "./routes/job-editing-routes";
 import adminLogsRoutes from "./routes/admin-logs-routes";
 import notaryVerificationRoutes from "./routes/notary-verification-routes";
 import notaryJobApprovalRoutes from "./routes/notary-job-approval-routes";
@@ -7690,18 +7691,29 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       const reportInfo = await JobCompletionReportService.getJobCompletionReport(jobId);
       
       if (!reportInfo.exists || !reportInfo.reportPath) {
-        return res.status(404).json({ message: 'Completion report not found' });
+        return res.status(404).json({ message: 'Completion report not found. Please generate the report first.' });
       }
 
-      // Check if file exists
+      // Check if file exists - handle both absolute and relative paths
       const fs = await import('fs/promises');
       const path = await import('path');
       
       try {
-        const fullPath = path.resolve(reportInfo.reportPath);
+        let fullPath: string;
+        
+        // If the stored path is already absolute, use it as-is
+        if (path.isAbsolute(reportInfo.reportPath)) {
+          fullPath = reportInfo.reportPath;
+        } else {
+          // If it's relative, resolve it from the current working directory
+          fullPath = path.resolve(reportInfo.reportPath);
+        }
+        
+        console.log(`📄 Attempting to access report file: ${fullPath}`);
         const fileStats = await fs.stat(fullPath);
         
         if (!fileStats.isFile()) {
+          console.error(`❌ Path exists but is not a file: ${fullPath}`);
           return res.status(404).json({ message: 'Report file not found' });
         }
 
@@ -7716,9 +7728,22 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         const fileBuffer = await fs.readFile(fullPath);
         res.send(fileBuffer);
         
+        console.log(`✅ Successfully served report file: ${fileName}`);
+        
       } catch (fileError) {
-        console.error('Error reading report file:', fileError);
-        return res.status(404).json({ message: 'Report file not accessible' });
+        console.error('Error accessing report file:', fileError);
+        
+        // If file doesn't exist, offer to regenerate it
+        if ((fileError as any)?.code === 'ENOENT') {
+          console.log(`📋 Report file not found for job ${jobId}, suggesting regeneration`);
+          return res.status(404).json({ 
+            message: 'Report file not found. The report may need to be regenerated.',
+            suggestion: 'Try generating a new completion report.',
+            canRegenerate: true
+          });
+        }
+        
+        return res.status(500).json({ message: 'Report file not accessible' });
       }
       
     } catch (error) {
@@ -8457,6 +8482,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   registerDigitalSignatureRoutes(app);
   registerCertificateVerificationRoutes(app);
   registerNotaryProfileRoutes(app);
+  registerJobEditingRoutes(app);
   registerFeeRoutes(app);
   registerAdminVerificationRoutes(app);
   

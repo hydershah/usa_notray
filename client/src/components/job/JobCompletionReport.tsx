@@ -114,7 +114,21 @@ export function JobCompletionReport({ jobId, jobStatus }: JobCompletionReportPro
         toast.success('Report downloaded successfully');
       } else {
         const errorData = await response.json();
-        toast.error(errorData.message || 'Failed to download report');
+        
+        // If the report file is missing and can be regenerated, offer to do so
+        if (response.status === 404 && errorData.canRegenerate) {
+          toast.error(
+            errorData.message || 'Report file not found', 
+            {
+              action: {
+                label: 'Generate Report',
+                onClick: () => generateReport()
+              }
+            }
+          );
+        } else {
+          toast.error(errorData.message || 'Failed to download report');
+        }
       }
     } catch (error) {
       console.error('Error downloading report:', error);
@@ -158,12 +172,6 @@ export function JobCompletionReport({ jobId, jobStatus }: JobCompletionReportPro
         <CardTitle className="flex items-center gap-2">
           <FileText className="h-5 w-5" />
           Completion Report
-          {hasReport && (
-            <Badge variant="outline" className="ml-auto">
-              <CheckCircle className="h-3 w-3 mr-1" />
-              Available
-            </Badge>
-          )}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -184,32 +192,6 @@ export function JobCompletionReport({ jobId, jobStatus }: JobCompletionReportPro
                 Generated: {new Date(reportInfo.generatedAt).toLocaleString()}
               </div>
             )}
-
-            <Separator />
-
-            <div className="space-y-3">
-              <h4 className="font-medium">Report Contents</h4>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <Users className="h-4 w-4 text-blue-500" />
-                  <span>Participant Information</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <FileCheck className="h-4 w-4 text-green-500" />
-                  <span>Document Details</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Signature className="h-4 w-4 text-purple-500" />
-                  <span>Signature Summary</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-orange-500" />
-                  <span>Session Timeline</span>
-                </div>
-              </div>
-            </div>
-
-            <Separator />
 
             <div className="flex gap-2">
               <Button

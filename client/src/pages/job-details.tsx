@@ -33,12 +33,15 @@ import { JobCompletionReport } from '@/components/job/JobCompletionReport';
 import { NotaryAssignmentCard } from '@/components/job/NotaryAssignmentCard';
 import { SessionRecordingCard } from '@/components/job/SessionRecordingCard';
 import { ActivityTimelineCard } from '@/components/job/ActivityTimelineCard';
+import { JobEditor } from '@/components/job/JobEditor';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 
 export default function JobDetailsPage() {
   const [, params] = useRoute('/jobs/:id');
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const jobId = params?.id ? parseInt(params.id) : null;
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   // Debug jobId
   useEffect(() => {
@@ -322,6 +325,15 @@ export default function JobDetailsPage() {
             </div>
           </div>
           <div className="flex items-center space-x-3">
+            <Button 
+              onClick={() => setIsEditModalOpen(true)}
+              variant="outline"
+              className="border-orange-600 text-orange-600 hover:bg-orange-50"
+              title="Edit job details, signers, and documents"
+            >
+              <Edit3 className="h-4 w-4 mr-2" />
+              Edit Job
+            </Button>
             <Button 
               onClick={handleStartTagging} 
               variant="outline" 
@@ -677,6 +689,16 @@ export default function JobDetailsPage() {
           <ActivityTimelineCard jobId={job.id} />
         </div>
       </div>
+
+      {/* Job Editor Modal */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden">
+          <JobEditor 
+            jobId={job.id}
+            onClose={() => setIsEditModalOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 } 
