@@ -523,7 +523,11 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
       
       if (response.ok) {
         const documents = await response.json();
-        setJobDocuments(documents);
+        // Filter to show only original documents (not signed ones) in the Documents section
+        const originalDocuments = documents.filter((doc: any) => 
+          doc.status !== 'signed' && doc.documentType === 'original'
+        );
+        setJobDocuments(originalDocuments);
       } else {
         console.warn('Failed to load job documents');
         setJobDocuments([]);

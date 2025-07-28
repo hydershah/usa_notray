@@ -24,7 +24,8 @@ import {
   Clock,
   CheckCircle,
   Edit3,
-  Shield
+  Shield,
+  FileCheck
 } from 'lucide-react';
 import { getStatusColor, formatDate, isMobileDevice } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -67,6 +68,28 @@ export default function JobDetailsPage() {
       if (!jobId) return [];
       
       const response = await fetch(`/api/jobs/${jobId}/documents`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!response.ok) return [];
+      const allDocuments = await response.json();
+      
+      // Filter to show only original documents (not signed ones) in the Documents section
+      return allDocuments.filter((doc: any) => 
+        doc.status !== 'signed' && doc.documentType === 'original'
+      );
+    },
+    enabled: !!jobId
+  });
+
+  const { data: completedDocuments = [] } = useQuery({
+    queryKey: ['job-completed-documents', jobId],
+    queryFn: async () => {
+      if (!jobId) return [];
+      
+      const response = await fetch(`/api/jobs/${jobId}/document-versions`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -578,6 +601,65 @@ export default function JobDetailsPage() {
               <div className="text-center py-8 text-gray-500">
                 <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p className="mb-2">No documents uploaded yet</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Completed Documents */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <FileCheck className="h-5 w-5 mr-2 text-green-600" />
+              Completed Documents ({completedDocuments.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {completedDocuments.length > 0 ? (
+              <div className="space-y-3">
+                {completedDocuments.map((document: any) => (
+                  <div key={document.id} className="flex items-center justify-between p-3 border border-green-200 bg-green-50 rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <FileCheck className="h-8 w-8 text-green-600" />
+                      <div>
+                        <p className="font-medium text-green-900">{document.fileName || `job_${jobId}_signed.pdf`}</p>
+                        <p className="text-sm text-green-700">
+                          Completed: {formatDate(document.completedAt || document.createdAt)}
+                        </p>
+                        {document.fileSize && (
+                          <p className="text-xs text-green-600">
+                            Size: {(document.fileSize / 1024 / 1024).toFixed(2)} MB
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Badge className="bg-green-100 text-green-800 border-green-200">
+                        <CheckCircle className="h-3 w-3 mr-1" />
+                        Signed & Completed
+                      </Badge>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          // Download signed document
+                          const downloadUrl = `/api/documents/signed/${encodeURIComponent(document.fileName)}`;
+                          window.open(downloadUrl, '_blank');
+                        }}
+                        title="Download signed document"
+                        className="text-green-700 border-green-300 hover:bg-green-100"
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <FileCheck className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p className="mb-2">No completed documents yet</p>
+                <p className="text-sm">Documents will appear here after signing sessions</p>
               </div>
             )}
           </CardContent>

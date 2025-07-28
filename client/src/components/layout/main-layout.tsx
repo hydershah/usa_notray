@@ -59,7 +59,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30">
       <Header />
       <NotificationBar />
-      <div className="flex h-[calc(100vh-8rem)]">
+      <div className="flex min-h-[calc(100vh-8rem)]">
         {/* Mobile sidebar backdrop */}
         {sidebarOpen && (
           <div 
@@ -77,7 +77,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
         
         {/* Main content */}
-        <main className="flex-1 overflow-y-auto relative">
+        <main className="flex-1 relative flex flex-col">
           {/* Background Pattern */}
           <div className="absolute inset-0 opacity-50">
             <div className="absolute inset-0 bg-gradient-to-br from-blue-50/50 via-transparent to-purple-50/50"></div>
@@ -86,7 +86,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             <div className="absolute bottom-1/4 left-1/3 w-96 h-96 bg-indigo-100/30 rounded-full mix-blend-multiply filter blur-xl animate-pulse" style={{ animationDelay: '4s' }}></div>
           </div>
           
-          <div className="relative z-10 p-2 sm:p-4 lg:p-6 max-w-7xl mx-auto">
+          <div className="relative z-10 p-2 sm:p-4 lg:p-6 max-w-7xl mx-auto flex-1 flex flex-col w-full">
             {/* Top Bar with Mobile Menu + Breadcrumbs */}
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-4">
@@ -123,21 +123,10 @@ export function MainLayout({ children }: MainLayoutProps) {
                   </nav>
                 )}
               </div>
-              
-              {/* Quick Actions */}
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="hidden sm:flex bg-white/80 backdrop-blur-sm hover:bg-white hover:shadow-md transition-all duration-200"
-                >
-                  Quick Actions
-                </Button>
-              </div>
             </div>
             
             {/* Page content */}
-            <div className="animate-in fade-in-50 slide-in-from-bottom-4 duration-700">
+            <div className="animate-in fade-in-50 slide-in-from-bottom-4 duration-700 flex-1">
               {children}
             </div>
           </div>

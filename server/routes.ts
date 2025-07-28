@@ -6117,32 +6117,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // First get all documents for this job
-      const jobDocumentsList = await db
+      // Get signed documents directly from jobDocuments table
+      const signedDocuments = await db
         .select()
         .from(jobDocuments)
-        .where(eq(jobDocuments.jobId, jobId));
-      
-      // Get document versions for these documents
-      const documentIds = jobDocumentsList.map(doc => doc.id);
-      let versions: any[] = [];
-      
-      if (documentIds.length > 0) {
-        // Use inArray to get versions for all document IDs at once
-        versions = await db
-          .select()
-          .from(documentVersions)
-          .where(inArray(documentVersions.originalDocumentId, documentIds))
-          .orderBy(desc(documentVersions.createdAt));
-      }
+        .where(and(
+          eq(jobDocuments.jobId, jobId),
+          eq(jobDocuments.documentType, 'signed_document')
+        ))
+        .orderBy(desc(jobDocuments.createdAt));
 
-      // Add download URLs to each version
-      const versionsWithUrls = versions.map(version => ({
-        ...version,
-        downloadUrl: `/api/documents/signed/${encodeURIComponent(version.fileName)}`
+      // Add download URLs to each signed document
+      const documentsWithUrls = signedDocuments.map(doc => ({
+        id: doc.id,
+        fileName: doc.fileName,
+        originalName: doc.originalName,
+        fileSize: doc.fileSize,
+        status: 'completed',
+        digitalCertificateApplied: false, // TODO: Track this properly
+        createdAt: doc.createdAt,
+        completedAt: doc.createdAt, // For signed docs, created = completed
+        downloadUrl: `/api/documents/signed/${encodeURIComponent(doc.fileName)}`
       }));
 
-      res.json(versionsWithUrls);
+      res.json(documentsWithUrls);
     } catch (error) {
       console.error('Get document versions error:', error);
       res.status(500).json({ message: 'Internal server error' });
