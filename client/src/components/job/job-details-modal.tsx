@@ -581,11 +581,11 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
           <div className="flex items-center justify-between">
             <div>
               <DialogTitle className="text-xl font-semibold flex items-center gap-2">
-                <FileCheck className="h-5 w-5 text-primary" />
-                Job Details
+                <Eye className="h-5 w-5 text-primary" />
+                Quick View
               </DialogTitle>
               <p id="job-details-description" className="text-sm text-gray-600 mt-1">
-                Comprehensive view of job #{job.id} information
+                Quick overview of job #{job.id} information
               </p>
             </div>
             <Badge className={cn("px-3 py-1 border", getStatusColor(job.jobStatus))}>

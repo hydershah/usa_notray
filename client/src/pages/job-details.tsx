@@ -521,55 +521,7 @@ export default function JobDetailsPage() {
           />
         )}
 
-        {/* Debug Panel for Certificate Verification (remove in production) */}
-        <Card className="border-purple-300 bg-purple-50">
-          <CardContent className="pt-6">
-            <div className="text-purple-800">
-              <p>🐛 <strong>DEBUG - Certificate Verification Status:</strong></p>
-              <div className="text-sm space-y-1 mt-2">
-                <p>JobId: {jobId || 'null'}</p>
-                <p>Query Enabled: {!!jobId ? 'YES' : 'NO'}</p>
-                <p>Loading: {isLoadingCertificates ? 'YES' : 'NO'}</p>
-                <p>Has Data: {certificateVerification ? 'YES' : 'NO'}</p>
-                <p>Has Error: {certificateError ? 'YES' : 'NO'}</p>
-                {certificateError && <p>Error: {certificateError.message}</p>}
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => {
-                    console.log('🔄 Manual certificate verification refresh triggered');
-                    refetchCertificates();
-                  }}
-                  className="mt-2"
-                >
-                  Test Certificate API
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={async () => {
-                    console.log('🧪 Direct API test starting...');
-                    try {
-                      const response = await fetch(`/api/certificate-verification/job/${jobId}`, {
-                        headers: {
-                          'Authorization': `Bearer ${localStorage.getItem('token')}`
-                        }
-                      });
-                      console.log('🧪 Direct API test response:', response.status, response.statusText);
-                      const data = await response.json();
-                      console.log('🧪 Direct API test data:', data);
-                    } catch (error) {
-                      console.error('🧪 Direct API test error:', error);
-                    }
-                  }}
-                  className="mt-2 ml-2"
-                >
-                  Direct API Test
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+
 
         {/* Documents */}
         <Card>

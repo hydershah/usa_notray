@@ -14,6 +14,8 @@ export interface ProcessedDocument {
   pageCount: number;
   digitalSignatures?: SignatureInfo[];
   isDigitallySigned?: boolean;
+  originalDocumentId?: string;
+  originalFileName?: string;
 }
 
 export interface SignatureInfo {
@@ -48,76 +50,31 @@ export class PDFProcessorService {
     return PDFProcessorService.instance;
   }
 
-  /**
+    /**
    * Process completed tagging session and generate final PDF with tags applied
    */
-  async processCompletedDocument(sessionId: string): Promise<ProcessedDocument> {
+  async processCompletedDocument(sessionId: string): Promise<ProcessedDocument[]> {
     try {
       console.log(`🔄 Processing completed document for session: ${sessionId}`);
 
-      // Get all tags for this session
-      const tags = await this.getSessionTags(sessionId);
-      console.log(`📌 Found ${tags.length} tags to apply`);
-
-      if (tags.length === 0) {
-        throw new Error('No tags found for session');
-      }
-
-      // Get original document and session info
-      const originalDocument = await this.getOriginalDocument(sessionId);
+      // Get session info first
       const sessionInfo = await this.getSessionInfo(sessionId);
-      console.log(`📄 Original document: ${originalDocument.fileName}`);
-
-      // Load PDF
-      const pdfBuffer = await this.loadDocumentBuffer(originalDocument.filePath);
-      const pdfDoc = await PDFDocument.load(pdfBuffer);
-      
-      // Apply tags to PDF
-      await this.applyTagsToPDF(pdfDoc, tags);
-      
-      // Generate PDF with visual content applied
-      const visuallyCompletePdfBuffer = await pdfDoc.save();
-      const visualBuffer = Buffer.from(visuallyCompletePdfBuffer);
-
-      console.log(`✅ Generated visually complete PDF: ${visualBuffer.length} bytes`);
-
-      // Apply digital signatures to the completed PDF
-      let finalBuffer = visualBuffer;
-      let digitalSignatures: SignatureInfo[] = [];
-      let isDigitallySigned = false;
-
-      if (sessionInfo?.jobId) {
-        console.log(`🔐 Applying digital signatures for job ${sessionInfo.jobId}`);
-        
-        const digitalSignatureService = DigitalSignatureService.getInstance();
-        const signatureResult = await digitalSignatureService.signCompletedDocument(
-          visualBuffer,
-          sessionInfo.jobId,
-          sessionId
-        );
-
-        if (signatureResult.success && signatureResult.signedPdfBuffer) {
-          finalBuffer = signatureResult.signedPdfBuffer;
-          digitalSignatures = signatureResult.signatures || [];
-          isDigitallySigned = true;
-          
-          console.log(`✅ Digital signatures applied: ${digitalSignatures.length} signatures`);
-        } else {
-          console.warn(`⚠️ Digital signature application failed: ${signatureResult.error}`);
-          console.log('📄 Proceeding with visually complete PDF without digital signatures');
-        }
-      } else {
-        console.warn('⚠️ No job ID found for session, skipping digital signatures');
+      if (!sessionInfo) {
+        throw new Error('Session not found');
       }
 
-      return {
-        buffer: finalBuffer,
-        fileName: `completed_${originalDocument.fileName}`,
-        fileSize: finalBuffer.length,
-        pageCount: pdfDoc.getPageCount(),
-        digitalSignatures,
-        isDigitallySigned
-      };
+      // Get all documents for this session's job
+      const documents = await this.getAllSessionDocuments(sessionInfo.jobId);
+      console.log(`📄 Found ${documents.length} documents to process`);
+
+      if (documents.length === 0) {
+        throw new Error('No documents found for session');
+      }
+
+      // Process each document separately to maintain individual signed documents
+      const processedDocuments = await this.processDocumentsSeparately(sessionId, documents, sessionInfo);
+      
+      return processedDocuments;
 
     } catch (error) {
       console.error('❌ Failed to process completed document:', error);
@@ -532,8 +489,8 @@ export class PDFProcessorService {
         } catch (jpgError) {
           // Try as WEBP (if supported in future)
           console.error('Failed to embed image as PNG or JPG:', { 
-            pngError: pngError.message, 
-            jpgError: jpgError.message,
+                        pngError: (pngError as Error).message,
+            jpgError: (jpgError as Error).message,
             bufferSize: imageBytes.length,
             first20Bytes: Array.from(imageBytes.slice(0, 20)).map(b => b.toString(16)).join(' ')
           });
@@ -813,6 +770,222 @@ export class PDFProcessorService {
       
     } catch (error) {
       console.error('❌ Failed to load document buffer:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all documents for a session's job
+   */
+  private async getAllSessionDocuments(jobId: number): Promise<any[]> {
+    try {
+      const documents = await db
+        .select()
+        .from(jobDocuments)
+        .where(eq(jobDocuments.jobId, jobId))
+        .orderBy(jobDocuments.createdAt);
+
+      return documents;
+    } catch (error) {
+      console.error('Failed to get session documents:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process and merge multiple documents with their respective tags
+   */
+  private async processAndMergeDocuments(sessionId: string, documents: any[]): Promise<PDFDocument> {
+    try {
+      const mergedDoc = await PDFDocument.create();
+      
+      // Get all tags for this session with document IDs
+      const allTags = await this.getSessionTagsWithDocumentId(sessionId);
+      
+      // Group tags by document ID
+      const tagsByDocument = new Map<number, TagPosition[]>();
+      for (const tag of allTags) {
+        const documentTags = tagsByDocument.get(tag.documentId) || [];
+        documentTags.push(tag);
+        tagsByDocument.set(tag.documentId, documentTags);
+      }
+
+      let totalPageOffset = 0;
+      const allAdjustedTags: TagPosition[] = [];
+      
+      // First pass: merge all documents and collect adjusted tags
+      for (const document of documents) {
+        const documentTags = tagsByDocument.get(document.id) || [];
+        console.log(`📄 Processing document ${document.fileName} with ${documentTags.length} tags`);
+        
+        // Load the document
+        const pdfBuffer = await this.loadDocumentBuffer(document.filePath);
+        const pdfDoc = await PDFDocument.load(pdfBuffer);
+        
+        // Adjust tag page numbers for merged document
+        const adjustedTags = documentTags.map(tag => ({
+          ...tag,
+          pageNumber: tag.pageNumber + totalPageOffset
+        }));
+        
+        // Collect all adjusted tags for final application
+        allAdjustedTags.push(...adjustedTags);
+        
+        // Copy pages to merged document
+        const pages = await mergedDoc.copyPages(pdfDoc, pdfDoc.getPageIndices());
+        pages.forEach(page => mergedDoc.addPage(page));
+        
+        totalPageOffset += pdfDoc.getPageCount();
+      }
+      
+      // Second pass: apply all tags to the merged document
+      if (allAdjustedTags.length > 0) {
+        console.log(`📝 Applying ${allAdjustedTags.length} tags to merged document with ${mergedDoc.getPageCount()} pages`);
+        await this.applyTagsToPDF(mergedDoc, allAdjustedTags);
+      }
+      
+      return mergedDoc;
+    } catch (error) {
+      console.error('❌ Failed to process and merge documents:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process each document separately to create individual signed documents
+   */
+  private async processDocumentsSeparately(
+    sessionId: string, 
+    documents: any[], 
+    sessionInfo: any
+  ): Promise<ProcessedDocument[]> {
+    const processedDocs: ProcessedDocument[] = [];
+    
+    // Get all tags for this session and group by document
+    const allTags = await this.getSessionTagsWithDocumentId(sessionId);
+    const tagsByDocument = new Map<number, (TagPosition & { documentId: number })[]>();
+    
+    // Group tags by document ID
+    for (const tag of allTags) {
+      const documentTags = tagsByDocument.get(tag.documentId) || [];
+      documentTags.push(tag);
+      tagsByDocument.set(tag.documentId, documentTags);
+    }
+    
+    console.log(`📄 Processing ${documents.length} documents separately`);
+    
+    for (const document of documents) {
+      const documentTags = tagsByDocument.get(document.id) || [];
+      console.log(`📄 Processing document ${document.fileName} with ${documentTags.length} tags`);
+      
+      if (documentTags.length === 0) {
+        console.log(`⚠️ No tags found for document ${document.fileName}, skipping`);
+        continue;
+      }
+      
+      try {
+        // Load the document
+        const pdfBuffer = await this.loadDocumentBuffer(document.filePath);
+        const pdfDoc = await PDFDocument.load(pdfBuffer);
+        
+        // Apply tags to this document
+        await this.applyTagsToPDF(pdfDoc, documentTags);
+        
+        // Generate PDF with visual content applied
+        const visuallyCompletePdfBuffer = await pdfDoc.save();
+        const visualBuffer = Buffer.from(visuallyCompletePdfBuffer);
+        
+        console.log(`✅ Generated signed PDF for ${document.fileName}: ${visualBuffer.length} bytes`);
+        
+        // Apply digital signatures to this document
+        let finalBuffer = visualBuffer;
+        let digitalSignatures: SignatureInfo[] = [];
+        let isDigitallySigned = false;
+        
+        if (sessionInfo?.jobId) {
+          console.log(`🔐 Applying digital signatures for ${document.fileName}`);
+          
+          const digitalSignatureService = DigitalSignatureService.getInstance();
+          const signatureResult = await digitalSignatureService.signCompletedDocument(
+            visualBuffer,
+            sessionInfo.jobId,
+            sessionId
+          );
+          
+          if (signatureResult.success && signatureResult.signedPdfBuffer) {
+            finalBuffer = signatureResult.signedPdfBuffer;
+            digitalSignatures = signatureResult.signatures || [];
+            isDigitallySigned = true;
+            
+            console.log(`✅ Digital signatures applied to ${document.fileName}: ${digitalSignatures.length} signatures`);
+          } else {
+            console.warn(`⚠️ Digital signature application failed for ${document.fileName}: ${signatureResult.error}`);
+          }
+        }
+        
+        // Create processed document
+        const processedDoc: ProcessedDocument = {
+          buffer: finalBuffer,
+          fileName: `${document.fileName.replace('.pdf', '')}_signed_${Date.now()}.pdf`,
+          fileSize: finalBuffer.length,
+          pageCount: pdfDoc.getPageCount(),
+          digitalSignatures,
+          isDigitallySigned,
+          originalDocumentId: document.id,
+          originalFileName: document.fileName
+        };
+        
+        processedDocs.push(processedDoc);
+        
+      } catch (error) {
+        console.error(`❌ Failed to process document ${document.fileName}:`, error);
+        // Continue with other documents instead of failing completely
+      }
+    }
+    
+    console.log(`✅ Successfully processed ${processedDocs.length} individual documents`);
+    return processedDocs;
+  }
+
+  /**
+   * Get session tags with document IDs included
+   */
+  private async getSessionTagsWithDocumentId(sessionId: string): Promise<(TagPosition & { documentId: number })[]> {
+    try {
+      const { editorSessions } = await import('../../shared/schema');
+      
+      // First get the session to get the actual session ID
+      const [session] = await db
+        .select()
+        .from(editorSessions)
+        .where(eq(editorSessions.sessionId, sessionId))
+        .limit(1);
+        
+      if (!session) {
+        throw new Error('Session not found');
+      }
+      
+      const tags = await db
+        .select()
+        .from(documentTags)
+        .where(eq(documentTags.sessionId, session.id));
+
+      return tags.map(tag => ({
+        x: tag.xPosition,
+        y: tag.yPosition,
+        width: tag.width,
+        height: tag.height,
+        pageNumber: tag.pageNumber,
+        content: tag.content || undefined,
+        contentData: tag.contentData || undefined,
+        contentType: tag.contentType || undefined,
+        tagType: tag.tagType,
+        isCompleted: tag.isCompleted || false,
+        documentId: tag.documentId
+      }));
+      
+    } catch (error) {
+      console.error('Failed to get session tags with document ID:', error);
       throw error;
     }
   }

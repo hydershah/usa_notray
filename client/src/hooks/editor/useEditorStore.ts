@@ -69,6 +69,7 @@ interface EditorStore {
   setSession: (session: EditorSession | null) => void;
   setDocuments: (documents: SessionDocument[]) => void;
   setCurrentDocument: (document: SessionDocument | null) => void;
+  switchToDocument: (document: SessionDocument) => void;
   setMode: (mode: EditorMode) => void;
   
   // Actions - User Management
@@ -85,6 +86,11 @@ interface EditorStore {
   selectTag: (tag: DocumentTag | null) => void;
   setSelectedTagType: (tagType: TagType | null) => void;
   setDraggedTag: (tag: DocumentTag | null) => void;
+  
+  // Document-specific tag management
+  getCurrentDocumentTags: () => DocumentTag[];
+  getDocumentTags: (documentId: string) => DocumentTag[];
+  loadTagsForDocument: (documentId: string) => Promise<void>;
   
   // Actions - Whiteout Overlay Management
   setWhiteoutOverlays: (overlays: Array<any>) => void;
@@ -193,6 +199,23 @@ export const useEditorStore = create<EditorStore>()(
           }
         })),
       
+      switchToDocument: (document) => {
+        console.log(`🔄 Switching to document: ${document.fileName} (ID: ${document.id})`);
+        set((state) => ({
+          currentDocument: document,
+          viewer: {
+            ...state.viewer,
+            documentId: document.id,
+            currentPage: 1,
+            scrollTop: 0,
+            zoomLevel: state.viewer.zoomLevel // Preserve zoom level
+          },
+          // Clear selected tag when switching documents
+          selectedTag: null,
+          selectedTagType: null
+        }));
+      },
+      
       setMode: (mode) => set({ mode }),
       
       // User Management Actions
@@ -276,6 +299,56 @@ export const useEditorStore = create<EditorStore>()(
       setSelectedTagType: (tagType) => set({ selectedTagType: tagType }),
       
       setDraggedTag: (tag) => set({ draggedTag: tag }),
+      
+      // Document-specific tag management
+      getCurrentDocumentTags: () => {
+        const { tags, currentDocument } = get();
+        if (!currentDocument) return [];
+        return tags.filter(tag => tag.documentId === currentDocument.id);
+      },
+      
+      getDocumentTags: (documentId: string) => {
+        const { tags } = get();
+        return tags.filter(tag => tag.documentId === documentId);
+      },
+      
+      loadTagsForDocument: async (documentId: string) => {
+        const { session } = get();
+        if (!session) {
+          console.warn('Cannot load tags: No active session');
+          return;
+        }
+        
+        try {
+          console.log(`🏷️ Loading tags for document ${documentId}...`);
+          const response = await fetch(`/api/editor/session/${session.id}/tags?documentId=${documentId}&t=${Date.now()}`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`,
+              'Cache-Control': 'no-cache'
+            }
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Failed to load document tags: ${response.status}`);
+          }
+          
+          const { tags: documentTags } = await response.json();
+          
+          // Update only tags for this specific document
+          set(state => ({
+            tags: [
+              ...state.tags.filter(tag => tag.documentId !== documentId), // Remove old tags for this document
+              ...documentTags // Add fresh tags for this document
+            ]
+          }));
+          
+          console.log(`✅ Loaded ${documentTags.length} tags for document ${documentId}`);
+          
+        } catch (error) {
+          console.error(`❌ Failed to load tags for document ${documentId}:`, error);
+          throw error;
+        }
+      },
       
       // Whiteout Overlay Management Actions
       setWhiteoutOverlays: (overlays) => set({ whiteoutOverlays: overlays }),

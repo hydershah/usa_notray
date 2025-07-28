@@ -901,13 +901,21 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                       </div>
                     </div>
 
-                    <div className="pt-2 border-t border-gray-100">
+                    <div className="pt-2 border-t border-gray-100 space-y-2">
                       <Button
                         onClick={() => handleViewDetails(job)}
-                        className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                        variant="outline"
+                        className="w-full hover:bg-blue-50 hover:text-blue-600 transition-colors"
                       >
                         <Eye className="w-4 h-4 mr-2" />
-                        View Details
+                        Quick View
+                      </Button>
+                      <Button
+                        onClick={() => window.open(`/jobs/${job.id}`, '_blank')}
+                        className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                      >
+                        <ExternalLink className="w-4 h-4 mr-2" />
+                        Job View
                       </Button>
                     </div>
                   </CardContent>
@@ -1067,15 +1075,26 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                         </div>
                       </TableCell>
                       <TableCell className="py-4">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleViewDetails(job)}
-                          className="hover:bg-blue-50 hover:text-blue-600 transition-colors"
-                        >
-                          <Eye className="h-4 w-4 mr-2" />
-                          Job Details
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleViewDetails(job)}
+                            className="hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                          >
+                            <Eye className="h-4 w-4 mr-2" />
+                            Quick View
+                          </Button>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => window.open(`/jobs/${job.id}`, '_blank')}
+                            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                          >
+                            <ExternalLink className="h-4 w-4 mr-2" />
+                            Job View
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

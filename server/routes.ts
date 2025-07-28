@@ -2125,107 +2125,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`✅ Created ${signers.length} signers in batch (${newUsers.length} new users, ${signers.length - newUsers.length} existing)`);
       }
 
-      // SEND SIGNER INVITATIONS FOR AUTO-APPROVED JOBS (after signers are created)
+      // 🚀 BACKGROUND: Queue signer invitations for auto-approved jobs (non-blocking!)
       const updatedJob = await storage.getJob(job.id);
       if (updatedJob && updatedJob.notaryApprovalStatus === 'approved' && req.body.signers) {
-        try {
-          console.log(`📧 Sending invitations for auto-approved job ${job.id}`);
-          
-          // Get the signers we just created
-          const jobSigners = await db
-            .select()
-            .from(signers)
-            .where(eq(signers.jobId, job.id));
-          
-          console.log(`   Found ${jobSigners.length} signers to invite`);
-          
-          // 🚀 OPTIMIZED: Send all invitations in PARALLEL
-          const invitationPromises = jobSigners.map(async (signer) => {
-            try {
-              // Generate invitation token if not exists
-              let invitationToken = signer.invitationToken;
-              if (!invitationToken) {
-                invitationToken = crypto.randomUUID();
-                await db.update(signers)
-                  .set({ 
-                    invitationToken,
-                    invitationSentAt: new Date()
-                  })
-                  .where(eq(signers.id, signer.id));
-              } else {
-                await db.update(signers)
-                  .set({ invitationSentAt: new Date() })
-                  .where(eq(signers.id, signer.id));
-              }
-
-              // Send email directly using emailService (like resend does)
-              await emailService.sendSignerInvitation({
-                signerName: signer.signerName,
-                signerEmail: signer.signerEmail,
-                signerRole: signer.signerRole,
-                invitationToken,
-                titleCompany: updatedJob.titleCompany,
-                closingType: updatedJob.closingType,
-                propertyAddress: updatedJob.propertyAddressOne ? 
-                  `${updatedJob.propertyAddressOne}, ${updatedJob.propertyCity}, ${updatedJob.propertyState} ${updatedJob.propertyZipCode}` : 
-                  undefined,
-                scheduledDate: updatedJob.selectedDate || undefined,
-                scheduledTime: updatedJob.selectedTime || undefined
-              });
-
-              return { success: true, signerEmail: signer.signerEmail };
-            } catch (error) {
-              console.error(`Failed to send invitation to ${signer.signerEmail}:`, error);
-              return { success: false, signerEmail: signer.signerEmail, error };
-            }
-          });
-
-          // Wait for all invitations to be sent in parallel
-          const invitationResults = await Promise.all(invitationPromises);
-          
-          // Log results
-          const successCount = invitationResults.filter(r => r.success).length;
-          const failCount = invitationResults.filter(r => !r.success).length;
-          
-          if (successCount > 0) {
-            console.log(`✅ Successfully sent ${successCount} invitations in parallel`);
-          }
-          if (failCount > 0) {
-            console.error(`❌ Failed to send ${failCount} invitations`);
-            invitationResults.filter(r => !r.success).forEach(result => {
-              console.error(`   - ${result.signerEmail}: ${result.error}`);
-            });
-          }
-
-          // Mark job as having notifications sent
-          await db.update(jobs)
-            .set({
-              signerNotificationsSent: true,
-              signerNotificationsSentAt: new Date()
-            })
-            .where(eq(jobs.id, job.id));
-
-        } catch (notificationError) {
-          console.error('Failed to send signer invitations for auto-approved job:', notificationError);
-        }
+        // Import background job queue
+        const { backgroundJobQueue } = await import('./services/background-job-queue');
+        
+        // Queue email sending in background - doesn't block job creation response
+        await backgroundJobQueue.queueSignerInvitations(job.id);
+        console.log(`📬 Queued signer invitations for job ${job.id} - will be sent in background`);
       }
 
       // Get the updated job with assigned notary before returning
       const finalJob = await storage.getJob(job.id);
       const documentCount = req.files ? req.files.length : 0;
       
-      // 🚀 PERFORMANCE OPTIMIZATION: Non-blocking cache invalidation
-      // Move cache invalidation to background to improve response time
-      setImmediate(async () => {
-        try {
-          console.log(`🧹 Background cache invalidation for job ${job.id}...`);
-          const { cacheInvalidation } = await import('./services/cache-manager');
-          await cacheInvalidation.onJobCreated(job.id, finalJob?.notaryId, req.user.id);
-          console.log(`✅ Background cache invalidation completed for job ${job.id}`);
-        } catch (cacheError) {
-          console.error('Background cache invalidation failed:', cacheError);
-        }
-      });
+      // 🚀 BACKGROUND: Queue cache invalidation (completely non-blocking!)
+      const { backgroundJobQueue } = await import('./services/background-job-queue');
+      await backgroundJobQueue.queueCacheInvalidation(job.id, req.user.id, finalJob?.notaryId);
+      console.log(`🧹 Queued cache invalidation for job ${job.id} - will be processed in background`);
       
       // 📊 PERFORMANCE TRACKING
       const totalJobCreationTime = Date.now() - jobCreationStartTime;
@@ -10219,70 +10137,72 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
               const { PDFProcessorService } = await import('./services/pdf-processor.service');
               const pdfProcessor = PDFProcessorService.getInstance();
               
-              // Process the document and apply real content
-              const processedDoc = await pdfProcessor.processCompletedDocument(actualSessionId);
+              // Process the documents and apply real content - now returns multiple documents
+              const processedDocs = await pdfProcessor.processCompletedDocument(actualSessionId);
               
-              if (processedDoc && processedDoc.buffer) {
-                // Upload signed PDF to Vultr cloud storage
-                try {
-                  const { VultrUploadHandler } = await import('./vultr-upload-handler');
-                  
-                  const signedFileName = `job_${session.jobId}_signed_${Date.now()}.pdf`;
-                  
-                  // Upload to Vultr with proper organization
-                  const uploadResult = await VultrUploadHandler.handleJobDocumentUpload(
-                    processedDoc.buffer,
-                    signedFileName,
-                    session.jobId,
-                    req.user.id,
-                    {
-                      documentType: 'signed_document',
-                      isRequired: false,
-                      sessionId: actualSessionId,
-                      signedAt: new Date().toISOString(),
-                      processedTags: tags.length,
-                      completedTags: tags.filter(t => t.isCompleted).length
-                    }
-                  );
-                  
-                  if (uploadResult.success) {
-                                  console.log(`✅ Generated final document with real user content: ${signedFileName} (${processedDoc.fileSize} bytes)`);
-              console.log(`📁 Vultr location: ${uploadResult.fileKey}`);
-              console.log(`📊 Applied ${tags.filter(t => t.isCompleted).length} user-filled tags to document`);
+              if (processedDocs && processedDocs.length > 0) {
+                console.log(`📄 Processing ${processedDocs.length} signed documents for upload`);
+                
+                // Process each signed document separately
+                for (const processedDoc of processedDocs) {
+                  // Upload signed PDF to Vultr cloud storage
+                  try {
+                    const { VultrUploadHandler } = await import('./vultr-upload-handler');
                     
-                    // Also save to local uploads directory as backup
+                    // Upload to Vultr with proper organization
+                    const uploadResult = await VultrUploadHandler.handleJobDocumentUpload(
+                      processedDoc.buffer,
+                      processedDoc.fileName,
+                      session.jobId,
+                      req.user.id,
+                      {
+                        documentType: 'signed_document',
+                        isRequired: false,
+                        sessionId: actualSessionId,
+                        signedAt: new Date().toISOString(),
+                        originalDocumentId: processedDoc.originalDocumentId,
+                        originalFileName: processedDoc.originalFileName
+                      }
+                    );
+                    
+                    if (uploadResult.success) {
+                      console.log(`✅ Generated signed document: ${processedDoc.fileName} (${processedDoc.fileSize} bytes)`);
+                      console.log(`📁 Vultr location: ${uploadResult.fileKey}`);
+                      console.log(`📊 Original document: ${processedDoc.originalFileName}`);
+                      
+                      // Also save to local uploads directory as backup
+                      const fs = await import('fs/promises');
+                      const path = await import('path');
+                      const uploadsDir = path.resolve('uploads/signed');
+                      
+                      try {
+                        await fs.mkdir(uploadsDir, { recursive: true });
+                        const localPath = path.join(uploadsDir, processedDoc.fileName);
+                        await fs.writeFile(localPath, processedDoc.buffer);
+                        console.log(`📁 Local backup saved: ${processedDoc.fileName}`);
+                      } catch (localError) {
+                        console.warn(`Failed to save local backup for ${processedDoc.fileName}:`, localError);
+                        // Don't fail on local backup error
+                      }
+                      
+                    } else {
+                      throw new Error(`Failed to upload signed PDF ${processedDoc.fileName}: ${uploadResult.error}`);
+                    }
+                    
+                  } catch (uploadError) {
+                    console.error(`❌ Failed to upload signed PDF ${processedDoc.fileName} to Vultr:`, uploadError);
+                    
+                    // Fallback: Save to local uploads directory only
                     const fs = await import('fs/promises');
                     const path = await import('path');
                     const uploadsDir = path.resolve('uploads/signed');
                     
-                    try {
-                      await fs.mkdir(uploadsDir, { recursive: true });
-                      const localPath = path.join(uploadsDir, signedFileName);
-                      await fs.writeFile(localPath, processedDoc.buffer);
-                      console.log(`📁 Local backup saved: ${signedFileName}`);
-                    } catch (localError) {
-                      console.warn('Failed to save local backup:', localError);
-                      // Don't fail on local backup error
-                    }
+                    await fs.mkdir(uploadsDir, { recursive: true });
+                    const signedFilePath = path.join(uploadsDir, processedDoc.fileName);
+                    await fs.writeFile(signedFilePath, processedDoc.buffer);
                     
-                  } else {
-                    throw new Error(`Failed to upload signed PDF: ${uploadResult.error}`);
+                    console.log(`📁 Fallback: Saved signed PDF locally: ${processedDoc.fileName}`);
                   }
-                  
-                } catch (uploadError) {
-                  console.error('❌ Failed to upload signed PDF to Vultr:', uploadError);
-                  
-                  // Fallback: Save to local uploads directory only
-                  const fs = await import('fs/promises');
-                  const path = await import('path');
-                  const uploadsDir = path.resolve('uploads/signed');
-                  
-                  await fs.mkdir(uploadsDir, { recursive: true });
-                  const signedFileName = `job_${session.jobId}_signed_${Date.now()}.pdf`;
-                  const signedFilePath = path.join(uploadsDir, signedFileName);
-                  await fs.writeFile(signedFilePath, processedDoc.buffer);
-                  
-                  console.log(`📁 Fallback: Saved signed PDF locally: ${signedFileName}`);
                 }
                 
                 // Update job status to indicate signed documents are available

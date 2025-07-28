@@ -1,0 +1,79 @@
+=== NOTARY DIGITAL CERTIFICATE ===
+Generated: Sun Jul 27 23:00:10 PKT 2025
+Certificate Name: notary_certificate_20250727_230009
+Full Name: syed haider ali
+Email: hyder99@hotmail.com
+State: tx
+Commission: 234234234
+Validity: 234 days
+Expires: Wed Mar 18 23:00:10 PKT 2026
+
+Files Generated:
+- notary_certificate_20250727_230009_certificate.pem (Public Certificate)
+- notary_certificate_20250727_230009_private_key.pem (Private Key - KEEP SECURE!)
+- notary_certificate_20250727_230009.conf (Certificate Configuration)
+- notary_certificate_20250727_230009_info.txt (This file)
+
+Certificate Details:
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            76:c8:96:9b:55:46:d7:29:a7:ec:fc:ec:30:c3:06:8d:64:7e:cc:9a
+        Signature Algorithm: sha256WithRSAEncryption
+        Issuer: C=US, ST=tx, L=Notary Services, O=USA Notary Platform, OU=Digital Notary Services, CN=syed haider ali, emailAddress=hyder99@hotmail.com
+        Validity
+            Not Before: Jul 27 18:00:10 2025 GMT
+            Not After : Mar 18 18:00:10 2026 GMT
+        Subject: C=US, ST=tx, L=Notary Services, O=USA Notary Platform, OU=Digital Notary Services, CN=syed haider ali, emailAddress=hyder99@hotmail.com
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+                Modulus:
+                    00:b5:4d:f7:66:55:fb:56:b6:89:15:fd:61:55:68:
+                    c5:07:b0:21:4e:9a:1c:86:f5:b6:a5:a4:ae:a4:ef:
+                    03:72:7c:7b:1c:d1:38:00:33:02:5e:b1:c3:36:69:
+                    d0:da:cc:42:75:d0:68:07:e3:14:09:cd:59:1b:d7:
+                    ba:8b:ee:75:79:dd:ba:cb:a4:99:b4:37:97:e0:6d:
+                    46:9b:f3:b4:37:49:ae:bf:2a:4e:7b:9b:d3:4c:ce:
+                    4f:e9:9a:a4:79:d3:b0:57:38:a2:c0:ed:bd:a1:5a:
+                    3c:b3:78:7c:41:79:66:72:6c:78:44:da:b0:f6:de:
+                    a4:e8:c6:d0:e2:8b:e5:3b:74:f4:c5:14:03:32:5b:
+                    5d:63:0f:4d:94:28:cb:66:eb:14:3f:28:80:a1:08:
+                    0a:64:a7:6b:2d:57:ee:4c:86:40:39:42:7c:64:53:
+                    9e:dc:cd:7a:24:a2:c3:fa:1c:f5:51:3d:93:33:74:
+                    6a:54:64:25:5f:91:65:f3:b5:16:12:cf:84:f1:c9:
+                    42:d3:d2:ca:b0:91:2a:0c:b0:cd:96:57:48:8e:80:
+                    05:c6:5a:b3:12:4e:76:e8:51:e4:31:9a:df:8d:27:
+                    24:42:7f:9a:9b:93:db:fa:56:83:53:80:2f:48:06:
+                    0c:1d:09:94:05:ce:1e:b4:b9:80:4b:c5:9a:6a:76:
+                    40:09
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            X509v3 Basic Constraints: 
+                CA:FALSE
+            X509v3 Key Usage: 
+                Digital Signature, Non Repudiation, Key Encipherment
+            X509v3 Extended Key Usage: 
+                E-mail Protection, TLS Web Client Authentication, Code Signing
+            X509v3 Subject Alternative Name: 
+                email:hyder99@hotmail.com, DNS:usanotary.com
+            X509v3 Subject Key Identifier: 
+                E7:6C:DC:BD:13:07:DE:FE:04:90:3D:83:74:CA:27:5E:0F:08:54:76
+    Signature Algorithm: sha256WithRSAEncryption
+    Signature Value:
+        a6:fa:d0:3b:3e:71:a2:f8:74:d8:8c:75:a7:43:1a:24:ab:1c:
+        cc:9d:21:33:7f:ea:cd:36:9d:ce:2c:ec:58:46:93:61:20:29:
+        e3:df:bf:c9:de:9b:a9:80:25:27:21:51:60:06:2b:a1:8b:23:
+        c2:af:fc:7a:d1:35:de:8e:30:69:a3:7c:5b:dd:e5:b8:d4:6e:
+        21:fc:e9:87:a2:61:01:b0:ef:b3:c6:67:07:51:da:eb:46:a9:
+        e2:01:0e:a8:70:df:7e:83:9a:a9:68:5d:cf:02:f5:2b:8a:1f:
+        63:60:ea:26:6f:b1:3b:b1:42:f9:ab:87:17:5c:2f:cf:7f:46:
+        24:94:e7:b7:7d:55:97:57:d6:3f:ae:75:08:4f:6b:d6:86:e3:
+        ac:4e:d6:73:27:ed:05:c6:0d:ae:ba:0e:db:67:8b:e0:9d:d6:
+        98:6c:f2:7c:e4:18:af:e5:61:f7:ef:c2:d0:83:fa:c3:db:eb:
+        7c:9e:96:82:bd:1a:1c:e1:0d:ed:37:78:4a:84:e3:8c:e4:1b:
+        f2:bb:10:f3:c7:63:c8:e6:92:54:72:83:07:97:ec:c2:bd:35:
+        a1:6c:94:be:d5:b6:b2:43:9e:72:78:3a:c1:46:4f:d3:f3:e0:
+        ea:02:7e:12:fd:16:bf:5f:83:61:7e:12:e9:b2:a4:1c:cd:fe:
+        34:a3:dc:56

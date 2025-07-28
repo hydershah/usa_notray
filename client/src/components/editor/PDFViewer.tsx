@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as pdfjsLib from 'pdfjs-dist';
 import { Rnd } from 'react-rnd';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
+
 import { initializePDFWorker, isPDFWorkerReady } from '../../lib/pdf-worker';
 import type { 
   DocumentTag, 
@@ -603,6 +604,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const pageContainerRefs = useRef<HTMLDivElement[]>([]);
   const loadingTaskRef = useRef<pdfjsLib.PDFDocumentLoadingTask | null>(null);
   const renderTasksRef = useRef<Map<number, any>>(new Map()); // Track render tasks
+  const currentDocumentUrlRef = useRef<string | null>(null);
+  const isLoadingRef = useRef<boolean>(false);
   
   const { 
     viewer, 
@@ -623,6 +626,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const [scaleFactors, setScaleFactors] = useState<Map<number, number>>(new Map());
   const isMountedRef = useRef<boolean>(true);
 
+  // Create a stable reference for document switching
+  const documentSwitchTimeoutRef = useRef<NodeJS.Timeout>();
+
   // Determine if user can edit tags - FIXED: Properly respect canPlaceTags in all modes
   const canEditTags = useMemo(() => {
     // In both tagging and signing modes, check if user can place tags
@@ -639,10 +645,59 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
   // Load PDF document with improved error handling and redirect support
   const loadPDF = useCallback(async (url: string) => {
+    // Extract document ID from URL for more accurate comparison
+    const getDocumentIdFromUrl = (url: string) => {
+      const match = url.match(/\/documents\/(\d+)\/preview/);
+      return match ? match[1] : url;
+    };
+
+    const documentId = getDocumentIdFromUrl(url);
+    const currentDocumentId = currentDocumentUrlRef.current ? getDocumentIdFromUrl(currentDocumentUrlRef.current) : null;
+
+    // Only prevent loading if it's the exact same document AND already loaded successfully
+    if (currentDocumentId === documentId && !error && pdfDoc && !loading) {
+      console.log('📄 Skipping load - same document already loaded:', documentId);
+      return;
+    }
+
+    // Prevent concurrent loading of the same document
+    if (isLoadingRef.current && currentDocumentId === documentId) {
+      console.log('📄 Skipping load - already loading this document:', documentId);
+      return;
+    }
+
     try {
-      console.log('📄 Starting PDF load for URL:', url);
+      console.log('📄 Starting PDF load for document:', documentId, 'URL:', url);
+      isLoadingRef.current = true;
       setLoading(true);
       setError(null);
+      
+      // Clear previous PDF state when switching to a different document
+      if (currentDocumentId !== documentId) {
+        console.log('🔄 Switching documents - clearing previous state');
+        
+        // Cancel all active render tasks
+        renderTasksRef.current.forEach((task, pageNumber) => {
+          if (task && typeof task.cancel === 'function') {
+            try {
+              task.cancel();
+              console.log(`🚫 Cancelled render task for page ${pageNumber} on document switch`);
+            } catch (e) {
+              // Ignore cancellation errors
+            }
+          }
+        });
+        renderTasksRef.current.clear();
+        
+        // Clear canvas refs
+        canvasRefs.current = [];
+        
+        // Reset component state
+        setPdfDoc(null);
+        setRenderedPages(new Set());
+        setScaleFactors(new Map());
+        setLoading(true);
+      }
       
       // Ensure worker is ready
       if (!isPDFWorkerReady()) {
@@ -651,16 +706,20 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         await new Promise(resolve => setTimeout(resolve, 200)); // Longer wait for worker
       }
 
-      // Clean up previous loading task
-      if (loadingTaskRef.current) {
+      // Clean up previous loading task when switching to a different document
+      if (loadingTaskRef.current && currentDocumentId !== documentId) {
         try {
           loadingTaskRef.current.destroy();
+          console.log('🗑️ Previous PDF loading task destroyed for document switch');
         } catch (e: any) {
           console.log('Previous task cleanup:', e?.message || 'Unknown error');
         }
         loadingTaskRef.current = null;
         await new Promise(resolve => setTimeout(resolve, 50)); // Wait for cleanup
       }
+
+      // Update current document reference
+      currentDocumentUrlRef.current = url;
       
       // FIXED: First fetch the PDF as a blob to handle redirects properly
       let pdfData: ArrayBuffer | undefined;
@@ -866,24 +925,30 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       
       if (!isMountedRef.current) return;
       
-      console.log('✅ PDF loaded successfully:', { numPages: pdf.numPages });
+      console.log('✅ PDF loaded successfully:', { numPages: pdf.numPages, documentId });
       setPdfDoc(pdf);
       setRenderedPages(new Set());
       setScaleFactors(new Map());
       
+      // Update viewer state with new document info
       useEditorStore.setState(state => ({
         viewer: {
           ...state.viewer,
           totalPages: pdf.numPages,
-          currentPage: 1
+          currentPage: 1,
+          scrollTop: 0 // Reset scroll position for new document
         }
       }));
       
       setLoading(false);
+      console.log(`🎯 Document ${documentId} loaded and ready for rendering`);
       
     } catch (err) {
       if (!isMountedRef.current) return;
       console.error('❌ PDF load error:', err);
+      
+      // Reset loading state on error
+      isLoadingRef.current = false;
       
       // Provide more specific error messages
       let errorMessage = 'Failed to load PDF';
@@ -901,6 +966,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       
       setError(errorMessage);
       setLoading(false);
+    } finally {
+      // Always reset loading state
+      isLoadingRef.current = false;
     }
   }, [documentUrl]);
 
@@ -1046,48 +1114,96 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     }
   }, [pdfDoc, viewer.zoomLevel, onPageLoad]);
 
-  // Load PDF on URL change
+  // Load PDF on URL change with smart debouncing for rapid document switching
   useEffect(() => {
     console.log('🔗 Document URL effect triggered:', { documentUrl, hasUrl: !!documentUrl });
-    if (documentUrl) {
-      loadPDF(documentUrl);
+    
+    // Clear any pending document switch timeout
+    if (documentSwitchTimeoutRef.current) {
+      clearTimeout(documentSwitchTimeoutRef.current);
     }
+    
+    if (documentUrl) {
+      // Use a shorter delay for more responsive switching
+      documentSwitchTimeoutRef.current = setTimeout(() => {
+        loadPDF(documentUrl);
+      }, 50);
+    } else {
+      // If no document URL, clear the current state
+      console.log('🧹 No document URL - clearing PDF state');
+      setPdfDoc(null);
+      setRenderedPages(new Set());
+      setScaleFactors(new Map());
+      setLoading(false);
+      setError(null);
+      currentDocumentUrlRef.current = null;
+      isLoadingRef.current = false;
+    }
+    
     return () => {
-      console.log('🧹 PDFViewer cleanup triggered');
+      console.log('🧹 PDFViewer cleanup triggered for document switch');
       
-      // Cancel all active render tasks FIRST
-      renderTasksRef.current.forEach((task, pageNumber) => {
-        if (task && typeof task.cancel === 'function') {
-          try {
-            task.cancel();
-            console.log(`🚫 Cancelled render task for page ${pageNumber} on cleanup`);
-          } catch (e) {
-            // Ignore cancellation errors
-          }
-        }
-      });
-      renderTasksRef.current.clear();
-      
-      // Destroy PDF loading task
-      if (loadingTaskRef.current) {
-        try {
-          loadingTaskRef.current.destroy();
-          console.log('🗑️ PDF loading task destroyed');
-        } catch (e) {
-          console.warn('⚠️ Error destroying PDF loading task:', e);
-        }
+      // Clear the document switch timeout
+      if (documentSwitchTimeoutRef.current) {
+        clearTimeout(documentSwitchTimeoutRef.current);
       }
       
-      // Set unmounted flag AFTER cleanup
-      isMountedRef.current = false;
+      // Only do aggressive cleanup on component unmount, not on document switch
+      // This is detected by checking if we're switching to a different document
+      const isComponentUnmount = !isMountedRef.current;
+      
+      if (isComponentUnmount) {
+        console.log('🗑️ Component unmounting - performing full cleanup');
+        
+        // Cancel all active render tasks
+        renderTasksRef.current.forEach((task, pageNumber) => {
+          if (task && typeof task.cancel === 'function') {
+            try {
+              task.cancel();
+              console.log(`🚫 Cancelled render task for page ${pageNumber} on unmount`);
+            } catch (e) {
+              // Ignore cancellation errors
+            }
+          }
+        });
+        renderTasksRef.current.clear();
+        
+        // Destroy PDF loading task
+        if (loadingTaskRef.current) {
+          try {
+            loadingTaskRef.current.destroy();
+            console.log('🗑️ PDF loading task destroyed on unmount');
+          } catch (e) {
+            console.warn('⚠️ Error destroying PDF loading task:', e);
+          }
+        }
+        
+        // Reset loading state
+        isLoadingRef.current = false;
+        currentDocumentUrlRef.current = null;
+      }
     };
   }, [documentUrl]);
 
+  // Component unmount cleanup
+  useEffect(() => {
+    return () => {
+      console.log('🧹 PDFViewer component unmounting');
+      isMountedRef.current = false;
+    };
+  }, []);
+
   // Initial page rendering when PDF loads (OPTIMIZED with proper container timing)
   useEffect(() => {
-    if (!pdfDoc) return;
+    if (!pdfDoc) {
+      console.log('⏳ Waiting for PDF document to load...');
+      return;
+    }
     
-    console.log('📖 PDF loaded, starting initial page rendering...');
+    console.log('📖 PDF loaded, starting initial page rendering...', { 
+      numPages: pdfDoc.numPages, 
+      renderedPagesCount: renderedPages.size 
+    });
     
     const renderInitialPages = async () => {
       // Check if component is still mounted

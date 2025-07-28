@@ -577,8 +577,8 @@ export default function Profile() {
             <Tabs defaultValue="profile" className="w-full">
               <div className="bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
                 <TabsList className={`grid w-full h-16 bg-transparent p-2 ${
-                  (currentUser?.role === 'notary' || currentUser?.role === 'admin') ? 'grid-cols-4' : 
-                  (currentUser?.role === 'title_company') ? 'grid-cols-2' : 'grid-cols-3'
+                  (currentUser?.role === 'notary' || currentUser?.role === 'admin') ? 'grid-cols-5' : 
+                  (currentUser?.role === 'title_company') ? 'grid-cols-3' : 'grid-cols-4'
                 }`}>
                   <TabsTrigger 
                     value="profile" 
@@ -603,6 +603,15 @@ export default function Profile() {
                     >
                       <Pencil className="w-5 h-5" />
                       Signatures
+                    </TabsTrigger>
+                  )}
+                  {(currentUser?.role === 'notary' || currentUser?.role === 'admin' || currentUser?.role === 'title_company') && (
+                    <TabsTrigger 
+                      value="documents" 
+                      className="flex items-center gap-2 h-12 text-sm font-medium data-[state=active]:bg-white data-[state=active]:shadow-md data-[state=active]:text-blue-600 rounded-xl transition-all duration-200"
+                    >
+                      <FileText className="w-5 h-5" />
+                      Documents
                     </TabsTrigger>
                   )}
                   <TabsTrigger 
@@ -1131,13 +1140,7 @@ export default function Profile() {
                           </div>
                         </div>
 
-                        {/* Document Management Section */}
-                        <div className="bg-gradient-to-br from-gray-50 to-slate-50 rounded-2xl p-8 border border-gray-100">
-                          <NotaryProfileDocumentManager 
-                            notaryId={currentUser.id}
-                            onDocumentsChange={loadUserProfile}
-                          />
-                        </div>
+
                       </>
                     )}
 
@@ -1196,6 +1199,27 @@ export default function Profile() {
                   <TabsContent value="signatures">
                     <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl p-8 border border-purple-100">
                       <SignatureManager userId={currentUser.id} />
+                    </div>
+                  </TabsContent>
+                )}
+
+                {/* Documents Tab */}
+                {(currentUser?.role === 'notary' || currentUser?.role === 'admin' || currentUser?.role === 'title_company') && (
+                  <TabsContent value="documents">
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-8 border border-blue-100">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center">
+                          <FileText className="w-5 h-5 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="text-2xl font-bold text-gray-900">Document Management</h3>
+                          <p className="text-gray-600 mt-1">View, download, and manage your notary documents</p>
+                        </div>
+                      </div>
+                      <NotaryProfileDocumentManager 
+                        notaryId={currentUser.id}
+                        onDocumentsChange={loadUserProfile}
+                      />
                     </div>
                   </TabsContent>
                 )}

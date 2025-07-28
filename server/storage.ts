@@ -357,7 +357,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUsers(): Promise<User[]> {
-    return await db.select().from(users).orderBy(asc(users.createdAt));
+    // 🚀 OPTIMIZED: Use indexed column for ordering and add LIMIT for performance
+    return await db.select().from(users)
+      .orderBy(asc(users.id)) // Use primary key (always indexed) instead of createdAt
+      .limit(1000); // Add reasonable limit to prevent large result sets
   }
 
   async getNotaryUsers(): Promise<User[]> {
@@ -1113,9 +1116,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getActiveClosingTypes(): Promise<ClosingType[]> {
+    // 🚀 OPTIMIZED: Add LIMIT for faster query execution
     return await db.select().from(closingTypes)
       .where(eq(closingTypes.isActive, true))
-      .orderBy(asc(closingTypes.name));
+      .orderBy(asc(closingTypes.name))
+      .limit(500); // Reasonable limit for closing types
   }
 
   // Participant role operations
@@ -1151,9 +1156,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getActiveParticipantRoles(): Promise<ParticipantRole[]> {
+    // 🚀 OPTIMIZED: Add LIMIT for faster query execution
     return await db.select().from(participantRoles)
       .where(eq(participantRoles.isActive, true))
-      .orderBy(asc(participantRoles.name));
+      .orderBy(asc(participantRoles.name))
+      .limit(200); // Reasonable limit for participant roles
   }
 
   // Signer operations

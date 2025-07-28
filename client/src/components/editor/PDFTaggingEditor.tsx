@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
 import { PDFViewer } from './PDFViewer';
 import { TaggingToolbar } from './TaggingToolbar';
+import { DocumentSelector } from './DocumentSelector';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
 import { HotkeyHandler } from './HotkeyHandler';
 import { TagInputModal } from './TagInputModal';
@@ -108,6 +109,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     setSession,
     setDocuments,
     setCurrentDocument,
+    switchToDocument,
     setSelectedUser,
     setSelectedTagType,
     setTags,
@@ -116,7 +118,10 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     setMode,
     setZoomLevel,
     setWebSocket,
-    setConnectionStatus
+    setConnectionStatus,
+    getCurrentDocumentTags,
+    getDocumentTags,
+    loadTagsForDocument
   } = useEditorStore();
 
   // Handle page load from PDFViewer to get canvas element
@@ -131,6 +136,32 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     
     // Also store all page canvases for potential fallback (optional enhancement)
   }, [viewer.currentPage]);
+
+  // Handle document switching
+  const handleDocumentChange = useCallback(async (document: SessionDocument) => {
+    try {
+      console.log(`🔄 Switching to document: ${document.fileName}`);
+      
+      // Switch to the document (this clears selected tags and resets viewer state)
+      switchToDocument(document);
+      
+      // Load tags for the new document
+      await loadTagsForDocument(document.id);
+      
+      // Load streamlined text inputs for this document
+      loadTextInputsFromTags(getDocumentTags(document.id));
+      
+      console.log(`✅ Successfully switched to document: ${document.fileName}`);
+      
+    } catch (error) {
+      console.error('❌ Failed to switch document:', error);
+      toast({
+        title: "Error",
+        description: "Failed to switch document. Please try again.",
+        variant: "destructive",
+      });
+    }
+  }, [switchToDocument, loadTagsForDocument, getDocumentTags, loadTextInputsFromTags, toast]);
 
   // Update canvas when current page changes - with fallback canvas retrieval
   useEffect(() => {
@@ -311,11 +342,15 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
           
           setTags(validTags);
           
-          // Load text tags into streamlined text input system
-          loadTextInputsFromTags(validTags);
+          // Load text tags into streamlined text input system for current document
+          const currentDocTags = validTags.filter((tag: any) => 
+            tag.documentId === documents[0]?.id
+          );
+          loadTextInputsFromTags(currentDocTags);
           
           // ✅ SIMPLIFIED: Whiteout tags now render as regular tags, no need for separate overlay system
           console.log('✅ Whiteout tags will render as regular tags');
+          console.log(`📄 Loaded ${currentDocTags.length} tags for current document ${documents[0]?.fileName}`);
           
           if (validTags.length > 0) {
             console.log(`🏷️  Tags loaded successfully - session appears to be a continuation of previous work`);
@@ -1210,12 +1245,23 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       {/* Simplified Header */}
       <div className="bg-white border-b px-4 py-3 shadow-sm">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold text-gray-900">
+          <div className="flex items-center gap-4 flex-1 min-w-0">
+            <h1 className="text-lg font-semibold text-gray-900 flex-shrink-0">
               {mode === 'tagging' ? 'Document Tagging' : 'Live Signing Session'}
             </h1>
-            <span className="text-sm text-gray-500">
-              {tags.length} tags • {tags.filter(t => t.isCompleted).length} completed
+            
+            {/* Document Selector */}
+            <div className="flex-1 max-w-md">
+              <DocumentSelector
+                documents={documents}
+                currentDocument={currentDocument}
+                onDocumentChange={handleDocumentChange}
+                tags={tags}
+              />
+            </div>
+            
+            <span className="text-sm text-gray-500 flex-shrink-0">
+              {getCurrentDocumentTags().length} tags • {getCurrentDocumentTags().filter(t => t.isCompleted).length} completed
             </span>
           </div>
           
