@@ -8474,6 +8474,10 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   app.use('/api/notary', notaryJobApprovalRoutes);
   app.use('/api', screenRecordingRoutes);
   
+  // Register job details routes
+  const { jobDetailsRoutes } = await import('./routes/job-details-routes');
+  app.use(jobDetailsRoutes);
+  
   // ==========================================
   // ADMIN VERIFICATION ROUTES (Missing endpoints for dashboard)
   // ==========================================
