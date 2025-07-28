@@ -9,25 +9,20 @@ export default defineConfig({
     outDir: '../server/dist/public',
     emptyOutDir: true,
     rollupOptions: {
-      external: ['fs', 'path', 'crypto'],
+      external: ['fs', 'path', 'crypto']
     }
   },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './client/src'),
-      // Browser polyfills for Node.js modules
-      'events': 'events',
-      'stream': 'stream-browserify',
-      'util': 'util',
-      'buffer': 'buffer',
-      'process': 'process/browser'
+      events: 'rollup-plugin-node-polyfills/polyfills/events',
+      stream: 'rollup-plugin-node-polyfills/polyfills/stream',
+      util: 'rollup-plugin-node-polyfills/polyfills/util',
+      buffer: 'rollup-plugin-node-polyfills/polyfills/buffer-es6'
     }
   },
   define: {
     global: 'globalThis',
     'process.env': {}
-  },
-  optimizeDeps: {
-    include: ['events', 'buffer', 'process']
   }
 }) 
