@@ -1,14 +1,12 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
-import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
 export default defineConfig({
   plugins: [
     react({
       jsxRuntime: 'automatic'
-    }),
-    nodePolyfills(),
+    })
   ],
   publicDir: './client/public',
   build: {
@@ -44,6 +42,7 @@ export default defineConfig({
         'tls',
         'http',
         'https',
+        'events',
         'url',
         'querystring',
         'zlib'
