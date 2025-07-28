@@ -17,7 +17,7 @@ import {
   Minimize2
 } from 'lucide-react';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
-import WherebyVideoConference from './WherebyVideoConference';
+import { OpenViduVideoConference } from '../video/OpenViduVideoConference';
 
 interface VideoIntegrationProps {
   sessionId: string;
@@ -334,11 +334,29 @@ export const VideoIntegration: React.FC<VideoIntegrationProps> = ({
   // Render active video conference
   return (
     <div className={className}>
-      <WherebyVideoConference
+      <OpenViduVideoConference
         sessionId={sessionId}
-        jobId={jobId}
-        currentUser={effectiveCurrentUser}
-        participants={effectiveParticipants}
+        jobId={typeof jobId === 'string' ? parseInt(jobId) : jobId}
+        currentUser={{
+          ...effectiveCurrentUser,
+          id: typeof effectiveCurrentUser.id === 'string' ? parseInt(effectiveCurrentUser.id) : effectiveCurrentUser.id
+        }}
+        participants={effectiveParticipants.map((p, index) => ({
+          userId: parseInt(p.userId),
+          connectionId: `connection-${p.userId}-${Date.now()}`,
+          role: p.userType as 'notary' | 'signer' | 'witness' | 'observer' | 'admin',
+          displayName: p.displayName,
+          email: p.email || '',
+          avatar: undefined,
+          isHost: p.userType === 'notary',
+          isConnected: false,
+          joinedAt: new Date(),
+          videoEnabled: true,
+          audioEnabled: true,
+          isScreenSharing: false,
+          networkQuality: 'good' as const,
+          position: index
+        }))}
         onParticipantJoined={handleParticipantJoined}
         onParticipantLeft={handleParticipantLeft}
         onConnectionStatusChange={handleConnectionStatusChange}

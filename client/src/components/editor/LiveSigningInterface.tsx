@@ -18,7 +18,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/auth';
-import WherebyVideoConference from './WherebyVideoConference';
+import { OpenViduVideoConference } from '../video/OpenViduVideoConference';
 import { PDFTaggingEditor } from './PDFTaggingEditor';
 import { ParticipantPanel } from './ParticipantPanel';
 import type { 
@@ -599,7 +599,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
               
               {/* Video Content */}
               <div className="flex-1">
-                <WherebyVideoConference
+                <OpenViduVideoConference
                   sessionId={sessionId}
                   jobId={parseInt(sessionId.split('_')[1]) || parseInt(sessionId) || 1}
                   currentUser={{
@@ -608,12 +608,21 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
                     email: currentUser?.email || '',
                     role: currentUser?.userType || 'signer'
                   }}
-                  participants={participants.map(p => ({
-                    userId: p.userId,
+                  participants={participants.map((p, index) => ({
+                    userId: parseInt(p.userId),
+                    connectionId: `connection-${p.userId}-${Date.now()}`,
+                    role: p.userType as 'notary' | 'signer' | 'witness' | 'observer' | 'admin',
                     displayName: p.displayName,
                     email: p.email || '',
-                    userType: p.userType,
-                    role: p.userType // Add missing role property
+                    avatar: undefined,
+                    isHost: p.userType === 'notary',
+                    isConnected: false,
+                    joinedAt: new Date(),
+                    videoEnabled: true,
+                    audioEnabled: true,
+                    isScreenSharing: false,
+                    networkQuality: 'good' as const,
+                    position: index
                   }))}
                   autoStart={true}
                   className="h-full"

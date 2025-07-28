@@ -1,4 +1,4 @@
-import WherebyVideoConference from './WherebyVideoConference';
+import { OpenViduVideoConference } from '../video/OpenViduVideoConference';
 import SimpleVideoConference from './SimpleVideoConference';
 import { VideoIntegration } from './VideoIntegration';
 import { useState } from 'react';
@@ -179,20 +179,38 @@ const VideoConferenceExample: React.FC<VideoConferenceExampleProps> = ({
             <CardContent>
               <div className="bg-gray-100 p-4 rounded-lg">
                 <div className="h-96 bg-white rounded border-2 border-dashed border-gray-300">
-                  <WherebyVideoConference
+                  <OpenViduVideoConference
                     sessionId={sessionId}
                     jobId={jobId}
-                    currentUser={dynamicCurrentUser}
-                    participants={dynamicParticipants}
+                    currentUser={{
+                      ...dynamicCurrentUser,
+                      id: parseInt(dynamicCurrentUser.id)
+                    }}
+                    participants={dynamicParticipants.map((p, index) => ({
+                      userId: parseInt(p.userId),
+                      connectionId: `connection-${p.userId}-${Date.now()}`,
+                      role: p.userType as 'notary' | 'signer' | 'witness' | 'observer' | 'admin',
+                      displayName: p.displayName,
+                      email: p.email || '',
+                      avatar: undefined,
+                      isHost: p.userType === 'notary',
+                      isConnected: false,
+                      joinedAt: new Date(),
+                      videoEnabled: true,
+                      audioEnabled: true,
+                      isScreenSharing: false,
+                      networkQuality: 'good' as const,
+                      position: index
+                    }))}
                     autoStart={demoSettings.autoStart}
                     className="h-full"
-                    onConnectionStatusChange={(status) => {
+                    onConnectionStatusChange={(status: string) => {
                       console.log('Connection status changed:', status);
                     }}
-                    onParticipantJoined={(participant) => {
+                    onParticipantJoined={(participant: any) => {
                       console.log('Participant joined:', participant);
                     }}
-                    onParticipantLeft={(participantId) => {
+                    onParticipantLeft={(participantId: string) => {
                       console.log('Participant left:', participantId);
                     }}
                   />

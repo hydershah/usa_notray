@@ -34,18 +34,18 @@ export const getTagLabel = (tagType: string): string => {
 
 export const getTagColor = (tagType: string): string => {
   const colors: Record<string, string> = {
-    'A': '#4ECDC4', // Name - teal
-    'S': '#45B7D1', // Signature - blue
-    'I': '#96CEB4', // Initials - green
-    'N': '#FECA57', // Commission # - yellow
-    'X': '#FF6B6B', // Expiration - red
-    'O': '#DDA0DD', // Disclosure - plum
-    'E': '#98D8C8', // Seal - mint
-    'W': '#F0F0F0', // Whiteout - light gray
-    'T': '#74B9FF', // Text - light blue
-    'D': '#FD79A8'  // Date - pink
+    'A': '#334155', // Name - dark slate
+    'S': '#991b1b', // Signature - dark red
+    'I': '#166534', // Initials - dark green
+    'N': '#9a3412', // Commission # - dark orange
+    'X': '#581c87', // Expiration - dark purple
+    'O': '#0f4c75', // Disclosure - dark blue
+    'E': '#831843', // Seal - dark pink
+    'W': '#374151', // Whiteout - dark gray
+    'T': '#1e3a8a', // Text - dark blue
+    'D': '#14532d'  // Date - dark emerald
   };
-  return colors[tagType] || '#4ECDC4';
+  return colors[tagType] || '#334155';
 };
 
 export const getTagTypeInfo = (tagType: string) => {

@@ -688,33 +688,30 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         ${mode.showPlaceholders || !tag.isCompleted ? 'opacity-95' : 'opacity-100'}
       `}
       style={{
-        // Completely transparent background for all tags
-        backgroundColor: 'transparent',
+        // Solid background colors for better visibility
+        backgroundColor: tag.colorCode || '#334155',
         
-        // Minimal styling for text tags
+        // Strong borders for better visibility
         border: tag.tagType === 'T' 
-          ? 'none' // Completely borderless for text tags
+          ? '2px solid rgba(255,255,255,0.8)' // White border for text tags
           : tag.isCompleted && mode.mode === 'signing' 
-          ? '1px solid #e2e8f0' // Very light grey border for completed tags
+          ? '3px solid #059669' // Green border for completed tags
           : isSelected
-          ? '2px solid #3b82f6' // Blue border for selected tags
-          : '1px solid #d1d5db', // Light grey border for all other tags
+          ? '3px solid #1d4ed8' // Thick blue border for selected tags
+          : '2px solid rgba(255,255,255,0.8)', // White border for visibility
         
         borderRadius: tag.tagType === 'T' ? '2px' : '8px', // Minimal radius for text tags
         
-        // Improved shadows - borderless for text tags
-        boxShadow: tag.tagType === 'T' 
-          ? 'none' // No shadows for borderless text tags
-          : tag.isCompleted && mode.mode === 'signing'
-          ? '0 1px 3px rgba(0,0,0,0.08)' // Subtle shadow for completed tags
-          : isSelected 
-          ? '0 4px 12px rgba(59, 130, 246, 0.15), 0 0 0 2px rgba(59, 130, 246, 0.1)' 
-          : '0 2px 6px rgba(0,0,0,0.1)', // Enhanced shadow for better depth
+        // Strong shadows for maximum visibility
+        boxShadow: isSelected 
+          ? '0 8px 20px rgba(29, 78, 216, 0.4), 0 4px 8px rgba(0,0,0,0.3)' 
+          : '0 4px 12px rgba(0,0,0,0.4), 0 2px 6px rgba(0,0,0,0.2)', // Strong shadow for all tags
         
-        // Better color contrast
-        color: tag.isCompleted && mode.mode === 'signing' 
-          ? '#1f2937' // Dark grey text for completed content
-          : tag.colorCode || '#374151',
+        // White text with shadow for maximum readability
+        color: '#ffffff',
+        fontWeight: 'bold',
+        textShadow: '0 1px 3px rgba(0, 0, 0, 0.8), 0 0 1px rgba(0, 0, 0, 0.9)',
+        fontSize: '13px',
         
         zIndex: tag.tagType === 'W' ? (isSelected ? 1000 : 10) : (isSelected ? 1000 : 100),
         

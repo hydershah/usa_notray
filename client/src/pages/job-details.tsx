@@ -33,12 +33,14 @@ import { JobCompletionReport } from '@/components/job/JobCompletionReport';
 import { NotaryAssignmentCard } from '@/components/job/NotaryAssignmentCard';
 import { SessionRecordingCard } from '@/components/job/SessionRecordingCard';
 import { ActivityTimelineCard } from '@/components/job/ActivityTimelineCard';
+import { JobEditor } from '@/components/job/JobEditor';
 
 export default function JobDetailsPage() {
   const [, params] = useRoute('/jobs/:id');
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const jobId = params?.id ? parseInt(params.id) : null;
+  const [isJobEditorOpen, setIsJobEditorOpen] = useState(false);
 
   // Debug jobId
   useEffect(() => {
@@ -281,11 +283,22 @@ export default function JobDetailsPage() {
           <div className="text-center">
             <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
             <p>Loading job details...</p>
-          </div>
-        </div>
-      </MainLayout>
-    );
-  }
+                  </div>
+      </div>
+
+      {/* Job Editor Modal */}
+      <JobEditor 
+        job={job}
+        isOpen={isJobEditorOpen}
+        onClose={() => setIsJobEditorOpen(false)}
+        onJobUpdated={(updatedJob) => {
+          // Optionally update local state or refetch data
+          console.log('Job updated:', updatedJob);
+        }}
+      />
+    </MainLayout>
+  );
+}
 
   if (error || !job) {
     return (
@@ -322,6 +335,15 @@ export default function JobDetailsPage() {
             </div>
           </div>
           <div className="flex items-center space-x-3">
+            <Button 
+              onClick={() => setIsJobEditorOpen(true)}
+              variant="outline"
+              disabled={job.jobStatus === 'completed' || job.jobStatus === 'cancelled'}
+              className="border-orange-600 text-orange-600 hover:bg-orange-50"
+            >
+              <Edit3 className="h-4 w-4 mr-2" />
+              Edit Job
+            </Button>
             <Button 
               onClick={handleStartTagging} 
               variant="outline" 

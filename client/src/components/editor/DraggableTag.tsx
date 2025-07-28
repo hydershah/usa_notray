@@ -174,33 +174,30 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
         top: `${tag.coordinates.y * scaleFactor}px`,
         width: `${tag.coordinates.width * scaleFactor}px`,
         height: `${tag.coordinates.height * scaleFactor}px`,
-        // Completely transparent background for all tags
-        backgroundColor: 'transparent',
-        // Minimal styling for text tags
+        // Solid background colors for better visibility
+        backgroundColor: tag.colorCode || '#334155',
+        // Strong borders for better visibility
         border: tag.tagType === 'T' 
-          ? 'none' // Completely borderless for text tags
+          ? '2px solid rgba(255,255,255,0.8)' // White border for text tags
           : isCompleted && isInSigningMode 
-          ? '1px solid #e2e8f0' // Very light grey border for completed tags
+          ? '3px solid #059669' // Green border for completed tags
           : isSelected || isDragging
-          ? '2px solid #3b82f6' // Blue border for selected/dragging tags
-          : '1px solid #d1d5db', // Light grey border for all other tags
+          ? '3px solid #1d4ed8' // Thick blue border for selected/dragging tags
+          : '2px solid rgba(255,255,255,0.8)', // White border for visibility
         borderRadius: '8px', // Slightly more rounded corners
-        color: isCompleted && isInSigningMode 
-          ? '#1f2937' // Dark grey text for completed content
-          : tag.colorCode || '#374151',
+        color: '#ffffff', // White text with shadow for maximum readability
+        fontWeight: 'bold',
+        textShadow: '0 1px 3px rgba(0, 0, 0, 0.8), 0 0 1px rgba(0, 0, 0, 0.9)',
+        fontSize: '13px',
         cursor: tagStyle.cursor,
         userSelect: 'none',
         zIndex: isDragging ? 1000 : isSelected ? 500 : 100,
         transition: isDragging ? 'none' : 'all 0.2s ease',
         boxSizing: 'border-box',
-        // Improved shadows - borderless for text tags
-        boxShadow: tag.tagType === 'T' 
-          ? 'none' // No shadows for borderless text tags
-          : isCompleted && isInSigningMode
-          ? '0 1px 3px rgba(0,0,0,0.08)' // Subtle shadow for completed tags
-          : isDragging || isSelected
-          ? '0 4px 12px rgba(59, 130, 246, 0.15), 0 0 0 2px rgba(59, 130, 246, 0.1)'
-          : '0 2px 6px rgba(0,0,0,0.1)', // Enhanced shadow for better depth
+        // Strong shadows for maximum visibility
+        boxShadow: isDragging || isSelected
+          ? '0 8px 20px rgba(29, 78, 216, 0.4), 0 4px 8px rgba(0,0,0,0.3)'
+          : '0 4px 12px rgba(0,0,0,0.4), 0 2px 6px rgba(0,0,0,0.2)', // Strong shadow for all tags
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
