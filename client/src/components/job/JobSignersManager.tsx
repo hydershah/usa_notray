@@ -371,35 +371,41 @@ export function JobSignersManager({ jobId, onSignersUpdated }: JobSignersManager
           </p>
         </div>
                  {canEditSigners && (
-           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-             <DialogTrigger>
-               <Button onClick={() => resetForm()}>
-                 <Plus className="h-4 w-4 mr-2" />
-                 Add Signer
-               </Button>
-             </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add New Signer</DialogTitle>
-              </DialogHeader>
-              <SignerForm />
-              <div className="flex justify-end space-x-2 pt-4">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setIsAddDialogOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={handleAddSigner}
-                  disabled={addSignerMutation.isPending}
-                >
-                  {addSignerMutation.isPending ? "Adding..." : "Add Signer"}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-        )}
+           <>
+             <Button 
+               onClick={() => {
+                 resetForm();
+                 setIsAddDialogOpen(true);
+               }}
+             >
+               <Plus className="h-4 w-4 mr-2" />
+               Add Signer
+             </Button>
+             
+             <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+               <DialogContent>
+                 <DialogHeader>
+                   <DialogTitle>Add New Signer</DialogTitle>
+                 </DialogHeader>
+                 <SignerForm />
+                 <div className="flex justify-end space-x-2 pt-4">
+                   <Button 
+                     variant="outline" 
+                     onClick={() => setIsAddDialogOpen(false)}
+                   >
+                     Cancel
+                   </Button>
+                   <Button 
+                     onClick={handleAddSigner}
+                     disabled={addSignerMutation.isPending}
+                   >
+                     {addSignerMutation.isPending ? "Adding..." : "Add Signer"}
+                   </Button>
+                 </div>
+               </DialogContent>
+             </Dialog>
+           </>
+         )}
       </div>
 
       {/* Signers Table */}

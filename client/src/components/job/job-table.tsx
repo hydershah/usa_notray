@@ -1233,7 +1233,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
 
       {/* Enhanced Job Editor Dialog with improved modal positioning */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent className="w-[95vw] max-w-7xl h-[95vh] p-0 overflow-hidden
+        <DialogContent className="w-[95vw] max-w-7xl h-[95vh] p-0
                                  data-[state=open]:animate-in data-[state=closed]:animate-out 
                                  data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 
                                  data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 

@@ -213,7 +213,7 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
   }
 
   return (
-    <div className="w-full h-full flex flex-col bg-white">
+    <div className="w-full flex flex-col bg-white">
       {/* Header Section - Fixed at top */}
       <div className="flex-shrink-0 border-b bg-white z-10">
         <div className="flex items-center justify-between p-4 lg:p-6">
@@ -302,9 +302,9 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
             </TabsList>
           </div>
 
-          {/* Content Section - Scrollable */}
-          <div className="flex-1 overflow-hidden">
-            <TabsContent value="basic" className="h-full overflow-y-auto p-4 lg:p-6 m-0 bg-gray-50">
+          {/* Content Section - Natural height */}
+          <div className="flex-1">
+            <TabsContent value="basic" className="p-4 lg:p-6 m-0 bg-gray-50">
               <div className="max-w-5xl mx-auto space-y-8">
                 {/* Company and Job Type */}
                 <Card className="border-0 shadow-sm">
@@ -605,7 +605,7 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
               </div>
             </TabsContent>
 
-            <TabsContent value="signers" className="h-full overflow-y-auto p-4 lg:p-6 m-0 bg-gray-50">
+            <TabsContent value="signers" className="p-4 lg:p-6 m-0 bg-gray-50">
               <div className="max-w-5xl mx-auto">
                 <Card>
                   <CardHeader>
@@ -620,7 +620,7 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
               </div>
             </TabsContent>
 
-            <TabsContent value="documents" className="h-full overflow-y-auto p-4 lg:p-6 m-0 bg-gray-50">
+            <TabsContent value="documents" className="p-4 lg:p-6 m-0 bg-gray-50">
               <div className="max-w-5xl mx-auto">
                 <EnhancedDocumentManager 
                   jobId={jobId} 
@@ -630,7 +630,7 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
               </div>
             </TabsContent>
 
-            <TabsContent value="settings" className="h-full overflow-y-auto p-4 lg:p-6 m-0 bg-gray-50">
+            <TabsContent value="settings" className="p-4 lg:p-6 m-0 bg-gray-50">
               <div className="max-w-5xl mx-auto">
                 <Card>
                   <CardHeader>
