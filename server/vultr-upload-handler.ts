@@ -31,7 +31,10 @@ export class VultrUploadHandler {
     metadata: any = {}
   ): Promise<VultrUploadResult> {
     try {
-      const sessionId = `job-${jobId}`;
+      // Handle temporary uploads (jobId = 0) for job requests
+      const sessionId = jobId === 0 ? 
+        (metadata.tempSessionId || `temp-${Date.now()}-${Math.random().toString(36).substring(7)}`) : 
+        `job-${jobId}`;
       
       // Enhanced metadata for intelligent organization
       const enhancedMetadata = {
@@ -50,22 +53,25 @@ export class VultrUploadHandler {
         enhancedMetadata
       );
 
-      // Create job document record in database with Vultr key
-      await db.insert(jobDocuments).values({
-        jobId,
-        fileName: originalFilename,
-        originalName: originalFilename,
-        filePath: uploadResult.key, // Store organized Vultr key
-        fileSize: uploadResult.size,
-        mimeType: this.getContentType(originalFilename),
-        documentType: enhancedMetadata.documentType,
-        status: 'uploaded',
-        uploadedBy: userId,
-        isRequired: metadata.isRequired || false,
-        signaturePages: []
-      });
+      // Only create database record if jobId is not 0 (temporary upload)
+      if (jobId !== 0) {
+        // Create job document record in database with Vultr key
+        await db.insert(jobDocuments).values({
+          jobId,
+          fileName: originalFilename,
+          originalName: originalFilename,
+          filePath: uploadResult.key, // Store organized Vultr key
+          fileSize: uploadResult.size,
+          mimeType: this.getContentType(originalFilename),
+          documentType: enhancedMetadata.documentType,
+          status: 'uploaded',
+          uploadedBy: userId,
+          isRequired: metadata.isRequired || false,
+          signaturePages: []
+        });
+      }
 
-      console.log(`✅ Uploaded job document to Vultr: ${originalFilename}`);
+      console.log(`✅ Uploaded ${jobId === 0 ? 'temporary' : 'job'} document to Vultr: ${originalFilename}`);
       console.log(`📁 Organized path: ${uploadResult.organizedPath?.folder}/${uploadResult.organizedPath?.filename}`);
 
       return {
@@ -92,28 +98,33 @@ export class VultrUploadHandler {
         // Generate local file path
         const timestamp = Date.now();
         const sanitizedFilename = originalFilename.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const localFilename = `job-${jobId}-${timestamp}-${sanitizedFilename}`;
+        const localFilename = jobId === 0 ? 
+          `temp-${timestamp}-${sanitizedFilename}` : 
+          `job-${jobId}-${timestamp}-${sanitizedFilename}`;
         const localPath = path.join(uploadsDir, localFilename);
         
         // Write file to local storage
         fs.writeFileSync(localPath, fileBuffer);
         
-        // Create job document record with local path
-        await db.insert(jobDocuments).values({
-          jobId,
-          fileName: originalFilename,
-          originalName: originalFilename,
-          filePath: localPath, // Store local path as fallback
-          fileSize: fileBuffer.length,
-          mimeType: this.getContentType(originalFilename),
-          documentType: metadata.documentType || 'original',
-          status: 'uploaded_local', // Mark as local fallback
-          uploadedBy: userId,
-          isRequired: metadata.isRequired || false,
-          signaturePages: []
-        });
+        // Only create database record if jobId is not 0 (temporary upload)
+        if (jobId !== 0) {
+          // Create job document record with local path
+          await db.insert(jobDocuments).values({
+            jobId,
+            fileName: originalFilename,
+            originalName: originalFilename,
+            filePath: localPath, // Store local path as fallback
+            fileSize: fileBuffer.length,
+            mimeType: this.getContentType(originalFilename),
+            documentType: metadata.documentType || 'original',
+            status: 'uploaded_local', // Mark as local fallback
+            uploadedBy: userId,
+            isRequired: metadata.isRequired || false,
+            signaturePages: []
+          });
+        }
         
-        console.log(`✅ Fallback: Saved document locally: ${localFilename}`);
+        console.log(`✅ Fallback: Saved ${jobId === 0 ? 'temporary' : 'job'} document locally: ${localFilename}`);
         
         return {
           success: true,
@@ -124,10 +135,10 @@ export class VultrUploadHandler {
         };
         
       } catch (fallbackError) {
-        console.error('Fallback upload also failed:', fallbackError);
+        console.error('❌ Local fallback also failed:', fallbackError);
         return {
           success: false,
-          error: `Both Vultr and local fallback failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+          error: `Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`
         };
       }
     }

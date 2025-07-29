@@ -319,6 +319,39 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      {/* Job Request Routes */}
+      <Route path="/job-request">
+        <ProtectedRoute allowedRoles={['signer', 'client']}>
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/job-request")))}
+            </React.Suspense>
+          </ErrorBoundary>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/my-job-requests">
+        <ProtectedRoute allowedRoles={['signer', 'client']}>
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/my-job-requests")))}
+            </React.Suspense>
+          </ErrorBoundary>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/job-requests">
+        <ProtectedRoute allowedRoles={['admin']}>
+          <MainLayout>
+            <ErrorBoundary fallback={<LoadingFallback />}>
+              <React.Suspense fallback={<LoadingFallback />}>
+                {React.createElement(React.lazy(() => import("@/pages/admin/job-requests")))}
+              </React.Suspense>
+            </ErrorBoundary>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+
       {/* PDF Editor Routes */}
       <Route path="/editor/:jobId">
         <ProtectedRoute allowedRoles={['admin', 'notary', 'signer', 'witness']}>

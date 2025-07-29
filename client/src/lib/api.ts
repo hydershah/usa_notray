@@ -18,13 +18,22 @@ export async function apiRequest(method: string, url: string, data?: any): Promi
   const options: RequestInit = {
     method: method.toUpperCase(),
     headers: {
-      'Content-Type': 'application/json',
       ...(token && { 'Authorization': `Bearer ${token}` })
     }
   };
 
   if (data && (method.toUpperCase() === 'POST' || method.toUpperCase() === 'PUT' || method.toUpperCase() === 'PATCH')) {
-    options.body = JSON.stringify(data);
+    // If data is FormData, don't set Content-Type header (let browser set it with boundary)
+    if (data instanceof FormData) {
+      options.body = data;
+    } else {
+      // For JSON data, set Content-Type header
+      options.headers = {
+        ...options.headers,
+        'Content-Type': 'application/json'
+      };
+      options.body = JSON.stringify(data);
+    }
   }
 
   const response = await fetch(url, options);

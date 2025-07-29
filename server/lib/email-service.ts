@@ -986,41 +986,151 @@ class EmailService {
   }
 
   async testConfiguration(testEmail: string): Promise<string> {
-    // Clear cache to ensure we use the latest settings from database
-    this.clearCache();
-    
-    const content = `
-        <h2 style="color: #10b981; margin-bottom: 20px;">✅ Email Configuration Test</h2>
-        
-        <p>Congratulations! Your email configuration is working perfectly.</p>
-        
-        <div class="success-box">
-            <h3 style="margin-top: 0;">📧 Test Results</h3>
-            <p>If you're reading this email, your SMTP configuration is properly set up and ready for:</p>
-            <ul style="margin: 10px 0;">
-                <li>Signer invitations</li>
-                <li>User registrations</li>
-                <li>Password resets</li>
-                <li>System notifications</li>
+    try {
+      await this.sendEmail({
+        to: testEmail,
+        subject: 'Email Configuration Test - USA Notary Platform',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #2563eb;">✅ Email Configuration Test Successful</h2>
+            <p>This is a test email to verify that your email configuration is working correctly.</p>
+            <p><strong>Test Details:</strong></p>
+            <ul>
+              <li>Timestamp: ${new Date().toLocaleString()}</li>
+              <li>Provider: ${this.settings?.email_provider || 'Unknown'}</li>
+              <li>From: ${this.settings?.from_email || 'Not configured'}</li>
             </ul>
-        </div>
-        
-        <p>This test was performed on: <strong>${new Date().toLocaleString()}</strong></p>
-        
-        <p style="margin-top: 30px;">
-            Best regards,<br>
-            <strong>The USA Notary Services Team</strong>
-        </p>
-    `;
+            <p>If you received this email, your email service is properly configured!</p>
+          </div>
+        `
+      });
+      return 'Email sent successfully';
+    } catch (error) {
+      console.error('Email test failed:', error);
+      throw new Error(`Email test failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Job Request Email Methods
+  async sendJobRequestNotification(data: {
+    to: string;
+    adminName: string;
+    requestTitle: string;
+    requestorEmail: string;
+    urgency: string;
+    description: string;
+  }): Promise<void> {
+    const urgencyColor = data.urgency === 'urgent' ? '#dc2626' : 
+                        data.urgency === 'high' ? '#ea580c' : 
+                        data.urgency === 'normal' ? '#2563eb' : '#16a34a';
 
     await this.sendEmail({
-      to: testEmail,
-      subject: `✅ Email Test Successful - Sharp Note`,
-      html: this.getBaseTemplate(content),
-      text: `Email configuration test successful! Your Sharp Note email system is ready.`
+      to: data.to,
+      subject: `New Job Request: ${data.requestTitle}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #2563eb;">New Job Request Submitted</h2>
+          <p>Hello ${data.adminName},</p>
+          <p>A new job request has been submitted and requires your review.</p>
+          
+          <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="margin-top: 0; color: #1e293b;">Request Details</h3>
+            <p><strong>Title:</strong> ${data.requestTitle}</p>
+            <p><strong>Requestor:</strong> ${data.requestorEmail}</p>
+            <p><strong>Urgency:</strong> <span style="color: ${urgencyColor}; font-weight: bold;">${data.urgency.toUpperCase()}</span></p>
+            <p><strong>Description:</strong></p>
+            <div style="background-color: white; padding: 15px; border-radius: 4px; border-left: 4px solid #2563eb;">
+              ${data.description}
+            </div>
+          </div>
+          
+          <p>Please review this request and take appropriate action.</p>
+          <p>Best regards,<br>USA Notary Platform</p>
+        </div>
+      `
     });
+  }
 
-    return 'Test email sent successfully';
+  async sendJobRequestReviewNotification(data: {
+    to: string;
+    requestTitle: string;
+    status: string;
+    reviewNotes?: string;
+    assignedNotary: string;
+  }): Promise<void> {
+    const statusColor = data.status === 'approved' ? '#16a34a' : '#dc2626';
+    const statusText = data.status === 'approved' ? 'APPROVED' : 'REJECTED';
+
+    await this.sendEmail({
+      to: data.to,
+      subject: `Job Request ${statusText}: ${data.requestTitle}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: ${statusColor};">Job Request ${statusText}</h2>
+          <p>Your job request has been reviewed by our admin team.</p>
+          
+          <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="margin-top: 0; color: #1e293b;">Request Details</h3>
+            <p><strong>Title:</strong> ${data.requestTitle}</p>
+            <p><strong>Status:</strong> <span style="color: ${statusColor}; font-weight: bold;">${statusText}</span></p>
+            <p><strong>Notary Assigned:</strong> ${data.assignedNotary}</p>
+            ${data.reviewNotes ? `
+              <p><strong>Admin Notes:</strong></p>
+              <div style="background-color: white; padding: 15px; border-radius: 4px; border-left: 4px solid ${statusColor};">
+                ${data.reviewNotes}
+              </div>
+            ` : ''}
+          </div>
+          
+          ${data.status === 'approved' ? `
+            <p>Your request has been approved! A notary will be in touch with you soon to schedule your notarization.</p>
+          ` : `
+            <p>Unfortunately, your request has been rejected. Please review the admin notes above for more details.</p>
+          `}
+          
+          <p>Best regards,<br>USA Notary Platform</p>
+        </div>
+      `
+    });
+  }
+
+  async sendNotaryAssignmentNotification(data: {
+    to: string;
+    notaryName: string;
+    requestTitle: string;
+    requestorEmail: string;
+    description: string;
+    preferredDate?: string;
+    preferredTime?: string;
+    location?: string;
+  }): Promise<void> {
+    await this.sendEmail({
+      to: data.to,
+      subject: `New Assignment: ${data.requestTitle}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #2563eb;">New Job Assignment</h2>
+          <p>Hello ${data.notaryName},</p>
+          <p>You have been assigned a new job request that requires your attention.</p>
+          
+          <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="margin-top: 0; color: #1e293b;">Assignment Details</h3>
+            <p><strong>Request Title:</strong> ${data.requestTitle}</p>
+            <p><strong>Requestor:</strong> ${data.requestorEmail}</p>
+            <p><strong>Description:</strong></p>
+            <div style="background-color: white; padding: 15px; border-radius: 4px; border-left: 4px solid #2563eb;">
+              ${data.description}
+            </div>
+            ${data.preferredDate ? `<p><strong>Preferred Date:</strong> ${data.preferredDate}</p>` : ''}
+            ${data.preferredTime ? `<p><strong>Preferred Time:</strong> ${data.preferredTime}</p>` : ''}
+            ${data.location ? `<p><strong>Location:</strong> ${data.location}</p>` : ''}
+          </div>
+          
+          <p>Please contact the requestor to schedule the notarization session.</p>
+          <p>Best regards,<br>USA Notary Platform</p>
+        </div>
+      `
+    });
   }
 }
 

@@ -77,6 +77,15 @@ const menuItems: MenuItem[] = [
     description: 'Your signing assignments'
   },
   {
+    id: 'job-requests',
+    label: 'Job Requests',
+    icon: FileText,
+    path: '/job-request',
+    roles: ['signer', 'client'],
+    section: 'work',
+    description: 'Request notarization services'
+  },
+  {
     id: 'create-job',
     label: 'New Job',
     icon: Plus,
@@ -187,6 +196,14 @@ const menuItems: MenuItem[] = [
         path: '/admin/approvals',
         roles: ['admin'],
         description: 'User and company approvals'
+      },
+      {
+        id: 'job-requests',
+        label: 'Job Requests',
+        icon: FileText,
+        path: '/admin/job-requests',
+        roles: ['admin'],
+        description: 'Review and approve signer job requests'
       },
       {
         id: 'verification',

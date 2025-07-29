@@ -29,7 +29,8 @@ import {
   Layers,
   Bell,
   Search,
-  Filter
+  Filter,
+  XCircle
 } from 'lucide-react';
 
 interface DashboardStats {
@@ -42,6 +43,12 @@ interface DashboardStats {
   completedJobs: number;
   monthlyRevenue: number;
   pendingPayments: number;
+  // Job Request Statistics
+  totalJobRequests: number;
+  pendingJobRequests: number;
+  approvedJobRequests: number;
+  rejectedJobRequests: number;
+  assignedJobRequests: number;
 }
 
 interface PendingUser {
@@ -131,7 +138,13 @@ export function AdminOverview() {
     activeJobs: 0,
     completedJobs: 0,
     monthlyRevenue: 0,
-    pendingPayments: 0
+    pendingPayments: 0,
+    // Job Request Statistics
+    totalJobRequests: 0,
+    pendingJobRequests: 0,
+    approvedJobRequests: 0,
+    rejectedJobRequests: 0,
+    assignedJobRequests: 0
   });
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [pendingCompanies, setPendingCompanies] = useState<PendingCompany[]>([]);
@@ -147,7 +160,7 @@ export function AdminOverview() {
       setLoading(true);
       
       // Fetch all required data
-      const [usersRes, companiesRes, jobsRes, pendingRes, pendingCompaniesRes, revenueRes] = await Promise.all([
+      const [usersRes, companiesRes, jobsRes, pendingRes, pendingCompaniesRes, revenueRes, jobRequestsRes] = await Promise.all([
         fetch('/api/users', {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`,
@@ -183,6 +196,12 @@ export function AdminOverview() {
             'Authorization': `Bearer ${localStorage.getItem('token')}`,
             'Content-Type': 'application/json'
           }
+        }),
+        fetch('/api/job-requests', {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Content-Type': 'application/json'
+          }
         })
       ]);
 
@@ -192,6 +211,7 @@ export function AdminOverview() {
       const pending = await pendingRes.json();
       const pendingCompaniesData = await pendingCompaniesRes.json();
       const revenueData = await revenueRes.json();
+      const jobRequestsData = await jobRequestsRes.json();
 
       // Ensure all data is arrays before processing
       const usersArray = Array.isArray(users) ? users : [];
@@ -199,6 +219,9 @@ export function AdminOverview() {
       const jobsArray = Array.isArray(jobs) ? jobs : [];
       const pendingArray = Array.isArray(pending) ? pending : [];
       const pendingCompaniesArray = Array.isArray(pendingCompaniesData) ? pendingCompaniesData : [];
+      const jobRequestsArray = Array.isArray(jobRequestsData.data?.requests) ? jobRequestsData.data.requests : 
+                              Array.isArray(jobRequestsData.data) ? jobRequestsData.data : 
+                              Array.isArray(jobRequestsData) ? jobRequestsData : [];
 
       // Calculate statistics
       const activeNotaries = usersArray.filter((user: any) => 
@@ -213,6 +236,12 @@ export function AdminOverview() {
         job.jobStatus === 'completed'
       ).length;
 
+      // Calculate job request statistics
+      const pendingJobRequests = jobRequestsArray.filter((req: any) => req.status === 'pending').length;
+      const approvedJobRequests = jobRequestsArray.filter((req: any) => req.status === 'approved').length;
+      const rejectedJobRequests = jobRequestsArray.filter((req: any) => req.status === 'rejected').length;
+      const assignedJobRequests = jobRequestsArray.filter((req: any) => req.status === 'assigned').length;
+
       setStats({
         totalUsers: usersArray.length,
         pendingApprovals: pendingArray.length,
@@ -222,7 +251,13 @@ export function AdminOverview() {
         activeJobs,
         completedJobs,
         monthlyRevenue: parseFloat(revenueData.monthly_revenue) || 0,
-        pendingPayments: parseInt(revenueData.pending_payments) || 0
+        pendingPayments: parseInt(revenueData.pending_payments) || 0,
+        // Job Request Statistics
+        totalJobRequests: jobRequestsArray.length,
+        pendingJobRequests,
+        approvedJobRequests,
+        rejectedJobRequests,
+        assignedJobRequests
       });
 
       setPendingUsers(pendingArray);
@@ -302,6 +337,50 @@ export function AdminOverview() {
         />
       </div>
 
+      {/* Job Request Statistics */}
+      <div className="mt-8">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Job Request Management</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <StatCard
+            title="Total Requests"
+            value={stats.totalJobRequests}
+            icon={FileText}
+            description="All job requests"
+            color="blue"
+          />
+          <StatCard
+            title="Pending Review"
+            value={stats.pendingJobRequests}
+            icon={Clock}
+            description="Awaiting admin review"
+            trend={stats.pendingJobRequests > 10 ? "High" : "Normal"}
+            trendDirection={stats.pendingJobRequests > 10 ? "up" : "down"}
+            color={stats.pendingJobRequests > 10 ? "red" : "yellow"}
+          />
+          <StatCard
+            title="Approved"
+            value={stats.approvedJobRequests}
+            icon={CheckCircle}
+            description="Approved requests"
+            color="green"
+          />
+          <StatCard
+            title="Assigned"
+            value={stats.assignedJobRequests}
+            icon={UserCheck}
+            description="Assigned to notaries"
+            color="purple"
+          />
+          <StatCard
+            title="Rejected"
+            value={stats.rejectedJobRequests}
+            icon={XCircle}
+            description="Rejected requests"
+            color="red"
+          />
+        </div>
+      </div>
+
       {/* Quick Actions & Recent Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Quick Actions */}
@@ -321,6 +400,7 @@ export function AdminOverview() {
             <div className="space-y-3">
               {[
                 { label: 'Review Pending Approvals', icon: CheckCircle, path: '/admin/approvals', count: stats.pendingApprovals },
+                { label: 'Job Request Management', icon: FileText, path: '/admin/job-requests', count: stats.pendingJobRequests },
                 { label: 'Manage Users', icon: Users, path: '/admin/users', count: stats.totalUsers },
                 { label: 'Notary Management', icon: Award, path: '/admin/notaries', count: stats.activeNotaries },
                 { label: 'Company Management', icon: Building2, path: '/admin/companies', count: stats.totalCompanies },

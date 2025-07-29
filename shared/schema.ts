@@ -334,7 +334,7 @@ export const jobs = pgTable("jobs", {
   recordingSessionId: text("recording_session_id"), // Editor session ID during recording
   recordingLiveSessionId: text("recording_live_session_id"), // Live session ID during recording
   recordingMetadata: jsonb("recording_metadata"), // Additional recording metadata (participants, session details, etc.)
-  jobStatus: text("job_status").notNull().default("open"), // 'open', 'pending', 'completed', 'cancelled', 'expired'
+  jobStatus: text("job_status").notNull().default("open"), // 'open', 'pending', 'completed', 'cancelled', 'expired', 'request_pending', 'request_approved', 'request_rejected'
   userId: integer("user_id").references(() => users.id),
   sessionToken: text("session_token"),
   scheduledAt: timestamp("scheduled_at"),
@@ -359,6 +359,13 @@ export const jobs = pgTable("jobs", {
   jobType: text("job_type").default("title_company"), // 'title_company', 'subscriber_personal'
   completionReportPath: text('completion_report_path'),
   completionReportGeneratedAt: timestamp('completion_report_generated_at'),
+  // Signer request fields
+  isSignerRequest: boolean("is_signer_request").default(false), // Indicates if this job was initiated by a signer
+  signerRequestNotes: text("signer_request_notes"), // Additional notes from signer about the request
+  adminReviewNotes: text("admin_review_notes"), // Admin's review notes when approving/rejecting
+  adminReviewedBy: integer("admin_reviewed_by").references(() => users.id), // Admin who reviewed the request
+  adminReviewedAt: timestamp("admin_reviewed_at"), // When admin reviewed the request
+  requestPriority: text("request_priority").default("normal"), // 'low', 'normal', 'high', 'urgent'
 });
 
 // Password reset tokens table
@@ -2080,3 +2087,62 @@ export const digitalSignatures = pgTable('digital_signatures', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull()
 });
+
+// Job requests table - for signer-initiated requests that need admin approval
+export const jobRequests = pgTable("notarization_job_requests", {
+  id: serial("id").primaryKey(),
+  // Request details
+  title: text("title").notNull(), // Brief title of the request
+  description: text("description").notNull(), // Detailed description of what needs to be notarized
+  documentType: text("document_type").notNull(), // Type of document(s) to be notarized
+  urgency: text("urgency").notNull().default("normal"), // 'low', 'normal', 'high', 'urgent'
+  preferredDate: text("preferred_date"), // Preferred date for notarization
+  preferredTime: text("preferred_time"), // Preferred time for notarization
+  location: text("location"), // Location where notarization should take place
+  
+  // Requestor information
+  requestorId: integer("requestor_id").references(() => users.id).notNull(), // Signer who made the request
+  requestorEmail: text("requestor_email").notNull(),
+  requestorPhone: text("requestor_phone"),
+  
+  // Status and workflow
+  status: text("status").notNull().default("pending"), // 'pending', 'approved', 'rejected', 'assigned', 'completed', 'cancelled'
+  priority: text("priority").default("normal"), // 'low', 'normal', 'high', 'urgent'
+  
+  // Admin review
+  reviewedBy: integer("reviewed_by").references(() => users.id), // Admin who reviewed
+  reviewedAt: timestamp("reviewed_at"),
+  reviewNotes: text("review_notes"), // Admin's notes on approval/rejection
+  
+  // Assignment
+  assignedNotaryId: integer("assigned_notary_id").references(() => users.id), // Notary assigned to handle this request
+  assignedAt: timestamp("assigned_at"),
+  assignmentNotes: text("assignment_notes"), // Notes about the assignment
+  
+  // Conversion to job
+  convertedToJobId: integer("converted_to_job_id").references(() => jobs.id), // If converted to a regular job
+  convertedAt: timestamp("converted_at"),
+  
+  // Timestamps
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  
+  // Additional metadata
+  metadata: jsonb("metadata"), // Additional request data
+});
+
+// Job Request schemas
+export const insertJobRequestSchema = createInsertSchema(jobRequests, {
+  urgency: z.enum(['low', 'normal', 'high', 'urgent']),
+  status: z.enum(['pending', 'approved', 'rejected', 'assigned', 'completed', 'cancelled']),
+  priority: z.enum(['low', 'normal', 'high', 'urgent']),
+});
+
+export const selectJobRequestSchema = createSelectSchema(jobRequests, {
+  urgency: z.enum(['low', 'normal', 'high', 'urgent']),
+  status: z.enum(['pending', 'approved', 'rejected', 'assigned', 'completed', 'cancelled']),
+  priority: z.enum(['low', 'normal', 'high', 'urgent']),
+});
+
+export type InsertJobRequest = z.infer<typeof insertJobRequestSchema>;
+export type JobRequest = typeof jobRequests.$inferSelect;

@@ -26,7 +26,8 @@ import {
   ToggleRight,
   PenTool,
   Video,
-  Download
+  Download,
+  MapPin
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -229,7 +230,6 @@ function SignerDashboard() {
   const [selectedJobForDocuments, setSelectedJobForDocuments] = useState<any>(null);
   const [jobDocuments, setJobDocuments] = useState<any[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
-
   const fetchJobDocuments = async (jobId: number) => {
     setDocumentsLoading(true);
     try {
@@ -376,6 +376,16 @@ function SignerDashboard() {
     fetchInvitedJobs();
   }, [user?.id]);
 
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed': return 'bg-green-100 text-green-800';
+      case 'in_progress': return 'bg-blue-100 text-blue-800';
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
+      case 'cancelled': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -447,46 +457,37 @@ function SignerDashboard() {
 
       {/* ID Verification Modal/Component */}
       {showVerification && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-4 border-b">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold">ID Verification Required</h2>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => setShowVerification(false)}
-                >
-                  <XCircle className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            <div className="p-4">
-              <EVSVerification
-                userId={(() => {
-                  let id = user?.id;
-                  if (!id) {
-                    const storedUser = localStorage.getItem('user');
-                    if (storedUser) {
-                      try {
-                        const parsedUser = JSON.parse(storedUser);
-                        id = parsedUser.id;
-                      } catch (e) {
-                        console.error('Error parsing stored user:', e);
-                      }
-                    }
-                  }
-                  return id || 0;
-                })()}
-                onVerificationComplete={handleVerificationComplete}
-                onVerificationFailed={handleVerificationFailed}
-              />
-            </div>
-          </div>
-        </div>
+        <Dialog open={showVerification} onOpenChange={setShowVerification}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Identity Verification</DialogTitle>
+            </DialogHeader>
+            <EVSVerification
+              onComplete={handleVerificationComplete}
+              onFailed={handleVerificationFailed}
+              onClose={() => setShowVerification(false)}
+            />
+          </DialogContent>
+        </Dialog>
       )}
 
-      {/* Invited Jobs Section */}
+      {/* KBA Verification Modal */}
+      {showKBAVerification && (
+        <Dialog open={showKBAVerification} onOpenChange={setShowKBAVerification}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Knowledge-Based Authentication (KBA)</DialogTitle>
+            </DialogHeader>
+            <KBAVerification
+              onComplete={handleKBAVerificationComplete}
+              onFailed={handleKBAVerificationFailed}
+              onClose={() => setShowKBAVerification(false)}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Your Signing Jobs Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-gray-900">Your Signing Jobs</h2>
@@ -509,280 +510,125 @@ function SignerDashboard() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {invitedJobs.map((job, index) => (
-              <Card key={job.id} className="border-l-4 border-l-blue-500">
+          <div className="grid gap-4">
+            {invitedJobs.slice(0, 3).map((job) => (
+              <Card key={job.id} className="hover:shadow-md transition-shadow">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
                         <h3 className="text-lg font-semibold text-gray-900">
-                          {job.titleCompany}
+                          {job.titleCompany} - {job.closingType}
                         </h3>
-                        <Badge 
-                          variant={job.signingStatus === 'completed' ? 'default' : 'secondary'}
-                          className={
-                            job.signingStatus === 'completed' ? 'bg-green-100 text-green-800' :
-                            job.signingStatus === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                            'bg-yellow-100 text-yellow-800'
-                          }
-                        >
-                          {job.signingStatus === 'pending' ? 'Pending' :
-                           job.signingStatus === 'in_progress' ? 'In Progress' :
-                           job.signingStatus === 'completed' ? 'Completed' : 
-                           job.signingStatus}
+                        <Badge className={getStatusColor(job.jobStatus)}>
+                          {job.jobStatus.charAt(0).toUpperCase() + job.jobStatus.slice(1)}
                         </Badge>
                       </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div>
-                          <p className="text-sm text-gray-600">Document Type</p>
-                          <p className="font-medium">{job.closingType}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Your Role</p>
-                          <p className="font-medium capitalize">{job.signerRole}</p>
-                        </div>
+                      <p className="text-gray-600 mb-3">
+                        Role: {job.signerRole} • Status: {job.signingStatus}
+                      </p>
+                      <div className="flex items-center gap-4 text-sm text-gray-500">
                         {job.propertyAddressOne && (
-                          <div className="md:col-span-2">
-                            <p className="text-sm text-gray-600">Property Address</p>
-                            <p className="font-medium">
-                              {job.propertyAddressOne}
-                              {job.propertyCity && `, ${job.propertyCity}`}
-                              {job.propertyState && `, ${job.propertyState}`}
-                            </p>
-                          </div>
+                          <span className="flex items-center">
+                            <MapPin className="h-4 w-4 mr-1" />
+                            {job.propertyAddressOne}, {job.propertyCity}, {job.propertyState}
+                          </span>
                         )}
                         {job.selectedDate && (
-                          <div>
-                            <p className="text-sm text-gray-600">Scheduled Date</p>
-                            <p className="font-medium">{new Date(job.selectedDate).toLocaleDateString()}</p>
-                          </div>
-                        )}
-                        {job.selectedTime && (
-                          <div>
-                            <p className="text-sm text-gray-600">Scheduled Time</p>
-                            <p className="font-medium">{job.selectedTime}</p>
-                          </div>
+                          <span className="flex items-center">
+                            <Calendar className="h-4 w-4 mr-1" />
+                            {new Date(job.selectedDate).toLocaleDateString()}
+                            {job.selectedTime && ` at ${job.selectedTime}`}
+                          </span>
                         )}
                       </div>
                     </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-4 border-t">
-                    <div className="text-sm text-gray-500">
-                      Invited: {job.invitationSentAt ? new Date(job.invitationSentAt).toLocaleDateString() : 'Not sent'}
-                    </div>
-                    
-                    <div className="flex gap-2">
-                      {/* View Documents Button - Always available for signers */}
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => handleViewDocuments(job)}
-                          >
-                            <Eye className="h-4 w-4 mr-2" />
-                            View Documents
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-                          <DialogHeader>
-                            <DialogTitle>Documents for {job.titleCompany}</DialogTitle>
-                          </DialogHeader>
-                          <div className="space-y-4">
-                            {documentsLoading ? (
-                              <div className="flex items-center justify-center py-8">
-                                <div className="text-center">
-                                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                                  <p className="mt-2 text-gray-600">Loading documents...</p>
-                                </div>
-                              </div>
-                            ) : jobDocuments.length > 0 ? (
-                              <div className="space-y-3">
-                                {jobDocuments.map((document: any) => (
-                                  <div key={document.id} className="flex items-center justify-between p-4 border rounded-lg bg-gray-50">
-                                    <div className="flex items-center space-x-3">
-                                      <FileText className="h-8 w-8 text-blue-600" />
-                                      <div>
-                                        <p className="font-medium">{document.originalName}</p>
-                                        <p className="text-sm text-gray-600">
-                                          Type: {document.documentType || 'Document'}
-                                          {document.isRequired && (
-                                            <Badge className="ml-2 bg-red-100 text-red-800">Required</Badge>
-                                          )}
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handlePreviewDocument(document.id)}
-                                        title="Preview document"
-                                      >
-                                        <Eye className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="text-center py-8">
-                                <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                                <p className="text-gray-600">No documents found for this job.</p>
-                              </div>
-                            )}
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-
-                      {job.signingStatus === 'pending' && profile?.isVerified && (
-                        <Button 
-                          size="sm" 
-                          className="bg-blue-600 hover:bg-blue-700"
-                          onClick={async () => {
-                            try {
-                              // For mobile devices, prepare the window reference before async operations
-                              const isMobile = isMobileDevice();
-                              let newWindow: Window | null = null;
-                              
-                              if (!isMobile) {
-                                // For desktop, prepare the window reference before the async call
-                                newWindow = window.open('about:blank', '_blank');
-                              }
-
-                              // Check if user has access to this job session
-                              const token = localStorage.getItem('token');
-                              const sessionAccessResponse = await fetch(`/api/jobs/${job.id}/session-access`, {
-                                headers: { 'Authorization': `Bearer ${token}` }
-                              });
-
-                              if (!sessionAccessResponse.ok) {
-                                const errorData = await sessionAccessResponse.json();
-                                // Close the prepared window if it was opened
-                                if (newWindow) {
-                                  newWindow.close();
-                                }
-                                throw new Error(errorData.message || 'Access denied to session');
-                              }
-
-                              const signingUrl = `/editor/${job.id}?mode=signing`;
-                              
-                              // Navigate based on device type
-                              if (isMobile) {
-                                // For mobile devices, navigate in the same tab
-                                window.location.href = signingUrl;
-                              } else {
-                                // For desktop, use the prepared window
-                                if (newWindow) {
-                                  newWindow.location.href = signingUrl;
-                                } else {
-                                  // Fallback if window.open failed
-                                  window.open(signingUrl, '_blank');
-                                }
-                              }
-                              
-                              toast({
-                                title: "Joining Session",
-                                description: "Redirecting you to the signing session...",
-                              });
-                            } catch (error) {
-                              console.error('❌ Failed to join session:', error);
-                              toast({
-                                variant: "destructive",
-                                title: "Failed to Join Session",
-                                description: error instanceof Error ? error.message : 'Unable to join session. Please try again.',
-                              });
-                            }
-                          }}
-                        >
-                          <Video className="h-4 w-4 mr-2" />
-                          Join Session
-                        </Button>
-                      )}
-                      {job.signingStatus === 'pending' && (
-                        // Show appropriate verification button based on job requirements
-                        job.kbaRequired ? (
-                          // KBA Required Jobs
-                          !profile?.kbaVerified && (
-                            <Button 
-                              size="sm" 
-                              variant="outline" 
-                              onClick={() => setShowKBAVerification(true)}
-                            >
-                              <Shield className="h-4 w-4 mr-2" />
-                              Complete KBA Verification
-                            </Button>
-                          )
-                        ) : (
-                          // Regular ID Verification Jobs
-                          !profile?.isVerified && (
-                            <Button 
-                              size="sm" 
-                              variant="outline" 
-                              onClick={() => setShowVerification(true)}
-                            >
-                              <Shield className="h-4 w-4 mr-2" />
-                              Verify ID First
-                            </Button>
-                          )
-                        )
-                      )}
-                      {job.signingStatus === 'completed' && (
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          onClick={async () => {
-                            try {
-                              const token = localStorage.getItem('token');
-                              const response = await fetch(`/api/jobs/${job.id}/download`, {
-                                headers: { 'Authorization': `Bearer ${token}` }
-                              });
-
-                              if (!response.ok) {
-                                throw new Error('Failed to download document');
-                              }
-
-                              // Create download link
-                              const blob = await response.blob();
-                              const url = window.URL.createObjectURL(blob);
-                              const link = document.createElement('a');
-                              link.href = url;
-                              link.download = `${job.titleCompany}_${job.closingType}_signed.pdf`;
-                              document.body.appendChild(link);
-                              link.click();
-                              document.body.removeChild(link);
-                              window.URL.revokeObjectURL(url);
-
-                              toast({
-                                title: "Download Started",
-                                description: "Your signed document is downloading...",
-                              });
-                            } catch (error) {
-                              console.error('❌ Failed to download:', error);
-                              toast({
-                                variant: "destructive",
-                                title: "Download Failed",
-                                description: "Unable to download the document. Please try again.",
-                              });
-                            }
-                          }}
-                        >
-                          <Download className="h-4 w-4 mr-2" />
-                          Download
-                        </Button>
-                      )}
+                    <div className="flex flex-col gap-2">
+                      <Button 
+                        size="sm"
+                        onClick={() => setLocation(`/editor/${job.id}?mode=signing`)}
+                      >
+                        <PenTool className="h-4 w-4 mr-2" />
+                        Sign Documents
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleViewDocuments(job)}
+                      >
+                        <Eye className="h-4 w-4 mr-2" />
+                        View Documents
+                      </Button>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             ))}
+            {invitedJobs.length > 3 && (
+              <div className="text-center">
+                <Button 
+                  variant="outline"
+                  onClick={() => setLocation('/signing-jobs')}
+                >
+                  View All {invitedJobs.length} Jobs
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
 
+      {/* Documents Modal */}
+      {selectedJobForDocuments && (
+        <Dialog open={!!selectedJobForDocuments} onOpenChange={() => setSelectedJobForDocuments(null)}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>
+                Documents for {selectedJobForDocuments.titleCompany} - {selectedJobForDocuments.closingType}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="max-h-96 overflow-y-auto">
+              {documentsLoading ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                  <p className="text-gray-600">Loading documents...</p>
+                </div>
+              ) : jobDocuments.length === 0 ? (
+                <div className="text-center py-8">
+                  <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">No documents found for this job.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {jobDocuments.map((doc) => (
+                    <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <FileText className="h-5 w-5 text-blue-600" />
+                        <div>
+                          <p className="font-medium text-gray-900">{doc.originalName}</p>
+                          <p className="text-sm text-gray-500">
+                            {doc.documentType} • {new Date(doc.uploadedAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => handlePreviewDocument(doc.id)}
+                      >
+                        <Eye className="h-4 w-4 mr-2" />
+                        Preview
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Information Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
@@ -866,43 +712,6 @@ function SignerDashboard() {
           </CardContent>
         </Card>
       </div>
-
-      {/* KBA Verification Modal */}
-      {showKBAVerification && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-auto">
-            <KBAVerification
-              userId={user?.id?.toString() || '0'}
-              userInfo={{
-                firstName: profile?.firstName || '',
-                lastName: profile?.lastName || '',
-                dateOfBirth: profile?.dateOfBirth || '',
-                address: {
-                  street: profile?.address1 || '',
-                  city: profile?.city || '',
-                  state: profile?.state || '',
-                  zipCode: profile?.zipCode || ''
-                },
-                ssn: profile?.ssn || '',
-                phone: profile?.phoneNumber || '',
-                email: profile?.email || user?.email || ''
-              }}
-              onVerificationComplete={handleKBAVerificationComplete}
-              onVerificationFailed={handleKBAVerificationFailed}
-              requireKBA={true}
-            />
-            <div className="p-6 border-t">
-              <Button 
-                onClick={() => setShowKBAVerification(false)}
-                variant="outline"
-                className="w-full"
-              >
-                Close
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
