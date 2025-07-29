@@ -1,0 +1,49 @@
+# SAMPLE NOTARY CERTIFICATE INFORMATION
+# Generated: 2025-07-29T04:10:02.437Z
+# FOR TESTING PURPOSES ONLY
+
+## Notary Information
+Notary Name: Sample Test Notary
+Commission Number: TEST123456789
+Commission Expiry: 2027-12-31
+State: California
+Country: US
+Email: test.notary@example.com
+
+## Certificate Details
+Subject: C=US/ST=California/L=California/O=California Secretary of State/OU=Notary Public Division/CN=Sample Test Notary/emailAddress=test.notary@example.com
+Issuer: C=US/ST=California/L=California/O=California Secretary of State/OU=Notary Public Division/CN=Sample Test Notary/emailAddress=test.notary@example.com (Self-Signed)
+Serial Number: 7C5F738D155A0897DD4651FA99CE8159599CB5A0
+SHA256 Fingerprint: sha256 Fingerprint=E7:D0:98:6F:10:7E:06:2F:D3:22:8C:70:55:71:AF:B3:B2:C0:D7:58:38:8F:72:CD:F5:B5:00:1B:E8:E4:9C:59
+Valid From: Jul 29 04:10:02 2025 GMT
+Valid Until: Jul 28 04:10:02 2028 GMT
+Key Length: 2048 bits
+Signature Algorithm: sha256WithRSAEncryption
+
+## P12 Certificate Bundle
+Password: SampleNotary2025!
+File Format: PKCS#12 (.p12)
+Usage: PDF Digital Signing, Document Authentication
+
+## Upload Instructions
+1. Log in to the USA Notary platform as a notary user
+2. Go to Profile Settings > Certificate Management
+3. Upload the .p12 file 
+4. Enter the password: SampleNotary2025!
+5. Save certificate for use in digital signing
+
+## Testing Notes
+- This is a SAMPLE certificate for testing only
+- Not issued by a real Certificate Authority
+- Should not be used for production notarizations
+- Compatible with Adobe Acrobat for signature validation testing
+
+## Technical Details
+- Certificate Type: X.509 v3
+- Key Algorithm: RSA
+- Hash Algorithm: SHA-256
+- Extensions: Basic Constraints, Key Usage, Extended Key Usage
+- Subject Alternative Names: Email, Notary Commission, Role
+
+## Security Notice
+Keep the P12 password secure and do not share this certificate outside of testing environments.

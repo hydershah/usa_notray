@@ -121,7 +121,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     setConnectionStatus,
     getCurrentDocumentTags,
     getDocumentTags,
-    loadTagsForDocument
+    loadTagsForDocument,
+    getTagDimensions
   } = useEditorStore();
 
   // Handle page load from PDFViewer to get canvas element
@@ -1040,6 +1041,19 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         console.log('📝 Placing streamlined text input...');
         console.log('Current text inputs before placement:', textInputs);
         
+        // Get saved dimensions for text tags, or use defaults
+        const { getTagDimensions } = useEditorStore.getState();
+        const dimensions = getTagDimensions('T') || { width: 80, height: 24 }; // Smaller default dimensions
+        
+        // Use the saved dimensions instead of coordinates from click
+        const textInputCoordinates = {
+          ...coordinates,
+          width: dimensions.width,
+          height: dimensions.height
+        };
+        
+        console.log('📏 Using dimensions for text tag:', dimensions);
+        
         // Set flag to suppress global click handler for the next click
         setJustPlacedTextInput(true);
         
@@ -1050,7 +1064,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         
         await placeTextInput({
           documentId: currentDocument.id,
-          coordinates,
+          coordinates: textInputCoordinates,
           assignedUserId: parseInt(selectedUser.userId.toString())
         }, selectedUser.colorCode || '#4ECDC4');
         

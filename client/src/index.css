@@ -193,3 +193,17 @@
     @apply bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent;
   }
 }
+
+/* Force transparent background for completed tags - STRONGER SPECIFICITY */
+.completed-tag-transparent,
+.completed-tag-transparent:hover,
+.completed-tag-transparent:focus,
+.completed-tag-transparent:active,
+div.completed-tag-transparent,
+[class*="completed-tag-transparent"] {
+  background-color: transparent !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+}

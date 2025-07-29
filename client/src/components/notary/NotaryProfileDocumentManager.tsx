@@ -1,9 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { 
@@ -126,6 +126,22 @@ export function NotaryProfileDocumentManager({
     onConfirm: () => {}
   });
 
+  // Handle keyboard events for modal
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && isUploadDialogOpen && !isUploading) {
+        setIsUploadDialogOpen(false);
+      }
+    };
+
+    if (isUploadDialogOpen) {
+      document.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [isUploadDialogOpen, isUploading]);
+
   // Fetch notary document status
   const { data: documentStatus, isLoading, refetch } = useQuery<NotaryDocumentSet>({
     queryKey: [`/api/notary/profile/documents/${notaryId}`],
@@ -228,12 +244,28 @@ export function NotaryProfileDocumentManager({
     const file = event.target.files?.[0];
     if (!file || !selectedDocumentType) return;
 
-    // Validate file type
-    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
-    if (!allowedTypes.includes(file.type)) {
+    // Validate file type based on document type
+    const isValidFileType = (documentType: string, file: File) => {
+      if (documentType === 'publicCertificateFile') {
+        // Digital certificates should be .pfx or .p12 files
+        const validExtensions = ['.pfx', '.p12'];
+        const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+        return validExtensions.includes(fileExtension);
+      } else {
+        // Other documents should be PDF, JPG, JPEG, or PNG
+        const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+        return allowedTypes.includes(file.type);
+      }
+    };
+
+    if (!isValidFileType(selectedDocumentType, file)) {
+      const allowedTypes = selectedDocumentType === 'publicCertificateFile' 
+        ? '.pfx or .p12 files' 
+        : 'PDF, JPG, JPEG, or PNG files';
+      
       toast({
         title: "Invalid File Type",
-        description: "Please select a PDF, JPG, JPEG, or PNG file.",
+        description: `Please select ${allowedTypes} only.`,
         variant: "destructive"
       });
       return;
@@ -463,7 +495,18 @@ export function NotaryProfileDocumentManager({
       <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Upload Document</DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle>Upload Document</DialogTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => setIsUploadDialogOpen(false)}
+              >
+                <X className="h-4 w-4" />
+                <span className="sr-only">Close</span>
+              </Button>
+            </div>
           </DialogHeader>
           <div className="space-y-4">
             {selectedDocumentType && (
@@ -479,13 +522,15 @@ export function NotaryProfileDocumentManager({
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 hover:border-gray-400 transition-colors">
                       <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                       <p className="text-sm text-gray-600 mb-2">
                         Drag and drop or click to select
                       </p>
                       <p className="text-xs text-gray-500">
-                        PDF, JPG, JPEG, or PNG (max 25MB)
+                        {selectedDocumentType === 'publicCertificateFile' 
+                          ? 'PFX or P12 files (max 25MB)' 
+                          : 'PDF, JPG, JPEG, or PNG (max 25MB)'}
                       </p>
                     </div>
                     
@@ -501,7 +546,7 @@ export function NotaryProfileDocumentManager({
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept=".pdf,.jpg,.jpeg,.png"
+                      accept={selectedDocumentType === 'publicCertificateFile' ? '.pfx,.p12' : '.pdf,.jpg,.jpeg,.png'}
                       onChange={handleFileSelect}
                       className="hidden"
                     />
@@ -510,6 +555,15 @@ export function NotaryProfileDocumentManager({
               </div>
             )}
           </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsUploadDialogOpen(false)}
+              disabled={isUploading}
+            >
+              Cancel
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

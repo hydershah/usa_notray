@@ -242,6 +242,33 @@ export function NotaryProfileCompletion() {
         return;
       }
 
+      // Validate file type based on the document type
+      const isValidFileType = (fileType: keyof FileUploadStatus, file: File) => {
+        if (fileType === 'publicCertificateFile') {
+          // Digital certificates should be .pfx or .p12 files
+          const validExtensions = ['.pfx', '.p12'];
+          const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+          return validExtensions.includes(fileExtension);
+        } else {
+          // Other documents should be PDF, JPG, JPEG, or PNG
+          const validTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+          return validTypes.includes(file.type);
+        }
+      };
+
+      if (!isValidFileType(fileType, file)) {
+        const allowedTypes = fileType === 'publicCertificateFile' 
+          ? '.pfx or .p12 files' 
+          : 'PDF, JPG, JPEG, or PNG files';
+        
+        toast({
+          title: 'Invalid file type',
+          description: `Please select ${allowedTypes} only.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+
       setUploadedFiles(prev => ({
         ...prev,
         [fileType]: file,
@@ -393,36 +420,46 @@ export function NotaryProfileCompletion() {
     title: string; 
     fileType: keyof FileUploadStatus; 
     description: string;
-  }) => (
-    <Card className="border-dashed hover:border-blue-300 transition-colors duration-200">
-      <CardHeader className="pb-4">
-        <CardTitle className="text-sm flex items-center gap-2">
-          <FileUp className="h-4 w-4 text-blue-600" />
-          {title}
-        </CardTitle>
-        <CardDescription className="text-xs">{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-2">
-          <input
-            type="file"
-            accept=".pdf,.jpg,.jpeg,.png"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handleFileUpload(fileType, file);
-            }}
-            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-colors duration-200"
-          />
-          {uploadedFiles[fileType] && (
-            <div className="flex items-center gap-2 text-sm text-green-600">
-              <CheckCircle className="h-4 w-4" />
-              {uploadedFiles[fileType]!.name}
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
+  }) => {
+    // Define accepted file types based on the file type
+    const getAcceptedFileTypes = (fileType: keyof FileUploadStatus) => {
+      if (fileType === 'publicCertificateFile') {
+        return '.pfx,.p12'; // Digital certificates
+      }
+      return '.pdf,.jpg,.jpeg,.png'; // Standard documents
+    };
+
+    return (
+      <Card className="border-dashed hover:border-blue-300 transition-colors duration-200">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <FileUp className="h-4 w-4 text-blue-600" />
+            {title}
+          </CardTitle>
+          <CardDescription className="text-xs">{description}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <input
+              type="file"
+              accept={getAcceptedFileTypes(fileType)}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleFileUpload(fileType, file);
+              }}
+              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-colors duration-200"
+            />
+            {uploadedFiles[fileType] && (
+              <div className="flex items-center gap-2 text-sm text-green-600">
+                <CheckCircle className="h-4 w-4" />
+                {uploadedFiles[fileType]!.name}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
@@ -964,7 +1001,7 @@ export function NotaryProfileCompletion() {
                 <FileUploadCard
                   title="Public Certificate"
                   fileType="publicCertificateFile"
-                  description="Upload your digital public certificate (PFX file)"
+                  description="Upload your digital public certificate (.pfx or .p12 file)"
                 />
 
                 <FileUploadCard

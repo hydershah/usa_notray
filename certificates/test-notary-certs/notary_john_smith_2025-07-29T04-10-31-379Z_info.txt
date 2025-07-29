@@ -1,0 +1,49 @@
+# SAMPLE NOTARY CERTIFICATE INFORMATION
+# Generated: 2025-07-29T04:10:31.743Z
+# FOR TESTING PURPOSES ONLY
+
+## Notary Information
+Notary Name: John Smith
+Commission Number: NY123456789
+Commission Expiry: 2027-12-31
+State: New York
+Country: US
+Email: john.smith@notary.ny.gov
+
+## Certificate Details
+Subject: C=US/ST=New York/L=New York/O=New York Secretary of State/OU=Notary Public Division/CN=John Smith/emailAddress=john.smith@notary.ny.gov
+Issuer: C=US/ST=New York/L=New York/O=New York Secretary of State/OU=Notary Public Division/CN=John Smith/emailAddress=john.smith@notary.ny.gov (Self-Signed)
+Serial Number: 511EE7565A3A8E1EDB893087BEA1F3810089B2BD
+SHA256 Fingerprint: sha256 Fingerprint=DA:D3:1A:59:08:9F:C5:93:83:B8:9A:00:13:22:30:33:B0:3E:61:5E:AD:BC:44:D0:E8:46:86:9F:E0:FA:38:FA
+Valid From: Jul 29 04:10:31 2025 GMT
+Valid Until: Jul 28 04:10:31 2028 GMT
+Key Length: 2048 bits
+Signature Algorithm: sha256WithRSAEncryption
+
+## P12 Certificate Bundle
+Password: TestNotary123!
+File Format: PKCS#12 (.p12)
+Usage: PDF Digital Signing, Document Authentication
+
+## Upload Instructions
+1. Log in to the USA Notary platform as a notary user
+2. Go to Profile Settings > Certificate Management
+3. Upload the .p12 file 
+4. Enter the password: TestNotary123!
+5. Save certificate for use in digital signing
+
+## Testing Notes
+- This is a SAMPLE certificate for testing only
+- Not issued by a real Certificate Authority
+- Should not be used for production notarizations
+- Compatible with Adobe Acrobat for signature validation testing
+
+## Technical Details
+- Certificate Type: X.509 v3
+- Key Algorithm: RSA
+- Hash Algorithm: SHA-256
+- Extensions: Basic Constraints, Key Usage, Extended Key Usage
+- Subject Alternative Names: Email, Notary Commission, Role
+
+## Security Notice
+Keep the P12 password secure and do not share this certificate outside of testing environments.

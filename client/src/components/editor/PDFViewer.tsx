@@ -285,37 +285,29 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         ${canEdit ? 'hover:shadow-md' : ''}
       `}
       style={{
-        // Completely transparent background for all tags
-        backgroundColor: 'transparent',
+        // Special handling for whiteout tags - always white background
+        backgroundColor: tag.tagType === 'W' ? '#ffffff' : (tag.colorCode || '#1e40af'),
         
-        // Minimal styling for text tags
-        border: tag.tagType === 'T' 
-          ? 'none' // Completely borderless for text tags
-          : tag.isCompleted && mode === 'signing' 
-          ? '1px solid #e2e8f0' // Very light grey border for completed tags
-          : isSelected
+        // Simple border styling
+        border: isSelected
           ? '2px solid #3b82f6' // Blue border for selected tags
-          : '1px solid #d1d5db', // Light grey border for all other tags
+          : tag.tagType === 'W'
+          ? '1px solid #d1d5db' // Light gray border for whiteout tags
+          : 'none',
         
-        borderRadius: tag.tagType === 'T' ? '2px' : '8px', // Minimal radius for text tags
+        borderRadius: '6px', // Clean rounded corners
         
-        // Better color contrast
-        color: tag.isCompleted && mode === 'signing' 
-          ? '#1f2937' // Dark grey text for completed content
-          : tag.colorCode || '#374151',
+        // Text color based on tag type
+        color: tag.tagType === 'W' ? '#374151' : '#ffffff',
         
         zIndex: tag.tagType === 'W' ? (isSelected ? 1000 : 10) : (isSelected ? 1000 : 100),
         pointerEvents: 'auto',
         cursor: mode === 'signing' && !tag.isCompleted ? 'pointer' : 'default',
         
-        // Improved shadows - borderless for text tags
-        boxShadow: tag.tagType === 'T' 
-          ? 'none' // No shadows for borderless text tags
-          : tag.isCompleted && mode === 'signing'
-          ? '0 1px 3px rgba(0,0,0,0.08)' // Subtle shadow for completed tags
-          : isSelected 
-          ? '0 4px 12px rgba(59, 130, 246, 0.15), 0 0 0 2px rgba(59, 130, 246, 0.1)' 
-          : '0 2px 6px rgba(0,0,0,0.1)', // Enhanced shadow for better depth
+        // Clean shadow for depth
+        boxShadow: isSelected 
+          ? '0 4px 12px rgba(0, 0, 0, 0.2)' 
+          : '0 2px 6px rgba(0, 0, 0, 0.1)',
         
         // Minimum sizing only for non-text tags
         minWidth: tag.tagType === 'T' ? 'auto' : '80px',
@@ -520,18 +512,52 @@ const TagRenderer: React.FC<TagRendererProps> = ({
             <>
               {/* Main tag content - improved sizing */}
               <div className="flex items-center gap-2">
-                <span className="text-sm opacity-80">{tagInfo.icon}</span>
-                <span className="text-sm font-medium truncate">{tagInfo.label}</span>
+                <span style={{ 
+                  fontSize: '16px', 
+                  color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
+                  fontWeight: '600',
+                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
+                }}>
+                  {tagInfo.icon}
+                </span>
+                <span style={{ 
+                  fontSize: '14px', 
+                  color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
+                  fontWeight: '600',
+                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
+                }}>
+                  {tagInfo.label}
+                </span>
               </div>
               
               {/* User identification - improved sizing */}
               {tag.displayLabel && tag.displayLabel.includes(' - ') && (
-                <div className="flex items-center gap-1.5 mt-1 px-2 py-1 bg-transparent rounded-full border border-gray-200">
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  marginTop: '4px',
+                  padding: '2px 8px',
+                  backgroundColor: tag.tagType === 'W' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(0, 0, 0, 0.2)',
+                  borderRadius: '12px',
+                  border: tag.tagType === 'W' ? '1px solid rgba(0, 0, 0, 0.2)' : '1px solid rgba(255, 255, 255, 0.2)'
+                }}>
                   <div 
-                    className="w-2.5 h-2.5 rounded-full border border-white shadow-sm" 
-                    style={{ backgroundColor: tag.colorCode }}
+                    style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      backgroundColor: tag.colorCode,
+                      border: '1px solid rgba(255, 255, 255, 0.5)',
+                      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.2)'
+                    }}
                   />
-                  <span className="text-sm font-medium opacity-90 truncate">
+                  <span style={{ 
+                    fontSize: '11px', 
+                    color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
+                    fontWeight: '500',
+                    textShadow: tag.tagType === 'W' ? 'none' : '0 1px 1px rgba(0, 0, 0, 0.5)'
+                  }}>
                     {tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
                   </span>
                 </div>
@@ -539,8 +565,12 @@ const TagRenderer: React.FC<TagRendererProps> = ({
               
               {/* Interaction hint for signing mode - improved sizing */}
               <div className="mt-1">
-                <span className="text-sm opacity-70">
-                  Double-click to {['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter'}
+                <span style={{ 
+                  fontSize: '12px', 
+                  color: tag.tagType === 'W' ? 'rgba(55, 65, 81, 0.7)' : 'rgba(255, 255, 255, 0.9)',
+                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 1px rgba(0, 0, 0, 0.5)'
+                }}>
+                  Double-click to {tag.tagType === 'W' ? 'apply whiteout' : (['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter')}
                 </span>
               </div>
             </>
@@ -550,18 +580,52 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           <>
             {/* Main tag content - improved sizing */}
             <div className="flex items-center gap-2">
-              <span className="text-sm opacity-80">{tagInfo.icon}</span>
-              <span className="text-sm font-medium truncate">{tagInfo.label}</span>
+              <span style={{ 
+                fontSize: '16px', 
+                color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
+                fontWeight: '600',
+                textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
+              }}>
+                {tagInfo.icon}
+              </span>
+              <span style={{ 
+                fontSize: '14px', 
+                color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
+                fontWeight: '600',
+                textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
+              }}>
+                {tagInfo.label}
+              </span>
             </div>
             
             {/* User identification - improved sizing */}
             {tag.displayLabel && tag.displayLabel.includes(' - ') && (
-              <div className="flex items-center gap-1.5 mt-1 px-2 py-1 bg-transparent rounded-full border border-gray-200">
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginTop: '4px',
+                padding: '2px 8px',
+                backgroundColor: tag.tagType === 'W' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(0, 0, 0, 0.2)',
+                borderRadius: '12px',
+                border: tag.tagType === 'W' ? '1px solid rgba(0, 0, 0, 0.2)' : '1px solid rgba(255, 255, 255, 0.2)'
+              }}>
                 <div 
-                  className="w-2.5 h-2.5 rounded-full border border-white shadow-sm" 
-                  style={{ backgroundColor: tag.colorCode }}
+                  style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    backgroundColor: tag.colorCode,
+                    border: '1px solid rgba(255, 255, 255, 0.5)',
+                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.2)'
+                  }}
                 />
-                <span className="text-sm font-medium opacity-90 truncate">
+                <span style={{ 
+                  fontSize: '11px', 
+                  color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
+                  fontWeight: '500',
+                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 1px rgba(0, 0, 0, 0.5)'
+                }}>
                   {tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
                 </span>
               </div>

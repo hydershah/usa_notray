@@ -10134,26 +10134,50 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
             // Live signing session - check if tags have real content from users
             const incompleteTags = tags.filter(tag => !tag.isCompleted);
             
-            if (incompleteTags.length > 0 && !force) {
-              console.log(`❌ Live signing session completion blocked - users haven't filled all tags:`, incompleteTags.map(t => ({
-                id: t.id,
-                type: t.tagType,
-                assignedUser: t.assignedUserId,
-                hasContent: !!(t.content && t.content.trim())
-              })));
-              
-              return res.status(400).json({
-                success: false,
-                message: `Cannot complete session: ${incompleteTags.length} tags haven't been filled by users`,
-                error: 'incomplete_user_tags',
-                canForce: true,
-                incompleteTags: incompleteTags.map(t => ({
-                  id: t.id,
-                  type: t.tagType,
-                  assignedUser: t.assignedUserId,
-                  note: 'User needs to click this tag to fill it with real content'
-                }))
-              });
+                      if (incompleteTags.length > 0 && !force) {
+            // Get user information for better error messaging
+            const userIds = [...new Set(incompleteTags.map(t => t.assignedUserId))];
+            const usersData = await db
+              .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+              .from(users)
+              .where(inArray(users.id, userIds));
+            
+            const userMap = new Map(usersData.map(u => [u.id, `${u.firstName} ${u.lastName}`]));
+            
+            const detailedIncompleteTags = incompleteTags.map(t => ({
+              id: t.id,
+              type: t.tagType,
+              assignedUserId: t.assignedUserId,
+              assignedUserName: userMap.get(t.assignedUserId) || 'Unknown User',
+              hasContent: !!(t.content && t.content.trim()),
+              coordinates: t.coordinates,
+              note: 'User needs to click this tag to fill it with real content'
+            }));
+            
+            console.log(`❌ Live signing session completion blocked - users haven't filled all tags:`, detailedIncompleteTags);
+            
+            // Group tags by assigned user for clearer messaging
+            const tagsByUser = detailedIncompleteTags.reduce((acc, tag) => {
+              const userName = tag.assignedUserName;
+              if (!acc[userName]) acc[userName] = [];
+              acc[userName].push(tag);
+              return acc;
+            }, {} as Record<string, typeof detailedIncompleteTags>);
+            
+            const unfilledSummary = Object.entries(tagsByUser)
+              .map(([userName, userTags]) => 
+                `${userName}: ${userTags.length} tag(s) - ${userTags.map(t => `${t.type} (#${t.id})`).join(', ')}`
+              ).join('; ');
+            
+            return res.status(400).json({
+              success: false,
+              message: `Cannot complete session: ${incompleteTags.length} tags haven't been filled by users. ${unfilledSummary}`,
+              error: 'incomplete_user_tags',
+              canForce: true,
+              incompleteTags: detailedIncompleteTags,
+              unfilledSummary,
+              instructions: 'Each user must click on their assigned unfilled tags to auto-fill them with profile data, or manually enter content for text tags.'
+            });
             }
           }
           

@@ -58,7 +58,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   tag,
   isSelected,
   canEdit,
-  scaleFactor, // Now using the actual scale factor
+  scaleFactor,
   onSelect,
   onUpdate,
   onDelete,
@@ -75,6 +75,18 @@ const TagRenderer: React.FC<TagRendererProps> = ({
     currentUser?.role === 'notary' ||
     currentUser?.role === 'admin'
   );
+  
+  // Check if tag has content (should be transparent)
+  const hasContent = !!(tag.content || tag.contentData || tag.isCompleted);
+  
+  console.log('🎨 TagLayer render:', {
+    tagId: tag.id.substring(0, 8),
+    tagType: tag.tagType,
+    isCompleted: tag.isCompleted,
+    hasContent: !!tag.content,
+    hasContentData: !!tag.contentData,
+    shouldBeTransparent: hasContent
+  });
 
   // Convert PDF coordinates to display coordinates using actual scale factor
   const displayCoords = {
@@ -265,23 +277,56 @@ const TagRenderer: React.FC<TagRendererProps> = ({
 
   // Render tag content based on mode and completion status
   const renderTagContent = () => {
+    console.log('🎨 TagLayer render debug:', {
+      tagId: tag.id.substring(0, 8),
+      tagType: tag.tagType,
+      isCompleted: tag.isCompleted,
+      hasContent: !!tag.content,
+      hasContentData: !!tag.contentData,
+      mode: mode.mode,
+      backgroundColorWillBe: tag.isCompleted ? 'transparent' : 'colored'
+    });
+
     const tagInfo = TAG_TYPE_INFO[tag.tagType];
     const userInfo = extractUserFromTag(tag, session);
     
     // For completed tags in signing mode, show the actual content
-    if (mode.mode === 'signing' && tag.isCompleted && (tag.contentData || tag.content)) {
+    if (mode.mode === 'signing' && tag.isCompleted) {
       // Special handling for whiteout tags - show as solid white rectangle
       if (tag.tagType === 'W') {
         return <div className="w-full h-full bg-white" />;
       }
-      // Show completed content as plain text/image without any styling
-      let contentData;
-      try {
-        if (tag.contentData) {
-          contentData = typeof tag.contentData === 'string' ? 
-            JSON.parse(tag.contentData) : tag.contentData;
-        } else if (tag.content) {
-          // Fallback: create contentData from content field with correct type based on tag type
+      
+      // For other completed tags, show content if available
+      if (tag.contentData || tag.content) {
+        // Show completed content as plain text/image without any styling
+        let contentData;
+        try {
+          if (tag.contentData) {
+            contentData = typeof tag.contentData === 'string' ? 
+              JSON.parse(tag.contentData) : tag.contentData;
+          } else if (tag.content) {
+            // Fallback: create contentData from content field with correct type based on tag type
+            const getTypeFromTagType = (tagType: string) => {
+              switch (tagType) {
+                case 'S': return 'signature';
+                case 'I': return 'initials';
+                case 'E': return 'seal';
+                case 'D': return 'date';
+                default: return 'text';
+              }
+            };
+            
+            contentData = {
+              type: getTypeFromTagType(tag.tagType),
+              value: tag.content
+            };
+          } else {
+            contentData = { type: 'text', value: '' };
+          }
+        } catch (e) {
+          console.error('Failed to parse contentData in TagLayer:', e);
+          // Fallback to content field if contentData parsing fails
           const getTypeFromTagType = (tagType: string) => {
             switch (tagType) {
               case 'S': return 'signature';
@@ -294,271 +339,252 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           
           contentData = {
             type: getTypeFromTagType(tag.tagType),
-            value: tag.content
+            value: tag.content || tag.contentData || ''
           };
-        } else {
-          contentData = { type: 'text', value: '' };
         }
-      } catch (e) {
-        console.error('Failed to parse contentData in TagLayer:', e);
-        // Fallback to content field if contentData parsing fails
-        const getTypeFromTagType = (tagType: string) => {
-          switch (tagType) {
-            case 'S': return 'signature';
-            case 'I': return 'initials';
-            case 'E': return 'seal';
-            case 'D': return 'date';
-            default: return 'text';
+        
+        // Helper function to check if contentData contains an image
+        const isImageContent = () => {
+          if (!contentData || !contentData.value) return false;
+          
+          const value = contentData.value;
+          
+          // Check if content type indicates it's an image-based content
+          const isSignatureType = contentData.type === 'signature' || contentData.type === 'initials' || contentData.type === 'seal';
+          
+          // Also check tag type as backup (in case contentData.type is wrong)
+          const isSignatureTagType = ['S', 'I', 'E'].includes(tag.tagType);
+          
+          const isImageUrl = (typeof value === 'string') && (
+            value.startsWith('data:image/') ||
+            value.startsWith('https://') ||
+            value.startsWith('http://') ||
+            value.includes('vultrobjects.com') ||
+            value.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i)
+          );
+          
+          // Special aggressive detection for signature/seal/initial tags
+          const isLikelySignatureUrl = (typeof value === 'string') && (
+            (value.length > 100 && value.includes('signature')) ||
+            (value.length > 100 && value.includes('stamp')) ||
+            (value.length > 100 && value.includes('vultrobjects.com')) ||
+            (value.length > 100 && value.includes('X-Amz-Algorithm'))
+          );
+          
+          console.log('🔍 TagLayer image content check for tag', tag.id, ':', {
+            tagType: tag.tagType,
+            contentDataType: contentData.type,
+            isSignatureType,
+            isSignatureTagType,
+            valueType: typeof value,
+            valueLength: typeof value === 'string' ? value.length : 'not string',
+            startsWithDataImage: typeof value === 'string' && value.startsWith('data:image/'),
+            startsWithHttps: typeof value === 'string' && value.startsWith('https://'),
+            includesVultr: typeof value === 'string' && value.includes('vultrobjects.com'),
+            hasImageExtension: typeof value === 'string' && !!value.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i),
+            isImageUrl,
+            isLikelySignatureUrl,
+            result: (isSignatureType || isSignatureTagType) && (isImageUrl || isLikelySignatureUrl)
+          });
+          
+          // Return true if it's either a signature content type OR a signature tag type, AND it looks like an image URL
+          return (isSignatureType || isSignatureTagType) && (isImageUrl || isLikelySignatureUrl);
+        };
+
+        // Determine the best image source from available data
+        const getImageUrl = () => {
+          // First try contentData.value
+          if (typeof contentData?.value === 'string') return contentData.value;
+          
+          // Try nested object structure (for complex signature data)
+          if (contentData?.value && typeof contentData.value === 'object') {
+            const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src', 'value'];
+            for (const key of possibleKeys) {
+              if (typeof (contentData.value as any)[key] === 'string') {
+                return (contentData.value as any)[key];
+              }
+            }
           }
+          
+          // Fallback to tag.content
+          if (typeof tag.content === 'string') return tag.content;
+          
+          // Try nested object in tag.content
+          if (tag.content && typeof tag.content === 'object') {
+            const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src', 'value'];
+            for (const key of possibleKeys) {
+              if (typeof (tag.content as any)[key] === 'string') {
+                return (tag.content as any)[key];
+              }
+            }
+          }
+          
+          return '';
         };
-        
-        contentData = {
-          type: getTypeFromTagType(tag.tagType),
-          value: tag.content || tag.contentData || ''
-        };
-      }
-      
-      // Helper function to check if contentData contains an image
-      const isImageContent = () => {
-        if (!contentData || !contentData.value) return false;
-        
-        const value = contentData.value;
-        
-        // Check if content type indicates it's an image-based content
-        const isSignatureType = contentData.type === 'signature' || contentData.type === 'initials' || contentData.type === 'seal';
-        
-        // Also check tag type as backup (in case contentData.type is wrong)
-        const isSignatureTagType = ['S', 'I', 'E'].includes(tag.tagType);
-        
-        const isImageUrl = (typeof value === 'string') && (
-          value.startsWith('data:image/') ||
-          value.startsWith('https://') ||
-          value.startsWith('http://') ||
-          value.includes('vultrobjects.com') ||
-          value.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i)
-        );
-        
-        // Special aggressive detection for signature/seal/initial tags
-        const isLikelySignatureUrl = (typeof value === 'string') && (
-          (value.length > 100 && value.includes('signature')) ||
-          (value.length > 100 && value.includes('stamp')) ||
-          (value.length > 100 && value.includes('vultrobjects.com')) ||
-          (value.length > 100 && value.includes('X-Amz-Algorithm'))
-        );
-        
-        console.log('🔍 TagLayer image content check for tag', tag.id, ':', {
+
+        console.log('🎨 TagLayer rendering completed tag', tag.id, ':', {
           tagType: tag.tagType,
-          contentDataType: contentData.type,
-          isSignatureType,
-          isSignatureTagType,
-          valueType: typeof value,
-          valueLength: typeof value === 'string' ? value.length : 'not string',
-          startsWithDataImage: typeof value === 'string' && value.startsWith('data:image/'),
-          startsWithHttps: typeof value === 'string' && value.startsWith('https://'),
-          includesVultr: typeof value === 'string' && value.includes('vultrobjects.com'),
-          hasImageExtension: typeof value === 'string' && !!value.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i),
-          isImageUrl,
-          isLikelySignatureUrl,
-          result: (isSignatureType || isSignatureTagType) && (isImageUrl || isLikelySignatureUrl)
+          isImageContent: isImageContent(),
+          imageUrl: getImageUrl(),
+          contentDataType: contentData?.type,
+          contentDataValue: typeof contentData?.value === 'string' 
+            ? contentData.value.substring(0, 100) + '...' 
+            : JSON.stringify(contentData?.value)
         });
-        
-        // Return true if it's either a signature content type OR a signature tag type, AND it looks like an image URL
-        return (isSignatureType || isSignatureTagType) && (isImageUrl || isLikelySignatureUrl);
-      };
 
-      // Determine the best image source from available data
-      const getImageUrl = () => {
-        // First try contentData.value
-        if (typeof contentData?.value === 'string') return contentData.value;
-        
-        // Try nested object structure (for complex signature data)
-        if (contentData?.value && typeof contentData.value === 'object') {
-          const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src', 'value'];
-          for (const key of possibleKeys) {
-            if (typeof (contentData.value as any)[key] === 'string') {
-              return (contentData.value as any)[key];
-            }
-          }
-        }
-        
-        // Fallback to tag.content
-        if (typeof tag.content === 'string') return tag.content;
-        
-        // Try nested object in tag.content
-        if (tag.content && typeof tag.content === 'object') {
-          const possibleKeys = ['imageUrl', 'url', 'signedUrl', 'src', 'value'];
-          for (const key of possibleKeys) {
-            if (typeof (tag.content as any)[key] === 'string') {
-              return (tag.content as any)[key];
-            }
-          }
-        }
-        
-        return '';
-      };
-
-      console.log('🎨 TagLayer rendering completed tag', tag.id, ':', {
-        tagType: tag.tagType,
-        isImageContent: isImageContent(),
-        imageUrl: getImageUrl(),
-        contentDataType: contentData?.type,
-        contentDataValue: typeof contentData?.value === 'string' 
-          ? contentData.value.substring(0, 100) + '...' 
-          : JSON.stringify(contentData?.value)
-      });
-
-      return (
-        <div className="w-full h-full flex items-center justify-center">
-          {isImageContent() ? (
-            <img 
-              src={getImageUrl()} 
-              alt={contentData.type === 'signature' ? 'Signature' : 
-                   contentData.type === 'initials' ? 'Initials' : 
-                   contentData.type === 'seal' || contentData.type === 'stamp' ? 'Notary Seal' : 'Image'} 
-              className="max-h-full max-w-full object-contain"
-              style={{ 
-                filter: 'none',
-                maxHeight: '100%',
-                maxWidth: '100%'
-              }}
-              onError={(e) => {
-                console.error('🖼️ Image failed to load in TagLayer:', getImageUrl());
-                // Try to refresh image if it's an expiring Vultr signed URL
-                const failedUrl = getImageUrl();
-                if (failedUrl.includes('vultrobjects.com') && failedUrl.includes('X-Amz-Expires')) {
-                  fetch(`/api/tags/${tag.id}/refresh-content`, {
-                    method: 'POST',
-                    headers: {
-                      'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                      'Content-Type': 'application/json'
-                    }
-                  }).then(res => {
-                    if (res.ok) {
-                      console.log('🔄 Refreshed tag content, attempting to reload image');
-                      res.json().then(data => {
-                        if (data?.content) {
-                          const newUrl = typeof data.content === 'string' ? data.content : (data.content?.value || '');
-                          if (newUrl) {
-                            e.currentTarget.style.display = 'block';
-                            e.currentTarget.setAttribute('src', newUrl);
-                            return;
+        return (
+          <div className="w-full h-full flex items-center justify-center">
+            {isImageContent() ? (
+              <img 
+                src={getImageUrl()} 
+                alt={contentData.type === 'signature' ? 'Signature' : 
+                     contentData.type === 'initials' ? 'Initials' : 
+                     contentData.type === 'seal' || contentData.type === 'stamp' ? 'Notary Seal' : 'Image'} 
+                className="max-h-full max-w-full object-contain"
+                style={{ 
+                  filter: 'none',
+                  maxHeight: '100%',
+                  maxWidth: '100%'
+                }}
+                onError={(e) => {
+                  console.error('🖼️ Image failed to load in TagLayer:', getImageUrl());
+                  // Try to refresh image if it's an expiring Vultr signed URL
+                  const failedUrl = getImageUrl();
+                  if (failedUrl.includes('vultrobjects.com') && failedUrl.includes('X-Amz-Expires')) {
+                    fetch(`/api/tags/${tag.id}/refresh-content`, {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Content-Type': 'application/json'
+                      }
+                    }).then(res => {
+                      if (res.ok) {
+                        console.log('🔄 Refreshed tag content, attempting to reload image');
+                        res.json().then(data => {
+                          if (data?.content) {
+                            const newUrl = typeof data.content === 'string' ? data.content : (data.content?.value || '');
+                            if (newUrl) {
+                              e.currentTarget.style.display = 'block';
+                              e.currentTarget.setAttribute('src', newUrl);
+                              return;
+                            }
                           }
+                          // Fallback reload
+                          window.location.reload();
+                        }).catch(() => window.location.reload());
+                      }
+                    }).catch(err => {
+                      console.error('❌ Failed to refresh tag content:', err);
+                    });
+                  }
+                  // Show actual content instead of generic "Applied" message
+                  e.currentTarget.style.display = 'none';
+                  const parent = e.currentTarget.parentElement;
+                  if (parent) {
+                    const actualContent = (() => {
+                      // Only display meaningful content to users, never debug data
+                      if (typeof contentData?.value === 'string') {
+                        const value = contentData.value;
+                        
+                        // For signature, initials, and seal tags, prioritize showing images even with technical URLs
+                        const isSignatureOrSealTag = ['S', 'I', 'E'].includes(tag.tagType);
+                        const isImageUrl = value.startsWith('data:image/') || 
+                                         value.startsWith('https://') ||
+                                         value.includes('vultrobjects.com') ||
+                                         value.includes('.png') ||
+                                         value.includes('.jpg') ||
+                                         value.includes('.jpeg') ||
+                                         value.includes('.gif') ||
+                                         value.includes('.svg') ||
+                                         (value.startsWith('http') && isSignatureOrSealTag);
+                        
+                        // If it's an image URL, try to create an img element instead of showing "[Applied]"
+                        if (isImageUrl) {
+                          return `<img src="${value}" alt="${tag.tagType === 'S' ? 'Signature' : tag.tagType === 'I' ? 'Initials' : 'Seal'}" style="max-height: 100%; max-width: 100%; object-fit: contain;" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=\\"text-center text-gray-600 text-xs\\">[${tag.tagType === 'S' ? 'Signature Applied' : tag.tagType === 'I' ? 'Initials Applied' : 'Seal Applied'}]</div>'" />`;
                         }
-                        // Fallback reload
-                        window.location.reload();
-                      }).catch(() => window.location.reload());
-                    }
-                  }).catch(err => {
-                    console.error('❌ Failed to refresh tag content:', err);
-                  });
-                }
-                // Show actual content instead of generic "Applied" message
-                e.currentTarget.style.display = 'none';
-                const parent = e.currentTarget.parentElement;
-                if (parent) {
-                  const actualContent = (() => {
-                    // Only display meaningful content to users, never debug data
-                    if (typeof contentData?.value === 'string') {
-                      const value = contentData.value;
-                      
-                      // For signature, initials, and seal tags, prioritize showing images even with technical URLs
-                      const isSignatureOrSealTag = ['S', 'I', 'E'].includes(tag.tagType);
-                      const isImageUrl = value.startsWith('data:image/') || 
-                                       value.startsWith('https://') ||
-                                       value.includes('vultrobjects.com') ||
-                                       value.includes('.png') ||
-                                       value.includes('.jpg') ||
-                                       value.includes('.jpeg') ||
-                                       value.includes('.gif') ||
-                                       value.includes('.svg') ||
-                                       (value.startsWith('http') && isSignatureOrSealTag);
-                      
-                      // If it's an image URL, try to create an img element instead of showing "[Applied]"
-                      if (isImageUrl) {
-                        return `<img src="${value}" alt="${tag.tagType === 'S' ? 'Signature' : tag.tagType === 'I' ? 'Initials' : 'Seal'}" style="max-height: 100%; max-width: 100%; object-fit: contain;" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=\\"text-center text-gray-600 text-xs\\">[${tag.tagType === 'S' ? 'Signature Applied' : tag.tagType === 'I' ? 'Initials Applied' : 'Seal Applied'}]</div>'" />`;
+                        
+                        // For non-image content, filter out technical/debug data
+                        if (value.includes('Algorithm=') || value.includes('Signature=') || value.includes('Expires=') || value.includes('&X-Amz-')) {
+                          return '[Applied]'; // Show simple applied message for technical data
+                        }
+                        return value;
+                      } else if (contentData?.value && typeof contentData.value === 'object') {
+                        return '[Applied]';
+                      } else {
+                        return tag.content && typeof tag.content === 'string' ? tag.content : '[No content]';
                       }
-                      
-                      // For non-image content, filter out technical/debug data
-                      if (value.includes('Algorithm=') || value.includes('Signature=') || value.includes('Expires=') || value.includes('&X-Amz-')) {
-                        return '[Applied]'; // Show simple applied message for technical data
-                      }
-                      return value;
-                    } else if (contentData?.value && typeof contentData.value === 'object') {
-                      return '[Applied]';
-                    } else {
-                      return tag.content && typeof tag.content === 'string' ? tag.content : '[No content]';
-                    }
-                  })()
-                  const displayContent = actualContent.length > 50 ? actualContent.substring(0, 47) + '...' : actualContent;
-                  parent.innerHTML = `<div class="w-full h-full flex items-center justify-center bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs font-medium p-1" style="word-break: break-word; line-height: 1.2;">${displayContent}</div>`;
-                }
-              }}
-            />
-          ) : (
-            <div 
-              className={`text-black w-full h-full flex items-center justify-center ${tag.tagType === 'T' ? 'p-1' : 'p-2'}`}
-              style={{ 
-                fontSize: Math.max(12, Math.min(18, tag.coordinates.height * 0.6)),
-                lineHeight: '1.3',
-                wordBreak: 'break-word',
-                fontFamily: 'inherit',
-                fontWeight: '500'
-              }}
-            >
-              {(() => {
-                // Only display meaningful content to users, never debug data
-                if (typeof contentData?.value === 'string') {
-                  const value = contentData.value;
-                  
-                  // For signature, initials, and seal tags, prioritize showing images even with technical URLs
-                  const isSignatureOrSealTag = ['S', 'I', 'E'].includes(tag.tagType);
-                  const isImageUrl = value.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i) || 
-                                   value.startsWith('data:image') || 
-                                   value.includes('vultrobjects.com') || 
-                                   (value.startsWith('http') && isSignatureOrSealTag);
-                  
-                  // Enhanced signature URL detection (same as main isImageContent function)
-                  const isLikelySignatureUrl = (
-                    (value.length > 100 && value.includes('signature')) ||
-                    (value.length > 100 && value.includes('stamp')) ||
-                    (value.length > 100 && value.includes('vultrobjects.com')) ||
-                    (value.length > 100 && value.includes('X-Amz-Algorithm'))
-                  );
-                  
-                  if (isImageUrl || (isSignatureOrSealTag && isLikelySignatureUrl)) {
-                    // Return the URL so it can be processed by image rendering logic above
-                    return (
-                      <img 
-                        src={value} 
-                        alt={`${tag.tagType === 'S' ? 'Signature' : tag.tagType === 'I' ? 'Initials' : 'Seal'}`}
-                        className="max-h-full max-w-full object-contain"
-                        onError={(e) => {
-                          // If image fails, replace with a user-friendly message
-                          const img = e.target as HTMLImageElement;
-                          const parent = img.parentElement;
-                          if (parent) {
-                            parent.innerHTML = `<div class="text-center text-gray-600 text-xs">[${tag.tagType === 'S' ? 'Signature Applied' : tag.tagType === 'I' ? 'Initials Applied' : 'Seal Applied'}]</div>`;
-                          }
-                        }}
-                      />
+                    })()
+                    const displayContent = actualContent.length > 50 ? actualContent.substring(0, 47) + '...' : actualContent;
+                    parent.innerHTML = `<div class="w-full h-full flex items-center justify-center bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs font-medium p-1" style="word-break: break-word; line-height: 1.2;">${displayContent}</div>`;
+                  }
+                }}
+              />
+            ) : (
+              <div 
+                className={`text-black w-full h-full flex items-center justify-center ${tag.tagType === 'T' ? 'p-1' : 'p-2'}`}
+                style={{ 
+                  fontSize: Math.max(12, Math.min(18, tag.coordinates.height * 0.6)),
+                  lineHeight: '1.3',
+                  wordBreak: 'break-word',
+                  fontFamily: 'inherit',
+                  fontWeight: '500'
+                }}
+              >
+                {(() => {
+                  // Only display meaningful content to users, never debug data
+                  if (typeof contentData?.value === 'string') {
+                    const value = contentData.value;
+                    
+                    // For signature, initials, and seal tags, prioritize showing images even with technical URLs
+                    const isSignatureOrSealTag = ['S', 'I', 'E'].includes(tag.tagType);
+                    const isImageUrl = value.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i) || 
+                                     value.startsWith('data:image') || 
+                                     value.includes('vultrobjects.com') || 
+                                     (value.startsWith('http') && isSignatureOrSealTag);
+                    
+                    // Enhanced signature URL detection (same as main isImageContent function)
+                    const isLikelySignatureUrl = (
+                      (value.length > 100 && value.includes('signature')) ||
+                      (value.length > 100 && value.includes('stamp')) ||
+                      (value.length > 100 && value.includes('vultrobjects.com')) ||
+                      (value.length > 100 && value.includes('X-Amz-Algorithm'))
                     );
-                  }
-                  
-                  // For signature/seal/initial tags that didn't match image detection above, show applied message
-                  if (isSignatureOrSealTag && (value.includes('Algorithm=') || value.includes('Signature=') || value.includes('Expires=') || value.includes('&X-Amz-'))) {
+                    
+                    if (isImageUrl || (isSignatureOrSealTag && isLikelySignatureUrl)) {
+                      // Return the URL so it can be processed by image rendering logic above
+                      return (
+                        <img 
+                          src={value} 
+                          alt={`${tag.tagType === 'S' ? 'Signature' : tag.tagType === 'I' ? 'Initials' : 'Seal'}`}
+                          className="max-h-full max-w-full object-contain"
+                          onError={(e) => {
+                            // If image fails, replace with a user-friendly message
+                            const img = e.target as HTMLImageElement;
+                            const parent = img.parentElement;
+                            if (parent) {
+                              parent.innerHTML = `<div class="text-center text-gray-600 text-xs">[${tag.tagType === 'S' ? 'Signature Applied' : tag.tagType === 'I' ? 'Initials Applied' : 'Seal Applied'}]</div>`;
+                            }
+                          }}
+                        />
+                      );
+                    }
+                    
+                    // For signature/seal/initial tags that didn't match image detection above, show applied message
+                    if (isSignatureOrSealTag && (value.includes('Algorithm=') || value.includes('Signature=') || value.includes('Expires=') || value.includes('&X-Amz-'))) {
+                      return '[Applied]';
+                    }
+                    return value;
+                  } else if (contentData?.value && typeof contentData.value === 'object') {
                     return '[Applied]';
+                  } else {
+                    return tag.content && typeof tag.content === 'string' ? tag.content : '[No content]';
                   }
-                  return value;
-                } else if (contentData?.value && typeof contentData.value === 'object') {
-                  return '[Applied]';
-                } else {
-                  return tag.content && typeof tag.content === 'string' ? tag.content : '[No content]';
-                }
-              })()}
-            </div>
-          )}
-        </div>
-      );
+                })()}
+              </div>
+            )}
+          </div>
+        );
+      }
     }
     
     // For incomplete tags (both tagging and signing mode), show the SAME rich UI
@@ -611,36 +637,85 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           }
         }}
       >
-        {/* Main tag content - improved sizing */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm opacity-80">{tagInfo.icon}</span>
-          <span className="text-sm font-medium truncate">{tagInfo.label}</span>
-          {/* Show status icon in signing mode for restricted tags */}
-          {mode.mode === 'signing' && statusIcon && (
-            <span className="text-sm">{statusIcon}</span>
-          )}
-        </div>
-        
-        {/* User identification - improved sizing */}
-        {userInfo && (
-          <div className="flex items-center gap-1.5 mt-1 px-2 py-1 bg-transparent rounded-full border border-gray-200">
-            <div 
-              className="w-2.5 h-2.5 rounded-full border border-white shadow-sm" 
-              style={{ backgroundColor: userInfo.colorCode }}
-            />
-            <span className="text-sm font-medium opacity-90 truncate">
-              {userInfo.name}
-            </span>
-          </div>
-        )}
-        
-        {/* Show interaction hint in signing mode - improved sizing */}
-        {mode.mode === 'signing' && (
-          <div className="mt-1">
-            <span className="text-sm opacity-70">
-              {interactionMessage || `Click to ${['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter'}`}
-            </span>
-          </div>
+        {/* Hide all interface elements for completed whiteout tags */}
+        {tag.tagType === 'W' && tag.isCompleted ? null : (
+          <>
+            {/* Main tag content - improved sizing */}
+            <div className="flex items-center gap-2">
+              <span style={{ 
+                fontSize: '16px', 
+                color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
+                fontWeight: '600',
+                textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
+              }}>
+                {tagInfo.icon}
+              </span>
+              <span style={{ 
+                fontSize: '14px', 
+                color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
+                fontWeight: '600',
+                textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
+              }}>
+                {tagInfo.label}
+              </span>
+              {/* Show status icon in signing mode for restricted tags */}
+              {mode.mode === 'signing' && statusIcon && (
+                <span style={{ 
+                  fontSize: '14px', 
+                  color: tag.tagType === 'W' ? '#374151' : '#ffffff',
+                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
+                }}>
+                  {statusIcon}
+                </span>
+              )}
+            </div>
+            
+            {/* User identification - improved sizing */}
+            {userInfo && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginTop: '4px',
+                padding: '2px 8px',
+                backgroundColor: tag.tagType === 'W' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(0, 0, 0, 0.2)',
+                borderRadius: '12px',
+                border: tag.tagType === 'W' ? '1px solid rgba(0, 0, 0, 0.2)' : '1px solid rgba(255, 255, 255, 0.2)'
+              }}>
+                <div 
+                  style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    backgroundColor: userInfo.colorCode,
+                    border: '1px solid rgba(255, 255, 255, 0.5)',
+                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.2)'
+                  }}
+                />
+                <span style={{ 
+                  fontSize: '11px', 
+                  color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
+                  fontWeight: '500',
+                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 1px rgba(0, 0, 0, 0.5)'
+                }}>
+                  {userInfo.name}
+                </span>
+              </div>
+            )}
+            
+            {/* Show interaction hint in signing mode - improved sizing */}
+            {mode.mode === 'signing' && (
+              <div className="mt-1">
+                <span style={{ 
+                  fontSize: '12px', 
+                  color: tag.tagType === 'W' ? 'rgba(55, 65, 81, 0.7)' : 'rgba(255, 255, 255, 0.9)',
+                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 1px rgba(0, 0, 0, 0.5)'
+                }}>
+                  {interactionMessage || `Click to ${tag.tagType === 'W' ? 'apply whiteout' : (['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter')}`}
+                </span>
+              </div>
+            )}
+          </>
         )}
       </div>
     );
@@ -686,35 +761,52 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         ${isSelected ? 'ring-2 ring-blue-400 ring-opacity-60' : ''}
         ${canModifyTag ? 'cursor-move hover:shadow-lg' : 'cursor-default'}
         ${mode.showPlaceholders || !tag.isCompleted ? 'opacity-95' : 'opacity-100'}
+        ${mode.mode === 'signing' && !tag.isCompleted ? 'animate-pulse border-2 border-orange-400' : ''}
+        ${hasContent ? 'completed-tag-transparent' : ''}
       `}
       style={{
-        // Completely transparent background for all tags
-        backgroundColor: 'transparent',
+        // ✅ FORCE TRANSPARENT BACKGROUND FOR TAGS WITH CONTENT
+        backgroundColor: hasContent
+          ? 'transparent' // Make tags with content transparent
+          : tag.tagType === 'W' 
+          ? '#ffffff' 
+          : mode.mode === 'signing' && !tag.isCompleted
+            ? '#f97316' // Orange background for unfilled tags in signing mode
+            : (tag.colorCode || '#1e40af'),
         
-        // Minimal styling for text tags
-        border: tag.tagType === 'T' 
-          ? 'none' // Completely borderless for text tags
-          : tag.isCompleted && mode.mode === 'signing' 
-          ? '1px solid #e2e8f0' // Very light grey border for completed tags
-          : isSelected
+        // Force transparency with additional properties
+        ...(hasContent && {
+          background: 'transparent',
+          backgroundColor: 'transparent',
+          backgroundImage: 'none',
+          border: 'none',
+          boxShadow: 'none',
+        }),
+        
+        // Simple border styling
+        border: isSelected
           ? '2px solid #3b82f6' // Blue border for selected tags
-          : '1px solid #d1d5db', // Light grey border for all other tags
+          : hasContent
+          ? 'none' // No border for tags with content
+          : tag.tagType === 'W'
+          ? '1px solid #d1d5db' // Light gray border for whiteout tags
+          : 'none',
         
-        borderRadius: tag.tagType === 'T' ? '2px' : '8px', // Minimal radius for text tags
+        borderRadius: '6px', // Clean rounded corners
         
-        // Improved shadows - borderless for text tags
-        boxShadow: tag.tagType === 'T' 
-          ? 'none' // No shadows for borderless text tags
-          : tag.isCompleted && mode.mode === 'signing'
-          ? '0 1px 3px rgba(0,0,0,0.08)' // Subtle shadow for completed tags
+        // Clean shadow for depth - removed for tags with content
+        boxShadow: hasContent
+          ? 'none' // No shadow for tags with content
           : isSelected 
-          ? '0 4px 12px rgba(59, 130, 246, 0.15), 0 0 0 2px rgba(59, 130, 246, 0.1)' 
-          : '0 2px 6px rgba(0,0,0,0.1)', // Enhanced shadow for better depth
+          ? '0 4px 12px rgba(0, 0, 0, 0.2)' 
+          : '0 2px 6px rgba(0, 0, 0, 0.1)',
         
-        // Better color contrast
-        color: tag.isCompleted && mode.mode === 'signing' 
-          ? '#1f2937' // Dark grey text for completed content
-          : tag.colorCode || '#374151',
+        // Text color based on content status and tag type
+        color: hasContent
+          ? '#000000' // Black text for tags with content
+          : tag.tagType === 'W' 
+          ? '#374151' 
+          : '#ffffff',
         
         zIndex: tag.tagType === 'W' ? (isSelected ? 1000 : 10) : (isSelected ? 1000 : 100),
         

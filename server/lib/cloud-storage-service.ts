@@ -240,6 +240,46 @@ export class CloudStorageService {
   }
 
   /**
+   * Download a file as Buffer from cloud storage
+   */
+  async downloadFile(key: string): Promise<Buffer> {
+    if (!this.isEnabled || !this.s3Client) {
+      throw new Error('Cloud storage not available - cannot download certificate file');
+    }
+
+    try {
+      console.log(`📥 Downloading file from Vultr: ${key}`);
+      
+      const command = new GetObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+      });
+
+      const result = await this.s3Client.send(command);
+      
+      if (!result.Body) {
+        throw new Error('No file content received from Vultr storage');
+      }
+
+      // Convert stream to buffer
+      const chunks: Uint8Array[] = [];
+      if (result.Body) {
+        for await (const chunk of result.Body as any) {
+          chunks.push(chunk);
+        }
+      }
+      
+      const buffer = Buffer.concat(chunks);
+      console.log(`✅ Downloaded ${buffer.length} bytes from Vultr: ${key}`);
+      
+      return buffer;
+    } catch (error) {
+      console.error(`❌ Failed to download file from Vultr: ${key}`, error);
+      throw new Error(`Failed to download file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
    * Get file metadata without downloading the file
    */
   async getFileMetadata(key: string): Promise<{

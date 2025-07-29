@@ -388,6 +388,9 @@ export const useEditorStore = create<EditorStore>()(
         } else if (tagType === 'E') {
           // Seal tags should be more square-like for notary seals
           return { width: 60, height: 60 };
+        } else if (tagType === 'T') {
+          // Text tags should have smaller default dimensions
+          return { width: 80, height: 24 };
         } else {
           // Other tag types get larger default size
           return { width: 140, height: 40 };

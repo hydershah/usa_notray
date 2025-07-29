@@ -143,8 +143,8 @@ export class PDFProcessorService {
       // Determine styling based on tag type
       const isNotaryTag = ['N', 'X', 'O', 'E'].includes(tag.tagType);
       const currentFont = isNotaryTag ? boldFont : font;
-      const fontSize = this.getFontSize(tag.tagType, tag.width, tag.height);
-      const textColor = this.getTagColor(tag.tagType);
+      const fontSize = this.getFontSize(tag.tagType, tag.width, tag.height, contentData);
+      const textColor = this.getTagColor(tag.tagType, contentData);
       
       // Handle special tag types
       switch (tag.tagType) {
@@ -574,25 +574,55 @@ export class PDFProcessorService {
   /**
    * Get appropriate font size for tag
    */
-  private getFontSize(tagType: string, width: number, height: number): number {
+  private getFontSize(tagType: string, width: number, height: number, contentData?: any): number {
+    // If user has set a custom fontSize in contentData, use that
+    if (contentData?.fontSize && typeof contentData.fontSize === 'number') {
+      // Ensure font size is within reasonable bounds
+      const customFontSize = Math.max(6, Math.min(contentData.fontSize, 72));
+      console.log(`🎨 Using custom font size ${customFontSize} for tag type ${tagType}`);
+      return customFontSize;
+    }
+    
+    // Otherwise, calculate based on tag dimensions (existing logic)
     const baseSize = Math.min(width / 8, height * 0.6);
     
+    let calculatedFontSize: number;
     switch (tagType) {
       case 'S': // Signature
       case 'I': // Initials
-        return Math.max(10, Math.min(baseSize, 14));
+        calculatedFontSize = Math.max(10, Math.min(baseSize, 14));
+        break;
       case 'E': // Seal
-        return Math.max(6, Math.min(baseSize * 0.7, 10));
+        calculatedFontSize = Math.max(6, Math.min(baseSize * 0.7, 10));
+        break;
       default:
-        return Math.max(8, Math.min(baseSize, 12));
+        calculatedFontSize = Math.max(8, Math.min(baseSize, 12));
+        break;
     }
+    
+    console.log(`📏 Calculated font size ${calculatedFontSize} for tag type ${tagType} (dimensions: ${width}x${height})`);
+    return calculatedFontSize;
   }
 
   /**
    * Get color for tag type
    */
-  private getTagColor(tagType: string): any {
-    // Always return black color for consistent, professional appearance
+  private getTagColor(tagType: string, contentData?: any): any {
+    // If user has set a custom textColor in contentData, use that
+    if (contentData?.textColor && typeof contentData.textColor === 'string') {
+      try {
+        // Parse hex color to RGB
+        const hex = contentData.textColor.replace('#', '');
+        const r = parseInt(hex.substr(0, 2), 16) / 255;
+        const g = parseInt(hex.substr(2, 2), 16) / 255;
+        const b = parseInt(hex.substr(4, 2), 16) / 255;
+        return rgb(r, g, b);
+      } catch (e) {
+        console.log('Could not parse custom text color, using default black');
+      }
+    }
+    
+    // Always return black color for consistent, professional appearance (default)
     return rgb(0, 0, 0);
   }
 
@@ -666,6 +696,12 @@ export class PDFProcessorService {
         .from(editorSessions)
         .where(eq(editorSessions.sessionId, sessionId))
         .limit(1);
+
+      console.log(`🔍 DEBUG: getSessionInfo for sessionId ${sessionId}:`, {
+        found: !!session,
+        sessionData: session,
+        hasJobId: !!session?.jobId
+      });
 
       return session;
     } catch (error) {
@@ -902,25 +938,41 @@ export class PDFProcessorService {
         let digitalSignatures: SignatureInfo[] = [];
         let isDigitallySigned = false;
         
+        console.log(`🔍 DEBUG: sessionInfo for digital signatures:`, {
+          sessionInfo: sessionInfo,
+          hasJobId: !!sessionInfo?.jobId,
+          jobId: sessionInfo?.jobId
+        });
+        
         if (sessionInfo?.jobId) {
           console.log(`🔐 Applying digital signatures for ${document.fileName}`);
           
-          const digitalSignatureService = DigitalSignatureService.getInstance();
-          const signatureResult = await digitalSignatureService.signCompletedDocument(
-            visualBuffer,
-            sessionInfo.jobId,
-            sessionId
-          );
-          
-          if (signatureResult.success && signatureResult.signedPdfBuffer) {
-            finalBuffer = signatureResult.signedPdfBuffer;
-            digitalSignatures = signatureResult.signatures || [];
-            isDigitallySigned = true;
+          try {
+            const digitalSignatureService = DigitalSignatureService.getInstance();
+            console.log(`🔍 DEBUG: About to call signCompletedDocument with jobId: ${sessionInfo.jobId}, sessionId: ${sessionId}`);
             
-            console.log(`✅ Digital signatures applied to ${document.fileName}: ${digitalSignatures.length} signatures`);
-          } else {
-            console.warn(`⚠️ Digital signature application failed for ${document.fileName}: ${signatureResult.error}`);
+            const signatureResult = await digitalSignatureService.signCompletedDocument(
+              visualBuffer,
+              sessionInfo.jobId,
+              sessionId
+            );
+            
+            console.log(`🔍 DEBUG: signCompletedDocument result:`, signatureResult);
+            
+            if (signatureResult.success && signatureResult.signedPdfBuffer) {
+              finalBuffer = signatureResult.signedPdfBuffer;
+              digitalSignatures = signatureResult.signatures || [];
+              isDigitallySigned = true;
+              
+              console.log(`✅ Digital signatures applied to ${document.fileName}: ${digitalSignatures.length} signatures`);
+            } else {
+              console.warn(`⚠️ Digital signature application failed for ${document.fileName}: ${signatureResult.error}`);
+            }
+          } catch (digitalSignatureError) {
+            console.error(`❌ Exception during digital signature application for ${document.fileName}:`, digitalSignatureError);
           }
+        } else {
+          console.log(`⚠️ Skipping digital signatures: sessionInfo.jobId is ${sessionInfo?.jobId}`);
         }
         
         // Create processed document

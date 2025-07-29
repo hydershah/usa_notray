@@ -21,13 +21,22 @@ const upload = multer({
       'application/pdf',
       'image/jpeg',
       'image/jpg',
-      'image/png'
+      'image/png',
+      // Digital certificate files
+      'application/x-pkcs12',
+      'application/pkcs12',
+      'application/x-pkcs-12',
+      'application/pkcs-12'
     ];
     
-    if (allowedMimes.includes(file.mimetype)) {
+    // Also check file extensions for certificate files
+    const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.pfx', '.p12'];
+    const fileExtension = file.originalname.toLowerCase().substring(file.originalname.lastIndexOf('.'));
+    
+    if (allowedMimes.includes(file.mimetype) || allowedExtensions.includes(fileExtension)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only PDF, JPG, JPEG, and PNG files are allowed.'));
+      cb(new Error('Invalid file type. Only PDF, JPG, JPEG, PNG, PFX, and P12 files are allowed.'));
     }
   }
 });
@@ -575,6 +584,30 @@ export function registerNotaryProfileRoutes(app: Express) {
         if (files[fileType] && files[fileType][0]) {
           try {
             const file = files[fileType][0];
+            
+            // Special validation for digital certificates
+            if (fileType === 'publicCertificateFile') {
+              const allowedCertExtensions = ['.pfx', '.p12'];
+              const fileExtension = path.extname(file.originalname).toLowerCase();
+              
+              if (!allowedCertExtensions.includes(fileExtension)) {
+                throw new Error(`Invalid certificate format. Only .pfx and .p12 files are supported for digital certificates. Received: ${fileExtension}`);
+              }
+              
+              // Validate certificate content type
+              const allowedCertMimeTypes = [
+                'application/x-pkcs12',
+                'application/x-pkcs12-pfx', 
+                'application/pkcs12',
+                'application/octet-stream' // Common fallback for .pfx files
+              ];
+              
+              if (!allowedCertMimeTypes.includes(file.mimetype)) {
+                console.warn(`⚠️ Unexpected MIME type for certificate: ${file.mimetype}. File: ${file.originalname}`);
+              }
+              
+              console.log(`🔐 Processing certificate upload: ${file.originalname} (${file.mimetype})`);
+            }
             
             // Sanitize filename for cloud storage
             const sanitizedFilename = file.originalname

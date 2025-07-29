@@ -311,9 +311,9 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
   const placeTextInput = useCallback(async (command: PlaceTextInputCommand, userColor: string) => {
     const tempId = `text_temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
-    // Create optimistic text input for immediate editing
-    // Default font size set to 16px for new tags, or inherit last used size if larger
-    const inheritedFontSize = textInputs.length > 0 ? textInputs[textInputs.length - 1].fontSize : 16;
+    // Create optimistic text input for immediate positioning (not editing)
+    // Default font size set to 12px for new tags, or inherit last used size if larger
+    const inheritedFontSize = textInputs.length > 0 ? textInputs[textInputs.length - 1].fontSize : 12;
     const optimisticTextInput: StreamlinedTextInput = {
       id: tempId,
       coordinates: command.coordinates,
@@ -323,12 +323,13 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       textColor: '#000000',
       assignedUserId: command.assignedUserId,
       userColor,
-      isNew: true,
+      isNew: true, // Mark as new for positioning behavior
       createdAt: new Date()
     };
 
-    // Add to local state immediately
+    // Add to local state immediately for responsive positioning
     setTextInputs(prev => [...prev, optimisticTextInput]);
+    // Select the new tag for positioning (not editing initially)
     setSelectedTextInputId(tempId);
     pendingCreations.current.add(tempId);
     
@@ -354,7 +355,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           documentId: command.documentId,
           coordinates: command.coordinates,
           assignedUserId: command.assignedUserId,
-          immediateEdit: true
+          immediateEdit: false // Changed to false - position first, edit second
         })
       });
 
@@ -386,7 +387,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           return {
             ...input, // Preserve user's current state (including any typed content)
             id: tag.id, // Update to real server ID
-            // Keep isNew as true to maintain editing state until user finishes typing
+            // Keep isNew as true to maintain positioning state until user starts editing
             isNew: input.content === '' ? true : false,
             // Explicitly preserve content to prevent server overwrite - NEVER use server content if user has typed something
             content: input.content !== '' ? input.content : tag.content || ''

@@ -164,113 +164,151 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
 
   const tagStyle = getTagStyle();
   
+  // Check if tag has content (should be transparent)
+  const hasContent = !!(tag.content || tag.contentData || tag.isCompleted);
+
+  console.log('🎨 DraggableTag render debug:', {
+    tagId: tag.id.substring(0, 8),
+    tagType: tag.tagType,
+    isCompleted: tag.isCompleted,
+    hasContent: !!tag.content,
+    hasContentData: !!tag.contentData,
+    shouldBeTransparent: hasContent,
+    backgroundColorWillBe: hasContent ? 'transparent' : (tag.tagType === 'W' ? '#ffffff' : (tag.colorCode || '#1e40af'))
+  });
+  
   return (
     <div
       onMouseDown={handleMouseDown}
       onClick={handleClick}
+      className={hasContent ? 'completed-tag-transparent' : ''}
       style={{
         position: 'absolute',
         left: `${tag.coordinates.x * scaleFactor}px`,
         top: `${tag.coordinates.y * scaleFactor}px`,
         width: `${tag.coordinates.width * scaleFactor}px`,
         height: `${tag.coordinates.height * scaleFactor}px`,
-        // Completely transparent background for all tags
-        backgroundColor: 'transparent',
-        // Minimal styling for text tags
-        border: tag.tagType === 'T' 
-          ? 'none' // Completely borderless for text tags
-          : isCompleted && isInSigningMode 
-          ? '1px solid #e2e8f0' // Very light grey border for completed tags
-          : isSelected || isDragging
+        // ✅ TRANSPARENT BACKGROUND FOR TAGS WITH CONTENT
+        backgroundColor: hasContent 
+          ? 'transparent' 
+          : tag.tagType === 'W' ? '#ffffff' : (tag.colorCode || '#1e40af'),
+        // Force transparency with additional properties
+        ...(hasContent && {
+          background: 'transparent',
+          backgroundColor: 'transparent',
+          backgroundImage: 'none',
+          border: 'none',
+          boxShadow: 'none',
+        }),
+        // Simple border styling
+        border: isSelected || isDragging
           ? '2px solid #3b82f6' // Blue border for selected/dragging tags
-          : '1px solid #d1d5db', // Light grey border for all other tags
-        borderRadius: '8px', // Slightly more rounded corners
-        color: isCompleted && isInSigningMode 
-          ? '#1f2937' // Dark grey text for completed content
-          : tag.colorCode || '#374151',
+          : hasContent
+          ? 'none' // No border for tags with content
+          : tag.tagType === 'W' 
+          ? '1px solid #d1d5db' // Light gray border for whiteout tags
+          : 'none',
+        borderRadius: '6px', // Clean rounded corners
+        color: hasContent 
+          ? '#000000' // Black text for tags with content
+          : tag.tagType === 'W' ? '#374151' : '#ffffff', // Dark text for whiteout, white for others
         cursor: tagStyle.cursor,
         userSelect: 'none',
         zIndex: isDragging ? 1000 : isSelected ? 500 : 100,
         transition: isDragging ? 'none' : 'all 0.2s ease',
         boxSizing: 'border-box',
-        // Improved shadows - borderless for text tags
-        boxShadow: tag.tagType === 'T' 
-          ? 'none' // No shadows for borderless text tags
-          : isCompleted && isInSigningMode
-          ? '0 1px 3px rgba(0,0,0,0.08)' // Subtle shadow for completed tags
+        // Clean shadow for depth
+        boxShadow: hasContent
+          ? 'none' // No shadow for tags with content
           : isDragging || isSelected
-          ? '0 4px 12px rgba(59, 130, 246, 0.15), 0 0 0 2px rgba(59, 130, 246, 0.1)'
-          : '0 2px 6px rgba(0,0,0,0.1)', // Enhanced shadow for better depth
+          ? '0 4px 12px rgba(0, 0, 0, 0.2)'
+          : '0 2px 6px rgba(0, 0, 0, 0.1)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         pointerEvents: 'auto',
-        // ✅ FIXED: Remove excessive minimum sizing constraints for text tags
-        minWidth: tag.tagType === 'T' ? 'auto' : '60px', // Reduced from 80px to 60px
-        minHeight: tag.tagType === 'T' ? 'auto' : '24px' // Reduced from 32px to 24px
+        minWidth: tag.tagType === 'T' ? 'auto' : '60px'
       }}
     >
       <div style={{ 
-        padding: tag.tagType === 'T' ? '2px 4px' : '6px 8px', // ✅ FIXED: Much smaller padding for text tags
-        fontSize: tag.tagType === 'T' ? '12px' : '14px', // ✅ FIXED: Smaller font size for text tags
-        fontWeight: '500',
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: tag.tagType === 'T' ? '1px' : '4px', // ✅ FIXED: Minimal gap for text tags
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        width: '100%',
         height: '100%',
-        justifyContent: 'center'
+        // Adjust padding based on tag type
+        padding: tag.tagType === 'T' ? '2px 4px' : '6px 8px',
+        fontSize: tag.tagType === 'T' ? '12px' : '14px',
+        fontWeight: '500',
+        textAlign: 'center',
+        gap: tag.tagType === 'T' ? '1px' : '4px',
       }}>
-        {/* Show different content based on mode */}
-        {isInSigningMode && isCompleted ? (
-          // Completed tag in signing mode
-          <div style={{ textAlign: 'center', color: '#15803d' }}>
-            <div style={{ fontSize: '16px' }}>DONE</div>
-            <div style={{ fontSize: '12px' }}>Completed</div>
-          </div>
-        ) : isInSigningMode && isCurrentUserTag && !isCompleted ? (
+        {/* Special handling for whiteout tags when completed - show nothing */}
+        {tag.tagType === 'W' && isCompleted ? (
+          // Completed whiteout: just white space, no content
+          null
+        ) : 
+        /* Special rendering for signing mode when tag is current user's and not completed */
+        isInSigningMode && isCurrentUserTag && !isCompleted ? (
           // Interactive tag in signing mode
-          <div style={{ textAlign: 'center', color: '#1e40af' }}>
-            <div style={{ fontSize: '14px', marginBottom: '4px' }}>
+          <div style={{ 
+            textAlign: 'center', 
+            color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
+            fontWeight: '600' 
+          }}>
+            <div style={{ fontSize: '16px', marginBottom: '4px' }}>
               {tag.tagType}
             </div>
-            <div style={{ fontSize: '12px' }}>Click to {['S', 'I'].includes(tag.tagType) ? 'apply' : 'enter'}</div>
+            <div style={{ fontSize: '12px' }}>
+              Click to {tag.tagType === 'W' ? 'apply whiteout' : (['S', 'I'].includes(tag.tagType) ? 'apply' : 'enter')}
+            </div>
           </div>
         ) : (
-          // Normal tag display
+          // Normal tag display (for positioning/dragging)
           <>
             {/* Main tag content */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-              <span style={{ opacity: 0.8 }}>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              gap: '3px',
+              fontSize: tag.tagType === 'T' ? '14px' : '16px',
+              fontWeight: '600',
+              color: tag.tagType === 'W' ? '#374151' : '#ffffff',
+              textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
+            }}>
+              <span>
                 {tag.displayLabel?.split(' - ')[0] || tag.tagType}
               </span>
             </div>
             
-            {/* User identification - improved sizing */}
-            {tag.displayLabel && tag.displayLabel.includes(' - ') && (
+            {/* User identification - only show for non-completed tags */}
+            {!isCompleted && tag.displayLabel && tag.displayLabel.includes(' - ') && (
               <div style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
-                gap: '6px', // Increased gap
-                fontSize: '12px', // Increased from 9px to 12px
+                justifyContent: 'center',
+                gap: '4px',
+                fontSize: '10px',
                 fontWeight: '500',
-                padding: '4px 8px', // Increased padding
-                backgroundColor: 'transparent',
-                borderRadius: '12px',
-                border: '1px solid #e2e8f0' // Added light border
+                padding: '2px 6px',
+                backgroundColor: tag.tagType === 'W' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(0, 0, 0, 0.2)',
+                borderRadius: '8px',
+                border: tag.tagType === 'W' ? '1px solid rgba(0, 0, 0, 0.2)' : '1px solid rgba(255, 255, 255, 0.2)',
+                marginTop: '2px'
               }}>
                 <div style={{
-                  width: '8px', // Increased from 6px to 8px
-                  height: '8px', // Increased from 6px to 8px
+                  width: '4px',
+                  height: '4px',
                   borderRadius: '50%',
-                  backgroundColor: tag.colorCode || '#3B82F6',
-                  border: '1px solid white',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
+                  backgroundColor: tag.tagType === 'W' ? '#374151' : '#ffffff',
+                  border: tag.tagType === 'W' ? '1px solid rgba(0, 0, 0, 0.3)' : '1px solid rgba(255, 255, 255, 0.5)'
                 }} />
-                <span>
+                <span style={{ 
+                  color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
+                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 1px rgba(0, 0, 0, 0.5)' 
+                }}>
                   {tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
                 </span>
               </div>
