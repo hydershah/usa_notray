@@ -7,7 +7,9 @@ import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
 import { Textarea } from '../ui/textarea';
-import { Loader2, FileText, User, Calendar, Clock, MapPin, AlertCircle, CheckCircle, XCircle, UserCheck, ExternalLink, Edit, Trash2, Eye, Search, Filter, Plus, Mail, Phone, MapPin as LocationIcon, Download, File, X, FileImage, FileText as FileTextIcon } from 'lucide-react';
+import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
+import { Label } from '../ui/label';
+import { Loader2, FileText, User, Calendar, Clock, MapPin, AlertCircle, CheckCircle, XCircle, UserCheck, ExternalLink, Edit, Trash2, Eye, Search, Filter, Plus, Mail, Phone, MapPin as LocationIcon, Download, File, X, FileImage, FileText as FileTextIcon, Hash, UserIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLocation } from 'wouter';
 import { apiRequest } from '../../lib/queryClient';
@@ -68,12 +70,35 @@ export function JobRequestManager() {
   const [selectedNotaryId, setSelectedNotaryId] = useState<string>('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
   const [selectedDocument, setSelectedDocument] = useState<string | null>(null);
+  const [assigningRequestId, setAssigningRequestId] = useState<number | null>(null);
+  
+  // New assignment system state
+  const [assignmentMethod, setAssignmentMethod] = useState<string>('assign');
+  const [notaryCode, setNotaryCode] = useState<string>('');
+  const [notaryCodeLoading, setNotaryCodeLoading] = useState(false);
+  const [notaryCodeResult, setNotaryCodeResult] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isUserLoading, setIsUserLoading] = useState(true);
   const [, setLocation] = useLocation();
 
   useEffect(() => {
     fetchAllRequests();
     fetchNotaries();
+    fetchCurrentUser();
   }, []);
+
+  const fetchCurrentUser = async () => {
+    try {
+      const userData = localStorage.getItem('user');
+      if (userData) {
+        setCurrentUser(JSON.parse(userData));
+      }
+    } catch (err) {
+      console.error('Failed to fetch current user:', err);
+    } finally {
+      setIsUserLoading(false);
+    }
+  };
 
   const fetchAllRequests = async () => {
     try {
@@ -97,6 +122,50 @@ export function JobRequestManager() {
       setNotaries(Array.isArray(notariesData) ? notariesData : []);
     } catch (err) {
       console.error('Failed to fetch notaries:', err);
+      setNotaries([]);
+    }
+  };
+
+  // Check if admin is available as a notary
+  const isAdminAvailableAsNotary = currentUser?.role === 'admin' && (
+    currentUser?.notaryType === 'subscriber' || 
+    currentUser?.notaryType === 'contractor' ||
+    currentUser?.isNotary === true ||
+    currentUser?.canNotarize === true
+  );
+  
+  // Determine if assignment is possible
+  const canAssignNotary = notaries.length > 0 || isAdminAvailableAsNotary;
+
+  // Debug logging
+  useEffect(() => {
+    if (currentUser) {
+      console.log('Current user data:', currentUser);
+      console.log('Admin available as notary:', isAdminAvailableAsNotary);
+      console.log('Can assign notary:', canAssignNotary);
+      console.log('Notaries count:', notaries.length);
+      console.log('User role:', currentUser.role);
+      console.log('User notaryType:', currentUser.notaryType);
+    }
+  }, [currentUser, isAdminAvailableAsNotary, canAssignNotary, notaries.length]);
+
+  const lookupNotaryByCode = async (code: string) => {
+    setNotaryCodeLoading(true);
+    try {
+      const response = await apiRequest('POST', '/api/notaries/lookup-by-code', { code });
+      const result = await response.json();
+      if (result.success && result.data) {
+        setNotaryCodeResult(result.data);
+        toast.success('Notary found successfully');
+      } else {
+        setNotaryCodeResult(null);
+        toast.error('Notary not found with this code');
+      }
+    } catch (error) {
+      setNotaryCodeResult(null);
+      toast.error('Failed to lookup notary');
+    } finally {
+      setNotaryCodeLoading(false);
     }
   };
 
@@ -117,26 +186,71 @@ export function JobRequestManager() {
   };
 
   const handleAssignRequest = async (requestId: number) => {
-    if (!selectedNotaryId) {
-      toast.error('Please select a notary');
-      return;
+    let assignedNotaryId: number | undefined;
+    let assignmentType = 'manual';
+
+    // Determine assignment based on method
+    switch (assignmentMethod) {
+      case 'admin_self':
+        assignedNotaryId = currentUser?.id;
+        assignmentType = 'admin_self';
+        break;
+      case 'assign':
+        if (!selectedNotaryId) {
+          toast.error('Please select a notary');
+          return;
+        }
+        assignedNotaryId = parseInt(selectedNotaryId);
+        assignmentType = 'manual';
+        break;
+      case 'auto':
+        assignmentType = 'auto';
+        break;
+      case 'id_code':
+        if (!notaryCodeResult?.id) {
+          toast.error('Please enter a valid notary ID code');
+          return;
+        }
+        assignedNotaryId = notaryCodeResult.id;
+        assignmentType = 'id_code';
+        break;
+      default:
+        toast.error('Please select an assignment method');
+        return;
     }
 
+    setAssigningRequestId(requestId);
     try {
-      await apiRequest('POST', `/api/job-requests/${requestId}/review`, {
+      const response = await apiRequest('POST', `/api/job-requests/${requestId}/review`, {
         action: 'assign',
-        assignedNotaryId: parseInt(selectedNotaryId),
-        assignmentNotes
+        assignedNotaryId,
+        assignmentNotes,
+        assignmentType
       });
+      
+      if (!response.ok) {
+        throw new Error('Failed to assign request');
+      }
+      
       toast.success('Request assigned successfully');
       setIsAssignDialogOpen(false);
-      setSelectedNotaryId('');
-      setAssignmentNotes('');
-      setSelectedRequest(null);
+      resetAssignmentForm();
       fetchAllRequests();
     } catch (error) {
+      console.error('Assignment error:', error);
       toast.error('Failed to assign request');
+    } finally {
+      setAssigningRequestId(null);
     }
+  };
+
+  const resetAssignmentForm = () => {
+    setSelectedNotaryId('');
+    setAssignmentNotes('');
+    setAssignmentMethod('assign');
+    setNotaryCode('');
+    setNotaryCodeResult(null);
+    setSelectedRequest(null);
   };
 
   const getUrgencyColor = (urgency: string) => {
@@ -261,9 +375,25 @@ export function JobRequestManager() {
           <h2 className="text-2xl font-bold">Job Request Management</h2>
           <p className="text-gray-600">Manage and review all job requests in the system</p>
         </div>
-        <Badge variant="outline" className="text-sm">
-          {filteredRequests.length} of {requests.length} Total
-        </Badge>
+        <div className="flex items-center gap-4">
+          <Badge variant="outline" className="text-sm">
+            {filteredRequests.length} of {requests.length} Total
+          </Badge>
+          {/* Debug button - remove after testing */}
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => {
+              console.log('Current user:', currentUser);
+              console.log('Is admin available as notary:', isAdminAvailableAsNotary);
+              console.log('Can assign notary:', canAssignNotary);
+              console.log('Notaries count:', notaries.length);
+              alert(`Debug Info:\nUser Role: ${currentUser?.role}\nNotary Type: ${currentUser?.notaryType}\nAdmin Available: ${isAdminAvailableAsNotary}\nCan Assign: ${canAssignNotary}\nNotaries: ${notaries.length}`);
+            }}
+          >
+            Debug Info
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -759,31 +889,36 @@ export function JobRequestManager() {
                       </DialogContent>
                     </Dialog>
 
-                                        {/* Assign Button */}
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedRequest(request);
-                        setSelectedNotaryId('');
-                        setAssignmentNotes('');
-                        setIsAssignDialogOpen(true);
-                      }}
-                      className="bg-green-600 hover:bg-green-700 text-white min-w-[140px]"
-                    >
-                      <UserCheck className="h-4 w-4 mr-2" />
-                      Assign to Notary
-                    </Button>
+                     {/* Assign Button */}
+                     {request.status === 'approved' && (
+                       <Button
+                         variant="default"
+                         size="sm"
+                         onClick={() => {
+                           setSelectedRequest(request);
+                           resetAssignmentForm();
+                           setIsAssignDialogOpen(true);
+                         }}
+                         className="bg-green-600 hover:bg-green-700 text-white min-w-[140px]"
+                         disabled={!canAssignNotary}
+                       >
+                         <UserCheck className="h-4 w-4 mr-2" />
+                         {canAssignNotary 
+                           ? (isAdminAvailableAsNotary ? 'Assign (You Available)' : 'Assign to Notary')
+                           : 'No Notaries Available'
+                         }
+                       </Button>
+                     )}
                     
                     <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
-                      <DialogContent className="max-w-2xl">
+                      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
                           <DialogTitle className="flex items-center gap-2">
                             <UserCheck className="h-5 w-5" />
                             Assign Job Request to Notary
                           </DialogTitle>
                           <DialogDescription>
-                            Select an available notary and provide assignment details for this job request.
+                            Choose how you want to assign this job request to a notary.
                           </DialogDescription>
                         </DialogHeader>
                         
@@ -814,43 +949,180 @@ export function JobRequestManager() {
                               </div>
                             </div>
 
-                            {/* Notary Selection */}
+                            {/* Assignment Method Selection */}
                             <div>
-                              <label className="text-sm font-medium mb-2 block">Select Notary</label>
-                              <Select value={selectedNotaryId} onValueChange={setSelectedNotaryId}>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Choose an available notary" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {notaries.length === 0 ? (
-                                    <SelectItem value="" disabled>
-                                      No available notaries found
-                                    </SelectItem>
-                                  ) : (
-                                    notaries.map((notary) => (
-                                      <SelectItem key={notary.id} value={notary.id.toString()}>
-                                        <div className="flex items-center gap-2">
-                                          <User className="h-4 w-4" />
-                                          <div>
-                                            <div className="font-medium">{notary.name}</div>
-                                            <div className="text-xs text-gray-500">{notary.email}</div>
-                                          </div>
+                              <Label className="text-sm font-medium text-gray-700 mb-4 block">
+                                Assignment Method
+                              </Label>
+                              <RadioGroup
+                                value={assignmentMethod}
+                                onValueChange={setAssignmentMethod}
+                                className="grid grid-cols-1 md:grid-cols-2 gap-4"
+                              >
+                                {/* Admin Self-Assignment Option */}
+                                {currentUser?.role === 'admin' && (
+                                  <div className="relative">
+                                    <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-purple-200 transition-colors cursor-pointer">
+                                      <RadioGroupItem value="admin_self" id="admin_self" className="mt-1" />
+                                      <div className="flex-1">
+                                        <Label htmlFor="admin_self" className="text-lg font-semibold text-gray-900 cursor-pointer">
+                                          Assign Myself as Notary
+                                        </Label>
+                                        <p className="text-sm text-gray-600 mt-1">You will be the notary for this job</p>
+                                        <div className="mt-3 flex items-center text-xs text-purple-600">
+                                          <UserIcon className="w-4 h-4 mr-1" />
+                                          Direct admin control
                                         </div>
-                                      </SelectItem>
-                                    ))
-                                  )}
-                                </SelectContent>
-                              </Select>
-                              {notaries.length === 0 && (
-                                <p className="text-sm text-red-600 mt-2">
-                                  No available notaries found. Please ensure notaries are active in the system.
-                                </p>
-                              )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Manual Notary Assignment */}
+                                <div className="relative">
+                                  <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-blue-200 transition-colors cursor-pointer">
+                                    <RadioGroupItem value="assign" id="assign" className="mt-1" />
+                                    <div className="flex-1">
+                                      <Label htmlFor="assign" className="text-lg font-semibold text-gray-900 cursor-pointer">
+                                        Assign Specific Notary
+                                      </Label>
+                                      <p className="text-sm text-gray-600 mt-1">Choose from available contractor notaries</p>
+                                      <div className="mt-3 flex items-center text-xs text-blue-600">
+                                        <CheckCircle className="w-4 h-4 mr-1" />
+                                        Direct selection control
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Auto Assignment */}
+                                <div className="relative">
+                                  <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-green-200 transition-colors cursor-pointer">
+                                    <RadioGroupItem value="auto" id="auto" className="mt-1" />
+                                    <div className="flex-1">
+                                      <Label htmlFor="auto" className="text-lg font-semibold text-gray-900 cursor-pointer">
+                                        Auto Assignment
+                                      </Label>
+                                      <p className="text-sm text-gray-600 mt-1">System assigns best contractor notary match</p>
+                                      <div className="mt-3 flex items-center text-xs text-green-600">
+                                        <CheckCircle className="w-4 h-4 mr-1" />
+                                        Optimal matching algorithm
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Notary ID Code Assignment */}
+                                <div className="relative">
+                                  <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-orange-200 transition-colors cursor-pointer">
+                                    <RadioGroupItem value="id_code" id="id_code" className="mt-1" />
+                                    <div className="flex-1">
+                                      <Label htmlFor="id_code" className="text-lg font-semibold text-gray-900 cursor-pointer">
+                                        Enter Notary ID Code
+                                      </Label>
+                                      <p className="text-sm text-gray-600 mt-1">Assign a specific notary using their ID code</p>
+                                      <div className="mt-3 flex items-center text-xs text-orange-600">
+                                        <Hash className="w-4 h-4 mr-1" />
+                                        Direct assignment by code
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </RadioGroup>
                             </div>
+
+                            {/* Conditional Assignment Options */}
+                            {assignmentMethod === 'assign' && (
+                              <div>
+                                <Label className="text-sm font-medium mb-2 block">Select Notary</Label>
+                                <Select value={selectedNotaryId} onValueChange={setSelectedNotaryId}>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Choose an available notary" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {notaries.length === 0 && !isAdminAvailableAsNotary ? (
+                                      <SelectItem value="" disabled>
+                                        No available notaries found
+                                      </SelectItem>
+                                    ) : (
+                                      <>
+                                        {/* Add admin as first option if they're available */}
+                                        {isAdminAvailableAsNotary && (
+                                          <SelectItem value={currentUser.id.toString()}>
+                                            <div className="flex items-center gap-2">
+                                              <UserIcon className="h-4 w-4" />
+                                              <div>
+                                                <div className="font-medium">{currentUser.firstName} {currentUser.lastName} (You)</div>
+                                                <div className="text-xs text-gray-500">{currentUser.email}</div>
+                                              </div>
+                                            </div>
+                                          </SelectItem>
+                                        )}
+                                        {/* Add other available notaries */}
+                                        {notaries.map((notary) => (
+                                          <SelectItem key={notary.id} value={notary.id.toString()}>
+                                            <div className="flex items-center gap-2">
+                                              <User className="h-4 w-4" />
+                                              <div>
+                                                <div className="font-medium">{notary.name}</div>
+                                                <div className="text-xs text-gray-500">{notary.email}</div>
+                                              </div>
+                                            </div>
+                                          </SelectItem>
+                                        ))}
+                                      </>
+                                    )}
+                                  </SelectContent>
+                                </Select>
+                                {notaries.length === 0 && !isAdminAvailableAsNotary && (
+                                  <p className="text-sm text-red-600 mt-2">
+                                    No available notaries found. Please ensure notaries are active in the system.
+                                  </p>
+                                )}
+                              </div>
+                            )}
+
+                            {assignmentMethod === 'id_code' && (
+                              <div>
+                                <Label className="text-sm font-medium mb-2 block">Notary ID Code</Label>
+                                <div className="flex gap-2">
+                                  <Input
+                                    value={notaryCode}
+                                    onChange={(e) => setNotaryCode(e.target.value)}
+                                    placeholder="Enter notary ID code"
+                                    className="flex-1"
+                                  />
+                                  <Button
+                                    onClick={() => lookupNotaryByCode(notaryCode)}
+                                    disabled={!notaryCode || notaryCodeLoading}
+                                    variant="outline"
+                                  >
+                                    {notaryCodeLoading ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Search className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                </div>
+                                {notaryCodeResult && (
+                                  <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                                    <div className="flex items-center gap-2">
+                                      <CheckCircle className="h-4 w-4 text-green-600" />
+                                      <div>
+                                        <p className="text-sm font-medium text-green-800">
+                                          {notaryCodeResult.firstName} {notaryCodeResult.lastName}
+                                        </p>
+                                        <p className="text-xs text-green-600">{notaryCodeResult.email}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
                             {/* Assignment Details */}
                             <div>
-                              <label className="text-sm font-medium mb-2 block">Assignment Notes</label>
+                              <Label className="text-sm font-medium mb-2 block">Assignment Notes</Label>
                               <Textarea
                                 value={assignmentNotes}
                                 onChange={(e) => setAssignmentNotes(e.target.value)}
@@ -863,12 +1135,36 @@ export function JobRequestManager() {
                             </div>
 
                             {/* Assignment Preview */}
-                            {selectedNotaryId && (
+                            {(selectedNotaryId || notaryCodeResult || assignmentMethod === 'admin_self' || assignmentMethod === 'auto') && (
                               <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
                                 <h4 className="font-semibold text-sm text-blue-800 mb-2">Assignment Preview</h4>
                                 <div className="text-sm text-blue-700">
-                                  <p><strong>Notary:</strong> {notaries.find(n => n.id.toString() === selectedNotaryId)?.name}</p>
-                                  <p><strong>Email:</strong> {notaries.find(n => n.id.toString() === selectedNotaryId)?.email}</p>
+                                  {assignmentMethod === 'admin_self' && (
+                                    <p><strong>Notary:</strong> {currentUser?.firstName} {currentUser?.lastName} (You)</p>
+                                  )}
+                                  {assignmentMethod === 'assign' && selectedNotaryId && (
+                                    <>
+                                      <p><strong>Notary:</strong> {
+                                        selectedNotaryId === currentUser?.id?.toString() 
+                                          ? `${currentUser.firstName} ${currentUser.lastName} (You)`
+                                          : notaries.find(n => n.id.toString() === selectedNotaryId)?.name
+                                      }</p>
+                                      <p><strong>Email:</strong> {
+                                        selectedNotaryId === currentUser?.id?.toString()
+                                          ? currentUser.email
+                                          : notaries.find(n => n.id.toString() === selectedNotaryId)?.email
+                                      }</p>
+                                    </>
+                                  )}
+                                  {assignmentMethod === 'id_code' && notaryCodeResult && (
+                                    <>
+                                      <p><strong>Notary:</strong> {notaryCodeResult.firstName} {notaryCodeResult.lastName}</p>
+                                      <p><strong>Email:</strong> {notaryCodeResult.email}</p>
+                                    </>
+                                  )}
+                                  {assignmentMethod === 'auto' && (
+                                    <p><strong>Assignment:</strong> System will automatically select the best available notary</p>
+                                  )}
                                   {assignmentNotes && (
                                     <p><strong>Notes:</strong> {assignmentNotes}</p>
                                   )}
@@ -880,7 +1176,10 @@ export function JobRequestManager() {
                             <div className="flex gap-2 pt-4 border-t">
                               <Button
                                 variant="outline"
-                                onClick={() => setIsAssignDialogOpen(false)}
+                                onClick={() => {
+                                  setIsAssignDialogOpen(false);
+                                  resetAssignmentForm();
+                                }}
                                 className="flex-1"
                               >
                                 Cancel
@@ -888,10 +1187,18 @@ export function JobRequestManager() {
                               <Button
                                 onClick={() => handleAssignRequest(selectedRequest.id)}
                                 className="flex-1 bg-green-600 hover:bg-green-700"
-                                disabled={!selectedNotaryId || notaries.length === 0}
+                                disabled={
+                                  (assignmentMethod === 'assign' && !selectedNotaryId) ||
+                                  (assignmentMethod === 'id_code' && !notaryCodeResult) ||
+                                  assigningRequestId === selectedRequest.id
+                                }
                               >
-                                <UserCheck className="h-4 w-4 mr-2" />
-                                Assign to Notary
+                                {assigningRequestId === selectedRequest.id ? (
+                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                ) : (
+                                  <UserCheck className="h-4 w-4 mr-2" />
+                                )}
+                                {assigningRequestId === selectedRequest.id ? 'Assigning...' : 'Assign to Notary'}
                               </Button>
                             </div>
                           </div>
