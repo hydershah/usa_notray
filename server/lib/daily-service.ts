@@ -166,21 +166,27 @@ class DailyService {
   // Generate meeting token for participants
   private async generateMeetingToken(roomName: string, isOwner: boolean = false): Promise<string> {
     if (!this.isConfigured) {
-      return 'fallback-token';
+      console.warn('⚠️ Daily service not configured, skipping token generation');
+      return '';
     }
 
     try {
+      console.log(`🎫 Generating ${isOwner ? 'host' : 'participant'} token for room: ${roomName}`);
+      
       const tokenConfig = {
         properties: {
           room_name: roomName,
           is_owner: isOwner,
           enable_screenshare: true,
           enable_recording: isOwner,
-          enable_transcription: isOwner,
           start_audio_off: false,
-          start_video_off: false
+          start_video_off: false,
+          // Add expiration time (1 hour from now)
+          exp: Math.floor(Date.now() / 1000) + 3600
         }
       };
+
+      console.log('🎫 Token config:', tokenConfig);
 
       const response = await fetch(`${this.config.apiUrl}/meeting-tokens`, {
         method: 'POST',
@@ -191,15 +197,21 @@ class DailyService {
         body: JSON.stringify(tokenConfig)
       });
 
+      console.log('🎫 Token API response status:', response.status);
+
       if (!response.ok) {
-        console.warn('⚠️ Failed to create meeting token, using room without token');
+        const errorText = await response.text();
+        console.warn(`⚠️ Failed to create meeting token (${response.status}): ${errorText}`);
+        console.warn('⚠️ Continuing without token - room will be public');
         return '';
       }
 
       const data = await response.json();
+      console.log('✅ Meeting token created successfully');
       return data.token;
     } catch (error) {
       console.warn('⚠️ Error creating meeting token:', error);
+      console.warn('⚠️ Continuing without token - room will be public');
       return '';
     }
   }

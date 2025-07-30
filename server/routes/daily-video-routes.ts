@@ -3,6 +3,57 @@ import { verifyToken } from '../auth';
 
 const router = Router();
 
+// Simple in-memory cache to prevent racing conditions
+const activeSessionCreations = new Map<number, Promise<any>>();
+
+// Function to create video session (extracted to prevent racing conditions)
+async function createVideoSession(jobId: number) {
+  // Import Daily service
+  const { dailyService } = await import('../lib/daily-service');
+  
+  // Check service configuration
+  const configStatus = dailyService.getConfigStatus();
+  console.log('Daily service configuration status:', configStatus);
+  
+  // Calculate end time (2 hours from now for notary sessions)
+  const endDate = new Date();
+  endDate.setHours(endDate.getHours() + 2);
+
+  // Create Daily meeting
+  const meetingOptions = {
+    roomNamePrefix: `notary-session-${jobId}`,
+    endDate: endDate.toISOString(),
+    isPrivate: false,
+    maxParticipants: 8,
+    enableRecording: true
+  };
+
+  console.log('Creating meeting with options:', meetingOptions);
+  const meeting = await dailyService.createMeeting(meetingOptions);
+  
+  console.log('Daily video session created:', {
+    meetingId: meeting.meetingId,
+    roomUrl: meeting.roomUrl,
+    endDate: meeting.endDate,
+    configured: configStatus.configured
+  });
+  
+  return {
+    success: true,
+    sessionId: meeting.meetingId,
+    roomUrl: meeting.roomUrl,
+    hostRoomUrl: meeting.hostRoomUrl,
+    roomName: meeting.roomName,
+    meetingId: meeting.meetingId,
+    sessionToken: meeting.meetingId,
+    endDate: meeting.endDate,
+    technology: 'daily',
+    configured: configStatus.configured,
+    mode: configStatus.configured ? 'api' : 'fallback',
+    jobId
+  };
+}
+
 // ===== VIDEO CONFERENCING ROUTES - DAILY.CO INTEGRATION =====
 
 // Create Daily video session for job
@@ -19,52 +70,33 @@ router.post('/api/jobs/:jobId/video-session', verifyToken, async (req: any, res)
       });
     }
 
+    // Check if there's already a session creation in progress for this job
+    if (activeSessionCreations.has(jobId)) {
+      console.log(`⏳ Video session creation already in progress for job ${jobId}, waiting...`);
+      try {
+        const existingResult = await activeSessionCreations.get(jobId);
+        return res.json(existingResult);
+      } catch (error) {
+        console.warn(`⚠️ Existing session creation failed for job ${jobId}, creating new one`);
+        activeSessionCreations.delete(jobId);
+      }
+    }
+
     console.log('Creating Daily video session for job:', jobId);
     
-    // Import Daily service
-    const { dailyService } = await import('../lib/daily-service');
+    // Create a promise for this session creation to prevent race conditions
+    const sessionCreationPromise = createVideoSession(jobId);
+    activeSessionCreations.set(jobId, sessionCreationPromise);
     
-    // Check service configuration
-    const configStatus = dailyService.getConfigStatus();
-    console.log('Daily service configuration status:', configStatus);
-    
-    // Calculate end time (2 hours from now for notary sessions)
-    const endDate = new Date();
-    endDate.setHours(endDate.getHours() + 2);
+    try {
+      const result = await sessionCreationPromise;
+      activeSessionCreations.delete(jobId); // Clean up
+      res.json(result);
+    } catch (error) {
+      activeSessionCreations.delete(jobId); // Clean up on error
+      throw error;
+    }
 
-    // Create Daily meeting
-    const meetingOptions = {
-      roomNamePrefix: `notary-session-${jobId}`,
-      endDate: endDate.toISOString(),
-      isPrivate: false,
-      maxParticipants: 8,
-      enableRecording: true
-    };
-
-    console.log('Creating meeting with options:', meetingOptions);
-    const meeting = await dailyService.createMeeting(meetingOptions);
-    
-    console.log('Daily video session created:', {
-      meetingId: meeting.meetingId,
-      roomUrl: meeting.roomUrl,
-      endDate: meeting.endDate,
-      configured: configStatus.configured
-    });
-    
-    res.json({
-      success: true,
-      sessionId: meeting.meetingId,
-      roomUrl: meeting.roomUrl,
-      hostRoomUrl: meeting.hostRoomUrl,
-      roomName: meeting.roomName,
-      meetingId: meeting.meetingId,
-      sessionToken: meeting.meetingId,
-      endDate: meeting.endDate,
-      technology: 'daily',
-      configured: configStatus.configured,
-      mode: configStatus.configured ? 'api' : 'fallback',
-      jobId
-    });
   } catch (error) {
     console.error('Create Daily video session error:', error);
     
@@ -289,7 +321,7 @@ router.get('/api/jobs/:jobId/recordings', verifyToken, async (req: any, res) => 
 
     // For now, return empty recordings array
     // In a full implementation, you'd query your database for recorded sessions
-    const recordings = [];
+    const recordings: any[] = [];
 
     res.json({
       success: true,

@@ -64,12 +64,15 @@ const DailyVideoConference: React.FC<DailyVideoConferenceProps> = ({
   onParticipantJoined,
   onParticipantLeft,
   onConnectionStatusChange,
-  autoStart = false,
+  autoStart = true,
   className = ''
 }) => {
   const { toast } = useToast();
   const containerRef = useRef<HTMLDivElement>(null);
   const callObjectRef = useRef<any>(null);
+  
+  // Video element refs for each participant box
+  const videoRefs = useRef<{[key: number]: HTMLVideoElement | null}>({});
   
   const [isVideoActive, setIsVideoActive] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -165,17 +168,72 @@ const DailyVideoConference: React.FC<DailyVideoConferenceProps> = ({
     setParticipantCount(otherParticipants.length + 1);
   }, [participants, currentUser]);
 
-  // Auto-start video session when component mounts
-  useEffect(() => {
-    startVideo();
-  }, []);
-
   // Update participant state
   const updateParticipantState = useCallback((index: number, updates: Partial<ParticipantState>) => {
     setParticipantStates(prev => ({
       ...prev,
       [index]: { ...prev[index], ...updates }
     }));
+  }, []);
+
+  // Connect video streams to custom video elements
+  const connectVideoStreams = useCallback(async () => {
+    if (!callObjectRef.current) return;
+
+    try {
+      console.log('🔗 Connecting video streams to custom UI...');
+      
+      // Get participants from Daily
+      const participants = callObjectRef.current.participants();
+      const localParticipant = participants.local;
+      
+      // Connect local video (current user - box 0)
+      if (localParticipant?.tracks?.video?.persistentTrack) {
+        const localVideoElement = videoRefs.current[0];
+        if (localVideoElement) {
+          const stream = new MediaStream([localParticipant.tracks.video.persistentTrack]);
+          localVideoElement.srcObject = stream;
+          console.log('✅ Connected local video stream');
+          updateParticipantState(0, { isConnected: true, hasVideo: true });
+        }
+      }
+      
+      // Connect remote participant videos
+      let boxIndex = 1;
+      Object.entries(participants).forEach(([sessionId, participant]: [string, any]) => {
+        if (sessionId === 'local' || boxIndex >= 8) return;
+        
+        if (participant?.tracks?.video?.persistentTrack) {
+          const videoElement = videoRefs.current[boxIndex];
+          if (videoElement) {
+            const stream = new MediaStream([participant.tracks.video.persistentTrack]);
+            videoElement.srcObject = stream;
+            console.log(`✅ Connected remote video stream for ${participant.user_name || 'participant'}`);
+            updateParticipantState(boxIndex, { 
+              isConnected: true, 
+              hasVideo: true,
+              name: participant.user_name || 'Participant',
+              role: participant.userData?.role || 'participant'
+            });
+          }
+        }
+        boxIndex++;
+      });
+      
+    } catch (error) {
+      console.error('❌ Failed to connect video streams:', error);
+    }
+  }, [updateParticipantState]);
+
+  // Handle track updates from Daily
+  const handleTrackStarted = useCallback((event: any) => {
+    console.log('🎥 Track started:', event);
+    connectVideoStreams();
+  }, [connectVideoStreams]);
+
+  const handleTrackStopped = useCallback((event: any) => {
+    console.log('🛑 Track stopped:', event);
+    // Handle video track removal if needed
   }, []);
 
   // Check media device availability and permissions
@@ -304,15 +362,36 @@ const DailyVideoConference: React.FC<DailyVideoConferenceProps> = ({
 
   // Check media devices when component mounts
   useEffect(() => {
+    console.log('🎬 DailyVideoConference component mounted, autoStart:', autoStart);
+    console.log('🎬 Current isVideoActive state:', isVideoActive);
+    
     checkMediaDevices().catch(error => {
       console.warn('⚠️ Initial media device check failed:', error);
       // Don't show error toast here, will be shown when user tries to start video
     });
-  }, [checkMediaDevices]);
+    
+    // Auto-start video if enabled
+    if (autoStart) {
+      console.log('🎬 Auto-starting video conference...');
+      // Small delay to ensure component is fully mounted
+      setTimeout(() => {
+        console.log('🚀 Calling startVideo()...');
+        startVideo().catch(error => {
+          console.error('❌ Auto-start video failed:', error);
+          // Let the user see the actual error instead of forcing success
+        });
+      }, 1000);
+    } else {
+      console.log('📝 autoStart is false, video will not start automatically');
+    }
+  }, [checkMediaDevices, autoStart, isVideoActive, currentUser, updateParticipantState, toast]);
 
   // Start video session
   const startVideo = useCallback(async () => {
-    if (isVideoActive) return;
+    if (isVideoActive) {
+      console.log('⚠️ Video already active, skipping startVideo');
+      return;
+    }
 
     try {
       console.log('🎥 Starting Daily video session...');
@@ -325,11 +404,12 @@ const DailyVideoConference: React.FC<DailyVideoConferenceProps> = ({
         console.log('✅ Media devices check passed');
       } catch (mediaError) {
         console.error('❌ Media devices check failed:', mediaError);
-        handleMediaError(mediaError);
-        return; // Don't proceed with video session if media check fails
+        // Don't fail completely - proceed without media
+        console.log('⚠️ Proceeding without media devices...');
       }
 
       // Create video session
+      console.log('📡 Creating video session with backend...');
       const response = await fetch(`/api/jobs/${jobId}/video-session`, {
         method: 'POST',
         headers: {
@@ -348,186 +428,147 @@ const DailyVideoConference: React.FC<DailyVideoConferenceProps> = ({
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to create video session: ${response.status}`);
+        const errorText = await response.text();
+        console.error('❌ Video session creation failed:', response.status, errorText);
+        throw new Error(`Failed to create video session: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
       console.log('✅ Video session created:', data);
+      console.log('🔍 Response data details:', {
+        success: data.success,
+        roomUrl: data.roomUrl,
+        sessionId: data.sessionId,
+        meetingId: data.meetingId,
+        hasRoomUrl: !!data.roomUrl,
+        roomUrlType: typeof data.roomUrl
+      });
       
       if (!data.success) {
         throw new Error(data.error || 'Failed to create video session');
       }
 
-      const meeting: DailyMeeting = {
-        meetingId: data.meetingId || data.sessionToken,
-        roomUrl: data.roomUrl,
-        hostRoomUrl: data.hostRoomUrl || data.roomUrl,
-        roomName: data.roomName,
-        startDate: data.startDate || new Date().toISOString(),
-        endDate: data.endDate,
-        isLocked: false
-      };
+      // Create and setup Daily.co call object
+      if (data.roomUrl) {
+        console.log('🔗 Setting up Daily.co call object with URL:', data.roomUrl);
+        
+        const callObject = DailyIframe.createCallObject();
+        
+        callObjectRef.current = callObject;
 
-      // Initialize Daily call object
-      console.log('📺 Initializing Daily call object...');
-      
-      if (!containerRef.current) {
-        throw new Error('Video container element not found');
-      }
-
-      // Create Daily call object with custom UI settings
-      const callObject = DailyIframe.createFrame(containerRef.current, {
-        url: currentUser.role === 'notary' ? meeting.hostRoomUrl : meeting.roomUrl,
-        showLeaveButton: false,
-        showFullscreenButton: false,
-        showLocalVideo: true,
-        showParticipantsBar: false
-      });
-
-      callObjectRef.current = callObject;
-
-      // Set up event listeners
-      callObject
-        .on('joined-meeting', (event) => {
-          console.log('✅ Joined Daily meeting:', event);
-          setIsVideoActive(true);
-          setIsConnected(true);
-          updateParticipantState(0, { isConnected: true, isLoading: false });
-          onConnectionStatusChange?.(true);
-          
-          toast({
-            title: "Video Connected",
-            description: "Successfully joined the video conference",
-          });
-        })
-        .on('left-meeting', () => {
-          console.log('📤 Left Daily meeting');
-          setIsVideoActive(false);
-          setIsConnected(false);
-          updateParticipantState(0, { isConnected: false });
-          onConnectionStatusChange?.(false);
-        })
-        .on('participant-joined', (event: any) => {
-          console.log('👤 Participant joined:', event);
-          setParticipantCount(prev => prev + 1);
-          
-          // Find an empty box for the new participant
-          const emptyBoxIndex = Object.keys(participantStates).find(index => 
-            parseInt(index) > 0 && !participantStates[parseInt(index)].name
-          );
-          
-          if (emptyBoxIndex) {
-            updateParticipantState(parseInt(emptyBoxIndex), {
-              isConnected: true,
-              name: event.participant?.user_name || 'Participant',
-              role: event.participant?.userData?.role || 'participant',
-              isLoading: false
-            });
-          }
-          
-          onParticipantJoined?.({
-            userId: parseInt(event.participant?.user_id) || 0,
-            role: event.participant?.userData?.role || 'observer',
-            displayName: event.participant?.user_name || 'Participant',
-            email: event.participant?.userData?.email || ''
-          });
-        })
-        .on('participant-left', (event: any) => {
-          console.log('👋 Participant left:', event);
-          setParticipantCount(prev => Math.max(0, prev - 1));
-          
-          // Find and clear the participant's box
-          Object.keys(participantStates).forEach(index => {
-            const state = participantStates[parseInt(index)];
-            if (state && state.name === event.participant?.user_name) {
-              updateParticipantState(parseInt(index), {
-                isConnected: false,
-                name: '',
-                role: '',
-                isLoading: false
-              });
+        // Set up event listeners
+        callObject
+          .on('joined-meeting', (event) => {
+            console.log('✅ Joined Daily meeting:', event);
+            setIsVideoActive(true);
+            setIsConnected(true);
+            updateParticipantState(0, { isConnected: true, isLoading: false });
+            onConnectionStatusChange?.(true);
+            
+            // Connect video streams to custom UI
+            setTimeout(() => connectVideoStreams(), 1000);
+            
+            // Ensure camera and microphone are active
+            try {
+              callObject.setLocalVideo(true);
+              callObject.setLocalAudio(true);
+              console.log('✅ Camera and microphone activated');
+            } catch (error) {
+              console.warn('⚠️ Failed to activate camera/microphone:', error);
             }
-          });
-          
-          onParticipantLeft?.(parseInt(event.participant?.user_id) || 0);
-        })
-        .on('recording-started', () => {
-          console.log('🔴 Recording started');
-          setIsRecording(true);
-        })
-        .on('recording-stopped', () => {
-          console.log('⏹️ Recording stopped');
-          setIsRecording(false);
-        })
-        .on('error', (error) => {
-          console.error('❌ Daily call error:', error);
-          
-          // Check if this is a media device error
-          if (error.errorMsg && (
-            error.errorMsg.includes('camera') || 
-            error.errorMsg.includes('video') ||
-            error.errorMsg.includes('microphone') || 
-            error.errorMsg.includes('audio') ||
-            error.errorMsg.includes('permission')
-          )) {
-            // Create a proper error object for media error handling
-            const mediaError = new Error(error.errorMsg);
-            if (error.errorMsg.includes('permission')) {
-              mediaError.name = 'NotAllowedError';
-            } else if (error.errorMsg.includes('camera') || error.errorMsg.includes('video')) {
-              mediaError.name = 'NotFoundError';
-            } else if (error.errorMsg.includes('microphone') || error.errorMsg.includes('audio')) {
-              mediaError.name = 'NotFoundError';
-            }
-            handleMediaError(mediaError);
-          } else {
-            // Handle general connection errors
-            let errorMessage = error.errorMsg || 'Video connection error';
-            updateParticipantState(0, { error: errorMessage, isLoading: false });
             
             toast({
-              variant: "destructive",
-              title: "Video Connection Error",
-              description: errorMessage,
+              title: "Video Connected",
+              description: "Successfully joined the video conference",
             });
-          }
-        });
+          })
+          .on('participant-joined', (event) => {
+            console.log('👋 Participant joined:', event.participant);
+            connectVideoStreams();
+          })
+          .on('participant-left', (event) => {
+            console.log('👋 Participant left:', event.participant);
+            connectVideoStreams();
+          })
+          .on('error', (error) => {
+            console.error('❌ Daily error:', error);
+            toast({
+              title: "Video Error",
+              description: "Connection issue - retrying...",
+              variant: "destructive"
+            });
+          });
 
-      // Count current user + other participants (excluding duplicates)
-      const otherParticipants = participants.filter(p => 
-        p.userId !== currentUser.id && 
-        p.displayName !== currentUser.name
-      );
-      setParticipantCount(otherParticipants.length + 1);
+        // Join the meeting
+        console.log('🚀 Joining Daily meeting...');
+        console.log('🔍 Room URL being used:', data.roomUrl);
+        console.log('🔍 Call object state before join:', callObject.meetingState());
+        
+        try {
+          const joinResult = await callObject.join({
+            url: data.roomUrl,
+            userName: currentUser.name || 'User'
+          });
+          console.log('✅ Daily join result:', joinResult);
+        } catch (joinError) {
+          console.error('❌ Failed to join Daily meeting:', joinError);
+          const errorMessage = joinError instanceof Error ? joinError.message : 'Unknown error';
+          console.error('❌ Join error details:', {
+            message: errorMessage,
+            error: joinError,
+            callObjectState: callObject.meetingState()
+          });
+          throw new Error(`Failed to join video meeting: ${errorMessage}`);
+        }
+      } else {
+        console.warn('⚠️ No room URL provided, proceeding without video');
+        setIsVideoActive(true);
+        updateParticipantState(0, { 
+          isLoading: false,
+          isConnected: false,
+          name: currentUser.name || 'You',
+          role: currentUser.role || 'user'
+        });
+      }
+
+      console.log('✅ Video session setup complete');
       
+      toast({
+        title: "Video Ready",
+        description: "Video conference initialized successfully",
+        variant: "default"
+      });
+
     } catch (error) {
       console.error('❌ Failed to start video session:', error);
       
-      // Check if this is a media device error or connection error
-      if (error instanceof Error && (
-        error.message.includes('camera') ||
-        error.message.includes('microphone') ||
-        error.message.includes('permission') ||
-        error.message.includes('NotAllowed') ||
-        error.message.includes('NotFound') ||
-        error.message.includes('NotReadable')
-      )) {
-        handleMediaError(error);
-      } else {
-        // Handle general connection errors
-        updateParticipantState(0, { 
-          error: error instanceof Error ? error.message : 'Connection failed',
-          isLoading: false 
-        });
-        
-        toast({
-          variant: "destructive",
-          title: "Video Connection Failed",
-          description: error instanceof Error ? error.message : 'Unable to start video conference',
-        });
-      }
+      // Allow user to proceed but show specific error
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      setIsVideoActive(true);
+      updateParticipantState(0, { 
+        isLoading: false,
+        isConnected: false,
+        name: currentUser.name || 'You',
+        role: currentUser.role || 'user',
+        error: `Video unavailable: ${errorMessage}`
+      });
+      
+      toast({
+        title: "Video Connection Failed",
+        description: errorMessage,
+        variant: "destructive"
+      });
     }
-  }, [jobId, sessionId, participants, currentUser, onConnectionStatusChange, onParticipantJoined, onParticipantLeft, toast, participantStates, updateParticipantState, checkMediaDevices, handleMediaError]);
+  }, [
+    isVideoActive,
+    jobId, 
+    sessionId, 
+    participants, 
+    currentUser, 
+    checkMediaDevices, 
+    updateParticipantState,
+    toast
+  ]);
 
   // Stop video session
   const stopVideo = useCallback(async () => {
@@ -647,69 +688,94 @@ const DailyVideoConference: React.FC<DailyVideoConferenceProps> = ({
                 </div>
               </div>
             ) : isCurrentUser ? (
-              <div className="w-full h-full">
-                {/* Daily iframe will render in the main container */}
-                <div className="absolute inset-0 bg-gray-800 flex items-center justify-center">
-                  <div className="text-white text-center">
-                    <div className="relative">
-                      <Video className="w-8 h-8 mx-auto mb-2" />
-                      {/* Media device status indicators */}
-                      {mediaDeviceStatus.errorMessage && (
-                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full flex items-center justify-center">
-                          <div className="w-1 h-1 bg-white rounded-full"></div>
-                        </div>
-                      )}
-                      {!mediaDeviceStatus.hasCamera && !mediaDeviceStatus.errorMessage && (
-                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-yellow-500 rounded-full flex items-center justify-center">
-                          <VideoOff className="w-2 h-2 text-white" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-xs font-medium">{state.name}</div>
-                    <div className="text-xs text-gray-300 mt-1">
-                      {mediaDeviceStatus.errorMessage ? 'Camera/Microphone Error' :
-                       state.isConnected ? 'Video Active' :
-                       isVideoActive ? 'Connecting to video...' : 'Ready to join'}
-                    </div>
-                    {mediaDeviceStatus.errorMessage && (
-                      <div className="text-xs text-red-300 mt-1 px-2">
-                        <div>{mediaDeviceStatus.errorMessage.includes('camera') ? 'Camera not working' : 
-                              mediaDeviceStatus.errorMessage.includes('microphone') ? 'Microphone not working' :
-                              'Device access denied'}</div>
-                        <button
-                          onClick={async () => {
-                            try {
-                              await checkMediaDevices();
-                              toast({
-                                title: "✅ Device Check Success",
-                                description: "Camera and microphone are working properly.",
-                              });
-                            } catch (error) {
-                              handleMediaError(error);
-                            }
-                          }}
-                          className="mt-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs"
-                          title="Check devices again"
-                        >
-                          Retry
-                        </button>
+              <div className="w-full h-full relative">
+                {/* Local video from Daily.co */}
+                <video
+                  ref={(el) => { videoRefs.current[0] = el; }}
+                  autoPlay
+                  muted
+                  playsInline
+                  className="w-full h-full object-cover bg-gray-800"
+                  style={{ transform: 'scaleX(-1)' }} // Mirror local video
+                />
+                
+                {/* Overlay for connection status */}
+                {!state.isConnected && (
+                  <div className="absolute inset-0 bg-gray-800/80 flex items-center justify-center">
+                    <div className="text-white text-center">
+                      <div className="relative">
+                        <Video className="w-8 h-8 mx-auto mb-2" />
+                        {/* Media device status indicators */}
+                        {mediaDeviceStatus.errorMessage && (
+                          <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full flex items-center justify-center">
+                            <div className="w-1 h-1 bg-white rounded-full"></div>
+                          </div>
+                        )}
+                        {!mediaDeviceStatus.hasCamera && !mediaDeviceStatus.errorMessage && (
+                          <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-yellow-500 rounded-full flex items-center justify-center">
+                            <VideoOff className="w-2 h-2 text-white" />
+                          </div>
+                        )}
                       </div>
-                    )}
+                      <div className="text-xs font-medium">{state.name}</div>
+                      <div className="text-xs text-gray-300 mt-1">
+                        {mediaDeviceStatus.errorMessage ? 'Camera/Microphone Error' :
+                         state.isConnected ? 'Video Active' :
+                         isVideoActive ? 'Connecting to video...' : 'Ready to join'}
+                      </div>
+                      {mediaDeviceStatus.errorMessage && (
+                        <div className="text-xs text-red-300 mt-1 px-2">
+                          <div>{mediaDeviceStatus.errorMessage.includes('camera') ? 'Camera not working' : 
+                                mediaDeviceStatus.errorMessage.includes('microphone') ? 'Microphone not working' :
+                                'Device access denied'}</div>
+                          <button
+                            onClick={async () => {
+                              try {
+                                await checkMediaDevices();
+                                toast({
+                                  title: "✅ Device Check Success",
+                                  description: "Camera and microphone are working properly.",
+                                });
+                              } catch (error) {
+                                handleMediaError(error);
+                              }
+                            }}
+                            className="mt-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs"
+                            title="Check devices again"
+                          >
+                            Retry
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             ) : (
-              <div className="w-full h-full bg-gray-700 flex items-center justify-center">
-                <div className="text-white text-center">
-                  <div className={`w-2 h-2 rounded-full mx-auto mb-2 ${state.isConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`} />
-                  <div className="text-xs font-medium">{state.name}</div>
-                  <div className="text-xs text-gray-300 mt-1">
-                    {state.isConnected ? 'User Active' : 'Waiting for user...'}
+              <div className="w-full h-full relative">
+                {/* Remote participant video from Daily.co */}
+                <video
+                  ref={(el) => { videoRefs.current[index] = el; }}
+                  autoPlay
+                  playsInline
+                  className="w-full h-full object-cover bg-gray-700"
+                />
+                
+                {/* Fallback when no video stream */}
+                {!state.isConnected && (
+                  <div className="absolute inset-0 bg-gray-700 flex items-center justify-center">
+                    <div className="text-white text-center">
+                      <div className={`w-2 h-2 rounded-full mx-auto mb-2 ${state.isConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`} />
+                      <div className="text-xs font-medium">{state.name}</div>
+                      <div className="text-xs text-gray-300 mt-1">
+                        {state.isConnected ? 'User Active' : 'Waiting for user...'}
+                      </div>
+                      <Badge variant="outline" className="text-xs mt-1">
+                        {state.role}
+                      </Badge>
+                    </div>
                   </div>
-                  <Badge variant="outline" className="text-xs mt-1">
-                    {state.role}
-                  </Badge>
-                </div>
+                )}
               </div>
             )}
             
@@ -748,6 +814,51 @@ const DailyVideoConference: React.FC<DailyVideoConferenceProps> = ({
   };
 
   // Main component render
+  // If video hasn't started, show initialization screen
+  if (!isVideoActive) {
+    return (
+      <div className={`${className} flex items-center justify-center bg-gray-900 text-white`}>
+        <div className="text-center space-y-4">
+          <div className="relative">
+            <div className="w-16 h-16 border-4 border-white border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <Video className="w-8 h-8 absolute inset-0 m-auto text-white" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold">Initializing Video Conference</h3>
+            <p className="text-gray-300 text-sm">Setting up your camera and microphone...</p>
+            
+            {/* Always show skip button after 3 seconds */}
+            <div className="mt-4 space-y-2">
+              <button
+                onClick={() => {
+                  console.log('👤 User clicked Skip Video');
+                  setIsVideoActive(true);
+                  updateParticipantState(0, { 
+                    isLoading: false,
+                    isConnected: false,
+                    name: currentUser.name || 'You',
+                    role: currentUser.role || 'user'
+                  });
+                  toast({
+                    title: "Video Skipped",
+                    description: "Proceeding with document editing",
+                    variant: "default"
+                  });
+                }}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm transition-colors"
+              >
+                Skip Video & Continue
+              </button>
+              <p className="text-xs text-gray-400">
+                Having trouble? You can proceed without video.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`${className} relative bg-gray-900 border border-gray-300 rounded-lg overflow-hidden min-h-[400px]`}>
       {/* Session Info Bar - always at the top, not inside scrollable grid */}
@@ -788,6 +899,7 @@ const DailyVideoConference: React.FC<DailyVideoConferenceProps> = ({
           </div>
         </div>
       </div>
+      
       {/* Participant Grid - Only show boxes with participants */}
       <div className="w-full h-full p-2 pt-1"> {/* Minimal padding */}
         <div className="flex flex-col space-y-1 h-full max-h-full overflow-y-auto"> {/* Using flex with minimal spacing */}
@@ -797,12 +909,37 @@ const DailyVideoConference: React.FC<DailyVideoConferenceProps> = ({
             .map(({ index }) => renderParticipantBox(index))}
         </div>
       </div>
-      {/* Hidden Daily iframe container */}
+      {/* Hidden Daily iframe container - provides video functionality */}
       <div
         ref={containerRef}
         className="absolute inset-0 opacity-0 pointer-events-none"
         style={{ minHeight: '400px' }}
       />
+      
+      {/* Status overlay when not connected */}
+      {!isConnected && (
+        <div className="absolute inset-0 mt-[48px] bg-gray-800/90 flex items-center justify-center z-30">
+          <div className="text-center text-white p-6">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-4"></div>
+            <div className="text-lg font-medium mb-2">Initializing Video Conference</div>
+            <div className="text-sm text-gray-300">
+              {mediaDeviceStatus.errorMessage ? (
+                <div className="text-red-300">
+                  <div className="mb-2">{mediaDeviceStatus.errorMessage}</div>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm"
+                  >
+                    Refresh Page
+                  </button>
+                </div>
+              ) : (
+                'Setting up your camera and microphone...'
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
