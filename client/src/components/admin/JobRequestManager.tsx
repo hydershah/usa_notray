@@ -13,6 +13,7 @@ import { Loader2, FileText, User, Calendar, Clock, MapPin, AlertCircle, CheckCir
 import { toast } from 'sonner';
 import { useLocation } from 'wouter';
 import { apiRequest } from '../../lib/queryClient';
+import { EnhancedAssignmentWizard } from './EnhancedAssignmentWizard';
 
 interface JobRequest {
   id: number;
@@ -66,6 +67,7 @@ export function JobRequestManager() {
   const [selectedRequest, setSelectedRequest] = useState<JobRequest | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
+  const [isEnhancedAssignDialogOpen, setIsEnhancedAssignDialogOpen] = useState(false);
   const [reviewNotes, setReviewNotes] = useState('');
   const [selectedNotaryId, setSelectedNotaryId] = useState<string>('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
@@ -81,6 +83,8 @@ export function JobRequestManager() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isUserLoading, setIsUserLoading] = useState(true);
   const [, setLocation] = useLocation();
+
+
 
   useEffect(() => {
     fetchAllRequests();
@@ -243,6 +247,30 @@ export function JobRequestManager() {
     } catch (error) {
       console.error('Assignment error:', error);
       toast.error('Failed to assign request');
+    } finally {
+      setAssigningRequestId(null);
+    }
+  };
+
+  const handleEnhancedAssignRequest = async (assignmentData: any) => {
+    if (!selectedRequest) return;
+
+    setAssigningRequestId(selectedRequest.id);
+    try {
+      const response = await apiRequest('POST', `/api/job-requests/${selectedRequest.id}/review`, assignmentData);
+      
+      if (!response.ok) {
+        throw new Error('Failed to assign request');
+      }
+      
+      toast.success('Request assigned successfully');
+      setIsEnhancedAssignDialogOpen(false);
+      resetAssignmentForm();
+      fetchAllRequests();
+    } catch (error) {
+      console.error('Assignment error:', error);
+      toast.error('Failed to assign request');
+      throw error; // Re-throw to let the wizard handle the error
     } finally {
       setAssigningRequestId(null);
     }
@@ -911,16 +939,12 @@ export function JobRequestManager() {
                          onClick={() => {
                            setSelectedRequest(request);
                            resetAssignmentForm();
-                           setIsAssignDialogOpen(true);
+                           setIsEnhancedAssignDialogOpen(true);
                          }}
                          className="bg-green-600 hover:bg-green-700 text-white min-w-[140px]"
-                         disabled={!canAssignNotary}
                        >
                          <UserCheck className="h-4 w-4 mr-2" />
-                         {canAssignNotary 
-                           ? (isAdminAvailableAsNotary ? 'Assign (You Available)' : 'Assign to Notary')
-                           : 'No Notaries Available'
-                         }
+                         Assign
                        </Button>
                      )}
                     
@@ -1226,6 +1250,17 @@ export function JobRequestManager() {
           ))}
         </div>
       )}
+
+      {/* Enhanced Assignment Wizard */}
+      <EnhancedAssignmentWizard
+        isOpen={isEnhancedAssignDialogOpen}
+        onClose={() => setIsEnhancedAssignDialogOpen(false)}
+        jobRequest={selectedRequest}
+        notaries={notaries}
+        currentUser={currentUser}
+        onAssign={handleEnhancedAssignRequest}
+        isAdminAvailableAsNotary={isAdminAvailableAsNotary}
+      />
     </div>
   );
 } 
