@@ -609,10 +609,10 @@ router.post('/:id/review', verifyToken, requireRole(['admin']), async (req, res)
     const requestId = parseInt(req.params.id);
     const { action, notes, assignedNotaryId, assignmentNotes } = req.body;
 
-    if (!['approve', 'reject'].includes(action)) {
+    if (!['approve', 'reject', 'assign'].includes(action)) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid action. Must be approve or reject',
+        error: 'Invalid action. Must be approve, reject, or assign',
       });
     }
 

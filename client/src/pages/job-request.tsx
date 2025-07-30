@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '../components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { Plus, FileText, Clock, CheckCircle, AlertCircle, Edit, Eye, Trash2, RefreshCw, Calendar, MapPin, Phone, User, CalendarDays, Loader2 } from 'lucide-react';
+import { Plus, FileText, Clock, CheckCircle, AlertCircle, Edit, Eye, Trash2, RefreshCw, Calendar, MapPin, Phone, User, CalendarDays, Loader2, X, FileImage, FileText as FileTextIcon, File, Download } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { apiRequest } from '../lib/queryClient';
@@ -48,6 +48,7 @@ export default function JobRequestPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [isViewing, setIsViewing] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
+  const [selectedDocument, setSelectedDocument] = useState<string | null>(null);
 
   useEffect(() => {
     fetchRequests();
@@ -177,6 +178,28 @@ export default function JobRequestPage() {
       hour: '2-digit',
       minute: '2-digit',
     });
+  };
+
+  const getFileIcon = (fileName: string) => {
+    const extension = fileName.split('.').pop()?.toLowerCase();
+    switch (extension) {
+      case 'pdf':
+        return <FileText className="h-8 w-8 text-red-500" />;
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+        return <FileImage className="h-8 w-8 text-green-500" />;
+      case 'doc':
+      case 'docx':
+        return <FileTextIcon className="h-8 w-8 text-blue-500" />;
+      default:
+        return <File className="h-8 w-8 text-gray-500" />;
+    }
+  };
+
+  const handleDocumentView = (url: string) => {
+    setSelectedDocument(url);
   };
 
   const stats = getStatusStats();
@@ -436,183 +459,230 @@ export default function JobRequestPage() {
 
       {/* Modal for Create/Edit/View */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto mt-8">
-          <DialogHeader onClose={() => setIsModalOpen(false)}>
-            <DialogTitle className="flex items-center gap-3">
-              <div className="p-2 bg-blue-50 rounded-lg">
-                <FileText className="h-5 w-5 text-blue-600" />
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0 bg-white">
+          {/* Enhanced Header */}
+          <div className="p-4 pb-3 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <FileText className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <DialogTitle className="text-xl font-bold text-gray-900">
+                    {isViewing ? 'Job Request Details' : isEditing ? 'Edit Job Request' : 'Submit New Job Request'}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {isViewing 
+                      ? 'View the complete details of your job request and its current status.'
+                      : isEditing 
+                      ? 'Update your job request details below. Only pending requests can be edited.'
+                      : 'Submit a comprehensive request for notarization services. Our admin team will review your request and assign a qualified notary.'
+                    }
+                  </DialogDescription>
+                </div>
               </div>
-              {isViewing ? 'Job Request Details' : isEditing ? 'Edit Job Request' : 'Submit New Job Request'}
-            </DialogTitle>
-            <DialogDescription>
-              {isViewing 
-                ? 'View the details of your job request.'
-                : isEditing 
-                ? 'Update your job request details below. Only pending requests can be edited.'
-                : 'Submit a request for notarization services. Our admin team will review your request and assign a notary.'
-              }
-            </DialogDescription>
-          </DialogHeader>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsModalOpen(false)}
+                className="h-8 w-8 p-0 hover:bg-gray-100 rounded-full"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
           
           {isViewing && selectedRequest ? (
-            <div className="p-6 space-y-8">
-              {/* Request Details */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="space-y-6">
-                  <div className="bg-white rounded-lg border border-gray-200 p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                      Request Information
-                    </h3>
+            <div className="flex h-[calc(90vh-120px)]">
+              {/* Left Panel - Document Viewer */}
+              <div className="w-2/5 border-r border-gray-200 bg-gray-50 flex flex-col">
+                <div className="p-4 border-b border-gray-200 bg-white">
+                  <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-gray-900">
+                    <div className="p-1.5 bg-blue-100 rounded-lg">
+                      <FileText className="h-4 w-4 text-blue-600" />
+                    </div>
+                    Documents
+                  </h3>
+                  <JobRequestDocuments requestId={selectedRequest.id} canView={true} />
+                </div>
+                
+                {/* Document Preview Area */}
+                <div className="flex-1 p-4">
+                  {selectedDocument ? (
+                    <div className="h-full bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
+                      <iframe
+                        src={selectedDocument}
+                        className="w-full h-full"
+                        title="Document Preview"
+                      />
+                    </div>
+                  ) : (
+                    <div className="h-full bg-white rounded-lg border border-gray-200 flex items-center justify-center">
+                      <div className="text-center text-gray-500">
+                        <FileText className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                        <p className="text-base font-medium">Document Preview</p>
+                        <p className="text-sm">Select a document to view</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Panel - Request Details */}
+              <div className="w-3/5 overflow-y-auto bg-white">
+                <div className="p-6 space-y-6">
+                  {/* Request Details */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div>
-                        <label className="text-sm font-medium text-gray-600 mb-1 block">Title</label>
-                        <p className="text-gray-900 font-medium">{selectedRequest.title}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-gray-600 mb-1 block">Description</label>
-                        <p className="text-gray-900 leading-relaxed">{selectedRequest.description}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-gray-600 mb-1 block">Document Type</label>
-                        <p className="text-gray-900 capitalize font-medium">{selectedRequest.documentType.replace('_', ' ')}</p>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <div>
-                          <label className="text-sm font-medium text-gray-600 mb-1 block">Status</label>
-                          <div className="mt-1">
-                            <Badge className={`${getStatusColor(selectedRequest.status)} px-3 py-1 text-xs font-medium`}>
-                              {selectedRequest.status}
-                            </Badge>
+                        <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-gray-900">
+                          <div className="w-2.5 h-2.5 bg-blue-500 rounded-full"></div>
+                          Request Information
+                        </h3>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="text-sm font-medium text-gray-700">Title</label>
+                            <p className="text-sm text-gray-900 font-medium mt-1">{selectedRequest.title}</p>
                           </div>
-                        </div>
-                        <div>
-                          <label className="text-sm font-medium text-gray-600 mb-1 block">Urgency</label>
-                          <div className="mt-1">
-                            <Badge className={`${getUrgencyColor(selectedRequest.urgency)} px-3 py-1 text-xs font-medium`}>
-                              {selectedRequest.urgency}
-                            </Badge>
+                          <div>
+                            <label className="text-sm font-medium text-gray-700">Description</label>
+                            <p className="text-sm text-gray-900 mt-1 leading-relaxed">{selectedRequest.description}</p>
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium text-gray-700">Document Type</label>
+                            <p className="text-sm text-gray-900 capitalize mt-1">{selectedRequest.documentType.replace('_', ' ')}</p>
+                          </div>
+                          <div className="flex gap-4">
+                            <div>
+                              <label className="text-sm font-medium text-gray-700">Status</label>
+                              <Badge className={`${getStatusColor(selectedRequest.status)} mt-2 flex items-center gap-1`}>
+                                {selectedRequest.status.toUpperCase()}
+                              </Badge>
+                            </div>
+                            <div>
+                              <label className="text-sm font-medium text-gray-700">Urgency</label>
+                              <Badge className={`${getUrgencyColor(selectedRequest.urgency)} mt-2`}>
+                                {selectedRequest.urgency.toUpperCase()}
+                              </Badge>
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                <div className="space-y-6">
-                  <div className="bg-white rounded-lg border border-gray-200 p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      Schedule & Location
+                    <div className="space-y-6">
+                      <div>
+                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-3 text-gray-900">
+                          <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                          Schedule & Location
+                        </h3>
+                        <div className="space-y-4">
+                          {selectedRequest.preferredDate && (
+                            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                              <Calendar className="h-5 w-5 text-gray-500" />
+                              <div>
+                                <label className="text-sm font-medium text-gray-700">Preferred Date</label>
+                                <p className="text-sm text-gray-900 font-medium">{formatDate(selectedRequest.preferredDate)}</p>
+                              </div>
+                            </div>
+                          )}
+                          {selectedRequest.preferredTime && (
+                            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                              <Clock className="h-5 w-5 text-gray-500" />
+                              <div>
+                                <label className="text-sm font-medium text-gray-700">Preferred Time</label>
+                                <p className="text-sm text-gray-900 font-medium">{formatTime(selectedRequest.preferredTime)}</p>
+                              </div>
+                            </div>
+                          )}
+                          {selectedRequest.location && (
+                            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                              <MapPin className="h-5 w-5 text-gray-500" />
+                              <div>
+                                <label className="text-sm font-medium text-gray-700">Location</label>
+                                <p className="text-sm text-gray-900 font-medium">{selectedRequest.location}</p>
+                              </div>
+                            </div>
+                          )}
+                          {selectedRequest.requestorPhone && (
+                            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                              <Phone className="h-5 w-5 text-gray-500" />
+                              <div>
+                                <label className="text-sm font-medium text-gray-700">Contact Phone</label>
+                                <p className="text-sm text-gray-900 font-medium">{selectedRequest.requestorPhone}</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Timeline */}
+                  <div>
+                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-3 text-gray-900">
+                      <div className="w-3 h-3 bg-gray-500 rounded-full"></div>
+                      Timeline
                     </h3>
                     <div className="space-y-4">
-                      {selectedRequest.preferredDate && (
-                        <div className="flex items-start gap-3">
-                          <div className="p-2 bg-blue-50 rounded-lg">
-                            <Calendar className="h-4 w-4 text-blue-600" />
-                          </div>
-                          <div>
-                            <label className="text-sm font-medium text-gray-600 mb-1 block">Preferred Date</label>
-                            <p className="text-gray-900 font-medium">{formatDate(selectedRequest.preferredDate)}</p>
-                          </div>
+                      <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
+                        <div className="p-2 bg-blue-100 rounded-lg">
+                          <Calendar className="h-5 w-5 text-blue-600" />
                         </div>
-                      )}
-                      {selectedRequest.preferredTime && (
-                        <div className="flex items-start gap-3">
-                          <div className="p-2 bg-green-50 rounded-lg">
-                            <Clock className="h-4 w-4 text-green-600" />
-                          </div>
-                          <div>
-                            <label className="text-sm font-medium text-gray-600 mb-1 block">Preferred Time</label>
-                            <p className="text-gray-900 font-medium">{formatTime(selectedRequest.preferredTime)}</p>
-                          </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Created</label>
+                          <p className="text-sm text-gray-900 font-medium">{formatDate(selectedRequest.createdAt)}</p>
                         </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="border-t border-gray-200 pt-6">
+                    <div className="flex gap-3">
+                      {selectedRequest.status === 'pending' && (
+                        <>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setIsViewing(false);
+                              setIsEditing(true);
+                            }}
+                            className="flex items-center gap-2 hover:bg-gray-50"
+                          >
+                            <Edit className="h-4 w-4" />
+                            Edit Request
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            onClick={() => handleDeleteRequest(selectedRequest.id)}
+                            className="flex items-center gap-2"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Delete Request
+                          </Button>
+                        </>
                       )}
-                      {selectedRequest.location && (
-                        <div className="flex items-start gap-3">
-                          <div className="p-2 bg-purple-50 rounded-lg">
-                            <MapPin className="h-4 w-4 text-purple-600" />
-                          </div>
-                          <div>
-                            <label className="text-sm font-medium text-gray-600 mb-1 block">Location</label>
-                            <p className="text-gray-900 font-medium">{selectedRequest.location}</p>
-                          </div>
-                        </div>
-                      )}
-                      {selectedRequest.requestorPhone && (
-                        <div className="flex items-start gap-3">
-                          <div className="p-2 bg-orange-50 rounded-lg">
-                            <Phone className="h-4 w-4 text-orange-600" />
-                          </div>
-                          <div>
-                            <label className="text-sm font-medium text-gray-600 mb-1 block">Contact Phone</label>
-                            <p className="text-gray-900 font-medium">{selectedRequest.requestorPhone}</p>
-                          </div>
-                        </div>
-                      )}
+                      <Button 
+                        variant="outline" 
+                        onClick={() => setIsModalOpen(false)}
+                        className="ml-auto hover:bg-gray-50"
+                      >
+                        Close
+                      </Button>
                     </div>
                   </div>
                 </div>
               </div>
-
-              {/* Timeline */}
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
-                  Timeline
-                </h3>
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-gray-50 rounded-lg">
-                      <Calendar className="h-4 w-4 text-gray-600" />
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium text-gray-600">Created</label>
-                      <p className="text-gray-900 font-medium">{formatDate(selectedRequest.createdAt)}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Documents Section */}
-              <JobRequestDocuments requestId={selectedRequest.id} canView={true} />
-
-              {/* Action Buttons */}
-              <DialogFooter>
-                {selectedRequest.status === 'pending' && (
-                  <>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setIsViewing(false);
-                        setIsEditing(true);
-                      }}
-                      className="flex items-center gap-2"
-                    >
-                      <Edit className="h-4 w-4" />
-                      Edit Request
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      onClick={() => handleDeleteRequest(selectedRequest.id)}
-                      className="flex items-center gap-2"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Delete Request
-                    </Button>
-                  </>
-                )}
-                <Button variant="outline" onClick={() => setIsModalOpen(false)}>
-                  Close
-                </Button>
-              </DialogFooter>
             </div>
           ) : (
-            <div className="p-6">
-              <JobRequestForm 
-                onSuccess={handleSuccess}
-                editData={isEditing ? selectedRequest : undefined}
-              />
+            <div className="flex-1 overflow-y-auto bg-gray-50">
+              <div className="p-4">
+                <JobRequestForm 
+                  onSuccess={handleSuccess}
+                  editData={isEditing ? selectedRequest : undefined}
+                />
+              </div>
             </div>
           )}
         </DialogContent>

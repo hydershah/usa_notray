@@ -1,6 +1,6 @@
 import { db } from '../db';
 import { jobRequests, jobs, users, jobDocuments } from '../../shared/schema';
-import { eq, and, desc, isNull, isNotNull, sql } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { InsertJobRequest, JobRequest } from '../../shared/schema';
 import { emailService } from '../lib/email-service';
 
@@ -27,7 +27,7 @@ export interface CreateJobRequestData {
 export interface ReviewJobRequestData {
   requestId: number;
   adminId: number;
-  action: 'approve' | 'reject';
+  action: 'approve' | 'reject' | 'assign';
   notes?: string;
   assignedNotaryId?: number;
   assignmentNotes?: string;
@@ -40,6 +40,7 @@ export class JobRequestService {
    */
   static async createJobRequest(data: CreateJobRequestData): Promise<JobRequest> {
     try {
+      console.log('Creating job request with data:', data);
       const [newRequest] = await db
         .insert(jobRequests)
         .values({
@@ -58,22 +59,18 @@ export class JobRequestService {
         })
         .returning();
 
-      // Handle document uploads if provided
       if (data.documents && data.documents.length > 0) {
+        console.log('Saving documents for job request:', newRequest.id);
         await this.saveJobRequestDocuments(newRequest.id, data.documents);
       }
 
-      // Send notification to admins about new request
+      console.log('Notifying admins of new request:', newRequest.id);
       await this.notifyAdminsOfNewRequest(newRequest);
 
       return newRequest;
     } catch (error) {
       console.error('Error creating job request:', error);
-      // Preserve the original error message for better debugging
-      if (error instanceof Error) {
-        throw new Error(`Failed to create job request: ${error.message}`);
-      }
-      throw new Error('Failed to create job request: Unknown error');
+      throw new Error(`Failed to create job request: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -82,11 +79,14 @@ export class JobRequestService {
    */
   static async getPendingRequests(): Promise<JobRequest[]> {
     try {
-      return await db
+      console.log('Fetching pending job requests');
+      const requests = await db
         .select()
         .from(jobRequests)
         .where(eq(jobRequests.status, 'pending'))
         .orderBy(desc(jobRequests.priority), desc(jobRequests.createdAt));
+      console.log('Pending requests fetched:', requests);
+      return requests;
     } catch (error) {
       console.error('Error fetching pending requests:', error);
       throw new Error('Failed to fetch pending requests');
@@ -98,11 +98,14 @@ export class JobRequestService {
    */
   static async getRequestsByRequestor(requestorId: number): Promise<JobRequest[]> {
     try {
-      return await db
+      console.log('Fetching job requests for requestor:', requestorId);
+      const requests = await db
         .select()
         .from(jobRequests)
         .where(eq(jobRequests.requestorId, requestorId))
         .orderBy(desc(jobRequests.createdAt));
+      console.log('Requests fetched for requestor:', requests);
+      return requests;
     } catch (error) {
       console.error('Error fetching user requests:', error);
       throw new Error('Failed to fetch user requests');
@@ -112,16 +115,55 @@ export class JobRequestService {
   /**
    * Get job requests assigned to a specific notary
    */
-  static async getRequestsByNotary(notaryId: number): Promise<JobRequest[]> {
+  static async getJobRequestsByNotary(
+    notaryId: number, 
+    options: {
+      page?: number;
+      limit?: number;
+      status?: string;
+      urgency?: string;
+    } = {}
+  ): Promise<{ requests: JobRequest[]; total: number; page: number; limit: number }> {
     try {
-      return await db
+      console.log('Fetching job requests for notary:', notaryId, 'with options:', options);
+      const { page = 1, limit = 10, status, urgency } = options;
+      const offset = (page - 1) * limit;
+
+      let whereConditions = [eq(jobRequests.assignedNotaryId, notaryId)];
+
+      if (status) {
+        whereConditions.push(eq(jobRequests.status, status));
+      }
+
+      if (urgency) {
+        whereConditions.push(eq(jobRequests.urgency, urgency));
+      }
+
+      const requests = await db
         .select()
         .from(jobRequests)
-        .where(eq(jobRequests.assignedNotaryId, notaryId))
-        .orderBy(desc(jobRequests.createdAt));
+        .where(and(...whereConditions))
+        .orderBy(desc(jobRequests.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      const totalResult = await db
+        .select({ count: sql`count(*)` })
+        .from(jobRequests)
+        .where(and(...whereConditions));
+
+      const total = parseInt(totalResult[0]?.count?.toString() || '0');
+
+      console.log('Notary requests fetched:', { requests, total, page, limit });
+      return {
+        requests,
+        total,
+        page,
+        limit
+      };
     } catch (error) {
-      console.error('Error fetching notary requests:', error);
-      throw new Error('Failed to fetch notary requests');
+      console.error('Error fetching notary job requests:', error);
+      throw new Error('Failed to fetch notary job requests');
     }
   }
 
@@ -138,85 +180,18 @@ export class JobRequestService {
     } = {}
   ): Promise<{ requests: JobRequest[]; total: number; page: number; limit: number }> {
     try {
-      console.log('getJobRequestsByUser called with userId:', userId, 'options:', options);
-      
+      console.log('Fetching job requests for user:', userId, 'with options:', options);
       const { page = 1, limit = 10, status, urgency } = options;
       const offset = (page - 1) * limit;
 
       let whereConditions = [eq(jobRequests.requestorId, userId)];
-      console.log('Base where condition:', whereConditions);
 
       if (status) {
-        whereConditions.push(eq(jobRequests.status, status as any));
-        console.log('Added status condition:', status);
+        whereConditions.push(eq(jobRequests.status, status));
       }
 
       if (urgency) {
-        whereConditions.push(eq(jobRequests.urgency, urgency as any));
-        console.log('Added urgency condition:', urgency);
-      }
-
-      console.log('Final where conditions:', whereConditions);
-
-      const requests = await db
-        .select()
-        .from(jobRequests)
-        .where(and(...whereConditions))
-        .orderBy(desc(jobRequests.createdAt))
-        .limit(limit)
-        .offset(offset);
-
-      console.log('Requests query result:', requests);
-
-      const totalResult = await db
-        .select({ count: sql`count(*)` })
-        .from(jobRequests)
-        .where(and(...whereConditions));
-
-      console.log('Total count result:', totalResult);
-
-      const total = parseInt(totalResult[0]?.count?.toString() || '0');
-
-      const result = {
-        requests,
-        total,
-        page,
-        limit
-      };
-
-      console.log('Returning result:', result);
-      return result;
-    } catch (error) {
-      console.error('Error fetching user job requests:', error);
-      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
-      throw new Error('Failed to fetch user job requests');
-    }
-  }
-
-  /**
-   * Get job requests by notary with pagination and filtering
-   */
-  static async getJobRequestsByNotary(
-    notaryId: number, 
-    options: {
-      page?: number;
-      limit?: number;
-      status?: string;
-      urgency?: string;
-    } = {}
-  ): Promise<{ requests: JobRequest[]; total: number; page: number; limit: number }> {
-    try {
-      const { page = 1, limit = 10, status, urgency } = options;
-      const offset = (page - 1) * limit;
-
-      let whereConditions = [eq(jobRequests.assignedNotaryId, notaryId)];
-
-      if (status) {
-        whereConditions.push(eq(jobRequests.status, status as any));
-      }
-
-      if (urgency) {
-        whereConditions.push(eq(jobRequests.urgency, urgency as any));
+        whereConditions.push(eq(jobRequests.urgency, urgency));
       }
 
       const requests = await db
@@ -234,6 +209,7 @@ export class JobRequestService {
 
       const total = parseInt(totalResult[0]?.count?.toString() || '0');
 
+      console.log('User requests fetched:', { requests, total, page, limit });
       return {
         requests,
         total,
@@ -241,8 +217,8 @@ export class JobRequestService {
         limit
       };
     } catch (error) {
-      console.error('Error fetching notary job requests:', error);
-      throw new Error('Failed to fetch notary job requests');
+      console.error('Error fetching user job requests:', error);
+      throw new Error('Failed to fetch user job requests');
     }
   }
 
@@ -258,19 +234,20 @@ export class JobRequestService {
     } = {}
   ): Promise<{ requests: JobRequest[]; total: number; page: number; limit: number }> {
     try {
+      console.log('Fetching all job requests with options:', options);
       const { page = 1, limit = 10, status, urgency } = options;
       const offset = (page - 1) * limit;
-
+  
       let whereConditions: any[] = [];
-
+  
       if (status) {
-        whereConditions.push(eq(jobRequests.status, status as any));
+        whereConditions.push(eq(jobRequests.status, status));
       }
-
+  
       if (urgency) {
-        whereConditions.push(eq(jobRequests.urgency, urgency as any));
+        whereConditions.push(eq(jobRequests.urgency, urgency));
       }
-
+  
       const requests = await db
         .select()
         .from(jobRequests)
@@ -278,14 +255,15 @@ export class JobRequestService {
         .orderBy(desc(jobRequests.createdAt))
         .limit(limit)
         .offset(offset);
-
+  
       const totalResult = await db
         .select({ count: sql`count(*)` })
         .from(jobRequests)
         .where(whereConditions.length > 0 ? and(...whereConditions) : undefined);
-
+  
       const total = parseInt(totalResult[0]?.count?.toString() || '0');
-
+  
+      console.log('All job requests fetched:', { requests, total, page, limit });
       return {
         requests,
         total,
@@ -303,6 +281,7 @@ export class JobRequestService {
    */
   static async reviewJobRequest(data: ReviewJobRequestData): Promise<JobRequest> {
     try {
+      console.log('Reviewing job request:', data);
       const [request] = await db
         .select()
         .from(jobRequests)
@@ -313,24 +292,42 @@ export class JobRequestService {
         throw new Error('Job request not found');
       }
 
-      if (request.status !== 'pending') {
-        throw new Error('Job request has already been reviewed');
+      // Allow review if pending, or if approved/rejected and we're assigning a notary
+      const canReview = request.status === 'pending' || 
+                       ((data.action === 'approve' || data.action === 'assign') && data.assignedNotaryId && 
+                        (request.status === 'approved' || request.status === 'rejected'));
+
+      if (!canReview) {
+        throw new Error('Job request cannot be reviewed in its current state');
       }
 
       const updateData: any = {
-        status: data.action === 'approve' ? 'approved' : 'rejected',
         reviewedBy: data.adminId,
         reviewedAt: new Date(),
         reviewNotes: data.notes,
         updatedAt: new Date(),
       };
 
-      // If approved and notary assigned, update assignment fields
-      if (data.action === 'approve' && data.assignedNotaryId) {
-        updateData.assignedNotaryId = data.assignedNotaryId;
-        updateData.assignedAt = new Date();
-        updateData.assignmentNotes = data.assignmentNotes;
-        updateData.status = 'assigned';
+      if (data.action === 'approve') {
+        if (request.status === 'pending') {
+          updateData.status = 'approved';
+        }
+        
+        if (data.assignedNotaryId) {
+          updateData.assignedNotaryId = data.assignedNotaryId;
+          updateData.assignedAt = new Date();
+          updateData.assignmentNotes = data.assignmentNotes;
+          updateData.status = 'assigned';
+        }
+      } else if (data.action === 'assign') {
+        if (data.assignedNotaryId) {
+          updateData.assignedNotaryId = data.assignedNotaryId;
+          updateData.assignedAt = new Date();
+          updateData.assignmentNotes = data.assignmentNotes;
+          updateData.status = 'assigned';
+        }
+      } else if (data.action === 'reject') {
+        updateData.status = 'rejected';
       }
 
       const [updatedRequest] = await db
@@ -339,11 +336,11 @@ export class JobRequestService {
         .where(eq(jobRequests.id, data.requestId))
         .returning();
 
-      // Send notification to requestor
+      console.log('Notifying requestor of review:', updatedRequest.id);
       await this.notifyRequestorOfReview(updatedRequest);
 
-      // If assigned to notary, notify the notary
-      if (data.action === 'approve' && data.assignedNotaryId) {
+      if ((data.action === 'approve' || data.action === 'assign') && data.assignedNotaryId) {
+        console.log('Notifying notary of assignment:', updatedRequest.id);
         await this.notifyNotaryOfAssignment(updatedRequest);
       }
 
@@ -359,6 +356,7 @@ export class JobRequestService {
    */
   static async convertRequestToJob(requestId: number): Promise<{ request: JobRequest; job: any }> {
     try {
+      console.log('Converting job request to job:', requestId);
       const [request] = await db
         .select()
         .from(jobRequests)
@@ -377,12 +375,11 @@ export class JobRequestService {
         throw new Error('Job request has already been converted to a job');
       }
 
-      // Create a new job from the request
       const [newJob] = await db
         .insert(jobs)
         .values({
-          titleCompany: 'Signer Request', // Default title company for signer requests
-          closingType: 'other', // Default closing type
+          titleCompany: 'Signer Request',
+          closingType: 'other',
           propertyAddressOne: request.location || 'TBD',
           propertyCity: 'TBD',
           propertyState: 'TBD',
@@ -400,12 +397,11 @@ export class JobRequestService {
         })
         .returning();
 
-      // Move documents from request metadata to job_documents table
       if (request.metadata?.documents) {
+        console.log('Moving documents to job:', newJob.id);
         await this.moveDocumentsToJob(newJob.id, request.metadata.documents, request.requestorId);
       }
 
-      // Update the request to mark it as converted
       const [updatedRequest] = await db
         .update(jobRequests)
         .set({
@@ -429,7 +425,8 @@ export class JobRequestService {
    */
   static async getAvailableNotaries(): Promise<any[]> {
     try {
-      return await db
+      console.log('Fetching available notaries');
+      const notaries = await db
         .select({
           id: users.id,
           firstName: users.firstName,
@@ -446,6 +443,8 @@ export class JobRequestService {
           )
         )
         .orderBy(users.firstName, users.lastName);
+      console.log('Available notaries:', notaries);
+      return notaries;
     } catch (error) {
       console.error('Error fetching available notaries:', error);
       throw new Error('Failed to fetch available notaries');
@@ -457,12 +456,26 @@ export class JobRequestService {
    */
   private static async notifyAdminsOfNewRequest(request: JobRequest): Promise<void> {
     try {
+      console.log('Fetching admins for notification of job request:', request.id);
       const admins = await db
         .select({ email: users.email, firstName: users.firstName, lastName: users.lastName })
         .from(users)
-        .where(eq(users.role, 'admin'));
+        .where(
+          and(
+            eq(users.role, 'admin'),
+            eq(users.isActive, true)
+          )
+        );
+
+      console.log('Admins found for notification:', admins);
+
+      if (admins.length === 0) {
+        console.warn('No active admins found to notify for job request:', request.id);
+        return;
+      }
 
       for (const admin of admins) {
+        console.log(`Sending notification to admin: ${admin.email}`);
         await emailService.sendJobRequestNotification({
           to: admin.email,
           adminName: `${admin.firstName} ${admin.lastName}`,
@@ -471,6 +484,7 @@ export class JobRequestService {
           urgency: request.urgency,
           description: request.description,
         });
+        console.log(`Notification sent to ${admin.email}`);
       }
     } catch (error) {
       console.error('Error notifying admins:', error);
@@ -482,6 +496,7 @@ export class JobRequestService {
    */
   private static async notifyRequestorOfReview(request: JobRequest): Promise<void> {
     try {
+      console.log('Notifying requestor of review for request:', request.id);
       await emailService.sendJobRequestReviewNotification({
         to: request.requestorEmail,
         requestTitle: request.title,
@@ -489,6 +504,7 @@ export class JobRequestService {
         reviewNotes: request.reviewNotes,
         assignedNotary: request.assignedNotaryId ? 'Yes' : 'No',
       });
+      console.log('Notification sent to requestor:', request.requestorEmail);
     } catch (error) {
       console.error('Error notifying requestor:', error);
     }
@@ -501,6 +517,7 @@ export class JobRequestService {
     try {
       if (!request.assignedNotaryId) return;
 
+      console.log('Fetching notary for assignment notification:', request.assignedNotaryId);
       const [notary] = await db
         .select({ email: users.email, firstName: users.firstName, lastName: users.lastName })
         .from(users)
@@ -508,6 +525,7 @@ export class JobRequestService {
         .limit(1);
 
       if (notary) {
+        console.log('Sending assignment notification to notary:', notary.email);
         await emailService.sendNotaryAssignmentNotification({
           to: notary.email,
           notaryName: `${notary.firstName} ${notary.lastName}`,
@@ -518,6 +536,9 @@ export class JobRequestService {
           preferredTime: request.preferredTime,
           location: request.location,
         });
+        console.log('Notification sent to notary:', notary.email);
+      } else {
+        console.warn('Notary not found for ID:', request.assignedNotaryId);
       }
     } catch (error) {
       console.error('Error notifying notary:', error);
@@ -536,6 +557,7 @@ export class JobRequestService {
     completed: number;
   }> {
     try {
+      console.log('Fetching request statistics');
       const allRequests = await db
         .select({ status: jobRequests.status })
         .from(jobRequests);
@@ -549,6 +571,7 @@ export class JobRequestService {
         completed: allRequests.filter(r => r.status === 'completed').length,
       };
 
+      console.log('Request statistics:', stats);
       return stats;
     } catch (error) {
       console.error('Error fetching request stats:', error);
@@ -570,8 +593,9 @@ export class JobRequestService {
     }>
   ): Promise<void> {
     try {
+      console.log('Saving documents for job request:', requestId);
       const documentRecords = documents.map(doc => ({
-        jobId: null, // Will be set when converted to job
+        jobId: null,
         fileName: doc.fileName,
         originalName: doc.originalName,
         filePath: doc.filePath,
@@ -579,17 +603,17 @@ export class JobRequestService {
         mimeType: doc.mimeType,
         documentType: 'original',
         status: 'uploaded',
-        uploadedBy: null, // Will be set when we have the requestor info
+        uploadedBy: null,
         isRequired: false,
       }));
 
-      // Store documents in metadata for now, will be moved to job_documents when converted
       await db
         .update(jobRequests)
         .set({
           metadata: { documents: documentRecords }
         })
         .where(eq(jobRequests.id, requestId));
+      console.log('Documents saved for job request:', requestId);
     } catch (error) {
       console.error('Error saving job request documents:', error);
       throw new Error('Failed to save documents');
@@ -601,6 +625,7 @@ export class JobRequestService {
    */
   static async getJobRequestDocuments(requestId: number): Promise<any[]> {
     try {
+      console.log('Fetching documents for job request:', requestId);
       const [request] = await db
         .select({ metadata: jobRequests.metadata })
         .from(jobRequests)
@@ -608,9 +633,11 @@ export class JobRequestService {
         .limit(1);
 
       if (!request || !request.metadata?.documents) {
+        console.log('No documents found for job request:', requestId);
         return [];
       }
 
+      console.log('Documents fetched for job request:', requestId, request.metadata.documents);
       return request.metadata.documents;
     } catch (error) {
       console.error('Error fetching job request documents:', error);
@@ -632,8 +659,9 @@ export class JobRequestService {
     }>
   ): Promise<void> {
     try {
+      console.log('Updating documents for job request:', requestId);
       const documentRecords = documents.map(doc => ({
-        jobId: null, // Will be set when converted to job
+        jobId: null,
         fileName: doc.fileName,
         originalName: doc.originalName,
         filePath: doc.filePath,
@@ -641,17 +669,17 @@ export class JobRequestService {
         mimeType: doc.mimeType,
         documentType: 'original',
         status: 'uploaded',
-        uploadedBy: null, // Will be set when we have the requestor info
+        uploadedBy: null,
         isRequired: false,
       }));
 
-      // Update documents in metadata
       await db
         .update(jobRequests)
         .set({
           metadata: { documents: documentRecords }
         })
         .where(eq(jobRequests.id, requestId));
+      console.log('Documents updated for job request:', requestId);
     } catch (error) {
       console.error('Error updating job request documents:', error);
       throw new Error('Failed to update documents');
@@ -667,6 +695,7 @@ export class JobRequestService {
     uploadedBy: number
   ): Promise<void> {
     try {
+      console.log('Moving documents to job:', jobId);
       const documentRecords = documents.map(doc => ({
         jobId: jobId,
         fileName: doc.fileName,
@@ -681,6 +710,7 @@ export class JobRequestService {
       }));
 
       await db.insert(jobDocuments).values(documentRecords);
+      console.log('Documents moved to job:', jobId);
     } catch (error) {
       console.error('Error moving documents to job:', error);
       throw new Error('Failed to move documents to job');
@@ -695,6 +725,7 @@ export class JobRequestService {
     updateData: Partial<CreateJobRequestData>
   ): Promise<JobRequest> {
     try {
+      console.log('Updating job request:', requestId, 'with data:', updateData);
       const [updatedRequest] = await db
         .update(jobRequests)
         .set({
@@ -708,8 +739,8 @@ export class JobRequestService {
         throw new Error('Job request not found');
       }
 
-      // Update documents if provided
       if (updateData.documents) {
+        console.log('Updating documents for job request:', requestId);
         await this.updateJobRequestDocuments(requestId, updateData.documents);
       }
 
@@ -725,6 +756,7 @@ export class JobRequestService {
    */
   static async deleteJobRequest(requestId: number): Promise<void> {
     try {
+      console.log('Deleting job request:', requestId);
       const result = await db
         .delete(jobRequests)
         .where(eq(jobRequests.id, requestId))
@@ -733,6 +765,7 @@ export class JobRequestService {
       if (result.length === 0) {
         throw new Error('Job request not found');
       }
+      console.log('Job request deleted:', requestId);
     } catch (error) {
       console.error('Error deleting job request:', error);
       throw new Error('Failed to delete job request');
@@ -744,6 +777,7 @@ export class JobRequestService {
    */
   static async deleteJobRequestDocument(requestId: number, fileName: string): Promise<void> {
     try {
+      console.log('Deleting document for job request:', requestId, 'file:', fileName);
       const [request] = await db
         .select({ metadata: jobRequests.metadata })
         .from(jobRequests)
@@ -764,6 +798,7 @@ export class JobRequestService {
           metadata: { documents: updatedDocuments }
         })
         .where(eq(jobRequests.id, requestId));
+      console.log('Document deleted for job request:', requestId);
     } catch (error) {
       console.error('Error deleting job request document:', error);
       throw new Error('Failed to delete document');
@@ -775,6 +810,7 @@ export class JobRequestService {
    */
   static async convertToJob(requestId: number, jobData: any): Promise<any> {
     try {
+      console.log('Converting job request to job:', requestId, 'with job data:', jobData);
       const [request] = await db
         .select()
         .from(jobRequests)
@@ -789,7 +825,6 @@ export class JobRequestService {
         throw new Error('Job request must be approved or assigned before conversion');
       }
 
-      // Create the job
       const [newJob] = await db
         .insert(jobs)
         .values({
@@ -801,13 +836,12 @@ export class JobRequestService {
         })
         .returning();
 
-      // Move documents from request to job
       const documents = await this.getJobRequestDocuments(requestId);
       if (documents.length > 0) {
+        console.log('Moving documents to job:', newJob.id);
         await this.moveDocumentsToJob(newJob.id, documents, request.requestorId);
       }
 
-      // Update request status
       await db
         .update(jobRequests)
         .set({
@@ -818,10 +852,11 @@ export class JobRequestService {
         })
         .where(eq(jobRequests.id, requestId));
 
+      console.log('Job request converted to job:', newJob.id);
       return newJob;
     } catch (error) {
       console.error('Error converting job request to job:', error);
       throw new Error('Failed to convert job request to job');
     }
   }
-} 
+}

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -10,19 +10,39 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Badge } from '../ui/badge';
-import { Loader2, FileText, Calendar, Clock, MapPin, AlertCircle, Upload, X, File, Download } from 'lucide-react';
+import { Progress } from '../ui/progress';
+import { 
+  Loader2, 
+  FileText, 
+  Calendar, 
+  Clock, 
+  MapPin, 
+  AlertCircle, 
+  Upload, 
+  X, 
+  File, 
+  Download, 
+  CheckCircle,
+  Info,
+  Paperclip,
+  Trash2
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { apiRequest } from '../../lib/queryClient';
 
 const jobRequestSchema = z.object({
-  title: z.string().min(5, 'Title must be at least 5 characters'),
-  description: z.string().min(20, 'Description must be at least 20 characters'),
+  title: z.string().min(5, 'Title must be at least 5 characters').max(100, 'Title must be less than 100 characters'),
+  description: z.string().min(20, 'Description must be at least 20 characters').max(1000, 'Description must be less than 1000 characters'),
   documentType: z.string().min(1, 'Document type is required'),
   urgency: z.enum(['low', 'normal', 'high', 'urgent']),
   preferredDate: z.string().optional(),
   preferredTime: z.string().optional(),
   location: z.string().optional(),
-  requestorPhone: z.string().optional(),
+  requestorPhone: z.string().optional().refine((val) => {
+    if (!val) return true; // Optional field
+    const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+    return phoneRegex.test(val.replace(/[\s\-\(\)]/g, ''));
+  }, 'Please enter a valid phone number'),
 });
 
 type JobRequestFormData = z.infer<typeof jobRequestSchema>;
@@ -35,6 +55,8 @@ interface DocumentFile {
   fileSize: number;
   mimeType: string;
   uploadProgress?: number;
+  uploadStatus?: 'pending' | 'uploading' | 'completed' | 'error';
+  errorMessage?: string;
 }
 
 interface JobRequest {
@@ -73,6 +95,8 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [documents, setDocuments] = useState<DocumentFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
     register,
@@ -123,6 +147,7 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
           filePath: doc.filePath,
           fileSize: doc.fileSize,
           mimeType: doc.mimeType,
+          uploadStatus: 'completed',
           // Note: We don't have the actual File object for existing documents
           // This is just for display purposes
         } as DocumentFile));
@@ -158,49 +183,97 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
           continue;
         }
 
-        // Upload file to server using the job request specific endpoint
-        const formData = new FormData();
-        formData.append('document', file);
-        
-        console.log('Uploading file:', file.name, 'Size:', file.size, 'Type:', file.type);
-        console.log('FormData created with document field');
-
-        const uploadResponse = await apiRequest('POST', '/api/job-requests/upload-document', formData);
-        
-        if (!uploadResponse.ok) {
-          const errorData = await uploadResponse.json();
-          console.error('Upload failed:', errorData);
-          toast.error(`Failed to upload ${file.name}: ${errorData.error || 'Upload failed'}`);
-          continue;
-        }
-
-        const uploadResult = await uploadResponse.json();
-        
-        const documentFile: DocumentFile = {
+        // Create temporary document entry
+        const tempDoc: DocumentFile = {
           file,
-          fileName: uploadResult.fileName || `${Date.now()}_${Math.random().toString(36).substring(7)}_${file.name}`,
+          fileName: `${Date.now()}_${Math.random().toString(36).substring(7)}_${file.name}`,
           originalName: file.name,
-          filePath: uploadResult.filePath || uploadResult.fileKey,
+          filePath: '',
           fileSize: file.size,
           mimeType: file.type,
+          uploadStatus: 'uploading',
+          uploadProgress: 0,
         };
 
-        newDocuments.push(documentFile);
+        // Add to documents list immediately for UI feedback
+        setDocuments(prev => [...prev, tempDoc]);
+
+        // Upload file to server with proper FormData construction
+        const formData = new FormData();
+        formData.append('document', file, file.name); // Ensure proper field name and filename
+        
+        console.log('Uploading file:', file.name, 'Size:', file.size, 'Type:', file.type);
+
+        try {
+          const uploadResponse = await apiRequest('POST', '/api/job-requests/upload-document', formData);
+          
+          if (!uploadResponse.ok) {
+            const errorData = await uploadResponse.json();
+            console.error('Upload failed:', errorData);
+            
+            // Update document status to error
+            setDocuments(prev => prev.map(doc => 
+              doc.fileName === tempDoc.fileName 
+                ? { ...doc, uploadStatus: 'error', errorMessage: errorData.error || 'Upload failed' }
+                : doc
+            ));
+            
+            toast.error(`Failed to upload ${file.name}: ${errorData.error || 'Upload failed'}`);
+            continue;
+          }
+
+          const uploadResult = await uploadResponse.json();
+          
+          // Update document with successful upload data
+          setDocuments(prev => prev.map(doc => 
+            doc.fileName === tempDoc.fileName 
+              ? {
+                  ...doc,
+                  fileName: uploadResult.fileName || tempDoc.fileName,
+                  filePath: uploadResult.filePath || uploadResult.fileKey,
+                  uploadStatus: 'completed',
+                  uploadProgress: 100,
+                }
+              : doc
+          ));
+        } catch (uploadError) {
+          console.error('Error uploading files:', uploadError);
+          
+          // Update document status to error
+          setDocuments(prev => prev.map(doc => 
+            doc.fileName === tempDoc.fileName 
+              ? { ...doc, uploadStatus: 'error', errorMessage: 'Network error during upload' }
+              : doc
+          ));
+          
+          toast.error(`Failed to upload ${file.name}: Network error`);
+        }
       }
 
-      setDocuments(prev => {
-        const updated = [...prev, ...newDocuments];
-        console.log('Documents state updated:', updated);
-        return updated;
-      });
-      toast.success(`${newDocuments.length} document(s) added successfully!`);
+      toast.success(`${files.length} document(s) uploaded successfully!`);
     } catch (error) {
-      console.error('Error uploading files:', error);
+      console.error('Error processing files:', error);
       toast.error('Error processing files. Please try again.');
     } finally {
       setIsUploading(false);
     }
   }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    handleFileUpload(e.dataTransfer.files);
+  }, [handleFileUpload]);
 
   const removeDocument = (index: number) => {
     const documentToRemove = documents[index];
@@ -229,10 +302,17 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
     setError(null);
 
     try {
+      // Filter out documents with upload errors
+      const validDocuments = documents.filter(doc => doc.uploadStatus !== 'error');
+      
+      if (documents.length !== validDocuments.length) {
+        toast.error('Please remove documents with upload errors before submitting');
+        setIsSubmitting(false);
+        return;
+      }
+
       // Prepare documents data for submission
-      // For existing documents (without file property), keep them as is
-      // For new documents (with file property), prepare them for upload
-      const documentsData = documents.map(doc => ({
+      const documentsData = validDocuments.map(doc => ({
         fileName: doc.fileName,
         originalName: doc.originalName,
         filePath: doc.filePath,
@@ -261,7 +341,34 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
       setDocuments([]);
       onSuccess?.();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to submit job request';
+      let errorMessage = 'Failed to submit job request';
+      
+      if (err instanceof Error) {
+        // Try to parse error message from response
+        const errorText = err.message;
+        if (errorText.includes('400:')) {
+          try {
+            const jsonMatch = errorText.match(/\{.*\}/);
+            if (jsonMatch) {
+              const errorData = JSON.parse(jsonMatch[0]);
+              errorMessage = errorData.error || errorData.message || 'Invalid request data. Please check your form and try again.';
+            } else {
+              errorMessage = 'Please check your form data and try again.';
+            }
+          } catch (parseError) {
+            errorMessage = 'Please check your form data and try again.';
+          }
+        } else if (errorText.includes('401:')) {
+          errorMessage = 'Your session has expired. Please log in again.';
+        } else if (errorText.includes('403:')) {
+          errorMessage = 'You do not have permission to perform this action.';
+        } else if (errorText.includes('500:')) {
+          errorMessage = 'Server error. Please try again later.';
+        } else {
+          errorMessage = errorText;
+        }
+      }
+      
       setError(errorMessage);
       toast.error(errorMessage);
     } finally {
@@ -272,21 +379,29 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
   const getUrgencyColor = (urgency: string) => {
     switch (urgency) {
       case 'urgent':
-        return 'bg-red-50 text-red-700 border-red-200';
+        return 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100';
       case 'high':
-        return 'bg-orange-50 text-orange-700 border-orange-200';
+        return 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100';
       case 'normal':
-        return 'bg-blue-50 text-blue-700 border-blue-200';
+        return 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100';
       case 'low':
-        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100';
       default:
-        return 'bg-gray-50 text-gray-700 border-gray-200';
+        return 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100';
     }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   return (
     <div className="w-full max-w-2xl mx-auto">
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-h-[calc(90vh-200px)] overflow-y-auto">
         {error && (
           <Alert variant="destructive" className="border-red-200 bg-red-50">
             <AlertCircle className="h-4 w-4" />
@@ -294,15 +409,36 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
           </Alert>
         )}
 
+        {/* Professional Header */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <FileText className="h-5 w-5 text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Job Request Details</h2>
+              <p className="text-sm text-gray-600">Please provide comprehensive information about your notarization needs</p>
+            </div>
+          </div>
+        </div>
+
         {/* Title */}
-        <div className="space-y-3">
-          <Label htmlFor="title" className="text-sm font-semibold text-gray-700">Request Title *</Label>
-          <Input
-            id="title"
-            placeholder="Brief title for your notarization request"
-            {...register('title')}
-            className={`h-12 px-4 border-gray-300 focus:border-blue-500 focus:ring-blue-500 ${errors.title ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
-          />
+        <div className="space-y-2">
+          <Label htmlFor="title" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <FileText className="h-4 w-4 text-blue-600" />
+            Request Title *
+          </Label>
+          <div className="relative">
+            <Input
+              id="title"
+              placeholder="e.g., Real Estate Purchase Agreement Notarization"
+              {...register('title')}
+              className={`h-11 px-3 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors ${errors.title ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+            />
+            <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-gray-400">
+              {watch('title')?.length || 0}/100
+            </div>
+          </div>
           {errors.title && (
             <p className="text-sm text-red-600 flex items-center gap-1">
               <AlertCircle className="h-3 w-3" />
@@ -312,15 +448,20 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
         </div>
 
         {/* Description */}
-        <div className="space-y-3">
+        <div className="space-y-2">
           <Label htmlFor="description" className="text-sm font-semibold text-gray-700">Description *</Label>
-          <Textarea
-            id="description"
-            placeholder="Please describe what documents need to be notarized and any specific requirements..."
-            rows={4}
-            {...register('description')}
-            className={`px-4 py-3 border-gray-300 focus:border-blue-500 focus:ring-blue-500 resize-none ${errors.description ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
-          />
+          <div className="relative">
+            <Textarea
+              id="description"
+              placeholder="Please provide detailed information about the documents that need notarization, any specific requirements, and any additional context that would help our team understand your needs."
+              rows={4}
+              {...register('description')}
+              className={`px-3 py-2 border-gray-300 focus:border-blue-500 focus:ring-blue-500 resize-none transition-colors ${errors.description ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+            />
+            <div className="absolute bottom-2 right-2 text-xs text-gray-400">
+              {watch('description')?.length || 0}/1000
+            </div>
+          </div>
           {errors.description && (
             <p className="text-sm text-red-600 flex items-center gap-1">
               <AlertCircle className="h-3 w-3" />
@@ -330,11 +471,11 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
         </div>
 
         {/* Document Type */}
-        <div className="space-y-3">
+        <div className="space-y-2">
           <Label htmlFor="documentType" className="text-sm font-semibold text-gray-700">Document Type *</Label>
           <Select onValueChange={(value) => setValue('documentType', value)}>
-            <SelectTrigger className={`h-12 px-4 border-gray-300 focus:border-blue-500 focus:ring-blue-500 ${errors.documentType ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}>
-              <SelectValue placeholder="Select document type" />
+            <SelectTrigger className={`h-11 px-3 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors ${errors.documentType ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}>
+              <SelectValue placeholder="Select the type of document that needs notarization" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="real_estate">Real Estate Documents</SelectItem>
@@ -355,31 +496,37 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
         </div>
 
         {/* Urgency */}
-        <div className="space-y-3">
+        <div className="space-y-2">
           <Label className="text-sm font-semibold text-gray-700">Urgency Level</Label>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {['low', 'normal', 'high', 'urgent'].map((level) => (
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { value: 'low', label: 'Low', description: 'Within 1 week' },
+              { value: 'normal', label: 'Normal', description: 'Within 3-5 days' },
+              { value: 'high', label: 'High', description: 'Within 1-2 days' },
+              { value: 'urgent', label: 'Urgent', description: 'Same day' }
+            ].map((level) => (
               <button
-                key={level}
+                key={level.value}
                 type="button"
-                onClick={() => setValue('urgency', level as any)}
-                className={`p-3 rounded-lg border-2 transition-all duration-200 text-sm font-medium ${
-                  urgency === level
-                    ? getUrgencyColor(level) + ' border-current'
+                onClick={() => setValue('urgency', level.value as any)}
+                className={`p-3 rounded-lg border-2 transition-all duration-200 text-left ${
+                  urgency === level.value
+                    ? getUrgencyColor(level.value) + ' border-current shadow-sm'
                     : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
                 }`}
               >
-                {level.charAt(0).toUpperCase() + level.slice(1)}
+                <div className="font-medium text-sm">{level.label}</div>
+                <div className="text-xs opacity-75">{level.description}</div>
               </button>
             ))}
           </div>
         </div>
 
         {/* Schedule */}
-        <div className="space-y-3">
+        <div className="space-y-2">
           <Label className="text-sm font-semibold text-gray-700">Schedule & Location</Label>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1">
               <Label htmlFor="preferredDate" className="text-sm text-gray-600 flex items-center gap-2">
                 <Calendar className="h-4 w-4" />
                 Preferred Date
@@ -388,10 +535,10 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
                 id="preferredDate"
                 type="date"
                 {...register('preferredDate')}
-                className="h-12 px-4 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                className="h-11 px-3 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors"
               />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1">
               <Label htmlFor="preferredTime" className="text-sm text-gray-600 flex items-center gap-2">
                 <Clock className="h-4 w-4" />
                 Preferred Time
@@ -400,43 +547,70 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
                 id="preferredTime"
                 type="time"
                 {...register('preferredTime')}
-                className="h-12 px-4 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                className="h-11 px-3 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors"
               />
             </div>
           </div>
         </div>
 
         {/* Location */}
-        <div className="space-y-3">
+        <div className="space-y-2">
           <Label htmlFor="location" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
             <MapPin className="h-4 w-4" />
             Location (Optional)
           </Label>
           <Input
             id="location"
-            placeholder="Where should the notarization take place?"
+            placeholder="e.g., 123 Main Street, Suite 100, New York, NY 10001"
             {...register('location')}
-            className="h-12 px-4 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+            className="h-11 px-3 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors"
           />
         </div>
 
         {/* Phone Number */}
-        <div className="space-y-3">
+        <div className="space-y-2">
           <Label htmlFor="requestorPhone" className="text-sm font-semibold text-gray-700">Phone Number (Optional)</Label>
           <Input
             id="requestorPhone"
             type="tel"
-            placeholder="Your phone number for contact"
+            placeholder="e.g., (555) 123-4567"
             {...register('requestorPhone')}
-            className="h-12 px-4 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+            className="h-11 px-3 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors"
           />
+          {errors.requestorPhone && (
+            <p className="text-sm text-red-600 flex items-center gap-1">
+              <AlertCircle className="h-3 w-3" />
+              {errors.requestorPhone.message}
+            </p>
+          )}
         </div>
 
         {/* Document Upload */}
         <div className="space-y-3">
-          <Label className="text-sm font-semibold text-gray-700">Documents (Optional)</Label>
-          <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-400 transition-colors duration-200">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <Paperclip className="h-4 w-4" />
+              Documents (Optional)
+            </Label>
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <Info className="h-3 w-3" />
+              PDF, JPEG, PNG up to 10MB each
+            </div>
+          </div>
+          
+          {/* Upload Area */}
+          <div
+            className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-200 ${
+              isDragOver 
+                ? 'border-blue-400 bg-blue-50' 
+                : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
+            }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
             <input
+              ref={fileInputRef}
               type="file"
               multiple
               accept=".pdf,.jpg,.jpeg,.png"
@@ -449,46 +623,90 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
               htmlFor="document-upload"
               className="cursor-pointer flex flex-col items-center space-y-3"
             >
-              <div className="p-3 bg-blue-50 rounded-full">
-                <Upload className="h-8 w-8 text-blue-600" />
+              <div className={`p-3 rounded-full transition-colors ${
+                isDragOver ? 'bg-blue-100' : 'bg-blue-50'
+              }`}>
+                {isUploading ? (
+                  <Loader2 className="h-6 w-6 text-blue-600 animate-spin" />
+                ) : (
+                  <Upload className="h-6 w-6 text-blue-600" />
+                )}
               </div>
-              <div className="text-sm text-gray-600">
-                <span className="font-medium text-blue-600 hover:text-blue-500">
-                  Click to upload
-                </span>{' '}
-                or drag and drop
+              <div className="space-y-1">
+                <div className="text-sm text-gray-600">
+                  <span className="font-medium text-blue-600 hover:text-blue-500">
+                    Click to upload
+                  </span>{' '}
+                  or drag and drop files here
+                </div>
+                <p className="text-xs text-gray-500">
+                  Supported formats: PDF, JPEG, PNG (Max 10MB per file)
+                </p>
               </div>
-              <p className="text-xs text-gray-500">
-                PDF, JPEG, PNG up to 10MB each
-              </p>
             </label>
           </div>
 
           {/* Document List */}
-          {(() => {
-            console.log('Rendering documents, count:', documents.length, 'documents:', documents);
-            return null;
-          })()}
           {documents.length > 0 && (
-            <div className="space-y-3">
-              <Label className="text-sm font-semibold text-gray-700">Uploaded Documents ({documents.length})</Label>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold text-gray-700">
+                  Uploaded Documents ({documents.length})
+                </Label>
+                {isUploading && (
+                  <div className="flex items-center gap-2 text-xs text-blue-600">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Uploading...
+                  </div>
+                )}
+              </div>
               <div className="space-y-2">
                 {documents.map((doc, index) => (
                   <div
                     key={index}
-                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200"
+                    className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
+                      doc.uploadStatus === 'error' 
+                        ? 'bg-red-50 border-red-200' 
+                        : doc.uploadStatus === 'completed'
+                        ? 'bg-green-50 border-green-200'
+                        : 'bg-gray-50 border-gray-200'
+                    }`}
                   >
                     <div className="flex items-center space-x-3">
-                      <div className="p-2 bg-blue-100 rounded-lg">
-                        <File className="h-5 w-5 text-blue-600" />
+                      <div className={`p-1.5 rounded-lg ${
+                        doc.uploadStatus === 'error' 
+                          ? 'bg-red-100' 
+                          : doc.uploadStatus === 'completed'
+                          ? 'bg-green-100'
+                          : 'bg-blue-100'
+                      }`}>
+                        {doc.uploadStatus === 'error' ? (
+                          <AlertCircle className="h-4 w-4 text-red-600" />
+                        ) : doc.uploadStatus === 'completed' ? (
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <File className="h-4 w-4 text-blue-600" />
+                        )}
                       </div>
-                      <div>
+                      <div className="flex-1">
                         <p className="text-sm font-medium text-gray-900">
                           {doc.originalName}
                         </p>
-                        <p className="text-xs text-gray-500">
-                          {(doc.fileSize / 1024 / 1024).toFixed(2)} MB
-                        </p>
+                        <div className="flex items-center gap-4 text-xs text-gray-500">
+                          <span>{formatFileSize(doc.fileSize)}</span>
+                          {doc.uploadStatus === 'uploading' && (
+                            <span className="text-blue-600">Uploading...</span>
+                          )}
+                          {doc.uploadStatus === 'error' && (
+                            <span className="text-red-600">{doc.errorMessage}</span>
+                          )}
+                          {doc.uploadStatus === 'completed' && (
+                            <span className="text-green-600">Uploaded successfully</span>
+                          )}
+                        </div>
+                        {doc.uploadStatus === 'uploading' && doc.uploadProgress !== undefined && (
+                          <Progress value={doc.uploadProgress} className="mt-1 h-1" />
+                        )}
                       </div>
                     </div>
                     <Button
@@ -496,9 +714,13 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
                       variant="ghost"
                       size="sm"
                       onClick={() => removeDocument(index)}
-                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                      className={`${
+                        doc.uploadStatus === 'error' 
+                          ? 'text-red-500 hover:text-red-700 hover:bg-red-100' 
+                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                      }`}
                     >
-                      <X className="h-4 w-4" />
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 ))}
@@ -508,20 +730,45 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
         </div>
 
         {/* Submit Button */}
-        <Button
-          type="submit"
-          disabled={isSubmitting || isUploading}
-          className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors duration-200"
-        >
-          {isSubmitting ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              {editData ? 'Updating Request...' : 'Submitting Request...'}
-            </>
-          ) : (
-            editData ? 'Update Job Request' : 'Submit Job Request'
-          )}
-        </Button>
+        <div className="pt-4 border-t border-gray-200">
+          {/* Helpful Tips */}
+          <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <div className="flex items-start gap-2">
+              <Info className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div className="space-y-1">
+                <h4 className="text-sm font-medium text-blue-900">Helpful Tips</h4>
+                <ul className="text-xs text-blue-800 space-y-0.5">
+                  <li>• Provide a clear, descriptive title that summarizes your notarization needs</li>
+                  <li>• Include specific details about document types, deadlines, and any special requirements</li>
+                  <li>• Upload relevant documents to help us better understand your needs</li>
+                  <li>• Choose the appropriate urgency level based on your timeline</li>
+                  <li>• Our team will review your request and contact you within 24 hours</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <Button
+            type="submit"
+            disabled={isSubmitting || isUploading}
+            className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors duration-200 shadow-sm"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {editData ? 'Updating Request...' : 'Submitting Request...'}
+              </>
+            ) : (
+              <>
+                <FileText className="mr-2 h-4 w-4" />
+                {editData ? 'Update Job Request' : 'Submit Job Request'}
+              </>
+            )}
+          </Button>
+          <p className="text-xs text-gray-500 text-center mt-2">
+            By submitting this request, you agree to our terms of service and privacy policy.
+          </p>
+        </div>
       </form>
     </div>
   );
