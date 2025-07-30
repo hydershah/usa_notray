@@ -194,8 +194,10 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   return (
     <Rnd
       size={{
-        width: displayCoords.width,
-        height: displayCoords.height
+        width: tag.isCompleted && (tag.tagType === 'O' || tag.tagType === 'X')
+          ? Math.max(displayCoords.width, 300) // Expand disclosure and expiry tags to at least 300px width
+          : displayCoords.width,
+        height: tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'auto' : displayCoords.height
       }}
       position={{
         x: displayCoords.x,
@@ -205,7 +207,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       onDragStop={handleDragStop}
       onResize={handleResize}
       onResizeStop={handleResizeStop}
-      enableResizing={canEdit}
+      enableResizing={canEdit && !(tag.isCompleted && tag.tagType === 'T')}
       disableDragging={!canEdit}
       bounds="parent"
       onClick={(e: React.MouseEvent<HTMLDivElement>) => {
@@ -282,17 +284,17 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       onKeyDown={handleKeyDown}
       tabIndex={0}
       className={`
-        transition-all cursor-pointer overflow-hidden
+        transition-all cursor-pointer ${tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'overflow-visible' : 'overflow-hidden'}
         ${isSelected ? 'ring-2 ring-blue-400 ring-opacity-60' : ''}
         ${canEdit ? 'hover:shadow-md' : ''}
         ${hasContent ? 'completed-tag-transparent' : ''}
       `}
       style={{
         backgroundColor: hasContent 
-          ? 'transparent' 
+          ? (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X' ? 'rgba(255, 255, 255, 0.95)' : 'transparent')
           : tag.tagType === 'W' ? '#ffffff' : (tag.colorCode || '#1e40af'),
         
-        ...(hasContent && {
+        ...(hasContent && tag.tagType !== 'T' && tag.tagType !== 'O' && tag.tagType !== 'X' && {
           background: 'transparent',
           backgroundColor: 'transparent',
           backgroundImage: 'none',
@@ -322,8 +324,8 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           ? '0 4px 12px rgba(0, 0, 0, 0.2)' 
           : '0 2px 6px rgba(0, 0, 0, 0.1)',
         
-        minWidth: tag.tagType === 'T' ? 'auto' : '80px',
-        minHeight: tag.tagType === 'T' ? 'auto' : '32px'
+        minWidth: (tag.tagType === 'T') ? 'auto' : ((tag.tagType === 'O' || tag.tagType === 'X') ? '200px' : '80px'), // Larger minimum for disclosure and expiry tags
+        minHeight: (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'auto' : '32px' // Allow auto height for text, disclosure, and expiry
       }}
       resizeHandleStyles={canEdit ? {
         bottomRight: { 
@@ -339,17 +341,19 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         }
       } : undefined}
     >
-      <div className="w-full h-full flex flex-col items-center justify-center p-3">
+      <div className={`w-full ${tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? '' : 'h-full'} flex flex-col ${tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'items-start justify-start' : 'items-center justify-center'}`} style={{
+        padding: tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? '0' : ((tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? '4px' : '8px 12px')
+      }}>
         {mode === 'signing' ? (
           // Signing mode: Show interactive state
           tag.isCompleted ? (
             // Completed tag - show actual content as plain text/image OR whiteout
             tag.tagType === 'W' ? (
-              // Whiteout tag: Show as solid white rectangle (no content)
-              <div className="w-full h-full bg-white" />
+              // Whiteout tag: Show as solid white rectangle with border to keep it visible
+              <div className="w-full h-full bg-white border border-gray-300" />
             ) : (
               // Regular completed tag - show actual content as plain text/image
-              <div className="w-full h-full flex items-center justify-center">
+              <div className="relative" style={{ width: '100%', minHeight: '100%' }}>
                 {(tag.contentData || tag.content) && (() => {
                   // Parse contentData if it's a string, fallback to content
                   let contentData;
@@ -476,12 +480,17 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                   if (imageLoadError || !isImageContent()) {
                     return (
                       <div 
-                        className="text-black w-full h-full flex items-center justify-center p-1"
+                        className="text-black"
                         style={{ 
-                          fontSize: Math.max(10, Math.min(16, tag.coordinates.height * 0.6)),
-                          lineHeight: '1.2',
+                          fontSize: '14px',
+                          lineHeight: '1.4',
                           wordBreak: 'break-word',
-                          fontFamily: 'inherit'
+                          fontFamily: 'inherit',
+                          width: '100%', // Fill container width
+                          maxWidth: 'none', // Remove max width constraint
+                          whiteSpace: 'normal',
+                          padding: '4px',
+                          textAlign: 'left'
                         }}
                       >
                         {/* Always show the actual content, never "Applied" messages */}
@@ -522,126 +531,91 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           ) : (
             // Incomplete tag in signing mode - use SAME UI as tagging mode
             <>
-              {/* Main tag content - improved sizing */}
-              <div className="flex items-center gap-2">
+              {/* Tag content with proper sizing */}
+              <div className="flex items-center gap-2" style={{
+                fontSize: Math.max(12, Math.min(16, displayCoords.height * 0.4)),
+                fontWeight: '600',
+                lineHeight: '1.2'
+              }}>
                 <span style={{ 
-                  fontSize: '16px', 
-                  color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
-                  fontWeight: '600',
+                  color: tag.tagType === 'W' ? '#374151' : '#ffffff',
                   textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
                 }}>
                   {tagInfo.icon}
                 </span>
                 <span style={{ 
-                  fontSize: '14px', 
-                  color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
-                  fontWeight: '600',
-                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
+                  color: tag.tagType === 'W' ? '#374151' : '#ffffff',
+                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)',
+                  whiteSpace: (tag.tagType === 'O' || tag.tagType === 'X') ? 'normal' : 'nowrap',
+                  overflow: (tag.tagType === 'O' || tag.tagType === 'X') ? 'visible' : 'hidden',
+                  textOverflow: (tag.tagType === 'O' || tag.tagType === 'X') ? 'unset' : 'ellipsis'
                 }}>
                   {tagInfo.label}
                 </span>
-              </div>
-              
-              {/* User identification - improved sizing */}
-              {tag.displayLabel && tag.displayLabel.includes(' - ') && (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  marginTop: '4px',
-                  padding: '2px 8px',
-                  backgroundColor: tag.tagType === 'W' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(0, 0, 0, 0.2)',
-                  borderRadius: '12px',
-                  border: tag.tagType === 'W' ? '1px solid rgba(0, 0, 0, 0.2)' : '1px solid rgba(255, 255, 255, 0.2)'
-                }}>
+                
+                {/* User indicator */}
+                {tag.displayLabel && tag.displayLabel.includes(' - ') && displayCoords.width > 70 && (
                   <div 
                     style={{
                       width: '8px',
                       height: '8px',
                       borderRadius: '50%',
                       backgroundColor: tag.colorCode,
-                      border: '1px solid rgba(255, 255, 255, 0.5)',
-                      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.2)'
+                      border: '1px solid rgba(255, 255, 255, 0.8)',
+                      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                      marginLeft: '4px',
+                      flexShrink: 0
                     }}
+                    title={tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
                   />
-                  <span style={{ 
-                    fontSize: '11px', 
-                    color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
-                    fontWeight: '500',
-                    textShadow: tag.tagType === 'W' ? 'none' : '0 1px 1px rgba(0, 0, 0, 0.5)'
-                  }}>
-                    {tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
-                  </span>
-                </div>
-              )}
-              
-              {/* Interaction hint for signing mode - improved sizing */}
-              <div className="mt-1">
-                <span style={{ 
-                  fontSize: '12px', 
-                  color: tag.tagType === 'W' ? 'rgba(55, 65, 81, 0.7)' : 'rgba(255, 255, 255, 0.9)',
-                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 1px rgba(0, 0, 0, 0.5)'
-                }}>
-                  Double-click to {tag.tagType === 'W' ? 'apply whiteout' : (['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter')}
-                </span>
+                )}
               </div>
+              
+
             </>
           )
         ) : (
           // Tagging mode: Show tag info - improved sizing
           <>
-            {/* Main tag content - improved sizing */}
-            <div className="flex items-center gap-2">
+            {/* Tag content with proper sizing */}
+            <div className="flex items-center gap-2" style={{
+              fontSize: Math.max(12, Math.min(16, displayCoords.height * 0.4)),
+              fontWeight: '600',
+              lineHeight: '1.2'
+            }}>
               <span style={{ 
-                fontSize: '16px', 
-                color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
-                fontWeight: '600',
+                color: tag.tagType === 'W' ? '#374151' : '#ffffff',
                 textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
               }}>
                 {tagInfo.icon}
               </span>
               <span style={{ 
-                fontSize: '14px', 
-                color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
-                fontWeight: '600',
-                textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
+                color: tag.tagType === 'W' ? '#374151' : '#ffffff',
+                textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)',
+                whiteSpace: (tag.tagType === 'O' || tag.tagType === 'X') ? 'normal' : 'nowrap',
+                overflow: (tag.tagType === 'O' || tag.tagType === 'X') ? 'visible' : 'hidden',
+                textOverflow: (tag.tagType === 'O' || tag.tagType === 'X') ? 'unset' : 'ellipsis'
               }}>
                 {tagInfo.label}
               </span>
-            </div>
-            
-            {/* User identification - improved sizing */}
-            {tag.displayLabel && tag.displayLabel.includes(' - ') && (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                marginTop: '4px',
-                padding: '2px 8px',
-                backgroundColor: tag.tagType === 'W' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(0, 0, 0, 0.2)',
-                borderRadius: '12px',
-                border: tag.tagType === 'W' ? '1px solid rgba(0, 0, 0, 0.2)' : '1px solid rgba(255, 255, 255, 0.2)'
-              }}>
+              
+              {/* User indicator */}
+              {tag.displayLabel && tag.displayLabel.includes(' - ') && displayCoords.width > 70 && (
                 <div 
                   style={{
                     width: '8px',
                     height: '8px',
                     borderRadius: '50%',
                     backgroundColor: tag.colorCode,
-                    border: '1px solid rgba(255, 255, 255, 0.5)',
-                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.2)'
+                    border: '1px solid rgba(255, 255, 255, 0.8)',
+                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                    marginLeft: '4px',
+                    flexShrink: 0
                   }}
+                  title={tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
                 />
-                <span style={{ 
-                  fontSize: '11px', 
-                  color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
-                  fontWeight: '500',
-                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 1px rgba(0, 0, 0, 0.5)'
-                }}>
-                  {tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
-                </span>
-              </div>
-            )}
+              )}
+            </div>
           </>
         )}
       </div>

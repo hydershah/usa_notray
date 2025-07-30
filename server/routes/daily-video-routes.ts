@@ -3,6 +3,14 @@ import { verifyToken } from '../auth';
 
 const router = Router();
 
+// Helper function to format dates as MM/DD/YYYY
+function formatDate(date: Date): string {
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  const year = date.getFullYear().toString();
+  return `${month}/${day}/${year}`;
+}
+
 // Simple in-memory cache to prevent racing conditions
 const activeSessionCreations = new Map<number, Promise<any>>();
 
@@ -133,7 +141,7 @@ router.post('/api/jobs/:jobId/video-session', verifyToken, async (req: any, res)
       message,
       error: errorCode,
       details: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString()
+      timestamp: formatDate(new Date())
     });
   }
 });
@@ -233,13 +241,13 @@ router.post('/api/jobs/:jobId/video-session/recording', verifyToken, async (req:
       recordingUrl,
       duration,
       participants,
-      createdAt: new Date().toISOString(),
+      createdAt: formatDate(new Date()),
       createdBy: req.user.id,
       complianceStatus: 'recorded',
       technology: 'daily',
       auditTrail: {
-        sessionStart: new Date(Date.now() - duration * 1000).toISOString(),
-        sessionEnd: new Date().toISOString(),
+        sessionStart: formatDate(new Date(Date.now() - duration * 1000)),
+        sessionEnd: formatDate(new Date()),
         participantCount: participants?.length || 0
       }
     };
@@ -350,7 +358,7 @@ router.get('/api/daily/diagnostics', verifyToken, async (req: any, res) => {
         nodeVersion: process.version,
         platform: process.platform,
         environment: process.env.NODE_ENV,
-        timestamp: new Date().toISOString()
+        timestamp: formatDate(new Date())
       },
       daily: {
         apiKeyConfigured: configStatus.hasApiKey ? 'configured' : 'missing',
@@ -464,14 +472,14 @@ router.get('/api/daily/health', async (req, res) => {
       configured: configStatus.configured,
       apiKeyPresent: configStatus.hasApiKey,
       domainPresent: configStatus.hasDomain,
-      timestamp: new Date().toISOString()
+      timestamp: formatDate(new Date())
     });
   } catch (error) {
     res.status(500).json({
       status: 'unhealthy',
       service: 'daily',
       error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString()
+      timestamp: formatDate(new Date())
     });
   }
 });

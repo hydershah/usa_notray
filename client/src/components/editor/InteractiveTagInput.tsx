@@ -291,7 +291,7 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
     
   }, [config?.required, onComplete]);
 
-  // Auto-apply content for certain tag types (except signatures which use modal)
+  // Handle tag interaction when clicked (manual interaction only)
   useEffect(() => {
     console.log('🔄 InteractiveTagInput effect triggered:', {
       isActive,
@@ -302,45 +302,25 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
       showSignatureModal
     });
 
-    console.log('🔄 InteractiveTagInput auto-trigger logic:', {
-      isActive,
-      canEdit,
-      isEditing,
-      tagType: tag.tagType,
-      hasContent: !!content.value,
-      showSignatureModal,
-      shouldTriggerSignatureModal: isActive && canEdit && !isEditing && tag.tagType === 'S' && !showSignatureModal
-    });
-
     if (isActive && canEdit && !isEditing) {
       if (tag.tagType === 'S') {
-        // ✅ SIGNATURE TAG: Always open modal for selection (but only if not already open)
+        // ✅ SIGNATURE TAG: Open modal for selection when clicked
         if (!showSignatureModal) {
-          console.log('🎯 Signature tag activated, opening selection modal');
-          // Force open the modal even if userProfile is missing
+          console.log('🎯 Signature tag clicked, opening selection modal');
           setTimeout(() => {
-            console.log('⏰ Auto-opening signature modal after delay');
+            console.log('⏰ Opening signature modal after delay');
             setShowSignatureModal(true);
           }, 100);
         } else {
-          console.log('⚠️ Signature modal already open, skipping auto-open');
+          console.log('⚠️ Signature modal already open, skipping');
         }
-      } else if (['A', 'N', 'X', 'O'].includes(tag.tagType) && content.value) {
-        // Auto-complete if we have content
-        setTimeout(() => handleSave(), 100);
-      } else if (!['S', 'I'].includes(tag.tagType)) {
-        // Start editing for empty fields (except signatures and initials which use modals)
+      } else if (['T'].includes(tag.tagType)) {
+        // Start editing for text fields when clicked
         setIsEditing(true);
-      } else if (tag.tagType === 'I') {
-        // ✅ INITIALS TAG: Could also use modal in future, for now auto-fill
-        if (content.value) {
-          setTimeout(() => handleSave(), 100);
-        } else {
-          setIsEditing(true);
-        }
       }
+      // Note: Removed auto-completion logic - tags now wait for manual interaction
     }
-  }, [isActive, canEdit, tag.tagType, userProfile, content.value, isEditing, showSignatureModal, handleSave]);
+  }, [isActive, canEdit, tag.tagType, content.value, isEditing, showSignatureModal]);
 
   // Render signature preview
   const renderSignaturePreview = () => {

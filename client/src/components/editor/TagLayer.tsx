@@ -92,13 +92,13 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   const displayCoords = {
     x: Math.round(tag.coordinates.x * scaleFactor),
     y: Math.round(tag.coordinates.y * scaleFactor),
-    // ✅ FIXED: Remove excessive minimum size constraints for text tags
-    width: tag.tagType === 'T' 
-      ? Math.round(tag.coordinates.width * scaleFactor) // No minimum width for text tags
-      : Math.max(Math.round(tag.coordinates.width * scaleFactor), 60), // Keep minimum for other tags
-    height: tag.tagType === 'T' 
-      ? Math.round(tag.coordinates.height * scaleFactor) // No minimum height for text tags
-      : Math.max(Math.round(tag.coordinates.height * scaleFactor), 30) // Keep minimum for other tags
+    // ✅ FIXED: Proper minimum size constraints - allow disclosure and expiry tags to expand
+    width: tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X'
+      ? Math.round(tag.coordinates.width * scaleFactor) // No minimum width for text, disclosure, and expiry tags
+      : Math.max(Math.round(tag.coordinates.width * scaleFactor), 80), // Keep minimum for other tags
+    height: tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X'
+      ? Math.round(tag.coordinates.height * scaleFactor) // No minimum height for text, disclosure, and expiry tags
+      : Math.max(Math.round(tag.coordinates.height * scaleFactor), 32) // Keep minimum for other tags
   };
 
   console.log('🏷️ Tag rendering:', {
@@ -433,7 +433,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         });
 
         return (
-          <div className="w-full h-full flex items-center justify-center">
+          <div className="relative" style={{ width: '100%', minHeight: '100%' }}>
             {isImageContent() ? (
               <img 
                 src={getImageUrl()} 
@@ -514,20 +514,29 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                         return tag.content && typeof tag.content === 'string' ? tag.content : '[No content]';
                       }
                     })()
-                    const displayContent = actualContent.length > 50 ? actualContent.substring(0, 47) + '...' : actualContent;
-                    parent.innerHTML = `<div class="w-full h-full flex items-center justify-center bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs font-medium p-1" style="word-break: break-word; line-height: 1.2;">${displayContent}</div>`;
+                    // For disclosure and expiry tags, show full content without truncation, otherwise truncate at 50 chars
+                    const displayContent = (tag.tagType === 'O' || tag.tagType === 'X')
+                      ? actualContent 
+                      : (actualContent.length > 50 ? actualContent.substring(0, 47) + '...' : actualContent);
+                    parent.innerHTML = `<div class="w-full h-full flex items-center justify-center bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs font-medium p-1" style="word-break: break-word; line-height: 1.2; white-space: ${(tag.tagType === 'O' || tag.tagType === 'X') ? 'normal' : 'nowrap'}; overflow: ${(tag.tagType === 'O' || tag.tagType === 'X') ? 'visible' : 'hidden'};">${displayContent}</div>`;
                   }
                 }}
               />
             ) : (
               <div 
-                className={`text-black w-full h-full flex items-center justify-center ${tag.tagType === 'T' ? 'p-1' : 'p-2'}`}
+                className="text-black"
                 style={{ 
-                  fontSize: Math.max(12, Math.min(18, tag.coordinates.height * 0.6)),
-                  lineHeight: '1.3',
+                  fontSize: '14px',
+                  lineHeight: '1.4',
                   wordBreak: 'break-word',
                   fontFamily: 'inherit',
-                  fontWeight: '500'
+                  fontWeight: '500',
+                  width: '100%', // Fill container width
+                  maxWidth: 'none', // Remove max width constraint
+                  whiteSpace: (tag.tagType === 'O' || tag.tagType === 'X') ? 'normal' : 'normal',
+                  padding: '4px',
+                  textAlign: 'left',
+                  overflow: (tag.tagType === 'O' || tag.tagType === 'X') ? 'visible' : 'hidden'
                 }}
               >
                 {(() => {
@@ -613,7 +622,10 @@ const TagRenderer: React.FC<TagRendererProps> = ({
     
     return (
       <div 
-        className={`flex flex-col items-center justify-center w-full h-full ${tag.tagType === 'T' ? 'p-1' : 'p-2'} cursor-pointer hover:opacity-80 transition-opacity`}
+        className={`flex items-center justify-center w-full h-full cursor-pointer hover:opacity-90 transition-opacity`}
+        style={{
+          padding: tag.tagType === 'T' ? '4px' : '8px 12px'
+        }}
         onClick={(e) => {
           console.log('🏷️ Tag content clicked in TagLayer:', {
             tagId: tag.id,
@@ -639,83 +651,57 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       >
         {/* Hide all interface elements for completed whiteout tags */}
         {tag.tagType === 'W' && tag.isCompleted ? null : (
-          <>
-            {/* Main tag content - improved sizing */}
-            <div className="flex items-center gap-2">
-              <span style={{ 
-                fontSize: '16px', 
-                color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
-                fontWeight: '600',
-                textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
-              }}>
-                {tagInfo.icon}
-              </span>
-              <span style={{ 
-                fontSize: '14px', 
-                color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
-                fontWeight: '600',
-                textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
-              }}>
-                {tagInfo.label}
-              </span>
-              {/* Show status icon in signing mode for restricted tags */}
-              {mode.mode === 'signing' && statusIcon && (
-                <span style={{ 
-                  fontSize: '14px', 
-                  color: tag.tagType === 'W' ? '#374151' : '#ffffff',
-                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
-                }}>
-                  {statusIcon}
-                </span>
-              )}
-            </div>
+          <div className="flex items-center gap-2" style={{ lineHeight: '1.2' }}>
+            {/* Icon and label in compact layout */}
+            <span style={{ 
+              fontSize: Math.max(12, Math.min(16, displayCoords.height * 0.4)),
+              color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
+              fontWeight: '600',
+              textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
+            }}>
+              {tagInfo.icon}
+            </span>
+            <span style={{ 
+              fontSize: Math.max(11, Math.min(14, displayCoords.height * 0.35)),
+              color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
+              fontWeight: '600',
+              textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)',
+              whiteSpace: (tag.tagType === 'O' || tag.tagType === 'X') ? 'normal' : 'nowrap',
+              overflow: (tag.tagType === 'O' || tag.tagType === 'X') ? 'visible' : 'hidden',
+              textOverflow: (tag.tagType === 'O' || tag.tagType === 'X') ? 'unset' : 'ellipsis'
+            }}>
+              {tagInfo.label}
+            </span>
             
-            {/* User identification - improved sizing */}
-            {userInfo && (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                marginTop: '4px',
-                padding: '2px 8px',
-                backgroundColor: tag.tagType === 'W' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(0, 0, 0, 0.2)',
-                borderRadius: '12px',
-                border: tag.tagType === 'W' ? '1px solid rgba(0, 0, 0, 0.2)' : '1px solid rgba(255, 255, 255, 0.2)'
-              }}>
-                <div 
-                  style={{
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    backgroundColor: userInfo.colorCode,
-                    border: '1px solid rgba(255, 255, 255, 0.5)',
-                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.2)'
-                  }}
-                />
-                <span style={{ 
-                  fontSize: '11px', 
-                  color: tag.tagType === 'W' ? '#374151' : '#ffffff', 
-                  fontWeight: '500',
-                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 1px rgba(0, 0, 0, 0.5)'
-                }}>
-                  {userInfo.name}
-                </span>
-              </div>
+            {/* User indicator - only show user color dot */}
+            {userInfo && displayCoords.width > 70 && (
+              <div 
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  backgroundColor: userInfo.colorCode,
+                  border: '1px solid rgba(255, 255, 255, 0.8)',
+                  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                  marginLeft: '4px',
+                  flexShrink: 0
+                }}
+                title={userInfo.name}
+              />
             )}
             
-            {/* Show interaction hint in signing mode - improved sizing */}
-            {mode.mode === 'signing' && (
-              <div className="mt-1">
-                <span style={{ 
-                  fontSize: '12px', 
-                  color: tag.tagType === 'W' ? 'rgba(55, 65, 81, 0.7)' : 'rgba(255, 255, 255, 0.9)',
-                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 1px rgba(0, 0, 0, 0.5)'
-                }}>
-                  {interactionMessage || `Click to ${tag.tagType === 'W' ? 'apply whiteout' : (['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter')}`}
-                </span>
-              </div>
+            {/* Status icon for restricted tags */}
+            {mode.mode === 'signing' && statusIcon && displayCoords.width > 80 && (
+              <span style={{ 
+                fontSize: Math.max(10, Math.min(13, displayCoords.height * 0.3)),
+                color: tag.tagType === 'W' ? '#374151' : '#ffffff',
+                textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)',
+                marginLeft: '2px'
+              }}>
+                {statusIcon}
+              </span>
             )}
-          </>
+          </div>
         )}
       </div>
     );
@@ -724,8 +710,10 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   return (
     <Rnd
       size={{
-        width: displayCoords.width,
-        height: displayCoords.height
+        width: tag.isCompleted && (tag.tagType === 'O' || tag.tagType === 'X')
+          ? Math.max(displayCoords.width, 300) // Expand disclosure and expiry tags to at least 300px width
+          : displayCoords.width,
+        height: (tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X')) ? 'auto' : displayCoords.height
       }}
       position={{
         x: displayCoords.x,
@@ -734,7 +722,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       onDragStop={handleDragStop}
       onResizeStop={handleResizeStop}
       disableDragging={!canModifyTag}
-      enableResizing={canModifyTag && isSelected}
+      enableResizing={canModifyTag && isSelected && !(tag.isCompleted && tag.tagType === 'T')}
       onClick={(e) => {
         e.stopPropagation();
         console.log('🏷️ Tag clicked in TagLayer:', {
@@ -757,7 +745,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       onKeyDown={handleKeyDown}
       tabIndex={0}
       className={`
-        relative transition-all duration-200 overflow-hidden
+        relative transition-all duration-200 ${tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'overflow-visible' : 'overflow-hidden'}
         ${isSelected ? 'ring-2 ring-blue-400 ring-opacity-60' : ''}
         ${canModifyTag ? 'cursor-move hover:shadow-lg' : 'cursor-default'}
         ${mode.showPlaceholders || !tag.isCompleted ? 'opacity-95' : 'opacity-100'}
@@ -767,15 +755,15 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       style={{
         // ✅ FORCE TRANSPARENT BACKGROUND FOR TAGS WITH CONTENT
         backgroundColor: hasContent
-          ? 'transparent' // Make tags with content transparent
+          ? (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X' ? 'rgba(255, 255, 255, 0.95)' : 'transparent') // Text, disclosure, and expiry tags need background
           : tag.tagType === 'W' 
           ? '#ffffff' 
           : mode.mode === 'signing' && !tag.isCompleted
             ? '#f97316' // Orange background for unfilled tags in signing mode
             : (tag.colorCode || '#1e40af'),
         
-        // Force transparency with additional properties
-        ...(hasContent && {
+        // Force transparency with additional properties (except for text, disclosure, and expiry tags)
+        ...(hasContent && tag.tagType !== 'T' && tag.tagType !== 'O' && tag.tagType !== 'X' && {
           background: 'transparent',
           backgroundColor: 'transparent',
           backgroundImage: 'none',
@@ -810,9 +798,9 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         
         zIndex: tag.tagType === 'W' ? (isSelected ? 1000 : 10) : (isSelected ? 1000 : 100),
         
-        // ✅ FIXED: Reduced minimum sizing constraints for better text tag sizing
-        minWidth: tag.tagType === 'T' ? 'auto' : '60px', // Reduced from 80px to 60px
-        minHeight: tag.tagType === 'T' ? 'auto' : '24px' // Reduced from 32px to 24px
+        // ✅ FIXED: Proper minimum sizing for tag types
+        minWidth: (tag.tagType === 'T') ? 'auto' : ((tag.tagType === 'O' || tag.tagType === 'X') ? '200px' : '80px'), // Larger minimum for disclosure and expiry tags
+        minHeight: (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'auto' : '32px' // Allow auto height for text, disclosure, and expiry
       }}
       resizeHandleStyles={{
         bottomRight: {
@@ -828,8 +816,10 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         }
       }}
     >
-      {/* Tag Content with improved padding and sizing */}
-      <div className={`w-full h-full flex items-center justify-center ${tag.tagType === 'T' ? 'p-1' : 'p-3'}`}> {/* ✅ FIXED: Minimal padding for text tags */}
+      {/* Tag Content with dynamic layout */}
+      <div className={`w-full ${tag.isCompleted && tag.tagType === 'T' ? '' : 'h-full'} flex ${tag.isCompleted && tag.tagType === 'T' ? 'items-start justify-start' : 'items-center justify-center'}`} style={{
+        padding: tag.isCompleted && tag.tagType === 'T' ? '0' : undefined
+      }}>
         {renderTagContent()}
       </div>
 
