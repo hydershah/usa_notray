@@ -86,7 +86,7 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       tagType === 'W' ? { width: 100, height: 25 } :
       tagType === 'S' ? { width: 120, height: 35 } :
       tagType === 'E' ? { width: 60, height: 60 } :
-      tagType === 'T' ? { width: 80, height: 24 } :
+              tagType === 'T' ? { width: 120, height: 32 } : // Larger default for better text visibility
       { width: 97, height: 26 }
     );
     

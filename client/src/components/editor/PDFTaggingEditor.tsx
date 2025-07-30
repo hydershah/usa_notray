@@ -204,8 +204,11 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       // Check if the click is outside any text input or control
       const target = e.target as HTMLElement;
       
-      // Don't deselect if clicking on StreamlinedTextLayer or its children
-      if (target.closest('.streamlined-text-layer')) {
+      // Don't deselect if clicking specifically on a text input element or its direct children
+      // Allow clicks on empty space within the text layer to deselect
+      if (target.closest('[data-text-input-id]') || 
+          target.closest('.streamlined-text-input') || 
+          target.tagName === 'INPUT') {
         return;
       }
       
@@ -218,6 +221,11 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       if (selectedTextInputId) {
         console.log('🎯 Global click detected - deselecting text input');
         selectTextInput(null);
+      }
+      // Deselect tag
+      if (useEditorStore.getState().selectedTag) {
+        console.log('🎯 Global click detected - deselecting tag');
+        useEditorStore.getState().selectTag(null);
       }
     };
     
@@ -1021,7 +1029,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         
         // Get saved dimensions for text tags, or use defaults
         const { getTagDimensions } = useEditorStore.getState();
-        const dimensions = getTagDimensions('T') || { width: 80, height: 24 }; // Smaller default dimensions
+        const dimensions = getTagDimensions('T') || { width: 120, height: 32 }; // Larger default for better text visibility
         
         // Use the saved dimensions instead of coordinates from click
         const textInputCoordinates = {

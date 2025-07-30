@@ -1426,10 +1426,11 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       return;
     }
     
-    // Position tag so mouse pointer is at bottom-left corner
-    // X: Left edge starts at click point
-    // Y: Bottom edge is at click point (so subtract full height)
-    const finalTagX = Math.max(0, Math.round(pdfX));
+    // Position tag so mouse pointer is at bottom-left corner of visible text
+    // Account for border (2px) + padding (6px) = 8px total visual offset, scaled properly
+    // Y: Bottom edge aligns with click point (tag appears above cursor)
+    const visualOffset = 8 / scaleFactor; // Border + padding offset divided by scale factor
+    const finalTagX = Math.max(0, Math.round(pdfX - visualOffset));
     const finalTagY = Math.max(0, Math.round(pdfY - dimensions.height));
     
     const coordinates: TagCoordinates = {

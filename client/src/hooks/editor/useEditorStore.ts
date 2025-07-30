@@ -49,6 +49,9 @@ interface EditorStore {
   // Custom tag dimensions (remembers resized dimensions per tag type)
   customTagDimensions: Partial<Record<TagType, { width: number; height: number }>>;
   
+  // Global font size for all text tags (uniform sizing)
+  globalFontSize: number;
+  
   // PDF viewer state
   viewer: PDFViewerState;
   
@@ -101,6 +104,10 @@ interface EditorStore {
   setCustomTagDimensions: (tagType: TagType, dimensions: { width: number; height: number }) => void;
   getTagDimensions: (tagType: TagType) => { width: number; height: number } | null;
   clearCustomTagDimensions: () => void;
+  
+  // Actions - Global Font Size
+  setGlobalFontSize: (fontSize: number) => void;
+  getGlobalFontSize: () => number;
   
   // Actions - PDF Viewer
   setCurrentPage: (page: number) => void;
@@ -161,6 +168,17 @@ export const useEditorStore = create<EditorStore>()(
         } catch (error) {
           console.warn('Failed to load custom tag dimensions from localStorage:', error);
           return {};
+        }
+      })(),
+      
+      globalFontSize: (() => {
+        // Load global font size from localStorage, default to 16px
+        try {
+          const saved = localStorage.getItem('editorGlobalFontSize');
+          return saved ? parseInt(saved, 10) : 16;
+        } catch (error) {
+          console.warn('Failed to load global font size from localStorage:', error);
+          return 16;
         }
       })(),
       
@@ -390,7 +408,7 @@ export const useEditorStore = create<EditorStore>()(
           return { width: 60, height: 60 };
         } else if (tagType === 'T') {
           // Text tags should have smaller default dimensions
-          return { width: 80, height: 24 };
+          return { width: 120, height: 32 }; // Larger default for better text visibility
         } else {
           // Other tag types get larger default size
           return { width: 140, height: 40 };
@@ -405,6 +423,24 @@ export const useEditorStore = create<EditorStore>()(
         } catch (error) {
           console.warn('Failed to clear custom tag dimensions from localStorage:', error);
         }
+      },
+      
+      // Global Font Size Actions
+      setGlobalFontSize: (fontSize) => {
+        const clampedFontSize = Math.min(Math.max(fontSize, 10), 40); // Clamp between 10px and 40px
+        set({ globalFontSize: clampedFontSize });
+        
+        // Save to localStorage for persistence
+        try {
+          localStorage.setItem('editorGlobalFontSize', clampedFontSize.toString());
+          console.log(`✅ Global font size set to ${clampedFontSize}px`);
+        } catch (error) {
+          console.warn('Failed to save global font size to localStorage:', error);
+        }
+      },
+      
+      getGlobalFontSize: () => {
+        return get().globalFontSize;
       },
       
       // PDF Viewer Actions
