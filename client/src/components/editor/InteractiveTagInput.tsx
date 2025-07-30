@@ -291,7 +291,7 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
     
   }, [config?.required, onComplete]);
 
-  // Auto-apply content for certain tag types (except signatures which use modal)
+  // Handle tag interaction when clicked (manual interaction only)
   useEffect(() => {
     console.log('🔄 InteractiveTagInput effect triggered:', {
       isActive,
@@ -302,45 +302,25 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
       showSignatureModal
     });
 
-    console.log('🔄 InteractiveTagInput auto-trigger logic:', {
-      isActive,
-      canEdit,
-      isEditing,
-      tagType: tag.tagType,
-      hasContent: !!content.value,
-      showSignatureModal,
-      shouldTriggerSignatureModal: isActive && canEdit && !isEditing && tag.tagType === 'S' && !showSignatureModal
-    });
-
     if (isActive && canEdit && !isEditing) {
       if (tag.tagType === 'S') {
-        // ✅ SIGNATURE TAG: Always open modal for selection (but only if not already open)
+        // ✅ SIGNATURE TAG: Open modal for selection when clicked
         if (!showSignatureModal) {
-          console.log('🎯 Signature tag activated, opening selection modal');
-          // Force open the modal even if userProfile is missing
+          console.log('🎯 Signature tag clicked, opening selection modal');
           setTimeout(() => {
-            console.log('⏰ Auto-opening signature modal after delay');
+            console.log('⏰ Opening signature modal after delay');
             setShowSignatureModal(true);
           }, 100);
         } else {
-          console.log('⚠️ Signature modal already open, skipping auto-open');
+          console.log('⚠️ Signature modal already open, skipping');
         }
-      } else if (['A', 'N', 'X', 'O'].includes(tag.tagType) && content.value) {
-        // Auto-complete if we have content
-        setTimeout(() => handleSave(), 100);
-      } else if (!['S', 'I'].includes(tag.tagType)) {
-        // Start editing for empty fields (except signatures and initials which use modals)
+      } else if (['T'].includes(tag.tagType)) {
+        // Start editing for text fields when clicked
         setIsEditing(true);
-      } else if (tag.tagType === 'I') {
-        // ✅ INITIALS TAG: Could also use modal in future, for now auto-fill
-        if (content.value) {
-          setTimeout(() => handleSave(), 100);
-        } else {
-          setIsEditing(true);
-        }
       }
+      // Note: Removed auto-completion logic - tags now wait for manual interaction
     }
-  }, [isActive, canEdit, tag.tagType, userProfile, content.value, isEditing, showSignatureModal, handleSave]);
+  }, [isActive, canEdit, tag.tagType, content.value, isEditing, showSignatureModal]);
 
   // Render signature preview
   const renderSignaturePreview = () => {
@@ -536,21 +516,21 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
       </div>
 
       {/* Actions */}
-      <div className="border-t p-2 flex gap-2">
+      <div className="border-t p-4 flex gap-3">
         <Button 
           onClick={handleSave} 
           disabled={!!validationError || (!content.value && config.required)}
-          className="flex-1 h-8 text-xs"
+          className="flex-1 h-12 text-sm font-semibold bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-[1.02] disabled:from-gray-400 disabled:to-gray-500 disabled:transform-none disabled:hover:scale-100"
         >
-          <Save className="h-3 w-3 mr-1" />
+          <Save className="h-5 w-5 mr-2" />
           Save
         </Button>
         <Button 
           onClick={handleCancel} 
           variant="outline" 
-          className="flex-1 h-8 text-xs"
+          className="flex-1 h-12 text-sm font-semibold border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 hover:text-gray-900 shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-[1.02]"
         >
-          <X className="h-3 w-3 mr-1" />
+          <X className="h-5 w-5 mr-2" />
           Cancel
         </Button>
       </div>

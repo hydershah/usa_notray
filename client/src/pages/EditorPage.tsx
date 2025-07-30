@@ -195,7 +195,7 @@ const EditorPage: React.FC<EditorPageProps> = () => {
             },
             body: JSON.stringify({
               sessionType,
-              videoSessionId: (mode === 'notary' || mode === 'signing') ? `whereby_${jobId}_${Date.now()}` : undefined
+              videoSessionId: (mode === 'notary' || mode === 'signing') ? `daily_${jobId}_${Date.now()}` : undefined
             })
           });
 

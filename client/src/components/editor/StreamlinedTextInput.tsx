@@ -58,8 +58,8 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
   coordinates,
   sessionId,
   content = '',
-  // Increased default font size for better readability
-  fontSize = 16,
+  // Reduced default font size for better initial sizing
+  fontSize = 12,
   fontFamily = 'Arial',
   textColor = '#000000',
   assignedUserId,
@@ -76,11 +76,12 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
   webSocket
 }) => {
   const [inputValue, setInputValueRaw] = useState(content);
-  const [currentFontSize, setCurrentFontSize] = useState(fontSize);
-  const [isEditing, setIsEditing] = useState(isNew); // Start editing if new
-  const [hasStartedEditing, setHasStartedEditing] = useState(isNew); // Track if user has started editing
+  // (currentFontSize will be defined after store access)
+  // ✅ FIXED: Don't start editing immediately for new tags - allow positioning first
+  const [isEditing, setIsEditing] = useState(false); // Changed from isNew to false
+  const [hasStartedEditing, setHasStartedEditing] = useState(false); // Don't start editing automatically
   const [lastSavedContent, setLastSavedContent] = useState(content); // Track last saved content to avoid resets
-  const [isProcessingClick, setIsProcessingClick] = useState(false); // Prevent duplicate click processing
+  // Removed isProcessingClick state - no longer needed
   
   // ✅ NEW: Drag state management to prevent flickering
   const [isDragging, setIsDragging] = useState(false);
@@ -153,10 +154,13 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     height: coordinates.height
   });
   const [isDeleted, setIsDeleted] = useState(false); // Track deletion state
-  const [clickTimeout, setClickTimeout] = useState<NodeJS.Timeout | null>(null); // For debouncing clicks
+  // Removed clickTimeout state - no longer needed
 
-  // Access editor store for custom dimensions
-  const { setCustomTagDimensions } = useEditorStore();
+  // Access editor store for custom dimensions and global font size
+  const { setCustomTagDimensions, globalFontSize, setGlobalFontSize } = useEditorStore();
+  
+  // Use global font size from store instead of local state
+  const currentFontSize = globalFontSize;
   
   const inputRef = useRef<HTMLInputElement>(null);
   const spanRef = useRef<HTMLSpanElement>(null);
@@ -186,9 +190,9 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     const textMetrics = ctx.measureText(textToMeasure);
     const textWidth = textMetrics.width;
     
-    // ✅ ULTRA-TIGHT FIT: Minimal padding that closely follows text outline
-    const minTextWidth = Math.max(textWidth + 4, 20); // Just 2px padding on each side, minimum 20px
-    const minTextHeight = Math.max(measureFontSize + 2, 14); // Just 1px padding top/bottom, minimum 14px
+    // ✅ GENEROUS FIT: More spacious padding for better usability
+    const minTextWidth = Math.max(textWidth + 16, 60); // 8px padding on each side, minimum 60px
+    const minTextHeight = Math.max(measureFontSize + 12, 32); // 6px padding top/bottom, minimum 32px
     
     return {
       width: minTextWidth,
@@ -212,10 +216,10 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     const textMetrics = ctx.measureText(textToMeasure);
     const textWidth = textMetrics.width;
     
-    // ✅ EXACT FIT: Background exactly matches text size with minimal padding
+    // ✅ SPACIOUS FIT: Background with generous padding for better usability
     return {
-      width: Math.max(textWidth + 2, 20), // Even tighter - just 1px padding each side
-      height: Math.max(measureFontSize + 1, 14) // Even tighter - minimal padding top/bottom
+      width: Math.max(textWidth + 16, 60), // Generous padding - 8px each side
+      height: Math.max(measureFontSize + 12, 32) // Generous padding - 6px top/bottom
     };
   }, [inputValue, currentFontSize, fontFamily]);
 
@@ -258,13 +262,13 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     }
   }, [content, hasStartedEditing, isEditing, inputValue, lastSavedContent, id]);
 
-  // For newly placed text inputs, don't jump straight into edit mode.
-  // This allows users to drag/position an empty tag before typing.
+  // For newly placed text inputs, select them for positioning (don't edit immediately)
   useEffect(() => {
     if (isNew && onSelect) {
-      onSelect(); // highlight/select the tag so it can be dragged immediately
+      onSelect(); // Select the tag so it can be dragged and positioned first
+      console.log('🎯 New text tag selected for positioning:', id);
     }
-  }, [isNew, onSelect]);
+  }, [isNew, onSelect, id]);
 
   // ✅ FIXED: Simplified auto-resize that only runs when explicitly requested
   const lastResizeText = useRef<string>('');
@@ -302,32 +306,44 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     // Only auto-resize for completely new text inputs (never edited before)
     if (isNew && !hasStartedEditing && !inputValue.trim()) {
              console.log('📏 Initial sizing for new text input:', id);
-       // Provide a visible default size instead of collapsing to a dot
-       setDimensions({ width: 120, height: 40 });
+       // Provide a smaller visible default size that matches store defaults
+       setDimensions({ width: 120, height: 32 }); // Larger default for better text visibility
     }
     // Don't auto-resize existing inputs or when user is actively editing
   }, [isNew, hasStartedEditing, inputValue, getExactTextDimensions]); // Only for truly new inputs
 
-  // Maintain editing state even when isNew becomes false if user was editing
-  useEffect(() => {
-    if (hasStartedEditing && !isEditing && inputValue.trim() === '' && isSelected) {
-      setIsEditing(true);
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 50);
-    }
-  }, [hasStartedEditing, isEditing, inputValue, isSelected]);
+  // ✅ FIXED: Don't force empty tags back into edit mode - let user position them first
+  // Removed the useEffect that was keeping empty selected tags in edit mode
+
+  // ✅ REMOVED: Don't maintain editing state for empty tags - let user position them first
+  // This useEffect was keeping empty tags in edit mode, preventing dragging
 
   // 🧩 Auto-tighten box when content or font size changes (only when not editing/resizing)
+  // ✅ REMOVED: Font size is now globally managed and doesn't change based on container size
+  
+  // Global keyboard handler for font size when selected (not editing)
   useEffect(() => {
-    if (isEditing || isResizing || isDeleted) return;
-
-    const newFontSize = Math.max(8, Math.round(dimensions.height - 4));
-    if (newFontSize !== currentFontSize) {
-      setCurrentFontSize(newFontSize);
-      onFontSizeChange?.(newFontSize);
-    }
-  }, [dimensions.height, isEditing, isResizing, isDeleted, currentFontSize, onFontSizeChange]);
+    if (!isSelected || isEditing) return;
+    
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === '=' || e.key === '+') {
+          e.preventDefault();
+          const newSize = Math.min(currentFontSize + 2, 40);
+          setGlobalFontSize(newSize);
+          console.log(`🔤 Font size increased to ${newSize}px`);
+        } else if (e.key === '-') {
+          e.preventDefault();
+          const newSize = Math.max(currentFontSize - 2, 10);
+          setGlobalFontSize(newSize);
+          console.log(`🔤 Font size decreased to ${newSize}px`);
+        }
+      }
+    };
+    
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [isSelected, isEditing, currentFontSize, setGlobalFontSize]);
    
   // Handle deletion - IMPROVED
   const handleDelete = useCallback(async () => {
@@ -439,11 +455,11 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     
     const trimmedValue = (content || inputValue).trim();
     
-    // If there's no content, don't save but keep editing mode for new inputs
-    if (!trimmedValue && isNew) {
-      console.log('📝 Empty content for new input, keeping in edit mode');
-      return;
-    }
+    // Allow saving empty content - users should be able to create empty text tags
+    // if (!trimmedValue && isNew) {
+    //   console.log('📝 Empty content for new input, keeping in edit mode');
+    //   return;
+    // }
     
     // Update local state immediately to prevent flickering
     setLastSavedContent(trimmedValue);
@@ -501,11 +517,8 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       }
       
       // ✅ FIXED: Exit edit mode and preserve current size when saving
-      if (trimmedValue || !isNew) {
-        setIsEditing(false);
-        setHasStartedEditing(false);
-        // Don't auto-resize when saving - keep current dimensions
-      }
+      setIsEditing(false);
+      // Don't auto-resize when saving - keep current dimensions
       
       // Ensure the component remains visible and selected after save
       setIsVisible(true);
@@ -678,7 +691,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     }
   }, [scaleFactor, sessionId, id, onMove, dimensions.width, dimensions.height, isDeleted, coordinates.pageNumber, webSocket, assignedUserId, currentFontSize]);
 
-  // ✅ ENHANCED: Improved resize handler with better constraints and sensitivity
+  // ✅ FIXED: Resize handler without font size changes - keep font size constant
   const handleResize = useCallback((
     e: any,
     direction: any,
@@ -691,24 +704,26 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     const newWidth = parseInt(ref.style.width) / scaleFactor;
     const newHeight = parseInt(ref.style.height) / scaleFactor;
 
-    // Directly update dimensions and font size for real-time preview
+    // Update dimensions and font size based on container height
     setDimensions({ width: newWidth, height: newHeight });
 
-    const autoSize = Math.max(8, Math.round(newHeight - 4));
-    if (autoSize !== currentFontSize) {
-      setCurrentFontSize(autoSize);
-      onFontSizeChange?.(autoSize);
+    // Calculate font size based on container height (but with limits)
+    const newFontSize = Math.min(Math.max(Math.round(newHeight * 0.6), 10), 40);
+    if (newFontSize !== currentFontSize) {
+      setGlobalFontSize(newFontSize);
     }
 
-    console.log('✅ Text tag resized:', { 
+    console.log('✅ Text tag resized with font adjustment:', { 
       id, 
       newSize: `${newWidth}x${newHeight}`,
+      oldFontSize: currentFontSize,
+      newFontSize: newFontSize
     });
 
     if (onResize) {
       onResize({ x: position.x, y: position.y, width: newWidth, height: newHeight });
     }
-  }, [scaleFactor, id, onResize, isDeleted, currentFontSize, onFontSizeChange]);
+  }, [scaleFactor, id, onResize, isDeleted, currentFontSize, setGlobalFontSize]);
 
   // ✅ ENHANCED: Handle resize stop with better feedback
   const handleResizeStop = useCallback((e: any, direction: any, ref: HTMLElement, delta: any, positionParam: any) => {
@@ -721,6 +736,10 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     setPosition({ x: newX, y: newY });
     // Save final geometry
     debouncedSaveRef.current(sessionId, id, newX, newY, newWidth, newHeight, coordinates.pageNumber);
+
+    // ✅ NEW: Save dimensions as default for future text tags
+    setCustomTagDimensions('T', { width: newWidth, height: newHeight });
+    console.log('💾 Saved text tag dimensions as default for future tags:', { width: newWidth, height: newHeight });
 
     // 🚀 Broadcast final geometry
     if (webSocket && webSocket.readyState === WebSocket.OPEN) {
@@ -737,84 +756,9 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       }));
     }
     console.log('🔧 Resize stop. Saved geometry.');
-  }, [scaleFactor, sessionId, id, coordinates.pageNumber, webSocket, assignedUserId, currentFontSize]);
+  }, [scaleFactor, sessionId, id, coordinates.pageNumber, webSocket, assignedUserId, currentFontSize, setCustomTagDimensions]);
 
-  // Handle click to select or start editing - FIXED to prevent duplication
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    if (isDeleted || isResizing) return;
-    
-    // ✅ CRITICAL FIX: Prevent duplicate processing with more robust debouncing
-    if (isProcessingClick) {
-      console.log('🚫 Click already being processed, ignoring duplicate');
-      return;
-    }
-    
-    setIsProcessingClick(true);
-    
-    // Clear any existing timeout
-    if (clickTimeout) {
-      clearTimeout(clickTimeout);
-    }
-    
-    // Set timeout to reset processing flag
-    const newTimeout = setTimeout(() => {
-      setIsProcessingClick(false);
-    }, 300);
-    setClickTimeout(newTimeout);
-    
-    e.stopPropagation();
-    e.preventDefault();
-    
-    console.log('🖱️ Text tag clicked:', {
-      id,
-      isSelected,
-      isEditing,
-      clickDetail: e.detail,
-      isNew,
-      target: (e.target as HTMLElement).tagName,
-      timeStamp: e.timeStamp
-    });
-    
-    // If clicking on the input field directly, don't interfere
-    if ((e.target as HTMLElement).tagName === 'INPUT') {
-      console.log('🎯 Input field clicked directly, allowing natural focus');
-      return;
-    }
-    
-    // If already editing, don't process click
-    if (isEditing) {
-      console.log('⚠️ Already editing, ignoring click for:', id);
-      return;
-    }
-    
-    // First click selects (enables drag); second click enters edit mode
-    if (!isSelected) {
-      onSelect?.();
-      return; // allow drag & other interactions without opening editor yet
-    }
-    // If already selected but not editing, start editing
-    if (!isEditing) {
-      console.log('✏️ Starting text editing for:', id);
-      setIsEditing(true);
-      setHasStartedEditing(true);
-      setTimeout(() => {
-        if (inputRef.current && !isDeleted) {
-          inputRef.current.focus();
-          inputRef.current.select();
-        }
-      }, 50);
-    }
-    
-  }, [onSelect, isDeleted, isResizing, id, isSelected, isEditing, isProcessingClick, clickTimeout]);
-
-  // Clean up timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (clickTimeout) {
-        clearTimeout(clickTimeout);
-      }
-    };
-  }, [clickTimeout]);
+  // Removed old handleClick function - using inline onClick handler in Rnd component
 
   // Handle keyboard in input field
   const handleInputKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -829,8 +773,21 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       setInputValue(content);
       setIsEditing(false);
       setHasStartedEditing(false);
+    } else if (e.ctrlKey || e.metaKey) {
+      // Font size shortcuts while editing
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        const newSize = Math.min(currentFontSize + 2, 40);
+        setGlobalFontSize(newSize);
+        console.log(`🔤 Font size increased to ${newSize}px`);
+      } else if (e.key === '-') {
+        e.preventDefault();
+        const newSize = Math.max(currentFontSize - 2, 10);
+        setGlobalFontSize(newSize);
+        console.log(`🔤 Font size decreased to ${newSize}px`);
+      }
     }
-  }, [handleSave, content, isDeleted, setInputValue, inputValue]);
+  }, [handleSave, content, isDeleted, setInputValue, inputValue, currentFontSize, setGlobalFontSize]);
 
   // Handle input blur (save when clicking outside) - IMPROVED
   const handleBlur = useCallback(() => {
@@ -844,30 +801,34 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       isNew
     });
     
-    // Tighten box to content on blur (shrink if necessary)
-    performAutoResize(inputValue, true);
+    // ✅ IMMEDIATE RESIZE: Ensure container fits content before switching modes
+    if (inputValue.trim()) {
+      const exactDimensions = getExactTextDimensions(inputValue);
+      console.log('📏 Immediate resize on blur:', {
+        text: inputValue,
+        newSize: `${exactDimensions.width.toFixed(1)}x${exactDimensions.height.toFixed(1)}`
+      });
+      setDimensions({
+        width: exactDimensions.width,
+        height: exactDimensions.height
+      });
+    }
     
     // Small delay to allow for potential clicks on the same element
     setTimeout(() => {
       if (isDeleted) return;
       
-      // Save if content has changed, but don't change dimensions
+      // Save if content has changed
       if (isEditing && inputValue.trim() !== lastSavedContent) {
-        console.log('💾 Content changed, saving on blur without resize');
+        console.log('💾 Content changed, saving on blur');
         handleSave(inputValue);
       } else if (isEditing) {
-        // Only exit edit mode if we have content OR if it's not a new input
-        if (inputValue.trim() || !isNew) {
-          console.log('✅ Exiting edit mode on blur - keeping current size');
-          setIsEditing(false);
-          setHasStartedEditing(false);
-          // Explicitly preserve current dimensions to prevent size jumping
-        } else {
-          console.log('📝 Keeping new input in edit mode (no content)');
-        }
+        // Always allow exiting edit mode on blur, regardless of content
+        console.log('✅ Exiting edit mode on blur - container already resized');
+        setIsEditing(false);
       }
     }, 100); // Small delay to prevent race conditions
-  }, [isEditing, inputValue, lastSavedContent, handleSave, isDeleted, isNew, id]);
+  }, [isEditing, inputValue, lastSavedContent, handleSave, isDeleted, isNew, id, getExactTextDimensions]);
 
   // Old text measurement function - DISABLED in favor of canvas-based measurement
   /*
@@ -1059,7 +1020,9 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     isDeleted,
     enableResizing: isSelected && !isEditing,
     canDrag: !isEditing,
-    canResize: isSelected && !isEditing
+    canResize: isSelected && !isEditing,
+    resizeHandleVisible: isSelected && !isEditing,
+    currentFontSize
   });
 
   return (
@@ -1089,6 +1052,11 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
           @keyframes fadeIn {
             from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
             to { opacity: 1; transform: translateX(-50%) translateY(0); }
+          }
+          
+          @keyframes fontSizeIndicatorFadeIn {
+            from { opacity: 0; transform: translateX(-50%) scale(0.8); }
+            to { opacity: 1; transform: translateX(-50%) scale(1); }
           }
           
           @keyframes pulse {
@@ -1170,10 +1138,17 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
         onResize={handleResize}
         onResizeStop={handleResizeStop}
         onResizeStart={(e, direction, ref) => {
-          console.log('📏 onResizeStart called:', { id, isSelected, isEditing, direction });
+          console.log('📏 onResizeStart called:', { 
+            id, 
+            isSelected, 
+            isEditing, 
+            direction,
+            enableResizing: isSelected && !isEditing,
+            hasResizeHandle: isSelected && !isEditing
+          });
           setIsResizing(true);
         }}
-        enableResizing={isSelected ? {
+        enableResizing={isSelected && !isEditing ? {
           top: false,
           right: false,
           bottom: false,
@@ -1184,37 +1159,43 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
           topLeft: false,
         } : false}
         disableDragging={isEditing}
-        // Keep reasonable minimum size so empty tags are easy to drag/select
-        minWidth={40 * scaleFactor}
-        minHeight={20 * scaleFactor}
+        // Minimum size constraints - small enough to allow fine-tuning but large enough for usability
+        minWidth={30 * scaleFactor}
+        minHeight={15 * scaleFactor}
         bounds="parent"
         className="streamlined-text-input"
+        data-text-input-id={id}
         style={{
           zIndex: isSelected ? 1000 : 100,
           pointerEvents: 'auto',
           transform: 'translateZ(0)', // Force hardware acceleration
         }}
-        resizeHandleStyles={isSelected ? {
+        resizeHandleStyles={isSelected && !isEditing ? {
           bottomRight: {
-            width: '8px',
-            height: '8px',
+            width: '28px',
+            height: '28px',
             backgroundColor: '#2563eb',
-            border: 'none',
+            border: '4px solid white',
             borderRadius: '50%',
-            right: '-4px',
-            bottom: '-4px',
+            right: '-14px',
+            bottom: '-14px',
             cursor: 'se-resize',
-            opacity: 1
+            opacity: 1,
+            boxShadow: '0 8px 25px rgba(37, 99, 235, 0.5)',
+            zIndex: 1001 // Ensure handle is above other elements
           }
         } : {}}
-        onClick={(e) => {
+        onClick={(e: React.MouseEvent) => {
           // Handle click on the Rnd container for selection/editing
           if (isDeleted || isResizing) return;
           
-          e.stopPropagation();
+          // Don't stop propagation completely - allow global click handler to work
+          // Only prevent default behavior
+          e.preventDefault();
           
           // First click selects (enables drag); second click enters edit mode
           if (!isSelected) {
+            console.log('🎯 Text tag selected for positioning:', id);
             onSelect?.();
             return;
           }
@@ -1274,25 +1255,24 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
               width: '100%',
               height: '100%',
               background: 'transparent',
-              border: 'none',
+              border: '3px dashed #3b82f6', // Thicker blue dashed border when editing
               outline: 'none',
-              borderRadius: '3px',
-              padding: '1px 2px', // ✅ MINIMAL PADDING to match display mode
+              borderRadius: '6px',
+              padding: '8px 12px', // More generous padding for better usability
               margin: 0,
-              fontSize: `${Math.max(dynamicFontSize, 8) * scaleFactor}px`,
+              fontSize: `${Math.min(Math.max(currentFontSize, 10), 40)}px`, // Fixed font size with 40px max limit
               fontFamily: fontFamily,
-              color: textColor,
-              lineHeight: '1.1', // ✅ TIGHT line height to match display
-              resize: 'none',
-              overflow: 'visible', // ✅ Allow text to be fully visible
-              textAlign: 'center', // ✅ Center text like display mode
-              whiteSpace: 'nowrap',
-              boxSizing: 'border-box'
+              color: textColor || '#000000',
+              textAlign: 'center',
+              fontWeight: '400',
+              letterSpacing: 'normal',
+              textShadow: 'none',
+              boxShadow: 'none'
             }}
             autoFocus
           />
         ) : (
-          // Display mode - show text content with tight fit
+          // Display mode - show text content with transparent background
           <div
             style={{
               position: 'relative',
@@ -1302,10 +1282,15 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: '1px 2px',
+              padding: '4px 6px', // More padding for better text visibility
               boxSizing: 'border-box',
-              border: (isSelected || isNew) ? '2px solid #2563eb' : '1px dashed #bbb',
-              borderRadius: '4px'
+              // Transparent background - only text is visible
+              backgroundColor: 'transparent',
+              border: isSelected ? '2px dashed #3b82f6' : (isNew && !hasStartedEditing ? '1px dashed #bbb' : 'none'),
+              borderRadius: '4px',
+              boxShadow: 'none',
+              // Smooth transition for interactions
+              transition: 'all 0.2s ease'
             }}
           >
             <span
@@ -1314,27 +1299,34 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
                 display: 'block',
                 width: '100%',
                 textAlign: 'center',
-                fontSize: `${Math.max(dynamicFontSize, 8) * scaleFactor}px`,
+                fontSize: `${Math.min(Math.max(currentFontSize, 10), 40)}px`, // Fixed font size with 40px max limit
                 fontFamily: fontFamily,
-                color: textColor,
-                lineHeight: '1.1', // ✅ TIGHT line height
-                wordWrap: 'break-word',
-                wordBreak: 'break-word',
-                whiteSpace: 'nowrap', // ✅ Keep text on one line for tight fit
-                overflow: 'visible', // ✅ Allow text to be fully visible
+                color: textColor || '#000000', // Use provided text color or default to black
+                lineHeight: '1.2',
+                whiteSpace: 'nowrap', // Keep text on single line
+                overflow: 'visible', // Allow text to be visible (container will auto-expand)
+                textOverflow: 'clip', // Clean clip instead of ellipsis
                 maxWidth: '100%',
                 maxHeight: '100%',
-                transition: 'all 0.2s ease'
+                fontWeight: '400', // Normal text weight
+                textShadow: 'none', // No text shadow for clean appearance
+                letterSpacing: 'normal' // Normal letter spacing
               }}
-              title={`${inputValue || 'Click to add text'} - Click to edit, Delete key to delete`}
+              title={`${inputValue || (isNew && !hasStartedEditing ? 'Text - click to edit' : 'Click to add text')} - Click to edit, Delete key to delete`}
             >
               {inputValue || (
                 <span style={{ 
-                  color: '#999', 
+                  color: 'rgba(0, 0, 0, 0.4)', // Light gray placeholder text
                   fontStyle: 'italic',
-                  fontSize: '0.9em'
+                  fontSize: '0.9em',
+                  whiteSpace: 'normal', // Allow placeholder text to wrap
+                  wordBreak: 'break-word', // Break long words if needed
+                  textAlign: 'center', // Center align placeholder text
+                  display: 'block',
+                  width: '100%',
+                  padding: '2px 4px' // Small padding to prevent text from touching edges
                 }}>
-                  Text
+                  {isNew && !hasStartedEditing ? 'Text' : 'Click to edit'}
                 </span>
               )}
             </span>
@@ -1364,6 +1356,31 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
                 Full text: "{inputValue}"
               </div>
             )}
+          </div>
+        )}
+        
+        {/* Font Size Indicator - show when selected */}
+        {isSelected && !isEditing && (
+          <div 
+            style={{
+              position: 'absolute',
+              top: '-30px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              backgroundColor: 'rgba(0, 0, 0, 0.8)',
+              color: 'white',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              fontSize: '11px',
+              fontWeight: '500',
+              whiteSpace: 'nowrap',
+              zIndex: 1002,
+              pointerEvents: 'none',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+              animation: 'fontSizeIndicatorFadeIn 0.2s ease-out'
+            }}
+          >
+{currentFontSize}px • Drag handle or Ctrl +/-
           </div>
         )}
       </Rnd>

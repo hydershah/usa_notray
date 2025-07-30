@@ -31,6 +31,15 @@ export class OptimizedStorageStrategy {
    * Average response time: 5-20ms (cached) vs 2000ms+ (database query)
    */
   async getOptimizedFileUrl(fileKey: string, expiresInHours: number = 24): Promise<OptimizedFileOperation> {
+    // For signatures, use longer expiration
+    if (fileKey.includes('signatures')) {
+      expiresInHours = 720; // 30 days
+    }
+    // For notary stamps/seals, use very long expiration (10 years)
+    if (fileKey.includes('notary') || fileKey.includes('stamp')) {
+      expiresInHours = 87600; // 10 years
+    }
+
     const cacheKey = `file:url:${fileKey}`;
     
     // Try cache first (5ms response)
@@ -73,7 +82,7 @@ export class OptimizedStorageStrategy {
     const fileKey = cloudStorage.generateFileKey('document', sessionId, fileName, userId);
     
     // Generate pre-signed upload URL (user uploads directly to S3)
-    const uploadUrl = await this.generatePresignedUploadUrl(fileKey, fileType);
+    const uploadUrl = this.generatePresignedUploadUrl(fileKey, fileType);
     
     return {
       uploadUrl,
@@ -168,7 +177,7 @@ export class OptimizedStorageStrategy {
     };
   }
 
-  private async generatePresignedUploadUrl(fileKey: string, contentType: string): Promise<string> {
+  private generatePresignedUploadUrl(fileKey: string, contentType: string): string {
     // Implementation would use AWS SDK to generate pre-signed upload URL
     // This allows direct browser → S3 uploads
     return `https://presigned-upload-url.example.com/${fileKey}`;

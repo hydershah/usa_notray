@@ -469,7 +469,7 @@ function Router() {
           <MainLayout>
             <ErrorBoundary fallback={<LoadingFallback />}>
               <React.Suspense fallback={<LoadingFallback />}>
-                {React.createElement(React.lazy(() => import("@/components/admin").then(m => ({ default: m.AdminApprovals }))))}
+                {React.createElement(React.lazy(() => import("@/components/admin/AdminApprovals").then(m => ({ default: m.AdminApprovals }))))}
               </React.Suspense>
             </ErrorBoundary>
           </MainLayout>
@@ -481,7 +481,7 @@ function Router() {
           <MainLayout>
             <ErrorBoundary fallback={<LoadingFallback />}>
               <React.Suspense fallback={<LoadingFallback />}>
-                {React.createElement(React.lazy(() => import("@/components/admin").then(m => ({ default: m.AdminVerification }))))}
+                {React.createElement(React.lazy(() => import("@/components/admin/AdminVerification").then(m => ({ default: m.AdminVerification }))))}
               </React.Suspense>
             </ErrorBoundary>
           </MainLayout>
@@ -493,7 +493,7 @@ function Router() {
           <MainLayout>
             <ErrorBoundary fallback={<LoadingFallback />}>
               <React.Suspense fallback={<LoadingFallback />}>
-                {React.createElement(React.lazy(() => import("@/components/admin").then(m => ({ default: m.AdminUsers }))))}
+                {React.createElement(React.lazy(() => import("@/components/admin/AdminUsers").then(m => ({ default: m.AdminUsers }))))}
               </React.Suspense>
             </ErrorBoundary>
           </MainLayout>
@@ -505,7 +505,7 @@ function Router() {
           <MainLayout>
             <ErrorBoundary fallback={<LoadingFallback />}>
               <React.Suspense fallback={<LoadingFallback />}>
-                {React.createElement(React.lazy(() => import("@/components/admin").then(m => ({ default: m.AdminNotaries }))))}
+                {React.createElement(React.lazy(() => import("@/components/admin/AdminNotaries").then(m => ({ default: m.AdminNotaries }))))}
               </React.Suspense>
             </ErrorBoundary>
           </MainLayout>
@@ -517,7 +517,7 @@ function Router() {
           <MainLayout>
             <ErrorBoundary fallback={<LoadingFallback />}>
               <React.Suspense fallback={<LoadingFallback />}>
-                {React.createElement(React.lazy(() => import("@/components/admin").then(m => ({ default: m.AdminCompanies }))))}
+                {React.createElement(React.lazy(() => import("@/components/admin/AdminCompanies").then(m => ({ default: m.AdminCompanies }))))}
               </React.Suspense>
             </ErrorBoundary>
           </MainLayout>
@@ -529,7 +529,7 @@ function Router() {
           <MainLayout>
             <ErrorBoundary fallback={<LoadingFallback />}>
               <React.Suspense fallback={<LoadingFallback />}>
-                {React.createElement(React.lazy(() => import("@/components/admin").then(m => ({ default: m.AdminLogs }))))}
+                {React.createElement(React.lazy(() => import("@/components/admin/AdminLogs").then(m => ({ default: m.AdminLogs }))))}
               </React.Suspense>
             </ErrorBoundary>
           </MainLayout>

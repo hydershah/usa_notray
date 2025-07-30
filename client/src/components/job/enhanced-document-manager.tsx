@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -55,8 +55,8 @@ interface JobDocument {
 interface DocumentUploadProgress {
   fileName: string;
   progress: number;
-  status: 'uploading' | 'processing' | 'complete' | 'error';
-  error?: string;
+  status: 'uploading' | 'complete' | 'error';
+  errorMessage?: string;
 }
 
 interface EnhancedDocumentManagerProps {
@@ -116,64 +116,80 @@ export default function EnhancedDocumentManager({
     }
   });
 
-  // Mutations
-  const uploadDocumentsMutation = useMutation({
-    mutationFn: async (files: FileList) => {
-      const formData = new FormData();
-      
-      Array.from(files).forEach((file, index) => {
-        formData.append('documents', file);
-        formData.append(`documentMetadata_${index}`, JSON.stringify({
-          isRequired: false,
-          documentType: 'original',
-          originalName: file.name
-        }));
-      });
-
-      const response = await apiRequest("POST", `/api/jobs/${jobId}/documents`, formData);
+  // Upload mutation
+  const uploadMutation = useMutation({
+    mutationFn: async (formData: FormData) => {
+      const response = await apiRequest("POST", `/api/jobs/${jobId}/documents/upload`, formData);
       return response.json();
-    },
-    onSuccess: () => {
-      refetch();
-      onDocumentsChange?.();
-      setUploadProgress([]);
-      toast({
-        title: "Documents Uploaded",
-        description: "Documents have been uploaded successfully.",
-      });
-    },
-    onError: (error: any) => {
-      setUploadProgress([]);
-      toast({
-        title: "Upload Failed",
-        description: error.message || "Failed to upload documents.",
-        variant: "destructive"
-      });
     }
   });
 
+  // Update mutation
   const updateDocumentMutation = useMutation({
     mutationFn: async ({ documentId, data }: { documentId: number; data: any }) => {
       const response = await apiRequest("PUT", `/api/jobs/${jobId}/documents/${documentId}`, data);
       return response.json();
-    },
-    onSuccess: () => {
-      refetch();
-      onDocumentsChange?.();
-      setIsEditOpen(false);
-      toast({
-        title: "Document Updated",
-        description: "Document settings have been updated.",
-      });
     }
   });
 
+  // Delete mutation
   const deleteDocumentMutation = useMutation({
     mutationFn: async (documentId: number) => {
       const response = await apiRequest("DELETE", `/api/jobs/${jobId}/documents/${documentId}`);
       return response.json();
-    },
-    onSuccess: () => {
+    }
+  });
+
+  // Bulk delete mutation
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (documentIds: number[]) => {
+      const response = await apiRequest("DELETE", `/api/jobs/${jobId}/documents/bulk`, { documentIds });
+      return response.json();
+    }
+  });
+
+  // Handle mutation results
+  useEffect(() => {
+    if (uploadMutation.isSuccess) {
+      refetch();
+      onDocumentsChange?.();
+      setUploadProgress([]);
+      toast({
+        title: "Upload Complete",
+        description: "Documents have been uploaded successfully.",
+      });
+    }
+    if (uploadMutation.isError) {
+      toast({
+        title: "Upload Failed",
+        description: (uploadMutation.error as any)?.message || "Failed to upload documents.",
+        variant: "destructive"
+      });
+    }
+  }, [uploadMutation.isSuccess, uploadMutation.isError, uploadMutation.error, refetch, onDocumentsChange, toast]);
+
+  useEffect(() => {
+    if (updateDocumentMutation.isSuccess) {
+      refetch();
+      onDocumentsChange?.();
+      setIsEditOpen(false);
+      setSelectedDocument(null);
+      toast({
+        title: "Document Updated",
+        description: "Document has been updated successfully.",
+      });
+    }
+    if (updateDocumentMutation.isError) {
+      toast({
+        title: "Update Failed",
+        description: (updateDocumentMutation.error as any)?.message || "Failed to update document.",
+        variant: "destructive"
+      });
+    }
+  }, [updateDocumentMutation.isSuccess, updateDocumentMutation.isError, updateDocumentMutation.error, refetch, onDocumentsChange, toast]);
+
+  useEffect(() => {
+    if (deleteDocumentMutation.isSuccess) {
       refetch();
       onDocumentsChange?.();
       toast({
@@ -181,33 +197,34 @@ export default function EnhancedDocumentManager({
         description: "Document has been deleted successfully.",
       });
     }
-  });
+    if (deleteDocumentMutation.isError) {
+      toast({
+        title: "Delete Failed",
+        description: (deleteDocumentMutation.error as any)?.message || "Failed to delete document.",
+        variant: "destructive"
+      });
+    }
+  }, [deleteDocumentMutation.isSuccess, deleteDocumentMutation.isError, deleteDocumentMutation.error, refetch, onDocumentsChange, toast]);
 
-  const bulkDeleteDocumentsMutation = useMutation({
-    mutationFn: async (documentIds: number[]) => {
-      const promises = documentIds.map(id => 
-        apiRequest("DELETE", `/api/jobs/${jobId}/documents/${id}`)
-      );
-      await Promise.all(promises);
-    },
-    onSuccess: () => {
+  useEffect(() => {
+    if (bulkDeleteMutation.isSuccess) {
       refetch();
       onDocumentsChange?.();
       setSelectedDocuments([]);
       setShowBulkActions(false);
       toast({
         title: "Documents Deleted",
-        description: `${selectedDocuments.length} documents have been deleted successfully.`,
+        description: "Selected documents have been deleted successfully.",
       });
-    },
-    onError: (error: any) => {
+    }
+    if (bulkDeleteMutation.isError) {
       toast({
         title: "Bulk Delete Failed",
-        description: error.message || "Some documents could not be deleted.",
+        description: (bulkDeleteMutation.error as any)?.message || "Failed to delete selected documents.",
         variant: "destructive"
       });
     }
-  });
+  }, [bulkDeleteMutation.isSuccess, bulkDeleteMutation.isError, bulkDeleteMutation.error, refetch, onDocumentsChange, toast]);
 
   // Helper functions
   const getStatusIcon = (status: string) => {
@@ -266,34 +283,41 @@ export default function EnhancedDocumentManager({
            userRole === 'notary'; // Allow notaries to delete documents too
   };
 
-  // File handling
-  const handleFileSelect = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+      handleFileUpload(Array.from(files));
+    }
+  };
 
+  const handleFileUpload = async (files: File[]) => {
     if (!canEditDocuments) {
       toast({
-        title: "Access Denied",
+        title: "Permission Denied",
         description: "You don't have permission to upload documents.",
         variant: "destructive"
       });
       return;
     }
 
-    // Initialize upload progress tracking
-    const progressItems: DocumentUploadProgress[] = Array.from(files).map(file => ({
+    const formData = new FormData();
+    files.forEach(file => {
+      formData.append('documents', file);
+    });
+
+    // Initialize progress tracking
+    const progressItems: DocumentUploadProgress[] = files.map(file => ({
       fileName: file.name,
       progress: 0,
       status: 'uploading'
     }));
     setUploadProgress(progressItems);
 
-    uploadDocumentsMutation.mutate(files);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    handleFileSelect(e.dataTransfer.files);
+    try {
+      uploadMutation.mutate(formData);
+    } catch (error) {
+      console.error('Upload error:', error);
+    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -301,9 +325,43 @@ export default function EnhancedDocumentManager({
     setDragOver(true);
   };
 
-  const handleDragLeave = (e: React.DragEvent) => {
+  const handleDragLeave = () => {
+    setDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
+    
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      handleFileUpload(files);
+    }
+  };
+
+  const handleDocumentSelect = (documentId: number, checked: boolean) => {
+    setSelectedDocuments(prev => 
+      checked 
+        ? [...prev, documentId]
+        : prev.filter(id => id !== documentId)
+    );
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    setSelectedDocuments(checked ? documents.map(doc => doc.id) : []);
+  };
+
+  const handleBulkDelete = () => {
+    setConfirmationDialog({
+      isOpen: true,
+      type: 'bulk',
+      title: 'Delete Selected Documents',
+      description: `Are you sure you want to delete ${selectedDocuments.length} selected document(s)? This action cannot be undone.`,
+      onConfirm: () => {
+        bulkDeleteMutation.mutate(selectedDocuments);
+        setConfirmationDialog(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const handleDownload = async (document: JobDocument) => {
@@ -371,58 +429,6 @@ export default function EnhancedDocumentManager({
     });
   };
 
-  const handleSelectDocument = (documentId: number, checked: boolean) => {
-    if (checked) {
-      setSelectedDocuments(prev => [...prev, documentId]);
-    } else {
-      setSelectedDocuments(prev => prev.filter(id => id !== documentId));
-    }
-  };
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      const deletableDocIds = documents
-        .filter(doc => canDeleteDocument(doc))
-        .map(doc => doc.id);
-      setSelectedDocuments(deletableDocIds);
-    } else {
-      setSelectedDocuments([]);
-    }
-  };
-
-  const handleBulkDelete = () => {
-    const selectedDocs = documents.filter(doc => selectedDocuments.includes(doc.id));
-    const docNames = selectedDocs.map(doc => doc.originalName).join(', ');
-    
-    setConfirmationDialog({
-      isOpen: true,
-      type: 'bulk',
-      title: `Delete ${selectedDocuments.length} Documents`,
-      description: selectedDocuments.length > 3 
-        ? `Are you sure you want to delete ${selectedDocuments.length} documents? This action cannot be undone.`
-        : `Are you sure you want to delete the following documents? This action cannot be undone.\n\n${docNames}`,
-      onConfirm: () => {
-        bulkDeleteDocumentsMutation.mutate(selectedDocuments);
-        setConfirmationDialog(prev => ({ ...prev, isOpen: false }));
-      }
-    });
-  };
-
-  const addSignaturePage = () => {
-    const pageNumber = editForm.signaturePages.length + 1;
-    setEditForm(prev => ({
-      ...prev,
-      signaturePages: [...prev.signaturePages, pageNumber]
-    }));
-  };
-
-  const removeSignaturePage = (index: number) => {
-    setEditForm(prev => ({
-      ...prev,
-      signaturePages: prev.signaturePages.filter((_, i) => i !== index)
-    }));
-  };
-
   if (isLoading) {
     return (
       <Card>
@@ -462,7 +468,7 @@ export default function EnhancedDocumentManager({
               </p>
               <Button
                 onClick={() => fileInputRef.current?.click()}
-                disabled={uploadDocumentsMutation.isPending}
+                disabled={uploadMutation.isPending}
               >
                 <Plus className="h-4 w-4 mr-2" />
                 Select Files
@@ -473,7 +479,7 @@ export default function EnhancedDocumentManager({
                 multiple
                 accept=".pdf,.doc,.docx"
                 className="hidden"
-                onChange={(e) => handleFileSelect(e.target.files)}
+                onChange={handleFileSelect}
               />
             </div>
 
@@ -517,7 +523,7 @@ export default function EnhancedDocumentManager({
                   variant="destructive"
                   size="sm"
                   onClick={handleBulkDelete}
-                  disabled={bulkDeleteDocumentsMutation.isPending}
+                  disabled={bulkDeleteMutation.isPending}
                 >
                   <Trash2 className="h-4 w-4 mr-2" />
                   Delete Selected ({selectedDocuments.length})
@@ -573,7 +579,7 @@ export default function EnhancedDocumentManager({
                       {canDeleteDocument(document) && (
                         <Checkbox
                           checked={selectedDocuments.includes(document.id)}
-                          onCheckedChange={(checked) => handleSelectDocument(document.id, !!checked)}
+                          onCheckedChange={(checked) => handleDocumentSelect(document.id, !!checked)}
                           aria-label={`Select ${document.originalName}`}
                         />
                       )}
@@ -776,7 +782,12 @@ export default function EnhancedDocumentManager({
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => removeSignaturePage(index)}
+                        onClick={() => {
+                          setEditForm(prev => ({
+                            ...prev,
+                            signaturePages: prev.signaturePages.filter((_, i) => i !== index)
+                          }));
+                        }}
                       >
                         <X className="h-4 w-4" />
                       </Button>
@@ -785,7 +796,12 @@ export default function EnhancedDocumentManager({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={addSignaturePage}
+                    onClick={() => {
+                      setEditForm(prev => ({
+                        ...prev,
+                        signaturePages: [...prev.signaturePages, prev.signaturePages.length + 1]
+                      }));
+                    }}
                   >
                     <Plus className="h-4 w-4 mr-2" />
                     Add Signature Page
@@ -824,7 +840,7 @@ export default function EnhancedDocumentManager({
         variant="destructive"
         confirmText="Delete"
         cancelText="Cancel"
-        isLoading={deleteDocumentMutation.isPending || bulkDeleteDocumentsMutation.isPending}
+        isLoading={deleteDocumentMutation.isPending || bulkDeleteMutation.isPending}
       />
     </div>
   );

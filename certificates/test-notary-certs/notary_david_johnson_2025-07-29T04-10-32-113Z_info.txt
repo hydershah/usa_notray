@@ -1,0 +1,49 @@
+# SAMPLE NOTARY CERTIFICATE INFORMATION
+# Generated: 2025-07-29T04:10:32.386Z
+# FOR TESTING PURPOSES ONLY
+
+## Notary Information
+Notary Name: David Johnson
+Commission Number: TX555666777
+Commission Expiry: 2028-03-15
+State: Texas
+Country: US
+Email: david.johnson@notary.tx.gov
+
+## Certificate Details
+Subject: C=US/ST=Texas/L=Texas/O=Texas Secretary of State/OU=Notary Public Division/CN=David Johnson/emailAddress=david.johnson@notary.tx.gov
+Issuer: C=US/ST=Texas/L=Texas/O=Texas Secretary of State/OU=Notary Public Division/CN=David Johnson/emailAddress=david.johnson@notary.tx.gov (Self-Signed)
+Serial Number: 162A49FBE28F5B10E9916AF3C18E31F6A296BA9F
+SHA256 Fingerprint: sha256 Fingerprint=8E:CD:B9:2C:91:6D:D8:9F:52:D0:FA:AA:85:D5:21:B3:8D:18:31:FE:95:EB:B7:39:8E:B5:55:AE:FF:7F:79:AA
+Valid From: Jul 29 04:10:32 2025 GMT
+Valid Until: Jul 28 04:10:32 2028 GMT
+Key Length: 2048 bits
+Signature Algorithm: sha256WithRSAEncryption
+
+## P12 Certificate Bundle
+Password: TestNotary789!
+File Format: PKCS#12 (.p12)
+Usage: PDF Digital Signing, Document Authentication
+
+## Upload Instructions
+1. Log in to the USA Notary platform as a notary user
+2. Go to Profile Settings > Certificate Management
+3. Upload the .p12 file 
+4. Enter the password: TestNotary789!
+5. Save certificate for use in digital signing
+
+## Testing Notes
+- This is a SAMPLE certificate for testing only
+- Not issued by a real Certificate Authority
+- Should not be used for production notarizations
+- Compatible with Adobe Acrobat for signature validation testing
+
+## Technical Details
+- Certificate Type: X.509 v3
+- Key Algorithm: RSA
+- Hash Algorithm: SHA-256
+- Extensions: Basic Constraints, Key Usage, Extended Key Usage
+- Subject Alternative Names: Email, Notary Commission, Role
+
+## Security Notice
+Keep the P12 password secure and do not share this certificate outside of testing environments.

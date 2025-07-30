@@ -23,9 +23,9 @@ EVS_API_KEY="E27235-CE567A22-0D31-474A-B551-252882763208"
 EVS_PASSWORD="8aeWPi0XV#AyS#I"
 EVS_ENVIRONMENT="production"
 
-# Whereby Video Conferencing
-WHEREBY_API_KEY="your-whereby-api-key"
-WHEREBY_API_URL="https://api.whereby.dev/v1"
+# Daily.co Video Conferencing
+DAILY_API_KEY="da48a4d3b10e1baded3b0cf71f68a6522925d0a10260f0e09202f25506759e64"
+DAILY_DOMAIN="your-domain.daily.co"
 
 # Stripe Payment Processing
 STRIPE_SECRET_KEY="sk_test_your_stripe_secret_key"
@@ -130,7 +130,7 @@ echo ""
 echo "📋 Next steps:"
 echo "1. Update your database URL in .env"
 echo "2. Configure your email settings"
-echo "3. Add your Whereby API key"
+echo "3. Add your Daily.co API key"
 echo "4. Set up Stripe keys for payments"
 echo "5. Configure AWS credentials for cloud storage"
 echo ""

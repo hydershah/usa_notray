@@ -121,7 +121,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     setConnectionStatus,
     getCurrentDocumentTags,
     getDocumentTags,
-    loadTagsForDocument
+    loadTagsForDocument,
+    getTagDimensions
   } = useEditorStore();
 
   // Handle page load from PDFViewer to get canvas element
@@ -203,8 +204,11 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       // Check if the click is outside any text input or control
       const target = e.target as HTMLElement;
       
-      // Don't deselect if clicking on StreamlinedTextLayer or its children
-      if (target.closest('.streamlined-text-layer')) {
+      // Don't deselect if clicking specifically on a text input element or its direct children
+      // Allow clicks on empty space within the text layer to deselect
+      if (target.closest('[data-text-input-id]') || 
+          target.closest('.streamlined-text-input') || 
+          target.tagName === 'INPUT') {
         return;
       }
       
@@ -217,6 +221,11 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       if (selectedTextInputId) {
         console.log('🎯 Global click detected - deselecting text input');
         selectTextInput(null);
+      }
+      // Deselect tag
+      if (useEditorStore.getState().selectedTag) {
+        console.log('🎯 Global click detected - deselecting tag');
+        useEditorStore.getState().selectTag(null);
       }
     };
     
@@ -701,23 +710,13 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     setSealDialogLoading(false);
   }, []);
 
-  // 🚀 Auto-trigger auto-fill for newly placed tags once they get real IDs
+  // Keep only instant completion for whiteout tags - remove auto-trigger for other tags
   useEffect(() => {
     if (mode !== 'signing') return;
     
-    const autoFillTags = ['A', 'I', 'N', 'X', 'D', 'O']; // Auto-fill tags (excluding signatures and seals)
-    const instantTags = ['W']; // Instant completion tags
+    const instantTags = ['W']; // Only instant completion tags (whiteout)
     
-    // Find tags that are ready for auto-fill
-    const tagsReadyForAutoFill = tags.filter(tag => 
-      autoFillTags.includes(tag.tagType) && 
-      !tag.isCompleted && 
-      !tag.id.startsWith('temp_') && // Has real database ID
-      tag.createdAt && // Recently created
-      Date.now() - new Date(tag.createdAt).getTime() < 10000 // Within last 10 seconds
-    );
-    
-    // Find tags that are ready for instant completion
+    // Find tags that are ready for instant completion (only whiteout tags)
     const tagsReadyForInstant = tags.filter(tag => 
       instantTags.includes(tag.tagType) && 
       !tag.isCompleted && 
@@ -726,19 +725,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       Date.now() - new Date(tag.createdAt).getTime() < 10000 // Within last 10 seconds
     );
     
-    // Auto-fill each ready tag
-    tagsReadyForAutoFill.forEach((tag: DocumentTag) => {
-      (async () => {
-        try {
-          console.log('🎯 Auto-triggering auto-fill for newly placed tag:', tag.id, tag.tagType);
-          await handleAutoFillTag(tag);
-        } catch (error) {
-          console.warn('Auto-trigger auto-fill failed:', error);
-        }
-      })();
-    });
-    
-    // Instantly complete whiteout tags
+    // Instantly complete whiteout tags (keep this functionality)
     tagsReadyForInstant.forEach((tag: DocumentTag) => {
       (async () => {
         try {
@@ -750,8 +737,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       })();
     });
     
-    // Note: Seal dialog is now triggered on click, not auto-triggered
-  }, [tags, mode, handleAutoFillTag, handleInstantTagCompletion]);
+    // Note: Other tags now require manual click to fill (restored original behavior)
+  }, [tags, mode, handleInstantTagCompletion]);
 
   // Handle tag click in signing mode - FIXED VERSION
   const handleTagClick = useCallback(async (tag: DocumentTag, position: { x: number; y: number; width: number; height: number }) => {
@@ -1040,6 +1027,19 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         console.log('📝 Placing streamlined text input...');
         console.log('Current text inputs before placement:', textInputs);
         
+        // Get saved dimensions for text tags, or use defaults
+        const { getTagDimensions } = useEditorStore.getState();
+        const dimensions = getTagDimensions('T') || { width: 120, height: 32 }; // Larger default for better text visibility
+        
+        // Use the saved dimensions instead of coordinates from click
+        const textInputCoordinates = {
+          ...coordinates,
+          width: dimensions.width,
+          height: dimensions.height
+        };
+        
+        console.log('📏 Using dimensions for text tag:', dimensions);
+        
         // Set flag to suppress global click handler for the next click
         setJustPlacedTextInput(true);
         
@@ -1050,7 +1050,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         
         await placeTextInput({
           documentId: currentDocument.id,
-          coordinates,
+          coordinates: textInputCoordinates,
           assignedUserId: parseInt(selectedUser.userId.toString())
         }, selectedUser.colorCode || '#4ECDC4');
         

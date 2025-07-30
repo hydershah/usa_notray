@@ -40,6 +40,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { JobDetailsModal } from './job-details-modal';
+import { JobEditor } from './JobEditor';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { getStatusColor, formatDate, formatDateTime } from '@/lib/utils';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -47,6 +49,7 @@ import {
   Eye, 
   Download, 
   Edit, 
+  Edit3,
   Search,
   Plus,
   Filter,
@@ -74,7 +77,7 @@ import {
   Settings,
   Grid3X3
 } from 'lucide-react';
-import { type Job } from '@shared/types';
+import { type Job } from '@shared/schema';
 
 // Type for paginated response
 interface JobsResponse {
@@ -86,6 +89,15 @@ interface JobsResponse {
   totalPages: number;
 }
 
+// Type for current user
+interface CurrentUser {
+  id: number;
+  role: string;
+  notaryType?: string;
+  name?: string;
+  email?: string;
+}
+
 interface JobTableProps {
   onCreateJob: () => void;
 }
@@ -93,6 +105,8 @@ interface JobTableProps {
 export function JobTable({ onCreateJob }: JobTableProps) {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [companyFilter, setCompanyFilter] = useState('all');
@@ -112,7 +126,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
   const queryClient = useQueryClient();
 
   // Get current user data to check permissions
-  const { data: currentUser } = useQuery({
+  const { data: currentUser } = useQuery<CurrentUser>({
     queryKey: ['/api/auth/me'],
   });
 
@@ -138,10 +152,10 @@ export function JobTable({ onCreateJob }: JobTableProps) {
       const matchesSearch = searchTerm === '' || 
         job.internalReference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         job.titleCompany?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.propertyAddress?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        job.propertyAddressOne?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         job.closingType?.toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesStatus = statusFilter === 'all' || job.status === statusFilter;
+      const matchesStatus = statusFilter === 'all' || job.jobStatus === statusFilter;
       const matchesCompany = companyFilter === 'all' || job.titleCompany === companyFilter;
       
       // Assignment status filter
@@ -152,13 +166,13 @@ export function JobTable({ onCreateJob }: JobTableProps) {
             matchesAssignment = !job.notaryId && !job.selectedNotary;
             break;
           case 'pending_approval':
-            matchesAssignment = job.approvalStatus === 'assigned_pending_approval';
+            matchesAssignment = job.notaryApprovalStatus === 'assigned_pending_approval';
             break;
-                      case 'approved':
-              matchesAssignment = job.approvalStatus === 'approved';
-              break;
-            case 'rejected':
-              matchesAssignment = job.approvalStatus === 'rejected';
+          case 'approved':
+            matchesAssignment = job.notaryApprovalStatus === 'approved';
+            break;
+          case 'rejected':
+            matchesAssignment = job.notaryApprovalStatus === 'rejected';
             break;
           case 'assigned':
             matchesAssignment = !!(job.notaryId || job.selectedNotary);
@@ -343,6 +357,20 @@ export function JobTable({ onCreateJob }: JobTableProps) {
       });
   };
 
+  const handleEditJob = (job: Job) => {
+    setEditingJob(job);
+    setIsEditModalOpen(true);
+  };
+
+  const handleJobUpdated = () => {
+    // Refresh the jobs list
+    queryClient.invalidateQueries({ queryKey: ['/api/jobs'] });
+    toast({
+      title: "Job Updated",
+      description: "Job has been updated successfully.",
+    });
+  };
+
   const handleDownload = async (jobId: number, type: 'original' | 'notarized') => {
     try {
       const response = await fetch(`/api/jobs/${jobId}/download/${type}`, {
@@ -405,7 +433,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
       <ArrowDown className="w-4 h-4" />;
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string | null) => {
     const config = {
       open: { 
         variant: 'secondary' as const, 
@@ -439,12 +467,13 @@ export function JobTable({ onCreateJob }: JobTableProps) {
       },
     };
 
-    const { icon: Icon, color, bgColor } = config[status as keyof typeof config] || config.open;
+    const statusKey = (status || 'open') as keyof typeof config;
+    const { icon: Icon, color, bgColor } = config[statusKey] || config.open;
 
     return (
       <Badge className={`flex items-center gap-1 ${bgColor} ${color} border hover:shadow-sm transition-all duration-200`}>
         <Icon className={`w-3 h-3`} />
-        {status.charAt(0).toUpperCase() + status.slice(1)}
+        {status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Open'}
       </Badge>
     );
   };
@@ -460,8 +489,11 @@ export function JobTable({ onCreateJob }: JobTableProps) {
 
   const getAssignedNotary = (job: Job): string => {
     // Check if we have assignedNotary data with the name
-    if (job.assignedNotary?.name) {
-      return job.assignedNotary.name;
+    if (job.notaryId) {
+      return `Notary #${job.notaryId}`;
+    }
+    if (job.selectedNotary) {
+      return job.selectedNotary;
     }
     
     return 'Unassigned';
@@ -1018,10 +1050,10 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                               <Building className="h-3 w-3" />
                               {job.titleCompany}
                             </div>
-                                                      <div className="text-sm text-gray-500 flex items-center gap-1">
-                            <User className="h-3 w-3" />
-                            {getAssignedNotary(job)}
-                          </div>
+                            <div className="text-sm text-gray-500 flex items-center gap-1">
+                              <User className="h-3 w-3" />
+                              {getAssignedNotary(job)}
+                            </div>
                             {job.closingType && (
                               <Badge variant="outline" className="text-xs mt-2">
                                 {job.closingType}
@@ -1071,7 +1103,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                       </TableCell>
                       <TableCell className="py-4">
                         <div className="text-sm text-gray-600">
-                          {formatDateTime(job.createdAt)}
+                          {job.createdAt ? formatDateTime(job.createdAt) : 'Unknown'}
                         </div>
                       </TableCell>
                       <TableCell className="py-4">
@@ -1085,6 +1117,17 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                             <Eye className="h-4 w-4 mr-2" />
                             Quick View
                           </Button>
+                          {canCreateJob && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleEditJob(job)}
+                              className="hover:bg-green-50 hover:text-green-600 transition-colors"
+                            >
+                              <Edit3 className="h-4 w-4 mr-2" />
+                              Edit
+                            </Button>
+                          )}
                           <Button
                             variant="default"
                             size="sm"
@@ -1173,7 +1216,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
         </div>
       </div>
 
-      {/* Replace the existing JobDetailsModal with EnhancedJobDetailsModal */}
+      {/* Enhanced Job Details Modal with better positioning and animation */}
       <JobDetailsModal
         job={selectedJob}
         isOpen={isModalOpen}
@@ -1188,9 +1231,37 @@ export function JobTable({ onCreateJob }: JobTableProps) {
         }}
       />
 
-      {/* Bulk Action Confirmation Dialog */}
+      {/* Enhanced Job Editor Dialog with improved modal positioning */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent className="w-[95vw] max-w-7xl h-[95vh] p-0
+                                 data-[state=open]:animate-in data-[state=closed]:animate-out 
+                                 data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 
+                                 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 
+                                 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] 
+                                 data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]
+                                 sm:rounded-lg shadow-2xl border-2 border-gray-200">
+          {editingJob && (
+            <JobEditor
+              jobId={editingJob.id}
+              onJobUpdated={handleJobUpdated}
+              onClose={() => {
+                setIsEditModalOpen(false);
+                setEditingJob(null);
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Enhanced Bulk Action Confirmation Dialog */}
       <AlertDialog open={isBulkActionOpen} onOpenChange={setIsBulkActionOpen}>
-        <AlertDialogContent className="sm:max-w-lg">
+        <AlertDialogContent className="sm:max-w-lg 
+                                     data-[state=open]:animate-in data-[state=closed]:animate-out 
+                                     data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 
+                                     data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 
+                                     data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] 
+                                     data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]
+                                     shadow-2xl border-2 border-gray-200">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <Trash2 className="h-5 w-5 text-red-600" />

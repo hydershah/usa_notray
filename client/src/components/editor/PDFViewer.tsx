@@ -111,6 +111,8 @@ const TagRenderer: React.FC<TagRendererProps> = ({
     height: Math.round(tag.coordinates.height * scaleFactor)
   };
 
+  const hasContent = !!(tag.content || tag.contentData || tag.isCompleted);
+
   const validateAndSanitizeCoordinates = (coords: any) => {
     const sanitized: any = {};
     
@@ -192,8 +194,10 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   return (
     <Rnd
       size={{
-        width: displayCoords.width,
-        height: displayCoords.height
+        width: tag.isCompleted && (tag.tagType === 'O' || tag.tagType === 'X')
+          ? Math.max(displayCoords.width, 300) // Expand disclosure and expiry tags to at least 300px width
+          : displayCoords.width,
+        height: tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'auto' : displayCoords.height
       }}
       position={{
         x: displayCoords.x,
@@ -203,7 +207,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       onDragStop={handleDragStop}
       onResize={handleResize}
       onResizeStop={handleResizeStop}
-      enableResizing={canEdit}
+      enableResizing={canEdit && !(tag.isCompleted && tag.tagType === 'T')}
       disableDragging={!canEdit}
       bounds="parent"
       onClick={(e: React.MouseEvent<HTMLDivElement>) => {
@@ -280,72 +284,76 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       onKeyDown={handleKeyDown}
       tabIndex={0}
       className={`
-        transition-all cursor-pointer overflow-hidden
+        transition-all cursor-pointer ${tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'overflow-visible' : 'overflow-hidden'}
         ${isSelected ? 'ring-2 ring-blue-400 ring-opacity-60' : ''}
         ${canEdit ? 'hover:shadow-md' : ''}
+        ${hasContent ? 'completed-tag-transparent' : ''}
       `}
       style={{
-        // Completely transparent background for all tags
-        backgroundColor: 'transparent',
+        backgroundColor: hasContent 
+          ? (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X' ? 'rgba(255, 255, 255, 0.95)' : 'transparent')
+          : tag.tagType === 'W' ? '#ffffff' : (tag.colorCode || '#1e40af'),
         
-        // Minimal styling for text tags
-        border: tag.tagType === 'T' 
-          ? 'none' // Completely borderless for text tags
-          : tag.isCompleted && mode === 'signing' 
-          ? '1px solid #e2e8f0' // Very light grey border for completed tags
+        ...(hasContent && tag.tagType !== 'T' && tag.tagType !== 'O' && tag.tagType !== 'X' && {
+          background: 'transparent',
+          backgroundColor: 'transparent',
+          backgroundImage: 'none',
+        }),
+        
+        border: hasContent 
+          ? 'none' 
           : isSelected
-          ? '2px solid #3b82f6' // Blue border for selected tags
-          : '1px solid #d1d5db', // Light grey border for all other tags
+          ? '2px solid #3b82f6' 
+          : tag.tagType === 'W'
+          ? '1px solid #d1d5db' 
+          : 'none',
         
-        borderRadius: tag.tagType === 'T' ? '2px' : '8px', // Minimal radius for text tags
+        borderRadius: '6px', 
         
-        // Better color contrast
-        color: tag.isCompleted && mode === 'signing' 
-          ? '#1f2937' // Dark grey text for completed content
-          : tag.colorCode || '#374151',
+        color: hasContent 
+          ? '#000000' 
+          : tag.tagType === 'W' ? '#374151' : '#ffffff',
         
         zIndex: tag.tagType === 'W' ? (isSelected ? 1000 : 10) : (isSelected ? 1000 : 100),
         pointerEvents: 'auto',
         cursor: mode === 'signing' && !tag.isCompleted ? 'pointer' : 'default',
         
-        // Improved shadows - borderless for text tags
-        boxShadow: tag.tagType === 'T' 
-          ? 'none' // No shadows for borderless text tags
-          : tag.isCompleted && mode === 'signing'
-          ? '0 1px 3px rgba(0,0,0,0.08)' // Subtle shadow for completed tags
+        boxShadow: hasContent 
+          ? 'none' 
           : isSelected 
-          ? '0 4px 12px rgba(59, 130, 246, 0.15), 0 0 0 2px rgba(59, 130, 246, 0.1)' 
-          : '0 2px 6px rgba(0,0,0,0.1)', // Enhanced shadow for better depth
+          ? '0 4px 12px rgba(0, 0, 0, 0.2)' 
+          : '0 2px 6px rgba(0, 0, 0, 0.1)',
         
-        // Minimum sizing only for non-text tags
-        minWidth: tag.tagType === 'T' ? 'auto' : '80px',
-        minHeight: tag.tagType === 'T' ? 'auto' : '32px'
+        minWidth: (tag.tagType === 'T') ? 'auto' : ((tag.tagType === 'O' || tag.tagType === 'X') ? '200px' : '80px'), // Larger minimum for disclosure and expiry tags
+        minHeight: (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'auto' : '32px' // Allow auto height for text, disclosure, and expiry
       }}
       resizeHandleStyles={canEdit ? {
         bottomRight: { 
-          width: '16px', // Increased from 10px to 16px for better interaction
-          height: '16px', // Increased from 10px to 16px
+          width: '16px', 
+          height: '16px', 
           backgroundColor: tag.colorCode || '#3b82f6',
           border: '2px solid white',
           borderRadius: '50%',
-          right: '-8px', // Adjusted position for larger handle
-          bottom: '-8px', // Adjusted position for larger handle
-          boxShadow: '0 2px 6px rgba(0,0,0,0.2)', // Enhanced shadow
+          right: '-8px', 
+          bottom: '-8px', 
+          boxShadow: '0 2px 6px rgba(0,0,0,0.2)', 
           cursor: 'nw-resize'
         }
       } : undefined}
     >
-      <div className="w-full h-full flex flex-col items-center justify-center p-3">
+      <div className={`w-full ${tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? '' : 'h-full'} flex flex-col ${tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'items-start justify-start' : 'items-center justify-center'}`} style={{
+        padding: tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? '0' : ((tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? '4px' : '8px 12px')
+      }}>
         {mode === 'signing' ? (
           // Signing mode: Show interactive state
           tag.isCompleted ? (
             // Completed tag - show actual content as plain text/image OR whiteout
             tag.tagType === 'W' ? (
-              // Whiteout tag: Show as solid white rectangle (no content)
-              <div className="w-full h-full bg-white" />
+              // Whiteout tag: Show as solid white rectangle with border to keep it visible
+              <div className="w-full h-full bg-white border border-gray-300" />
             ) : (
               // Regular completed tag - show actual content as plain text/image
-              <div className="w-full h-full flex items-center justify-center">
+              <div className="relative" style={{ width: '100%', minHeight: '100%' }}>
                 {(tag.contentData || tag.content) && (() => {
                   // Parse contentData if it's a string, fallback to content
                   let contentData;
@@ -472,12 +480,17 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                   if (imageLoadError || !isImageContent()) {
                     return (
                       <div 
-                        className="text-black w-full h-full flex items-center justify-center p-1"
+                        className="text-black"
                         style={{ 
-                          fontSize: Math.max(10, Math.min(16, tag.coordinates.height * 0.6)),
-                          lineHeight: '1.2',
+                          fontSize: '14px',
+                          lineHeight: '1.4',
                           wordBreak: 'break-word',
-                          fontFamily: 'inherit'
+                          fontFamily: 'inherit',
+                          width: '100%', // Fill container width
+                          maxWidth: 'none', // Remove max width constraint
+                          whiteSpace: 'normal',
+                          padding: '4px',
+                          textAlign: 'left'
                         }}
                       >
                         {/* Always show the actual content, never "Applied" messages */}
@@ -518,54 +531,91 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           ) : (
             // Incomplete tag in signing mode - use SAME UI as tagging mode
             <>
-              {/* Main tag content - improved sizing */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm opacity-80">{tagInfo.icon}</span>
-                <span className="text-sm font-medium truncate">{tagInfo.label}</span>
-              </div>
-              
-              {/* User identification - improved sizing */}
-              {tag.displayLabel && tag.displayLabel.includes(' - ') && (
-                <div className="flex items-center gap-1.5 mt-1 px-2 py-1 bg-transparent rounded-full border border-gray-200">
-                  <div 
-                    className="w-2.5 h-2.5 rounded-full border border-white shadow-sm" 
-                    style={{ backgroundColor: tag.colorCode }}
-                  />
-                  <span className="text-sm font-medium opacity-90 truncate">
-                    {tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
-                  </span>
-                </div>
-              )}
-              
-              {/* Interaction hint for signing mode - improved sizing */}
-              <div className="mt-1">
-                <span className="text-sm opacity-70">
-                  Double-click to {['S', 'I', 'E'].includes(tag.tagType) ? 'apply' : 'enter'}
+              {/* Tag content with proper sizing */}
+              <div className="flex items-center gap-2" style={{
+                fontSize: Math.max(12, Math.min(16, displayCoords.height * 0.4)),
+                fontWeight: '600',
+                lineHeight: '1.2'
+              }}>
+                <span style={{ 
+                  color: tag.tagType === 'W' ? '#374151' : '#ffffff',
+                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
+                }}>
+                  {tagInfo.icon}
                 </span>
+                <span style={{ 
+                  color: tag.tagType === 'W' ? '#374151' : '#ffffff',
+                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)',
+                  whiteSpace: (tag.tagType === 'O' || tag.tagType === 'X') ? 'normal' : 'nowrap',
+                  overflow: (tag.tagType === 'O' || tag.tagType === 'X') ? 'visible' : 'hidden',
+                  textOverflow: (tag.tagType === 'O' || tag.tagType === 'X') ? 'unset' : 'ellipsis'
+                }}>
+                  {tagInfo.label}
+                </span>
+                
+                {/* User indicator */}
+                {tag.displayLabel && tag.displayLabel.includes(' - ') && displayCoords.width > 70 && (
+                  <div 
+                    style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      backgroundColor: tag.colorCode,
+                      border: '1px solid rgba(255, 255, 255, 0.8)',
+                      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                      marginLeft: '4px',
+                      flexShrink: 0
+                    }}
+                    title={tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
+                  />
+                )}
               </div>
+              
+
             </>
           )
         ) : (
           // Tagging mode: Show tag info - improved sizing
           <>
-            {/* Main tag content - improved sizing */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm opacity-80">{tagInfo.icon}</span>
-              <span className="text-sm font-medium truncate">{tagInfo.label}</span>
-            </div>
-            
-            {/* User identification - improved sizing */}
-            {tag.displayLabel && tag.displayLabel.includes(' - ') && (
-              <div className="flex items-center gap-1.5 mt-1 px-2 py-1 bg-transparent rounded-full border border-gray-200">
+            {/* Tag content with proper sizing */}
+            <div className="flex items-center gap-2" style={{
+              fontSize: Math.max(12, Math.min(16, displayCoords.height * 0.4)),
+              fontWeight: '600',
+              lineHeight: '1.2'
+            }}>
+              <span style={{ 
+                color: tag.tagType === 'W' ? '#374151' : '#ffffff',
+                textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
+              }}>
+                {tagInfo.icon}
+              </span>
+              <span style={{ 
+                color: tag.tagType === 'W' ? '#374151' : '#ffffff',
+                textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)',
+                whiteSpace: (tag.tagType === 'O' || tag.tagType === 'X') ? 'normal' : 'nowrap',
+                overflow: (tag.tagType === 'O' || tag.tagType === 'X') ? 'visible' : 'hidden',
+                textOverflow: (tag.tagType === 'O' || tag.tagType === 'X') ? 'unset' : 'ellipsis'
+              }}>
+                {tagInfo.label}
+              </span>
+              
+              {/* User indicator */}
+              {tag.displayLabel && tag.displayLabel.includes(' - ') && displayCoords.width > 70 && (
                 <div 
-                  className="w-2.5 h-2.5 rounded-full border border-white shadow-sm" 
-                  style={{ backgroundColor: tag.colorCode }}
+                  style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    backgroundColor: tag.colorCode,
+                    border: '1px solid rgba(255, 255, 255, 0.8)',
+                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                    marginLeft: '4px',
+                    flexShrink: 0
+                  }}
+                  title={tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
                 />
-                <span className="text-sm font-medium opacity-90 truncate">
-                  {tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
-                </span>
-              </div>
-            )}
+              )}
+            </div>
           </>
         )}
       </div>
@@ -1376,10 +1426,11 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       return;
     }
     
-    // Position tag so mouse pointer is at bottom-left corner
-    // X: Left edge starts at click point
-    // Y: Bottom edge is at click point (so subtract full height)
-    const finalTagX = Math.max(0, Math.round(pdfX));
+    // Position tag so mouse pointer is at bottom-left corner of visible text
+    // Account for border (2px) + padding (6px) = 8px total visual offset, scaled properly
+    // Y: Bottom edge aligns with click point (tag appears above cursor)
+    const visualOffset = 8 / scaleFactor; // Border + padding offset divided by scale factor
+    const finalTagX = Math.max(0, Math.round(pdfX - visualOffset));
     const finalTagY = Math.max(0, Math.round(pdfY - dimensions.height));
     
     const coordinates: TagCoordinates = {

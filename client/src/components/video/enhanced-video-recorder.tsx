@@ -84,7 +84,7 @@ export function EnhancedVideoRecorder({
 
       setStreamActive(true);
       
-      // Notify that recording capabilities are ready (for Whereby)
+      // Notify that recording capabilities are ready (for Daily.co)
       if (onRecordingStart && autoStart) {
         const recordingId = `preview_${jobId}_${Date.now()}`;
         onRecordingStart(recordingId);
@@ -191,7 +191,7 @@ export function EnhancedVideoRecorder({
             <Info className="w-4 h-4 text-blue-600 mt-0.5" />
             <div className="text-sm text-blue-700">
               <p className="font-medium">Recording via Video Conference</p>
-              <p className="text-blue-600">Session recording will be handled automatically by the Whereby video conference system when you join the meeting.</p>
+              <p className="text-blue-600">Session recording will be handled automatically by the Daily.co video conference system when you join the meeting.</p>
             </div>
           </div>
         </div>

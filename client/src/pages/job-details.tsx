@@ -33,17 +33,22 @@ import { JobCompletionReport } from '@/components/job/JobCompletionReport';
 import { NotaryAssignmentCard } from '@/components/job/NotaryAssignmentCard';
 import { SessionRecordingCard } from '@/components/job/SessionRecordingCard';
 import { ActivityTimelineCard } from '@/components/job/ActivityTimelineCard';
+import { JobEditor } from '@/components/job/JobEditor';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 
 export default function JobDetailsPage() {
   const [, params] = useRoute('/jobs/:id');
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const jobId = params?.id ? parseInt(params.id) : null;
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
-  // Debug jobId
+  // Debug jobId (only log on changes)
   useEffect(() => {
-    console.log('🆔 JobDetailsPage - Current jobId:', jobId, 'params:', params);
-  }, [jobId, params]);
+    if (process.env.NODE_ENV === 'development' && jobId) {
+      console.log('🆔 JobDetailsPage - Current jobId:', jobId);
+    }
+  }, [jobId]);
 
   const { data: job, isLoading, error } = useQuery({
     queryKey: ['job', jobId],
@@ -108,19 +113,18 @@ export default function JobDetailsPage() {
     queryKey: ['certificate-verification', jobId],
     queryFn: async () => {
       if (!jobId) {
-        console.log('❌ Certificate verification: jobId is null');
         return null;
       }
       
-      console.log(`🔍 Fetching certificate verification for job ${jobId}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`🔍 Fetching certificate verification for job ${jobId}`);
+      }
       
       const response = await fetch(`/api/certificate-verification/job/${jobId}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
-      
-      console.log(`📡 Certificate verification API response: ${response.status} ${response.statusText}`);
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -129,7 +133,9 @@ export default function JobDetailsPage() {
       }
       
       const result = await response.json();
-      console.log('📋 Certificate verification data:', result);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📋 Certificate verification data:', result);
+      }
       return result.data as JobCertificateVerification;
     },
     enabled: !!jobId,
@@ -139,16 +145,17 @@ export default function JobDetailsPage() {
     gcTime: 0 // Don't cache old data
   });
 
-  // Debug certificate verification query state
+  // Debug certificate verification query state (development only)
   useEffect(() => {
-    console.log('🔒 Certificate verification query state:', {
-      jobId,
-      enabled: !!jobId,
-      isLoading: isLoadingCertificates,
-      hasData: !!certificateVerification,
-      hasError: !!certificateError,
-      error: certificateError?.message
-    });
+    if (process.env.NODE_ENV === 'development' && (certificateError || isLoadingCertificates)) {
+      console.log('🔒 Certificate verification query state:', {
+        jobId,
+        isLoading: isLoadingCertificates,
+        hasData: !!certificateVerification,
+        hasError: !!certificateError,
+        error: certificateError?.message
+      });
+    }
   }, [jobId, isLoadingCertificates, certificateVerification, certificateError]);
 
   const handleBackToJobs = () => {
@@ -322,6 +329,15 @@ export default function JobDetailsPage() {
             </div>
           </div>
           <div className="flex items-center space-x-3">
+            <Button 
+              onClick={() => setIsEditModalOpen(true)}
+              variant="outline"
+              className="border-orange-600 text-orange-600 hover:bg-orange-50"
+              title="Edit job details, signers, and documents"
+            >
+              <Edit3 className="h-4 w-4 mr-2" />
+              Edit Job
+            </Button>
             <Button 
               onClick={handleStartTagging} 
               variant="outline" 
@@ -677,6 +693,16 @@ export default function JobDetailsPage() {
           <ActivityTimelineCard jobId={job.id} />
         </div>
       </div>
+
+      {/* Job Editor Modal */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent className="max-w-6xl max-h-[90vh]">
+          <JobEditor 
+            jobId={job.id}
+            onClose={() => setIsEditModalOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 } 

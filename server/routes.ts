@@ -14,6 +14,7 @@ import { registerCertificateVerificationRoutes } from "./routes/certificate-veri
 import { registerFeeRoutes } from "./fee-routes";
 import { registerTitleCompanyNotaryRoutes } from "./title-company-notary-routes";
 import { registerAdminVerificationRoutes } from "./routes/admin-verification-routes";
+import { registerJobEditingRoutes } from "./routes/job-editing-routes";
 import adminLogsRoutes from "./routes/admin-logs-routes";
 import notaryVerificationRoutes from "./routes/notary-verification-routes";
 import notaryJobApprovalRoutes from "./routes/notary-job-approval-routes";
@@ -5141,307 +5142,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
 
-  // ===== VIDEO CONFERENCING ROUTES - WHEREBY INTEGRATION =====
-  
-  // Create Whereby video session for job
-  app.post('/api/jobs/:jobId/video-session', verifyToken, async (req: any, res) => {
-    try {
-      const jobId = parseInt(req.params.jobId);
-      const job = await storage.getJob(jobId);
-      
-      if (!job) {
-        return res.status(404).json({ 
-          message: 'Job not found',
-          error: 'JOB_NOT_FOUND'
-        });
-      }
-
-      console.log('Creating Whereby video session for job:', jobId);
-      
-      // Import Whereby service
-      const { wherebyService } = await import('./lib/whereby-service');
-      
-      // Check service configuration
-      const configStatus = wherebyService.getConfigStatus();
-      console.log('Whereby service configuration status:', configStatus);
-      
-      // Calculate end time (2 hours from now for notary sessions)
-      const endDate = new Date();
-      endDate.setHours(endDate.getHours() + 2);
-
-      // Create Whereby meeting
-      const meetingOptions = {
-        roomNamePrefix: `notary-session-${jobId}`,
-        roomMode: 'normal' as const,
-        endDate: endDate.toISOString(),
-        fields: ['hostRoomUrl']
-      };
-
-      console.log('Creating meeting with options:', meetingOptions);
-      const meeting = await wherebyService.createMeeting(meetingOptions);
-      
-      console.log('Whereby video session created:', {
-        meetingId: meeting.meetingId,
-        roomUrl: meeting.roomUrl,
-        endDate: meeting.endDate,
-        configured: configStatus.configured
-      });
-      
-      res.json({
-        success: true,
-        sessionId: meeting.meetingId,
-        roomUrl: meeting.roomUrl,
-        hostRoomUrl: meeting.hostRoomUrl,
-        roomName: meeting.roomName,
-        meetingId: meeting.meetingId,
-        sessionToken: meeting.meetingId,
-        endDate: meeting.endDate,
-        technology: 'whereby',
-        configured: configStatus.configured,
-        mode: configStatus.configured ? 'api' : 'fallback',
-        jobId
-      });
-    } catch (error) {
-      console.error('Create Whereby video session error:', error);
-      
-      // Provide more specific error information
-      let errorCode = 'VIDEO_SESSION_ERROR';
-      let statusCode = 500;
-      let message = 'Failed to create video session';
-      
-      if (error instanceof Error) {
-        if (error.message.includes('API key')) {
-          errorCode = 'API_KEY_MISSING';
-          message = 'Video service not configured properly';
-          statusCode = 503; // Service Unavailable
-        } else if (error.message.includes('401')) {
-          errorCode = 'API_UNAUTHORIZED';
-          message = 'Video service authentication failed';
-          statusCode = 503;
-        } else if (error.message.includes('403')) {
-          errorCode = 'API_FORBIDDEN';
-          message = 'Video service access denied';
-          statusCode = 503;
-        } else if (error.message.includes('402')) {
-          errorCode = 'API_PAYMENT_REQUIRED';
-          message = 'Video service payment required';
-          statusCode = 503;
-        } else if (error.message.includes('429')) {
-          errorCode = 'API_RATE_LIMITED';
-          message = 'Video service rate limit exceeded';
-          statusCode = 429;
-        }
-      }
-      
-      res.status(statusCode).json({ 
-        message,
-        error: errorCode,
-        details: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toISOString()
-      });
-    }
-  });
-
-  // Get video session status
-  app.get('/api/jobs/:jobId/video-session', verifyToken, async (req: any, res) => {
-    try {
-      const jobId = parseInt(req.params.jobId);
-      const job = await storage.getJob(jobId);
-      
-      if (!job) {
-        return res.status(404).json({ message: 'Job not found' });
-      }
-
-      // Return active session info
-      const sessionInfo = {
-        jobId,
-        isActive: false,
-        participants: [],
-        recordings: [],
-        technology: 'whereby',
-        message: 'No active video session. Create one by starting a live signing session.'
-      };
-
-      res.json(sessionInfo);
-    } catch (error) {
-      console.error('Get video session error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  });
-
-  // Start recording for Whereby session
-  app.post('/api/jobs/:jobId/video-session/recording/start', verifyToken, async (req: any, res) => {
-    try {
-      const jobId = parseInt(req.params.jobId);
-      const { roomName, meetingId } = req.body;
-      
-      const { wherebyService } = await import('./lib/whereby-service');
-      const recording = await wherebyService.startRecording(roomName || meetingId);
-      
-      console.log('Recording started for Whereby session:', {
-        jobId,
-        roomName,
-        recordingId: recording.recordingId
-      });
-
-      res.json({
-        success: true,
-        recordingId: recording.recordingId,
-        message: 'Recording started successfully',
-        technology: 'whereby'
-      });
-    } catch (error) {
-      console.error('Start recording error:', error);
-      res.status(500).json({ message: 'Failed to start recording' });
-    }
-  });
-
-  // Stop recording for Whereby session
-  app.post('/api/jobs/:jobId/video-session/recording/stop', verifyToken, async (req: any, res) => {
-    try {
-      const jobId = parseInt(req.params.jobId);
-      const { recordingId } = req.body;
-      
-      const { wherebyService } = await import('./lib/whereby-service');
-      const result = await wherebyService.stopRecording(recordingId);
-      
-      console.log('Recording stopped for Whereby session:', {
-        jobId,
-        recordingId,
-        status: result.status
-      });
-
-      res.json({
-        success: true,
-        status: result.status,
-        message: 'Recording stopped successfully',
-        technology: 'whereby'
-      });
-    } catch (error) {
-      console.error('Stop recording error:', error);
-      res.status(500).json({ message: 'Failed to stop recording' });
-    }
-  });
-
-  // Save recording metadata
-  app.post('/api/jobs/:jobId/video-session/recording', verifyToken, async (req: any, res) => {
-    try {
-      const jobId = parseInt(req.params.jobId);
-      const { recordingUrl, duration, participants, meetingId } = req.body;
-      
-      // Store recording metadata in your database
-      const recordingData = {
-        jobId,
-        meetingId,
-        recordingUrl,
-        duration,
-        participants,
-        createdAt: new Date().toISOString(),
-        createdBy: req.user.id,
-        complianceStatus: 'recorded',
-        technology: 'whereby',
-        auditTrail: {
-          sessionStart: new Date(Date.now() - duration * 1000).toISOString(),
-          sessionEnd: new Date().toISOString(),
-          participantCount: participants?.length || 0
-        }
-      };
-
-      console.log('Recording metadata saved:', {
-        jobId,
-        meetingId,
-        duration: `${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, '0')}`,
-        participants: participants?.length || 0
-      });
-
-      res.json({
-        success: true,
-        recordingId: `recording-${jobId}-${Date.now()}`,
-        message: 'Recording metadata saved successfully',
-        complianceVerified: true,
-        technology: 'whereby'
-      });
-    } catch (error) {
-      console.error('Save recording error:', error);
-      res.status(500).json({ message: 'Failed to save recording metadata' });
-    }
-  });
-
-  // End Whereby video session
-  app.delete('/api/jobs/:jobId/video-session', verifyToken, async (req: any, res) => {
-    try {
-      const jobId = parseInt(req.params.jobId);
-      const { sessionId, meetingId } = req.body;
-      
-      if (sessionId || meetingId) {
-        console.log(`Ending Whereby video session ${sessionId || meetingId} for job ${jobId}`);
-        
-        // Clean up Whereby meeting
-        const { wherebyService } = await import('./lib/whereby-service');
-        try {
-          await wherebyService.deleteMeeting(sessionId || meetingId);
-        } catch (deleteError) {
-          console.warn('Failed to delete Whereby meeting:', deleteError);
-          // Non-critical error, continue
-        }
-      }
-      
-      // Update job status to completed if needed
-      const job = await storage.getJob(jobId);
-      if (job && job.jobStatus === 'in_progress') {
-        await storage.updateJob(jobId, {
-          jobStatus: 'completed',
-          completedAt: new Date(),
-          completedBy: req.user.id
-        });
-      }
-      
-      console.log(`Whereby video session ended for job ${jobId}`);
-      
-      res.json({
-        success: true,
-        message: 'Whereby video session ended successfully',
-        jobStatus: 'completed',
-        technology: 'whereby'
-      });
-    } catch (error) {
-      console.error('End Whereby video session error:', error);
-      res.status(500).json({ message: 'Failed to end Whereby video session' });
-    }
-  });
-
-  // Get session recordings for compliance
-  app.get('/api/jobs/:jobId/recordings', verifyToken, async (req: any, res) => {
-    try {
-      const jobId = parseInt(req.params.jobId);
-      const job = await storage.getJob(jobId);
-      
-      if (!job) {
-        return res.status(404).json({ message: 'Job not found' });
-      }
-
-      // Check if user has access to this job
-      if (req.user.role !== 'admin' && job.userId !== req.user.id && job.selectedNotary !== req.user.id.toString()) {
-        return res.status(403).json({ message: 'Access denied' });
-      }
-
-      console.log(`Getting recordings for job ${jobId}`);
-      
-      // In a real implementation, you would query the database for actual recordings
-      const recordings: any[] = [];
-      
-      res.json({
-        success: true,
-        jobId,
-        recordings,
-        technology: 'whereby',
-        message: recordings.length > 0 ? 'Recordings retrieved successfully' : 'No recordings found for this session'
-      });
-    } catch (error) {
-      console.error('Get recordings error:', error);
-      res.status(500).json({ message: 'Failed to retrieve recordings' });
-    }
-  });
+  // Video conferencing routes are now handled by daily-video-routes.ts
 
   // ===== ENHANCED UPLOAD SYSTEM ROUTES (VULTR-ENABLED) =====
   
@@ -7981,18 +7682,29 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       const reportInfo = await JobCompletionReportService.getJobCompletionReport(jobId);
       
       if (!reportInfo.exists || !reportInfo.reportPath) {
-        return res.status(404).json({ message: 'Completion report not found' });
+        return res.status(404).json({ message: 'Completion report not found. Please generate the report first.' });
       }
 
-      // Check if file exists
+      // Check if file exists - handle both absolute and relative paths
       const fs = await import('fs/promises');
       const path = await import('path');
       
       try {
-        const fullPath = path.resolve(reportInfo.reportPath);
+        let fullPath: string;
+        
+        // If the stored path is already absolute, use it as-is
+        if (path.isAbsolute(reportInfo.reportPath)) {
+          fullPath = reportInfo.reportPath;
+        } else {
+          // If it's relative, resolve it from the current working directory
+          fullPath = path.resolve(reportInfo.reportPath);
+        }
+        
+        console.log(`📄 Attempting to access report file: ${fullPath}`);
         const fileStats = await fs.stat(fullPath);
         
         if (!fileStats.isFile()) {
+          console.error(`❌ Path exists but is not a file: ${fullPath}`);
           return res.status(404).json({ message: 'Report file not found' });
         }
 
@@ -8007,9 +7719,22 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         const fileBuffer = await fs.readFile(fullPath);
         res.send(fileBuffer);
         
+        console.log(`✅ Successfully served report file: ${fileName}`);
+        
       } catch (fileError) {
-        console.error('Error reading report file:', fileError);
-        return res.status(404).json({ message: 'Report file not accessible' });
+        console.error('Error accessing report file:', fileError);
+        
+        // If file doesn't exist, offer to regenerate it
+        if ((fileError as any)?.code === 'ENOENT') {
+          console.log(`📋 Report file not found for job ${jobId}, suggesting regeneration`);
+          return res.status(404).json({ 
+            message: 'Report file not found. The report may need to be regenerated.',
+            suggestion: 'Try generating a new completion report.',
+            canRegenerate: true
+          });
+        }
+        
+        return res.status(500).json({ message: 'Report file not accessible' });
       }
       
     } catch (error) {
@@ -8748,6 +8473,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   registerDigitalSignatureRoutes(app);
   registerCertificateVerificationRoutes(app);
   registerNotaryProfileRoutes(app);
+  registerJobEditingRoutes(app);
   registerFeeRoutes(app);
   registerAdminVerificationRoutes(app);
   
@@ -8772,6 +8498,9 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   // Register job request routes
   const jobRequestRoutes = await import('./routes/job-request-routes');
   app.use('/api/job-requests', jobRequestRoutes.default);
+  // Register Daily video conferencing routes
+  const dailyVideoRoutes = await import('./routes/daily-video-routes');
+  app.use(dailyVideoRoutes.default);
   
   // ==========================================
   // ADMIN VERIFICATION ROUTES (Missing endpoints for dashboard)
@@ -10403,26 +10132,50 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
             // Live signing session - check if tags have real content from users
             const incompleteTags = tags.filter(tag => !tag.isCompleted);
             
-            if (incompleteTags.length > 0 && !force) {
-              console.log(`❌ Live signing session completion blocked - users haven't filled all tags:`, incompleteTags.map(t => ({
-                id: t.id,
-                type: t.tagType,
-                assignedUser: t.assignedUserId,
-                hasContent: !!(t.content && t.content.trim())
-              })));
-              
-              return res.status(400).json({
-                success: false,
-                message: `Cannot complete session: ${incompleteTags.length} tags haven't been filled by users`,
-                error: 'incomplete_user_tags',
-                canForce: true,
-                incompleteTags: incompleteTags.map(t => ({
-                  id: t.id,
-                  type: t.tagType,
-                  assignedUser: t.assignedUserId,
-                  note: 'User needs to click this tag to fill it with real content'
-                }))
-              });
+                      if (incompleteTags.length > 0 && !force) {
+            // Get user information for better error messaging
+            const userIds = [...new Set(incompleteTags.map(t => t.assignedUserId))];
+            const usersData = await db
+              .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+              .from(users)
+              .where(inArray(users.id, userIds));
+            
+            const userMap = new Map(usersData.map(u => [u.id, `${u.firstName} ${u.lastName}`]));
+            
+            const detailedIncompleteTags = incompleteTags.map(t => ({
+              id: t.id,
+              type: t.tagType,
+              assignedUserId: t.assignedUserId,
+              assignedUserName: userMap.get(t.assignedUserId) || 'Unknown User',
+              hasContent: !!(t.content && t.content.trim()),
+              coordinates: t.coordinates,
+              note: 'User needs to click this tag to fill it with real content'
+            }));
+            
+            console.log(`❌ Live signing session completion blocked - users haven't filled all tags:`, detailedIncompleteTags);
+            
+            // Group tags by assigned user for clearer messaging
+            const tagsByUser = detailedIncompleteTags.reduce((acc, tag) => {
+              const userName = tag.assignedUserName;
+              if (!acc[userName]) acc[userName] = [];
+              acc[userName].push(tag);
+              return acc;
+            }, {} as Record<string, typeof detailedIncompleteTags>);
+            
+            const unfilledSummary = Object.entries(tagsByUser)
+              .map(([userName, userTags]) => 
+                `${userName}: ${userTags.length} tag(s) - ${userTags.map(t => `${t.type} (#${t.id})`).join(', ')}`
+              ).join('; ');
+            
+            return res.status(400).json({
+              success: false,
+              message: `Cannot complete session: ${incompleteTags.length} tags haven't been filled by users. ${unfilledSummary}`,
+              error: 'incomplete_user_tags',
+              canForce: true,
+              incompleteTags: detailedIncompleteTags,
+              unfilledSummary,
+              instructions: 'Each user must click on their assigned unfilled tags to auto-fill them with profile data, or manually enter content for text tags.'
+            });
             }
           }
           

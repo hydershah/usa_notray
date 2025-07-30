@@ -718,91 +718,52 @@ export class DatabaseStorage implements IStorage {
       const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
       
       if (user) {
-        // Get jobs created by the user
-        const createdJobs = await db.select().from(jobs)
-          .where(eq(jobs.userId, userId))
-          .orderBy(desc(jobs.createdAt));
+        // For signers/witnesses, use a UNION query to get all relevant jobs efficiently
+        // This combines created jobs and invited jobs in a single optimized query
+        const combinedJobsQuery = sql`
+          (
+            SELECT DISTINCT j.* FROM jobs j 
+            WHERE j.user_id = ${userId}
+          )
+          UNION
+          (
+            SELECT DISTINCT j.* FROM jobs j
+            INNER JOIN signers s ON s.job_id = j.id
+            WHERE s.signer_email = ${user.email}
+          )
+          ORDER BY created_at DESC
+          LIMIT ${limit}
+          OFFSET ${offset}
+        `;
         
-        // Get jobs where user is invited as signer
-        const invitedJobs = await db.select({
-          id: jobs.id,
-          titleCompany: jobs.titleCompany,
-          closingType: jobs.closingType,
-          internalReference: jobs.internalReference,
-          kbaRequired: jobs.kbaRequired,
-          propertyAddressOne: jobs.propertyAddressOne,
-          propertyAddressTwo: jobs.propertyAddressTwo,
-          propertyCity: jobs.propertyCity,
-          propertyState: jobs.propertyState,
-          propertyZipCode: jobs.propertyZipCode,
-          notaryOption: jobs.notaryOption,
-          selectedNotary: jobs.selectedNotary,
-          selectedDate: jobs.selectedDate,
-          selectedTime: jobs.selectedTime,
-          uploadedFile: jobs.uploadedFile,
-          notarizedFile: jobs.notarizedFile,
-          recordingFileKey: jobs.recordingFileKey,
-          recordingFileUrl: jobs.recordingFileUrl,
-          recordingFileName: jobs.recordingFileName,
-          recordingDuration: jobs.recordingDuration,
-          recordingStartedAt: jobs.recordingStartedAt,
-          recordingUploadedAt: jobs.recordingUploadedAt,
-          recordingParticipantCount: jobs.recordingParticipantCount,
-          recordingSessionId: jobs.recordingSessionId,
-          recordingLiveSessionId: jobs.recordingLiveSessionId,
-          recordingMetadata: jobs.recordingMetadata,
-          jobStatus: jobs.jobStatus,
-          userId: jobs.userId,
-          sessionToken: jobs.sessionToken,
-          scheduledAt: jobs.scheduledAt,
-          completedAt: jobs.completedAt,
-          completedBy: jobs.completedBy,
-          createdAt: jobs.createdAt,
-          requiresNSA: jobs.requiresNSA,
-          requiresSpanishSpeaking: jobs.requiresSpanishSpeaking,
-          assignmentAttempts: jobs.assignmentAttempts,
-          rejectedNotaries: jobs.rejectedNotaries,
-          isRandomAssignment: jobs.isRandomAssignment,
-          notaryId: jobs.notaryId,
-          notaryApprovalStatus: jobs.notaryApprovalStatus,
-          notaryApprovedAt: jobs.notaryApprovedAt,
-          notaryApprovalNotes: jobs.notaryApprovalNotes,
-          notaryApprovalConditions: jobs.notaryApprovalConditions,
-          signerNotificationsSent: jobs.signerNotificationsSent,
-          signerNotificationsSentAt: jobs.signerNotificationsSentAt,
-          jobType: jobs.jobType,
-          completionReportPath: jobs.completionReportPath,
-          completionReportGeneratedAt: jobs.completionReportGeneratedAt,
-          isSignerRequest: jobs.isSignerRequest,
-          signerRequestNotes: jobs.signerRequestNotes,
-          adminReviewNotes: jobs.adminReviewNotes,
-          adminReviewedBy: jobs.adminReviewedBy,
-          adminReviewedAt: jobs.adminReviewedAt,
-          requestPriority: jobs.requestPriority
-        })
-        .from(jobs)
-        .innerJoin(signers, eq(signers.jobId, jobs.id))
-        .where(eq(signers.signerEmail, user.email))
-        .orderBy(desc(jobs.createdAt));
+        // Get total count for pagination
+        const countQuery = sql`
+          SELECT COUNT(*) as count FROM (
+            (
+              SELECT DISTINCT j.id FROM jobs j 
+              WHERE j.user_id = ${userId}
+            )
+            UNION
+            (
+              SELECT DISTINCT j.id FROM jobs j
+              INNER JOIN signers s ON s.job_id = j.id
+              WHERE s.signer_email = ${user.email}
+            )
+          ) as combined_jobs
+        `;
         
-        // Combine and deduplicate jobs
-        const allJobs = [...createdJobs, ...invitedJobs];
-        const uniqueJobs = allJobs.filter((job, index, self) => 
-          index === self.findIndex(j => j.id === job.id)
-        );
+        const [jobsResult, countResult] = await Promise.all([
+          db.execute(combinedJobsQuery),
+          db.execute(countQuery)
+        ]);
         
-        // Sort by creation date
-        uniqueJobs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        
-        // Apply pagination
-        const totalCount = uniqueJobs.length;
-        const paginatedJobs = uniqueJobs.slice(offset, offset + limit);
+        const totalCount = countResult.rows[0].count as number;
         const hasMore = offset + limit < totalCount;
         
-        console.log(`📋 Found ${paginatedJobs.length} jobs for ${role} ${user.email} (page ${page}, total: ${totalCount})`);
+        console.log(`📋 Found ${jobsResult.rows.length} jobs for ${role} ${user.email} (page ${page}, total: ${totalCount})`);
         
         return {
-          jobs: paginatedJobs,
+          jobs: jobsResult.rows as Job[],
           totalCount,
           hasMore
         };

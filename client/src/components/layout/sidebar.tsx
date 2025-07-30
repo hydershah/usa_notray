@@ -160,16 +160,7 @@ const menuItems: MenuItem[] = [
     description: 'Job updates and alerts'
   },
   
-  // Support
-  {
-    id: 'help-support',
-    label: 'Help & Support',
-    icon: HelpCircle,
-    path: '/help-support',
-    roles: ['signer', 'witness', 'client', 'notary', 'admin', 'title_company'],
-    section: 'support',
-    description: 'User guides and support'
-  },
+
   
   // Management (Admin/Title Company)
   {

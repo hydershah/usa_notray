@@ -41,7 +41,7 @@ export function NotificationBar({ className }: NotificationBarProps) {
     // Refresh every 30 seconds
     const interval = setInterval(fetchNotifications, 30000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user?.id, user?.role]); // Only depend on stable user properties
 
   const fetchNotifications = async () => {
     if (!user) return;
@@ -129,10 +129,10 @@ export function NotificationBar({ className }: NotificationBarProps) {
       // Filter and cap the tasks to prevent overwhelming numbers
       const filteredTasks = tasks.filter(task => task.count > 0 && task.count < 100); // Cap at 100 to prevent data issues
       
-      console.log('NotificationBar: Fetched tasks for user', user.role, ':', {
-        raw: tasks.map(t => ({ id: t.id, count: t.count })),
-        filtered: filteredTasks.map(t => ({ id: t.id, count: t.count }))
-      });
+      // Only log if there are actual tasks to reduce console noise
+      if (filteredTasks.length > 0) {
+        console.log('NotificationBar: Fetched tasks for user', user.role, ':', filteredTasks.map(t => ({ id: t.id, count: t.count })));
+      }
       
       setPendingTasks(filteredTasks);
     } catch (error) {

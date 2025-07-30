@@ -1,0 +1,49 @@
+# SAMPLE NOTARY CERTIFICATE INFORMATION
+# Generated: 2025-07-29T04:10:32.113Z
+# FOR TESTING PURPOSES ONLY
+
+## Notary Information
+Notary Name: Maria Rodriguez
+Commission Number: CA987654321
+Commission Expiry: 2026-06-30
+State: California
+Country: US
+Email: maria.rodriguez@notary.ca.gov
+
+## Certificate Details
+Subject: C=US/ST=California/L=California/O=California Secretary of State/OU=Notary Public Division/CN=Maria Rodriguez/emailAddress=maria.rodriguez@notary.ca.gov
+Issuer: C=US/ST=California/L=California/O=California Secretary of State/OU=Notary Public Division/CN=Maria Rodriguez/emailAddress=maria.rodriguez@notary.ca.gov (Self-Signed)
+Serial Number: 6950F6456196E6AAA3B2E09F92C129A5AB27142C
+SHA256 Fingerprint: sha256 Fingerprint=EF:75:5F:57:02:89:85:9E:5F:7A:95:96:1B:AD:57:94:63:E0:45:05:E1:F5:EA:5B:53:62:8D:7D:F6:FE:6B:C8
+Valid From: Jul 29 04:10:31 2025 GMT
+Valid Until: Jul 28 04:10:31 2028 GMT
+Key Length: 2048 bits
+Signature Algorithm: sha256WithRSAEncryption
+
+## P12 Certificate Bundle
+Password: TestNotary456!
+File Format: PKCS#12 (.p12)
+Usage: PDF Digital Signing, Document Authentication
+
+## Upload Instructions
+1. Log in to the USA Notary platform as a notary user
+2. Go to Profile Settings > Certificate Management
+3. Upload the .p12 file 
+4. Enter the password: TestNotary456!
+5. Save certificate for use in digital signing
+
+## Testing Notes
+- This is a SAMPLE certificate for testing only
+- Not issued by a real Certificate Authority
+- Should not be used for production notarizations
+- Compatible with Adobe Acrobat for signature validation testing
+
+## Technical Details
+- Certificate Type: X.509 v3
+- Key Algorithm: RSA
+- Hash Algorithm: SHA-256
+- Extensions: Basic Constraints, Key Usage, Extended Key Usage
+- Subject Alternative Names: Email, Notary Commission, Role
+
+## Security Notice
+Keep the P12 password secure and do not share this certificate outside of testing environments.

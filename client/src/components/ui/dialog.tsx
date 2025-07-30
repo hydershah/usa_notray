@@ -48,10 +48,12 @@ export const Dialog: React.FC<DialogProps> = ({ open, onOpenChange, children }) 
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-16 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 bg-black bg-opacity-50 overflow-y-auto"
       onClick={handleBackdropClick}
     >
-      {children}
+      <div className="flex min-h-full items-center justify-center p-4">
+        {children}
+      </div>
     </div>
   );
 };

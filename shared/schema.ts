@@ -1835,16 +1835,16 @@ export const TAG_TYPES = {
 } as const;
 
 export const USER_COLORS = [
-  '#FF6B6B', // Red
-  '#4ECDC4', // Teal
-  '#45B7D1', // Blue
-  '#96CEB4', // Green
-  '#FFEAA7', // Yellow
-  '#DDA0DD', // Plum
-  '#98D8C8', // Mint
-  '#F7DC6F', // Light Yellow
-  '#BB8FCE', // Light Purple
-  '#85C1E9', // Light Blue
+  '#1e40af', // Professional Blue (notary)
+  '#7c2d12', // Professional Brown (admin)
+  '#059669', // Professional Green (signer1)
+  '#7c3aed', // Professional Purple (signer2)
+  '#dc2626', // Professional Red (signer3)
+  '#ea580c', // Professional Orange (signer4)
+  '#0891b2', // Professional Cyan (signer5)
+  '#be185d', // Professional Pink (witness1)
+  '#65a30d', // Professional Lime (witness2)
+  '#374151', // Professional Gray (additional users)
 ] as const;
 
 // Participant Roles schemas
