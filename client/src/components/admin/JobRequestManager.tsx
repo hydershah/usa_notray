@@ -71,6 +71,7 @@ export function JobRequestManager() {
   const [assignmentNotes, setAssignmentNotes] = useState('');
   const [selectedDocument, setSelectedDocument] = useState<string | null>(null);
   const [assigningRequestId, setAssigningRequestId] = useState<number | null>(null);
+  const [reviewingRequestId, setReviewingRequestId] = useState<number | null>(null);
   
   // New assignment system state
   const [assignmentMethod, setAssignmentMethod] = useState<string>('assign');
@@ -170,6 +171,7 @@ export function JobRequestManager() {
   };
 
   const handleReviewRequest = async (requestId: number, action: 'approve' | 'reject') => {
+    setReviewingRequestId(requestId);
     try {
       await apiRequest('POST', `/api/job-requests/${requestId}/review`, {
         action,
@@ -182,6 +184,8 @@ export function JobRequestManager() {
       fetchAllRequests();
     } catch (error) {
       toast.error(`Failed to ${action} request`);
+    } finally {
+      setReviewingRequestId(null);
     }
   };
 
@@ -848,18 +852,28 @@ export function JobRequestManager() {
                                           onClick={() => handleReviewRequest(selectedRequest.id, 'approve')}
                                           className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3"
                                           size="lg"
+                                          disabled={reviewingRequestId === selectedRequest.id}
                                         >
-                                          <CheckCircle className="h-5 w-5 mr-2" />
-                                          Approve Request
+                                          {reviewingRequestId === selectedRequest.id ? (
+                                            <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                                          ) : (
+                                            <CheckCircle className="h-5 w-5 mr-2" />
+                                          )}
+                                          {reviewingRequestId === selectedRequest.id ? 'Approving...' : 'Approve Request'}
                                         </Button>
                                         <Button
                                           variant="destructive"
                                           onClick={() => handleReviewRequest(selectedRequest.id, 'reject')}
                                           className="flex-1 py-3"
                                           size="lg"
+                                          disabled={reviewingRequestId === selectedRequest.id}
                                         >
-                                          <XCircle className="h-5 w-5 mr-2" />
-                                          Reject Request
+                                          {reviewingRequestId === selectedRequest.id ? (
+                                            <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                                          ) : (
+                                            <XCircle className="h-5 w-5 mr-2" />
+                                          )}
+                                          {reviewingRequestId === selectedRequest.id ? 'Rejecting...' : 'Reject Request'}
                                         </Button>
                                       </div>
                                     </div>
