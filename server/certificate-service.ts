@@ -2,6 +2,8 @@ import { CertificateAuthority, UserCertConfig } from './certificate-authority';
 import { storage } from './storage';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
+import { db } from './db';
+import { eq } from 'drizzle-orm';
 
 interface CertificateRecord {
   userId: number;
@@ -111,10 +113,12 @@ class CertificateService {
         p12Password: await this.getP12Password(certResult.p12Path)
       });
 
-      // Update user record with certificate information
+      // Update user record with certificate information including the P12 password
+      const actualP12Password = await this.getP12Password(certResult.p12Path);
       await this.updateUserCertificateInfo(userId, {
         digitalCertificateFile: certResult.p12Path,
-        digitalCertificateExpiration: new Date(Date.now() + userConfig.validityDays * 24 * 60 * 60 * 1000).toISOString()
+        digitalCertificateExpiration: new Date(Date.now() + userConfig.validityDays * 24 * 60 * 60 * 1000).toISOString(),
+        publicCertificatePassword: actualP12Password
       });
 
       console.log(`✅ Certificate generated successfully for user ${userId}`);
@@ -207,10 +211,12 @@ class CertificateService {
         p12Password: await this.getP12Password(certResult.p12Path)
       });
 
-      // Update user record with certificate information
+      // Update user record with certificate information including the P12 password
+      const actualP12Password = await this.getP12Password(certResult.p12Path);
       await this.updateUserCertificateInfo(userId, {
         digitalCertificateFile: certResult.p12Path,
-        digitalCertificateExpiration: new Date(Date.now() + userConfig.validityDays * 24 * 60 * 60 * 1000).toISOString()
+        digitalCertificateExpiration: new Date(Date.now() + userConfig.validityDays * 24 * 60 * 60 * 1000).toISOString(),
+        publicCertificatePassword: actualP12Password
       });
 
       console.log(`✅ ${user.role} certificate generated successfully for user ${userId}`);
@@ -572,17 +578,54 @@ class CertificateService {
   private async updateUserCertificateInfo(userId: number, info: {
     digitalCertificateFile: string | null;
     digitalCertificateExpiration: string | null;
+    publicCertificatePassword?: string | null;
   }): Promise<void> {
-    await storage.executeQuery(
-      'UPDATE users SET digital_certificate_file = $1, digital_certificate_expiration = $2 WHERE id = $3',
-      [info.digitalCertificateFile, info.digitalCertificateExpiration, userId]
-    );
+    if (info.publicCertificatePassword !== undefined) {
+      // Update with password
+      await storage.executeQuery(
+        'UPDATE users SET digital_certificate_file = $1, digital_certificate_expiration = $2, public_certificate_password = $3 WHERE id = $4',
+        [info.digitalCertificateFile, info.digitalCertificateExpiration, info.publicCertificatePassword, userId]
+      );
+    } else {
+      // Update without password (maintain backward compatibility)
+      await storage.executeQuery(
+        'UPDATE users SET digital_certificate_file = $1, digital_certificate_expiration = $2 WHERE id = $3',
+        [info.digitalCertificateFile, info.digitalCertificateExpiration, userId]
+      );
+    }
   }
 
   private async getP12Password(p12Path: string): Promise<string> {
-    // In a real implementation, you'd retrieve this from the database
-    // For now, return a placeholder
-    return 'notary123';
+    // Extract certificate info from path to get the actual password
+    // P12 path format: user-{serialNumber}.p12
+    try {
+      const serialMatch = p12Path.match(/user-([^-.]+)\.p12$/);
+      if (!serialMatch) {
+        console.warn(`⚠️ Could not extract serial number from P12 path: ${p12Path}`);
+        return 'notary123'; // Fallback to old default
+      }
+      
+      const serialNumber = serialMatch[1];
+      
+      // Query the certificates table for the actual password
+      const { certificates } = await import('../../shared/schema');
+      const [certificate] = await db
+        .select()
+        .from(certificates)
+        .where(eq(certificates.serialNumber, serialNumber))
+        .limit(1);
+      
+      if (certificate && certificate.p12Password) {
+        console.log(`✅ Retrieved actual P12 password for certificate ${serialNumber}`);
+        return certificate.p12Password;
+      } else {
+        console.warn(`⚠️ No password found in database for certificate ${serialNumber}`);
+        return 'notary123'; // Fallback
+      }
+    } catch (error) {
+      console.error(`❌ Failed to retrieve P12 password for ${p12Path}:`, error);
+      return 'notary123'; // Fallback
+    }
   }
 }
 

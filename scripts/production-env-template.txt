@@ -6,7 +6,7 @@ CLIENT_URL="https://notary.yourdomain.com"
 SERVER_URL="https://api.yourdomain.com" 
 WS_URL="wss://api.yourdomain.com"
 API_URL="https://api.yourdomain.com/api"
-VIDEO_URL="https://yourdomain.whereby.com"
+VIDEO_URL="https://yourdomain.daily.co"
 
 # Database
 DATABASE_URL="postgresql://username:password@your-db-host:5432/notary_platform"
@@ -22,7 +22,8 @@ SESSION_SECRET="your-secure-session-secret-production"
 
 # External Services
 EVS_API_KEY="your-evs-api-key"
-WHEREBY_API_KEY="your-whereby-api-key"
+DAILY_API_KEY="da48a4d3b10e1baded3b0cf71f68a6522925d0a10260f0e09202f25506759e64"
+DAILY_DOMAIN="yourdomain.daily.co"
 STRIPE_SECRET_KEY="sk_live_your_stripe_secret_key"
 
 # Storage

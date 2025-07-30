@@ -223,6 +223,59 @@ export function registerDigitalSignatureRoutes(app: Express) {
   });
 
   /**
+   * Validate a P12 certificate and password
+   * POST /api/digital-signatures/validate-certificate
+   */
+  app.post('/api/digital-signatures/validate-certificate', verifyToken, async (req: any, res) => {
+    try {
+      const { certificateData, password } = req.body;
+
+      if (!certificateData || !password) {
+        return res.status(400).json({ 
+          message: 'Certificate data and password are required' 
+        });
+      }
+
+      // Convert base64 certificate data to buffer
+      let certificateBuffer: Buffer;
+      try {
+        certificateBuffer = Buffer.from(certificateData, 'base64');
+      } catch (error) {
+        return res.status(400).json({ 
+          message: 'Invalid certificate data format' 
+        });
+      }
+
+      // Validate the certificate
+      const validationResult = await digitalSignatureService.validateP12Certificate(
+        certificateBuffer, 
+        password
+      );
+
+      if (validationResult.success) {
+        res.json({
+          success: true,
+          message: 'Certificate validation successful',
+          certificateInfo: validationResult.certificateInfo
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          message: 'Certificate validation failed',
+          error: validationResult.error
+        });
+      }
+
+    } catch (error) {
+      console.error('Failed to validate certificate:', error);
+      res.status(500).json({
+        message: 'Failed to validate certificate',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  /**
    * Get signature statistics for admin dashboard
    * GET /api/digital-signatures/stats
    */

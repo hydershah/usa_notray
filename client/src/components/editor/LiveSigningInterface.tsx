@@ -19,7 +19,7 @@ import {
   Zap
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/auth';
-import WherebyVideoConference from './WherebyVideoConference';
+import DailyVideoConference from './DailyVideoConference';
 import { PDFTaggingEditor } from './PDFTaggingEditor';
 import { ParticipantPanel } from './ParticipantPanel';
 import { UnfilledTagsAlert } from './UnfilledTagsAlert';
@@ -739,7 +739,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
               
               {/* Video Content */}
               <div className="flex-1">
-                <WherebyVideoConference
+                <DailyVideoConference
                   sessionId={sessionId}
                   jobId={parseInt(sessionId.split('_')[1]) || parseInt(sessionId) || 1}
                   currentUser={{

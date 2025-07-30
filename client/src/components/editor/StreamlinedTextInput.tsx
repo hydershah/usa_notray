@@ -187,9 +187,9 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     const textMetrics = ctx.measureText(textToMeasure);
     const textWidth = textMetrics.width;
     
-    // ✅ ULTRA-TIGHT FIT: Minimal padding that closely follows text outline
-    const minTextWidth = Math.max(textWidth + 4, 20); // Just 2px padding on each side, minimum 20px
-    const minTextHeight = Math.max(measureFontSize + 2, 14); // Just 1px padding top/bottom, minimum 14px
+    // ✅ GENEROUS FIT: More spacious padding for better usability
+    const minTextWidth = Math.max(textWidth + 16, 60); // 8px padding on each side, minimum 60px
+    const minTextHeight = Math.max(measureFontSize + 12, 32); // 6px padding top/bottom, minimum 32px
     
     return {
       width: minTextWidth,
@@ -213,10 +213,10 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     const textMetrics = ctx.measureText(textToMeasure);
     const textWidth = textMetrics.width;
     
-    // ✅ EXACT FIT: Background exactly matches text size with minimal padding
+    // ✅ SPACIOUS FIT: Background with generous padding for better usability
     return {
-      width: Math.max(textWidth + 2, 20), // Even tighter - just 1px padding each side
-      height: Math.max(measureFontSize + 1, 14) // Even tighter - minimal padding top/bottom
+      width: Math.max(textWidth + 16, 60), // Generous padding - 8px each side
+      height: Math.max(measureFontSize + 12, 32) // Generous padding - 6px top/bottom
     };
   }, [inputValue, currentFontSize, fontFamily]);
 
@@ -1198,16 +1198,16 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
         }}
         resizeHandleStyles={isSelected ? {
           bottomRight: {
-            width: '12px',
-            height: '12px',
-            backgroundColor: '#3b82f6',
-            border: '2px solid white',
+            width: '28px',
+            height: '28px',
+            backgroundColor: '#2563eb',
+            border: '4px solid white',
             borderRadius: '50%',
-            right: '-6px',
-            bottom: '-6px',
+            right: '-14px',
+            bottom: '-14px',
             cursor: 'se-resize',
             opacity: 1,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+            boxShadow: '0 8px 25px rgba(37, 99, 235, 0.5)'
           }
         } : {}}
         onClick={(e: React.MouseEvent) => {
@@ -1278,10 +1278,10 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
               width: '100%',
               height: '100%',
               background: 'transparent',
-              border: '2px dashed #3b82f6', // Blue dashed border when editing
+              border: '3px dashed #3b82f6', // Thicker blue dashed border when editing
               outline: 'none',
-              borderRadius: '4px',
-              padding: '2px 4px', // Consistent padding with display mode
+              borderRadius: '6px',
+              padding: '8px 12px', // More generous padding for better usability
               margin: 0,
               fontSize: `${Math.max(dynamicFontSize, 10) * scaleFactor}px`, // Reduced scaling to match display mode
               fontFamily: fontFamily,

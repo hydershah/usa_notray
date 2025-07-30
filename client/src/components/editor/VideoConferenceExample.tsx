@@ -1,4 +1,4 @@
-import WherebyVideoConference from './WherebyVideoConference';
+import DailyVideoConference from './DailyVideoConference';
 import SimpleVideoConference from './SimpleVideoConference';
 import { VideoIntegration } from './VideoIntegration';
 import { useState } from 'react';
@@ -66,13 +66,13 @@ const VideoConferenceExample: React.FC<VideoConferenceExampleProps> = ({
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div className="text-center">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          Whereby Video Conference Integration
+          Daily.co Video Conference Integration
         </h1>
         <p className="text-gray-600">
-          Demonstration of our new Whereby-powered video conferencing system
+          Demonstration of our new Daily.co-powered video conferencing system
         </p>
         <div className="flex justify-center gap-2 mt-4">
-          <Badge variant="secondary">Whereby.com Integration</Badge>
+          <Badge variant="secondary">Daily.co Integration</Badge>
           <Badge variant="outline">Cloud Recording</Badge>
           <Badge variant="outline">Professional Grade</Badge>
         </div>
@@ -171,7 +171,7 @@ const VideoConferenceExample: React.FC<VideoConferenceExampleProps> = ({
         <TabsContent value="full" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Full Whereby Conference</CardTitle>
+              <CardTitle>Full Daily Conference</CardTitle>
               <p className="text-sm text-gray-600">
                 Complete video conferencing interface with all features
               </p>
@@ -179,7 +179,7 @@ const VideoConferenceExample: React.FC<VideoConferenceExampleProps> = ({
             <CardContent>
               <div className="bg-gray-100 p-4 rounded-lg">
                 <div className="h-96 bg-white rounded border-2 border-dashed border-gray-300">
-                  <WherebyVideoConference
+                  <DailyVideoConference
                     sessionId={sessionId}
                     jobId={jobId}
                     currentUser={dynamicCurrentUser}
@@ -231,7 +231,7 @@ const VideoConferenceExample: React.FC<VideoConferenceExampleProps> = ({
       {/* Feature Comparison */}
       <Card>
         <CardHeader>
-          <CardTitle>Whereby vs WebRTC Comparison</CardTitle>
+          <CardTitle>Daily.co vs WebRTC Comparison</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -240,7 +240,7 @@ const VideoConferenceExample: React.FC<VideoConferenceExampleProps> = ({
                 <tr className="border-b">
                   <th className="text-left py-2">Feature</th>
                   <th className="text-left py-2">WebRTC (Old)</th>
-                  <th className="text-left py-2">Whereby (New)</th>
+                  <th className="text-left py-2">Daily.co (New)</th>
                 </tr>
               </thead>
               <tbody className="text-sm">
@@ -290,7 +290,7 @@ const VideoConferenceExample: React.FC<VideoConferenceExampleProps> = ({
             <div>
               <h4 className="font-semibold text-green-800 mb-2">✅ Implemented Features</h4>
               <ul className="space-y-1 text-sm">
-                <li>• Whereby iframe integration</li>
+                <li>• Daily.co iframe integration</li>
                 <li>• Host/participant role management</li>
                 <li>• Cloud recording controls</li>
                 <li>• Participant join/leave events</li>

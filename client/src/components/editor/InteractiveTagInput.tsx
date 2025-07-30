@@ -536,21 +536,21 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
       </div>
 
       {/* Actions */}
-      <div className="border-t p-2 flex gap-2">
+      <div className="border-t p-4 flex gap-3">
         <Button 
           onClick={handleSave} 
           disabled={!!validationError || (!content.value && config.required)}
-          className="flex-1 h-8 text-xs"
+          className="flex-1 h-12 text-sm font-semibold bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-[1.02] disabled:from-gray-400 disabled:to-gray-500 disabled:transform-none disabled:hover:scale-100"
         >
-          <Save className="h-3 w-3 mr-1" />
+          <Save className="h-5 w-5 mr-2" />
           Save
         </Button>
         <Button 
           onClick={handleCancel} 
           variant="outline" 
-          className="flex-1 h-8 text-xs"
+          className="flex-1 h-12 text-sm font-semibold border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 hover:text-gray-900 shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-[1.02]"
         >
-          <X className="h-3 w-3 mr-1" />
+          <X className="h-5 w-5 mr-2" />
           Cancel
         </Button>
       </div>

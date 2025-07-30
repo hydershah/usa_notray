@@ -198,11 +198,14 @@ export function JobSignersManager({ jobId, onSignersUpdated }: JobSignersManager
     }
   }, [sendInvitationMutation.isSuccess, sendInvitationMutation.isError, sendInvitationMutation.error, refetch, toast]);
 
-  // Permission checks
+  // Permission checks - Allow admin, title_company, and notary roles to edit signers
   const canEditSigners = user && (
     user.role === 'admin' || 
-    user.role === 'title_company'
+    user.role === 'title_company' ||
+    user.role === 'notary'
   );
+
+
 
   const resetForm = () => {
     setFormData({
@@ -362,6 +365,8 @@ export function JobSignersManager({ jobId, onSignersUpdated }: JobSignersManager
 
   return (
     <div className="space-y-6">
+
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -372,7 +377,7 @@ export function JobSignersManager({ jobId, onSignersUpdated }: JobSignersManager
         </div>
                  {canEditSigners && (
            <>
-             <Button 
+                          <Button 
                onClick={() => {
                  resetForm();
                  setIsAddDialogOpen(true);
@@ -381,8 +386,15 @@ export function JobSignersManager({ jobId, onSignersUpdated }: JobSignersManager
                <Plus className="h-4 w-4 mr-2" />
                Add Signer
              </Button>
-             
-             <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+           </>
+         )}
+         
+
+         
+      </div>
+
+      {/* Add/Edit Signer Dialog - Available for both normal and debug modes */}
+      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
                <DialogContent>
                  <DialogHeader>
                    <DialogTitle>Add New Signer</DialogTitle>
@@ -404,9 +416,6 @@ export function JobSignersManager({ jobId, onSignersUpdated }: JobSignersManager
                  </div>
                </DialogContent>
              </Dialog>
-           </>
-         )}
-      </div>
 
       {/* Signers Table */}
       <Card>

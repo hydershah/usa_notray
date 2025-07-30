@@ -11,7 +11,7 @@ export function registerJobEditingRoutes(app: Express) {
   // ===========================
   
   // Update job basic information
-  app.put('/api/jobs/:jobId', verifyToken, hasAdminPrivileges, async (req: any, res) => {
+  app.put('/api/jobs/:jobId', verifyToken, async (req: any, res) => {
     try {
       const jobId = parseInt(req.params.jobId);
       const userId = req.user.id;
@@ -135,7 +135,8 @@ export function registerJobEditingRoutes(app: Express) {
 
       // Check permissions
       const canEdit = req.user.role === 'admin' || 
-                     req.user.role === 'title_company';
+                     req.user.role === 'title_company' ||
+                     req.user.role === 'notary';
 
       if (!canEdit) {
         return res.status(403).json({ message: 'You do not have permission to add signers' });
@@ -217,7 +218,8 @@ export function registerJobEditingRoutes(app: Express) {
 
       // Check permissions
       const canEdit = req.user.role === 'admin' || 
-                     req.user.role === 'title_company';
+                     req.user.role === 'title_company' ||
+                     req.user.role === 'notary';
 
       if (!canEdit) {
         return res.status(403).json({ message: 'You do not have permission to edit signers' });
@@ -250,12 +252,12 @@ export function registerJobEditingRoutes(app: Express) {
           .from(signers)
           .where(and(
             eq(signers.jobId, jobId), 
-            eq(signers.signerEmail, signerEmail),
-            eq(signers.id, signerId) // Exclude current signer
+            eq(signers.signerEmail, signerEmail)
           ))
           .limit(1);
 
-        if (emailConflict.length > 0) {
+        // Check if the conflict is with a different signer (not the current one)
+        if (emailConflict.length > 0 && emailConflict[0].id !== signerId) {
           return res.status(400).json({ 
             message: 'Another signer with this email already exists for this job' 
           });
@@ -298,11 +300,33 @@ export function registerJobEditingRoutes(app: Express) {
         return res.status(400).json({ message: 'Invalid job ID or signer ID' });
       }
 
-      // Check permissions
+      // Check permissions with debug logging
+      console.log('DELETE SIGNER Debug:', {
+        userId: req.user.id,
+        userRole: req.user.role,
+        userName: req.user.username,
+        jobId: jobId,
+        signerId: signerId
+      });
+
       const canEdit = req.user.role === 'admin' || 
-                     req.user.role === 'title_company';
+                     req.user.role === 'title_company' ||
+                     req.user.role === 'notary';
+
+      console.log('DELETE SIGNER Permission Check:', {
+        userRole: req.user.role,
+        canEdit: canEdit,
+        isAdmin: req.user.role === 'admin',
+        isTitleCompany: req.user.role === 'title_company',
+        isNotary: req.user.role === 'notary'
+      });
 
       if (!canEdit) {
+        console.log('DELETE SIGNER DENIED:', {
+          userId: req.user.id,
+          userRole: req.user.role,
+          reason: 'Role not admin, title_company, or notary'
+        });
         return res.status(403).json({ message: 'You do not have permission to remove signers' });
       }
 
@@ -353,7 +377,8 @@ export function registerJobEditingRoutes(app: Express) {
 
       // Check permissions
       const canEdit = req.user.role === 'admin' || 
-                     req.user.role === 'title_company';
+                     req.user.role === 'title_company' ||
+                     req.user.role === 'notary';
 
       if (!canEdit) {
         return res.status(403).json({ message: 'You do not have permission to send invitations' });
@@ -445,7 +470,8 @@ export function registerJobEditingRoutes(app: Express) {
 
       // Check permissions
       const canEdit = req.user.role === 'admin' || 
-                     req.user.role === 'title_company';
+                     req.user.role === 'title_company' ||
+                     req.user.role === 'notary';
 
       if (!canEdit) {
         return res.status(403).json({ message: 'You do not have permission to add participants' });
@@ -515,7 +541,8 @@ export function registerJobEditingRoutes(app: Express) {
 
       // Check permissions
       const canEdit = req.user.role === 'admin' || 
-                     req.user.role === 'title_company';
+                     req.user.role === 'title_company' ||
+                     req.user.role === 'notary';
 
       if (!canEdit) {
         return res.status(403).json({ message: 'You do not have permission to remove participants' });

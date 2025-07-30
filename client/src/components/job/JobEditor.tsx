@@ -27,9 +27,10 @@ import {
   Building,
   MapPin,
   Calendar,
-  Clock
+  Clock,
+  ArrowLeft
 } from 'lucide-react';
-// import { JobSignersManager } from './JobSignersManager';
+import { JobSignersManager } from './JobSignersManager';
 import EnhancedDocumentManager from './enhanced-document-manager';
 
 interface JobEditorProps {
@@ -145,12 +146,29 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
     }
   }, [updateJobMutation.isSuccess, updateJobMutation.isError, updateJobMutation.error, queryClient, jobId, onJobUpdated, toast]);
 
-  // Permission checks
+  // Permission checks - admins and title companies can edit any job, notaries only open/pending
   const canEditJob = user && job && (
     user.role === 'admin' || 
     user.role === 'title_company' || 
     (user.role === 'notary' && ['open', 'pending'].includes(job.jobStatus))
   );
+
+  // Debug info for admins
+  const getPermissionDetails = () => {
+    if (!user) return "User not authenticated";
+    if (!job) return "Job data not loaded";
+    
+    if (user.role === 'admin') return "Admin users should have full access to all jobs";
+    if (user.role === 'title_company') return "Title company users should have full access to all jobs";
+    if (user.role === 'notary') {
+      if (['open', 'pending'].includes(job.jobStatus)) {
+        return "Notary can edit open/pending jobs";
+      } else {
+        return `Notary cannot edit jobs with status: ${job.jobStatus}`;
+      }
+    }
+    return `Role '${user.role}' does not have edit permissions for any jobs`;
+  };
 
   const handleFormChange = (field: keyof Job, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -203,9 +221,44 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
   if (!canEditJob) {
     return (
       <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Info className="h-5 w-5 text-amber-500" />
+              Access Restricted
+            </CardTitle>
+            {onClose && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onClose}
+                className="flex items-center gap-2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </Button>
+            )}
+          </div>
+        </CardHeader>
         <CardContent className="p-6">
-          <div className="text-center text-amber-600">
-            You don't have permission to edit this job.
+          <div className="text-center space-y-4">
+            <div className="text-amber-600 font-medium">
+              You don't have permission to edit this job.
+            </div>
+            {user?.role === 'admin' && job && (
+              <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded">
+                <p><strong>Debug Info:</strong></p>
+                <p>User Role: {user.role}</p>
+                <p>Job Status: {job.jobStatus}</p>
+                <p>Job ID: {job.id}</p>
+                <p>Reason: {getPermissionDetails()}</p>
+              </div>
+            )}
+            {user?.role !== 'admin' && (
+              <div className="text-sm text-gray-600">
+                {getPermissionDetails()}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -516,16 +569,13 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
             </TabsContent>
 
             <TabsContent value="signers" className="h-full p-6 m-0">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Signers Management</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center py-8 text-muted-foreground">
-                    Signers management functionality will be available soon.
-                  </div>
-                </CardContent>
-              </Card>
+              <JobSignersManager 
+                jobId={jobId} 
+                onSignersUpdated={() => {
+                  queryClient.invalidateQueries({ queryKey: [`/api/jobs/${jobId}`] });
+                  onJobUpdated?.();
+                }}
+              />
             </TabsContent>
 
             <TabsContent value="documents" className="h-full p-6 m-0">
@@ -605,20 +655,7 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
               </div>
             </TabsContent>
 
-            <TabsContent value="signers" className="p-4 lg:p-6 m-0 bg-gray-50">
-              <div className="max-w-5xl mx-auto">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Signers Management</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-center py-8 text-muted-foreground">
-                      Signers management functionality will be available soon.
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
+
 
             <TabsContent value="documents" className="p-4 lg:p-6 m-0 bg-gray-50">
               <div className="max-w-5xl mx-auto">

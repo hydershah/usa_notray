@@ -17,7 +17,7 @@ import {
   Minimize2
 } from 'lucide-react';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
-import WherebyVideoConference from './WherebyVideoConference';
+import DailyVideoConference from './DailyVideoConference';
 
 interface VideoIntegrationProps {
   sessionId: string;
@@ -73,7 +73,7 @@ export const VideoIntegration: React.FC<VideoIntegrationProps> = ({
     mode: editorMode
   } = useEditorStore();
 
-  // Extract job ID from session ID for Whereby integration
+  // Extract job ID from session ID for Daily.co integration
   const jobId = useMemo(() => {
     if (session?.jobId) return session.jobId;
     
@@ -226,7 +226,7 @@ export const VideoIntegration: React.FC<VideoIntegrationProps> = ({
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <h3 className="text-lg font-medium text-gray-900 mb-2">Starting Video Conference</h3>
-          <p className="text-sm text-gray-600">Setting up your Whereby session...</p>
+          <p className="text-sm text-gray-600">Setting up your Daily.co session...</p>
         </div>
       </div>
     );
@@ -334,7 +334,7 @@ export const VideoIntegration: React.FC<VideoIntegrationProps> = ({
   // Render active video conference
   return (
     <div className={className}>
-      <WherebyVideoConference
+      <DailyVideoConference
         sessionId={sessionId}
         jobId={jobId}
         currentUser={effectiveCurrentUser}

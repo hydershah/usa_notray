@@ -111,6 +111,8 @@ const TagRenderer: React.FC<TagRendererProps> = ({
     height: Math.round(tag.coordinates.height * scaleFactor)
   };
 
+  const hasContent = !!(tag.content || tag.contentData || tag.isCompleted);
+
   const validateAndSanitizeCoordinates = (coords: any) => {
     const sanitized: any = {};
     
@@ -283,46 +285,56 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         transition-all cursor-pointer overflow-hidden
         ${isSelected ? 'ring-2 ring-blue-400 ring-opacity-60' : ''}
         ${canEdit ? 'hover:shadow-md' : ''}
+        ${hasContent ? 'completed-tag-transparent' : ''}
       `}
       style={{
-        // Special handling for whiteout tags - always white background
-        backgroundColor: tag.tagType === 'W' ? '#ffffff' : (tag.colorCode || '#1e40af'),
+        backgroundColor: hasContent 
+          ? 'transparent' 
+          : tag.tagType === 'W' ? '#ffffff' : (tag.colorCode || '#1e40af'),
         
-        // Simple border styling
-        border: isSelected
-          ? '2px solid #3b82f6' // Blue border for selected tags
+        ...(hasContent && {
+          background: 'transparent',
+          backgroundColor: 'transparent',
+          backgroundImage: 'none',
+        }),
+        
+        border: hasContent 
+          ? 'none' 
+          : isSelected
+          ? '2px solid #3b82f6' 
           : tag.tagType === 'W'
-          ? '1px solid #d1d5db' // Light gray border for whiteout tags
+          ? '1px solid #d1d5db' 
           : 'none',
         
-        borderRadius: '6px', // Clean rounded corners
+        borderRadius: '6px', 
         
-        // Text color based on tag type
-        color: tag.tagType === 'W' ? '#374151' : '#ffffff',
+        color: hasContent 
+          ? '#000000' 
+          : tag.tagType === 'W' ? '#374151' : '#ffffff',
         
         zIndex: tag.tagType === 'W' ? (isSelected ? 1000 : 10) : (isSelected ? 1000 : 100),
         pointerEvents: 'auto',
         cursor: mode === 'signing' && !tag.isCompleted ? 'pointer' : 'default',
         
-        // Clean shadow for depth
-        boxShadow: isSelected 
+        boxShadow: hasContent 
+          ? 'none' 
+          : isSelected 
           ? '0 4px 12px rgba(0, 0, 0, 0.2)' 
           : '0 2px 6px rgba(0, 0, 0, 0.1)',
         
-        // Minimum sizing only for non-text tags
         minWidth: tag.tagType === 'T' ? 'auto' : '80px',
         minHeight: tag.tagType === 'T' ? 'auto' : '32px'
       }}
       resizeHandleStyles={canEdit ? {
         bottomRight: { 
-          width: '16px', // Increased from 10px to 16px for better interaction
-          height: '16px', // Increased from 10px to 16px
+          width: '16px', 
+          height: '16px', 
           backgroundColor: tag.colorCode || '#3b82f6',
           border: '2px solid white',
           borderRadius: '50%',
-          right: '-8px', // Adjusted position for larger handle
-          bottom: '-8px', // Adjusted position for larger handle
-          boxShadow: '0 2px 6px rgba(0,0,0,0.2)', // Enhanced shadow
+          right: '-8px', 
+          bottom: '-8px', 
+          boxShadow: '0 2px 6px rgba(0,0,0,0.2)', 
           cursor: 'nw-resize'
         }
       } : undefined}

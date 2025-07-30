@@ -102,19 +102,57 @@ export class CertificateVerificationService {
     try {
       const requiresCertificate = this.userRequiresCertificate(user.role);
       
-      // Get user's active certificate
-      const [certificate] = await db
-        .select()
-        .from(selfSignedCertificates)
-        .where(and(
-          eq(selfSignedCertificates.userId, user.id),
-          eq(selfSignedCertificates.status, 'active')
-        ))
-        .limit(1);
+      let hasCertificate = false;
+      let certificateExpired = false;
+      let certificateValid = false;
+      let certificateId = '';
+      let certificateExpiry: Date | undefined;
+      let certificateIssued: Date | undefined;
 
-      const hasCertificate = !!certificate;
-      const certificateExpired = certificate ? new Date(certificate.expiresAt) < new Date() : false;
-      const certificateValid = hasCertificate && !certificateExpired;
+      // For notaries, first check if they have uploaded .pfx certificate
+      if (user.role === 'notary' && user.publicCertificateFile) {
+        try {
+          console.log(`📂 Checking uploaded notary certificate for ${user.email}: ${user.publicCertificateFile}`);
+          
+          // Check if uploaded certificate exists (we'll assume it's valid if the file field is set)
+          hasCertificate = true;
+          certificateId = user.publicCertificateFile;
+          
+          // Check expiration if provided
+          if (user.publicCertificateExpiration) {
+            certificateExpiry = new Date(user.publicCertificateExpiration);
+            certificateExpired = certificateExpiry < new Date();
+          }
+          
+          certificateValid = hasCertificate && !certificateExpired;
+          console.log(`✅ Found uploaded notary certificate for ${user.email}`);
+        } catch (error) {
+          console.warn(`⚠️ Error checking uploaded certificate for notary ${user.email}:`, error);
+          // Fall back to self-signed certificate check below
+          hasCertificate = false;
+        }
+      }
+
+      // If no uploaded certificate found, check self-signed certificates table
+      if (!hasCertificate) {
+        const [certificate] = await db
+          .select()
+          .from(selfSignedCertificates)
+          .where(and(
+            eq(selfSignedCertificates.userId, user.id),
+            eq(selfSignedCertificates.status, 'active')
+          ))
+          .limit(1);
+
+        if (certificate) {
+          hasCertificate = true;
+          certificateExpired = new Date(certificate.expiresAt) < new Date();
+          certificateValid = hasCertificate && !certificateExpired;
+          certificateId = certificate.serialNumber || certificate.id.toString();
+          certificateExpiry = new Date(certificate.expiresAt);
+          certificateIssued = new Date(certificate.createdAt);
+        }
+      }
 
       const issues: string[] = [];
       let canProceed = true;
@@ -131,11 +169,11 @@ export class CertificateVerificationService {
 
       // Additional validation for notaries
       if (user.role === 'notary') {
-        if (!user.isApproved) {
+        if (user.approvalStatus !== 'approved') {
           issues.push('Notary not approved');
           canProceed = false;
         }
-        if (!user.notaryProfileCompleted) {
+        if (!user.profileSubmitted) {
           issues.push('Notary profile incomplete');
           canProceed = false;
         }
@@ -149,9 +187,9 @@ export class CertificateVerificationService {
         hasCertificate,
         certificateValid,
         certificateExpired,
-        certificateId: certificate?.certificateId,
-        certificateExpiry: certificate ? new Date(certificate.expiresAt) : undefined,
-        certificateIssued: certificate ? new Date(certificate.issuedAt) : undefined,
+        certificateId,
+        certificateExpiry,
+        certificateIssued,
         requiresCertificate,
         canProceed,
         issues
@@ -167,6 +205,9 @@ export class CertificateVerificationService {
         hasCertificate: false,
         certificateValid: false,
         certificateExpired: false,
+        certificateId: '',
+        certificateExpiry: undefined,
+        certificateIssued: undefined,
         requiresCertificate: true,
         canProceed: false,
         issues: ['Error checking certificate status']

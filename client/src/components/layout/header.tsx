@@ -98,10 +98,11 @@ export function Header() {
           {/* Logo Section */}
           <div className="flex items-center flex-1">
             <div className="relative">
-              <div className="h-10 w-10 bg-gradient-to-br from-blue-500 via-purple-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
-                <IdCard className="h-5 w-5 text-white" />
-              </div>
-              <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-white animate-pulse"></div>
+              <img 
+                src="/logo.jpeg" 
+                alt="Sharp Note Logo" 
+                className="h-10 w-auto object-contain"
+              />
             </div>
             <div className="ml-3">
               <h1 className="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">

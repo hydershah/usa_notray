@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { UserForm } from '@/components/user/user-form';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/queryClient';
 import { 
   Award, 
   Shield, 
@@ -22,7 +26,8 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  Hash
+  Hash,
+  Plus
 } from 'lucide-react';
 
 interface NotaryData {
@@ -101,12 +106,54 @@ interface NotaryData {
 
 export function AdminNotaries() {
   const [, setLocation] = useLocation();
-  const [allNotaries, setAllNotaries] = useState<NotaryData[]>([]);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedNotary, setSelectedNotary] = useState<NotaryData | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [loading, setLoading] = useState(true);
+  const [allNotaries, setAllNotaries] = useState<NotaryData[]>([]);
+  
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const createUserMutation = useMutation({
+    mutationFn: async (userData: any) => {
+      const response = await apiRequest('POST', '/api/auth/register', userData);
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Notary created successfully.",
+      });
+      setIsFormOpen(false);
+      // Refresh the notary data
+      fetchNotariesData();
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to create notary.",
+      });
+    },
+  });
+
+  const handleAddNotary = () => {
+    setIsFormOpen(true);
+  };
+
+  const handleFormSubmit = (formData: any) => {
+    // Set role to notary and default notary type if not specified
+    const userData = {
+      ...formData,
+      role: 'notary',
+      notaryType: formData.notaryType || 'contractor'
+    };
+    createUserMutation.mutate(userData);
+  };
 
   useEffect(() => {
     fetchNotariesData();
@@ -316,6 +363,13 @@ export function AdminNotaries() {
             <Award className="h-3 w-3 mr-1" />
             {allNotaries.length} notaries
           </Badge>
+          <Button 
+            onClick={handleAddNotary}
+            className="bg-green-600 hover:bg-green-700 text-white"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add Notary
+          </Button>
           <Button 
             onClick={() => setLocation('/notary-management')}
             className="bg-blue-500 hover:bg-blue-600 text-white"
@@ -766,6 +820,16 @@ export function AdminNotaries() {
           </Card>
         </div>
       </div>
+
+      {/* User Form Modal */}
+      <UserForm
+        user={null}
+        isOpen={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        onSubmit={handleFormSubmit}
+        isLoading={createUserMutation.isPending}
+        defaultRole="notary"
+      />
     </div>
   );
 } 
