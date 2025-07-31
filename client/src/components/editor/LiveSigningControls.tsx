@@ -30,13 +30,14 @@ export const LiveSigningControls: React.FC<LiveSigningControlsProps> = ({
       {sessionState === 'waiting' && (
         <Button 
           onClick={onStartSession} 
-          className="bg-green-600 hover:bg-green-700"
+          size="lg"
+          className="bg-green-600 hover:bg-green-700 px-6 py-3 text-base font-semibold"
           disabled={isLoading}
         >
           {isLoading ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            <Loader2 className="h-5 w-5 mr-2 animate-spin" />
           ) : (
-            <Play className="h-4 w-4 mr-2" />
+            <Play className="h-5 w-5 mr-2" />
           )}
           Start Session
         </Button>
@@ -46,26 +47,29 @@ export const LiveSigningControls: React.FC<LiveSigningControlsProps> = ({
         <>
           <Button 
             onClick={onPauseSession} 
+            size="lg"
             variant="outline"
+            className="px-5 py-3 text-base font-medium"
             disabled={isLoading}
           >
             {isLoading ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
             ) : (
-              <Pause className="h-4 w-4 mr-2" />
+              <Pause className="h-5 w-5 mr-2" />
             )}
             Pause
           </Button>
           
           <Button 
             onClick={onCompleteSession} 
-            className="bg-purple-600 hover:bg-purple-700"
+            size="lg"
+            className="bg-purple-600 hover:bg-purple-700 px-5 py-3 text-base font-semibold"
             disabled={isLoading}
           >
             {isLoading ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
             ) : (
-              <CheckCircle className="h-4 w-4 mr-2" />
+              <CheckCircle className="h-5 w-5 mr-2" />
             )}
             Complete Session
           </Button>
@@ -76,26 +80,28 @@ export const LiveSigningControls: React.FC<LiveSigningControlsProps> = ({
         <>
           <Button 
             onClick={onResumeSession} 
-            className="bg-blue-600 hover:bg-blue-700"
+            size="lg"
+            className="bg-blue-600 hover:bg-blue-700 px-5 py-3 text-base font-semibold"
             disabled={isLoading}
           >
             {isLoading ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
             ) : (
-              <Play className="h-4 w-4 mr-2" />
+              <Play className="h-5 w-5 mr-2" />
             )}
             Resume
           </Button>
           
           <Button 
             onClick={onCompleteSession} 
-            className="bg-purple-600 hover:bg-purple-700"
+            size="lg"
+            className="bg-purple-600 hover:bg-purple-700 px-5 py-3 text-base font-semibold"
             disabled={isLoading}
           >
             {isLoading ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
             ) : (
-              <CheckCircle className="h-4 w-4 mr-2" />
+              <CheckCircle className="h-5 w-5 mr-2" />
             )}
             Complete Session
           </Button>

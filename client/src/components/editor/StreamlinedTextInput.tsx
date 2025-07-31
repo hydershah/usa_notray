@@ -3,6 +3,27 @@ import { Rnd } from 'react-rnd';
 import { useToast } from '@/hooks/use-toast';
 import { useEditorStore } from '@/hooks/editor/useEditorStore';
 
+// Utility to measure text dimensions for smart box sizing
+const measureText = (text: string, fontSize: number, fontFamily: string = 'Arial'): { width: number; height: number } => {
+  // Create a temporary canvas for text measurement
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (!context) return { width: 100, height: fontSize * 1.2 };
+  
+  context.font = `${fontSize}px ${fontFamily}`;
+  const textMetrics = context.measureText(text || 'A'); // Use 'A' as fallback for empty text
+  
+  // Calculate width and height with proper line spacing
+  const lines = (text || 'A').split('\n');
+  const maxLineWidth = Math.max(...lines.map(line => context.measureText(line).width));
+  const textHeight = lines.length * fontSize * 1.2; // 1.2 for line spacing
+  
+  return {
+    width: Math.max(maxLineWidth, 50), // Minimum width
+    height: Math.max(textHeight, fontSize * 1.2) // Minimum height
+  };
+};
+
 // Simple debounce utility
 function debounce<T extends (...args: any[]) => any>(
   func: T,
@@ -156,11 +177,46 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
   const [isDeleted, setIsDeleted] = useState(false); // Track deletion state
   // Removed clickTimeout state - no longer needed
 
-  // Access editor store for custom dimensions and global font size
-  const { setCustomTagDimensions, globalFontSize, setGlobalFontSize } = useEditorStore();
+  // Access editor store for custom dimensions and last used font size
+  const { setCustomTagDimensions, lastUsedFontSize, setLastUsedFontSize } = useEditorStore();
+
+
   
-  // Use global font size from store instead of local state
-  const currentFontSize = globalFontSize;
+  // Use individual font size from props (default to lastUsedFontSize if not provided)
+  const [liveFontSize, setLiveFontSize] = useState<number | undefined>(undefined);
+  const currentFontSize = liveFontSize !== undefined ? liveFontSize : fontSize;
+
+  // Smart box sizing: Calculate dimensions based on text content
+  const calculateSmartDimensions = useCallback((textContent: string, fontSizeValue: number): { width: number; height: number } => {
+    const textDimensions = measureText(textContent, fontSizeValue, fontFamily);
+    const padding = 16; // Padding around text so box never overlaps
+    
+    return {
+      width: Math.max(textDimensions.width + padding * 2, 120), // Minimum width
+      height: Math.max(textDimensions.height + padding * 2, 60) // Minimum height
+    };
+  }, [fontFamily]);
+
+  // Smart resize: Update box dimensions when text or font size changes
+  useEffect(() => {
+    const smartDimensions = calculateSmartDimensions(inputValue, currentFontSize);
+    
+    // Only update if dimensions would significantly change (avoid constant micro-adjustments)
+    const widthDiff = Math.abs(smartDimensions.width - dimensions.width);
+    const heightDiff = Math.abs(smartDimensions.height - dimensions.height);
+    
+    if (widthDiff > 10 || heightDiff > 10) {
+      setDimensions(smartDimensions);
+      
+      console.log('📏 Smart box resize:', {
+        id,
+        text: inputValue.substring(0, 20) + (inputValue.length > 20 ? '...' : ''),
+        fontSize: currentFontSize,
+        oldDimensions: dimensions,
+        newDimensions: smartDimensions
+      });
+    }
+  }, [inputValue, currentFontSize, calculateSmartDimensions, dimensions, id]);
   
   const inputRef = useRef<HTMLInputElement>(null);
   const spanRef = useRef<HTMLSpanElement>(null);
@@ -321,29 +377,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
   // 🧩 Auto-tighten box when content or font size changes (only when not editing/resizing)
   // ✅ REMOVED: Font size is now globally managed and doesn't change based on container size
   
-  // Global keyboard handler for font size when selected (not editing)
-  useEffect(() => {
-    if (!isSelected || isEditing) return;
-    
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        if (e.key === '=' || e.key === '+') {
-          e.preventDefault();
-          const newSize = Math.min(currentFontSize + 2, 40);
-          setGlobalFontSize(newSize);
-          console.log(`🔤 Font size increased to ${newSize}px`);
-        } else if (e.key === '-') {
-          e.preventDefault();
-          const newSize = Math.max(currentFontSize - 2, 10);
-          setGlobalFontSize(newSize);
-          console.log(`🔤 Font size decreased to ${newSize}px`);
-        }
-      }
-    };
-    
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [isSelected, isEditing, currentFontSize, setGlobalFontSize]);
+  // Font size is now controlled by corner drag resize only
    
   // Handle deletion - IMPROVED
   const handleDelete = useCallback(async () => {
@@ -691,7 +725,8 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     }
   }, [scaleFactor, sessionId, id, onMove, dimensions.width, dimensions.height, isDeleted, coordinates.pageNumber, webSocket, assignedUserId, currentFontSize]);
 
-  // ✅ FIXED: Resize handler without font size changes - keep font size constant
+  // ✅ INSTANT CORNER DRAG: Resize handler with immediate response
+  
   const handleResize = useCallback((
     e: any,
     direction: any,
@@ -700,63 +735,42 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     position: { x: number; y: number }
   ) => {
     if (isDeleted) return;
-
     const newWidth = parseInt(ref.style.width) / scaleFactor;
     const newHeight = parseInt(ref.style.height) / scaleFactor;
-
-    // Update dimensions and font size based on container height
-    setDimensions({ width: newWidth, height: newHeight });
-
-    // Calculate font size based on container height (but with limits)
-    const newFontSize = Math.min(Math.max(Math.round(newHeight * 0.6), 10), 40);
-    if (newFontSize !== currentFontSize) {
-      setGlobalFontSize(newFontSize);
+    const smartDimensions = calculateSmartDimensions(inputValue, currentFontSize);
+    setDimensions(smartDimensions);
+    // 100px:1 font size sensitivity
+    const dragDistance = delta.width;
+    const fontSizeChange = dragDistance / (scaleFactor * 100); // 100px drag = 1px font size
+    if (Math.abs(dragDistance) > 0) {
+      let newFontSize = currentFontSize + fontSizeChange;
+      newFontSize = Math.max(10, Math.min(72, newFontSize));
+      setLiveFontSize(newFontSize); // Use exact value for instant feedback
     }
-
-    console.log('✅ Text tag resized with font adjustment:', { 
-      id, 
-      newSize: `${newWidth}x${newHeight}`,
-      oldFontSize: currentFontSize,
-      newFontSize: newFontSize
-    });
-
     if (onResize) {
-      onResize({ x: position.x, y: position.y, width: newWidth, height: newHeight });
+      onResize({
+        x: coordinates.x,
+        y: coordinates.y,
+        width: smartDimensions.width,
+        height: smartDimensions.height
+      });
     }
-  }, [scaleFactor, id, onResize, isDeleted, currentFontSize, setGlobalFontSize]);
+  }, [scaleFactor, isDeleted, inputValue, currentFontSize, onResize, calculateSmartDimensions]);
 
   // ✅ ENHANCED: Handle resize stop with better feedback
   const handleResizeStop = useCallback((e: any, direction: any, ref: HTMLElement, delta: any, positionParam: any) => {
     setIsResizing(false);
-    const newWidth = parseInt(ref.style.width) / scaleFactor;
-    const newHeight = parseInt(ref.style.height) / scaleFactor;
-    const newX = positionParam.x / scaleFactor;
-    const newY = positionParam.y / scaleFactor;
-
-    setPosition({ x: newX, y: newY });
-    // Save final geometry
-    debouncedSaveRef.current(sessionId, id, newX, newY, newWidth, newHeight, coordinates.pageNumber);
-
-    // ✅ NEW: Save dimensions as default for future text tags
-    setCustomTagDimensions('T', { width: newWidth, height: newHeight });
-    console.log('💾 Saved text tag dimensions as default for future tags:', { width: newWidth, height: newHeight });
-
-    // 🚀 Broadcast final geometry
-    if (webSocket && webSocket.readyState === WebSocket.OPEN) {
-      webSocket.send(JSON.stringify({
-        type: 'text_input_position_updated',
-        payload: {
-          textInputId: id,
-          coordinates: { x: newX, y: newY, width: newWidth, height: newHeight },
-          fontSize: currentFontSize
-        },
-        userId: assignedUserId.toString(),
-        sessionId,
-        timestamp: Date.now()
-      }));
+    setLiveFontSize(undefined); // Reset live font size after drag
+    const smartDimensions = calculateSmartDimensions(inputValue, currentFontSize);
+    // Don't update position during resize - keep original position
+    debouncedSaveRef.current(sessionId, id, coordinates.x, coordinates.y, smartDimensions.width, smartDimensions.height, coordinates.pageNumber);
+    setCustomTagDimensions('T', { width: smartDimensions.width, height: smartDimensions.height });
+    // Save rounded font size to server
+    if (onFontSizeChange && liveFontSize !== undefined) {
+      onFontSizeChange(Math.round(liveFontSize));
     }
-    console.log('🔧 Resize stop. Saved geometry.');
-  }, [scaleFactor, sessionId, id, coordinates.pageNumber, webSocket, assignedUserId, currentFontSize, setCustomTagDimensions]);
+    console.log('🔧 Smart resize stop. Saved optimized geometry.');
+  }, [scaleFactor, sessionId, id, coordinates.x, coordinates.y, coordinates.pageNumber, currentFontSize, setCustomTagDimensions, inputValue, liveFontSize, onFontSizeChange, calculateSmartDimensions]);
 
   // Removed old handleClick function - using inline onClick handler in Rnd component
 
@@ -773,21 +787,9 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
       setInputValue(content);
       setIsEditing(false);
       setHasStartedEditing(false);
-    } else if (e.ctrlKey || e.metaKey) {
-      // Font size shortcuts while editing
-      if (e.key === '=' || e.key === '+') {
-        e.preventDefault();
-        const newSize = Math.min(currentFontSize + 2, 40);
-        setGlobalFontSize(newSize);
-        console.log(`🔤 Font size increased to ${newSize}px`);
-      } else if (e.key === '-') {
-        e.preventDefault();
-        const newSize = Math.max(currentFontSize - 2, 10);
-        setGlobalFontSize(newSize);
-        console.log(`🔤 Font size decreased to ${newSize}px`);
-      }
     }
-  }, [handleSave, content, isDeleted, setInputValue, inputValue, currentFontSize, setGlobalFontSize]);
+    // Font size is controlled by corner drag resize only
+  }, [handleSave, content, isDeleted, setInputValue, inputValue]);
 
   // Handle input blur (save when clicking outside) - IMPROVED
   const handleBlur = useCallback(() => {
@@ -1075,6 +1077,12 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
             50% { box-shadow: 0 0 15px rgba(220, 53, 69, 0.8); }
           }
           
+          /* Font size indicator animation */
+          @keyframes slideInFromTop {
+            from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+            to { opacity: 1; transform: translateX(-50%) translateY(0); }
+          }
+          
           .streamlined-text-input .react-resizable-handle {
             transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
           }
@@ -1359,7 +1367,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
           </div>
         )}
         
-        {/* Font Size Indicator - show when selected */}
+                {/* Font Size Indicator - show when selected */}
         {isSelected && !isEditing && (
           <div 
             style={{
@@ -1377,10 +1385,10 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
               zIndex: 1002,
               pointerEvents: 'none',
               boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-              animation: 'fontSizeIndicatorFadeIn 0.2s ease-out'
+              animation: 'slideInFromTop 0.3s ease-out'
             }}
           >
-{currentFontSize}px • Drag handle or Ctrl +/-
+            {currentFontSize}px • Drag corner handle to resize font
           </div>
         )}
       </Rnd>

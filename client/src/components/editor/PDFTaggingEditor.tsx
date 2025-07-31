@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
 import { PDFViewer } from './PDFViewer';
 import { TaggingToolbar } from './TaggingToolbar';
-import { DocumentSelector } from './DocumentSelector';
+
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
 import { HotkeyHandler } from './HotkeyHandler';
 import { TagInputModal } from './TagInputModal';
@@ -1244,42 +1244,9 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Simplified Header */}
       <div className="bg-white border-b px-4 py-3 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4 flex-1 min-w-0">
-            <h1 className="text-lg font-semibold text-gray-900 flex-shrink-0">
-              {mode === 'tagging' ? 'Document Tagging' : 'Live Signing Session'}
-            </h1>
-            
-            {/* Document Selector */}
-            <div className="flex-1 max-w-md">
-              <DocumentSelector
-                documents={documents}
-                currentDocument={currentDocument}
-                onDocumentChange={handleDocumentChange}
-                tags={tags}
-              />
-            </div>
-            
-            <span className="text-sm text-gray-500 flex-shrink-0">
-              {getCurrentDocumentTags().length} tags • {getCurrentDocumentTags().filter(t => t.isCompleted).length} completed
-            </span>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            {/* Role Badge */}
-            {currentUser?.userType === 'notary' && (
-              <Badge className="bg-red-100 text-red-800 border-red-300">
-                Notary
-              </Badge>
-            )}
-            {currentUser?.userType === 'signer' && (
-              <Badge className="bg-blue-100 text-blue-800 border-blue-300">
-                Signer
-              </Badge>
-            )}
-            
-            {/* Complete Button for Tagging Mode */}
-            {mode === 'tagging' && (
+        <div className="flex items-center justify-end">
+          {/* Complete Button for Tagging Mode */}
+          {mode === 'tagging' && (
               <button
                 onClick={async () => {
                   if (!sessionId || isCompleting) return;
@@ -1334,8 +1301,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
               >
                 {isCompleting ? 'Completing...' : 'Complete Tagging'}
               </button>
-            )}
-          </div>
+          )}
         </div>
       </div>
 

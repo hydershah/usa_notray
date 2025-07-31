@@ -86,9 +86,10 @@ interface TagRendererProps {
   onSelect: () => void;
   onTagClick?: (tag: DocumentTag, position: { x: number; y: number; width: number; height: number }) => void;
   mode?: string;
+  onFontSizeChange?: (tagId: string, fontSize: number) => void;
 }
 
-const TagRenderer: React.FC<TagRendererProps> = ({
+const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   tag,
   scaleFactor,
   isSelected,
@@ -98,10 +99,30 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   onDelete,
   onSelect,
   onTagClick,
-  mode
+  mode,
+  onFontSizeChange,
+  localFontSize
 }) => {
   const [imageLoadError, setImageLoadError] = React.useState(false);
   const tagInfo = TAG_TYPE_INFO[tag.tagType];
+  
+  // Use local font size if available, otherwise fall back to stored font size
+  const [liveFontSize, setLiveFontSize] = React.useState<number | undefined>(undefined);
+  const currentFontSize =
+    liveFontSize !== undefined
+      ? liveFontSize
+      : localFontSize || tag.contentData?.fontSize || 12;
+  
+  console.log('🏷️ TagRenderer debug:', {
+    tagId: tag.id,
+    tagType: tag.tagType,
+    canEdit,
+    currentFontSize,
+    localFontSize,
+    storedFontSize: tag.contentData?.fontSize,
+    isCompleted: tag.isCompleted,
+    enableResizing: canEdit && !(tag.isCompleted && tag.tagType === 'T')
+  });
   
   // Convert PDF coordinates to display coordinates
   const displayCoords = {
@@ -156,32 +177,39 @@ const TagRenderer: React.FC<TagRendererProps> = ({
     onSave(newCoordinates);
   };
 
+  // Instant font size updates
+  
   const handleResize = (e: any, direction: any, ref: any, delta: any, position: any) => {
     if (!canEdit) return;
-    
-    // Update coordinates during resize for smooth visual feedback
+    // During resize, only update size, NOT position - keep tag anchored at original location
     const newCoordinates = validateAndSanitizeCoordinates({
-      x: position.x / scaleFactor,
-      y: position.y / scaleFactor,
       width: ref.offsetWidth / scaleFactor,
       height: ref.offsetHeight / scaleFactor
     });
-    
     onUpdate(newCoordinates);
+    // 100px:1 font size sensitivity
+    const dragDistance = delta.width;
+    const fontSizeChange = dragDistance / (scaleFactor * 100); // 100px drag = 1px font size
+    if (Math.abs(dragDistance) > 0) {
+      let newFontSize = currentFontSize + fontSizeChange;
+      newFontSize = Math.max(10, Math.min(72, newFontSize));
+      setLiveFontSize(newFontSize); // Use exact value for instant feedback
+    }
   };
 
   const handleResizeStop = (e: any, direction: any, ref: any, delta: any, position: any) => {
     if (!canEdit || !onSave) return;
-    
-    // Save to server only when resize ends
+    setLiveFontSize(undefined); // Reset live font size after drag
+    // Save to server only when resize ends - only save size, not position
     const newCoordinates = {
-      x: Math.round(position.x / scaleFactor),
-      y: Math.round(position.y / scaleFactor),
       width: Math.round(ref.offsetWidth / scaleFactor),
       height: Math.round(ref.offsetHeight / scaleFactor)
     };
-    
     onSave(newCoordinates);
+    // Save rounded font size to server and update localFontSizes
+    if (onFontSizeChange && liveFontSize !== undefined) {
+      onFontSizeChange(tag.id, Math.round(liveFontSize));
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -337,7 +365,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           right: '-8px', 
           bottom: '-8px', 
           boxShadow: '0 2px 6px rgba(0,0,0,0.2)', 
-          cursor: 'nw-resize'
+          cursor: 'se-resize'
         }
       } : undefined}
     >
@@ -482,7 +510,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
                       <div 
                         className="text-black"
                         style={{ 
-                          fontSize: '14px',
+                          fontSize: `${currentFontSize}px`, // Use current font size (local or stored)
                           lineHeight: '1.4',
                           wordBreak: 'break-word',
                           fontFamily: 'inherit',
@@ -533,7 +561,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
             <>
               {/* Tag content with proper sizing */}
               <div className="flex items-center gap-2" style={{
-                fontSize: Math.max(12, Math.min(16, displayCoords.height * 0.4)),
+                fontSize: currentFontSize, // Use current font size (local or stored)
                 fontWeight: '600',
                 lineHeight: '1.2'
               }}>
@@ -579,7 +607,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           <>
             {/* Tag content with proper sizing */}
             <div className="flex items-center gap-2" style={{
-              fontSize: Math.max(12, Math.min(16, displayCoords.height * 0.4)),
+              fontSize: currentFontSize, // Use current font size (local or stored)
               fontWeight: '600',
               lineHeight: '1.2'
             }}>
@@ -619,6 +647,31 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           </>
         )}
       </div>
+
+      {/* Font Size Indicator - show when selected */}
+      {isSelected && canEdit && (
+        <div 
+          style={{
+            position: 'absolute',
+            top: '-30px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            color: 'white',
+            padding: '4px 8px',
+            borderRadius: '4px',
+            fontSize: '11px',
+            fontWeight: '500',
+            whiteSpace: 'nowrap',
+            zIndex: 1002,
+            pointerEvents: 'none',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+            animation: 'fadeIn 0.3s ease-out'
+          }}
+        >
+          {currentFontSize}px • Drag corner handle to resize font
+        </div>
+      )}
     </Rnd>
   );
 };
@@ -692,6 +745,69 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     });
     return result;
   }, [mode, editorMode.canPlaceTags]);
+
+  // Debounced font size updates to prevent API spam during drag
+  const debouncedTagFontSizeUpdates = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  
+  // Local state for immediate font size updates (for responsive UI)
+  const [localFontSizes, setLocalFontSizes] = useState<Map<string, number>>(new Map());
+
+  // Function to update tag font size with immediate local update + debounced server sync
+  const updateTagFontSize = useCallback(async (tagId: string, fontSize: number) => {
+    try {
+      // ✅ IMMEDIATE LOCAL UPDATE: Update local font size for instant visual feedback
+      setLocalFontSizes(prev => {
+        const newMap = new Map(prev);
+        newMap.set(tagId, fontSize);
+        return newMap;
+      });
+      
+      console.log(`🚀 Immediately updated local font size for tag ${tagId} to ${fontSize}px`);
+
+      // Clear any existing timeout for this tag
+      const existingTimeout = debouncedTagFontSizeUpdates.current.get(tagId);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+      }
+
+      // Set new debounced timeout for server sync
+      const timeout = setTimeout(async () => {
+        try {
+          const response = await fetch(`/api/editor/session/${sessionId}/tag/${tagId}/font-size`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({ fontSize })
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to update font size');
+          }
+
+          console.log(`✅ Server updated font size for tag ${tagId} to ${fontSize}px`);
+          debouncedTagFontSizeUpdates.current.delete(tagId);
+          
+        } catch (serverError) {
+          console.error('❌ Failed to update tag font size on server:', serverError);
+        }
+      }, 350); // 350ms debounce delay - smooth but not overwhelming server
+
+      debouncedTagFontSizeUpdates.current.set(tagId, timeout);
+      
+    } catch (error) {
+      console.error('❌ Failed to setup tag font size update:', error);
+    }
+  }, [sessionId]);
+
+  // Cleanup debounced font size updates on unmount
+  useEffect(() => {
+    return () => {
+      debouncedTagFontSizeUpdates.current.forEach(timeout => clearTimeout(timeout));
+      debouncedTagFontSizeUpdates.current.clear();
+    };
+  }, []);
 
   // Load PDF document with improved error handling and redirect support
   const loadPDF = useCallback(async (url: string) => {
@@ -1812,6 +1928,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                           onSelect={() => handleTagSelect(tag)}
                           onTagClick={onTagClick}
                           mode={mode}
+                          onFontSizeChange={updateTagFontSize}
+                          localFontSize={localFontSizes.get(tag.id)}
                         />
                       </div>
                     );

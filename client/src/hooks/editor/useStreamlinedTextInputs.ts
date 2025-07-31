@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { useEditorStore } from './useEditorStore';
 
 interface StreamlinedTextInput {
   id: string;
@@ -312,13 +313,13 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
     const tempId = `text_temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     // Create optimistic text input for immediate positioning (not editing)
-    // Default font size set to 12px for new tags, or inherit last used size if larger
-    const inheritedFontSize = textInputs.length > 0 ? textInputs[textInputs.length - 1].fontSize : 12;
+    // Use lastUsedFontSize from editor store, fallback to 12px default
+    const { lastUsedFontSize } = useEditorStore.getState();
     const optimisticTextInput: StreamlinedTextInput = {
       id: tempId,
       coordinates: command.coordinates,
       content: '',
-      fontSize: inheritedFontSize,
+      fontSize: lastUsedFontSize || 12,
       fontFamily: 'Arial',
       textColor: '#000000',
       assignedUserId: command.assignedUserId,
@@ -446,10 +447,13 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
     }
   }, [toast]);
 
-  // Update font size
+  // Debounced font size API calls to prevent lag
+  const debouncedFontSizeUpdates = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  
+  // Update font size with debouncing
   const updateFontSize = useCallback(async (textInputId: string, fontSize: number, fontFamily?: string, textColor?: string) => {
     try {
-      // Update local state immediately
+      // Update local state immediately for responsive UI
       setTextInputs(prev => prev.map(input => 
         input.id === textInputId 
           ? { 
@@ -461,28 +465,45 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           : input
       ));
 
-      // Send to server
-      const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${textInputId}/font-size`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          fontSize,
-          ...(fontFamily && { fontFamily }),
-          ...(textColor && { textColor })
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update font size');
+      // Debounce server updates to prevent lag during drag operations
+      const existingTimeout = debouncedFontSizeUpdates.current.get(textInputId);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
       }
 
-      console.log(`✅ Font size updated for ${textInputId}: ${fontSize}px`);
+      const timeout = setTimeout(async () => {
+        try {
+          // Send to server after debounce delay
+          const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${textInputId}/font-size`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+              fontSize,
+              ...(fontFamily && { fontFamily }),
+              ...(textColor && { textColor })
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to update font size');
+          }
+
+          console.log(`✅ Font size updated on server for ${textInputId}: ${fontSize}px`);
+          debouncedFontSizeUpdates.current.delete(textInputId);
+
+        } catch (serverError) {
+          console.error('❌ Failed to update font size on server:', serverError);
+          // Don't show toast for debounced server errors during drag
+        }
+      }, 300); // 300ms debounce delay - smooth but not overwhelming server
+
+      debouncedFontSizeUpdates.current.set(textInputId, timeout);
 
     } catch (error) {
-      console.error('❌ Failed to update font size:', error);
+      console.error('❌ Failed to update font size locally:', error);
       toast({
         variant: "destructive",
         title: "Update Failed", 
@@ -490,6 +511,14 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       });
     }
   }, [sessionId, toast]);
+
+  // Cleanup debounced font size updates on unmount
+  useEffect(() => {
+    return () => {
+      debouncedFontSizeUpdates.current.forEach(timeout => clearTimeout(timeout));
+      debouncedFontSizeUpdates.current.clear();
+    };
+  }, []);
 
   // Delete text input
   const deleteTextInput = useCallback(async (textInputId: string) => {

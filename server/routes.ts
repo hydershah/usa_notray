@@ -92,6 +92,7 @@ import {
   documentVersions,
   jobNotifications,
   userSignatures,
+  documentTags,
 } from "@shared/schema";
 
 // Import enhanced upload handlers
@@ -10425,6 +10426,120 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       res.status(500).json({ 
         message: error instanceof Error ? error.message : 'Failed to get tags',
         error: 'tags_fetch_failed'
+      });
+    }
+  });
+
+  // Update tag font size
+  app.put('/api/editor/session/:sessionId/tag/:tagId/font-size', verifyToken, async (req: any, res) => {
+    try {
+      const { sessionId, tagId } = req.params;
+      const { fontSize } = req.body;
+      
+      if (!fontSize) {
+        return res.status(400).json({ message: 'Font size is required' });
+      }
+
+      const numericTagId = parseInt(tagId);
+      const numericFontSize = parseInt(fontSize);
+      
+      if (isNaN(numericTagId) || isNaN(numericFontSize)) {
+        return res.status(400).json({ message: 'Invalid tag ID or font size' });
+      }
+
+      if (numericFontSize < 6 || numericFontSize > 72) {
+        return res.status(400).json({ message: 'Font size must be between 6 and 72' });
+      }
+
+      // Get current tag to update contentData
+      const [currentTag] = await db
+        .select()
+        .from(documentTags)
+        .where(eq(documentTags.id, numericTagId))
+        .limit(1);
+
+      if (!currentTag) {
+        return res.status(404).json({ message: 'Tag not found' });
+      }
+
+      // Parse existing contentData and update styling
+      let contentData: any = {
+        fontSize: 12,
+        fontFamily: 'Arial',
+        textColor: '#000000'
+      };
+
+      if (currentTag.contentData) {
+        try {
+          contentData = { ...contentData, ...JSON.parse(currentTag.contentData) };
+        } catch (e) {
+          console.warn('Could not parse existing contentData, using defaults');
+        }
+      }
+
+      // Update font size
+      contentData.fontSize = numericFontSize;
+      contentData.timestamp = new Date().toISOString();
+
+      // Update tag styling via contentData
+      const updateData: any = {
+        contentData: JSON.stringify(contentData),
+        updatedBy: req.user.id,
+        updatedAt: new Date()
+      };
+
+      const [updatedTag] = await db
+        .update(documentTags)
+        .set(updateData)
+        .where(eq(documentTags.id, numericTagId))
+        .returning();
+
+      if (!updatedTag) {
+        return res.status(404).json({ message: 'Tag not found' });
+      }
+
+      console.log(`✅ Font size updated for tag ${tagId}: ${numericFontSize}px`);
+
+      // 🚀 REAL-TIME SYNC: Broadcast font size update to all session participants
+      try {
+        const { WebSocketService } = await import('./services/editor/WebSocketService');
+        
+        const syncMessage = {
+          type: 'tag_font_size_updated',
+          payload: {
+            tagId: updatedTag.id,
+            fontSize: numericFontSize,
+            contentData: contentData
+          },
+          userId: req.user.id.toString(),
+          sessionId,
+          timestamp: Date.now()
+        };
+
+        WebSocketService.broadcastToSession(sessionId, syncMessage);
+        console.log(`🔄 Font size update broadcasted for tag ${tagId} in session ${sessionId}`);
+        
+      } catch (wsError) {
+        console.warn('Failed to broadcast font size update via WebSocket:', wsError);
+        // Don't fail the request if WebSocket broadcast fails
+      }
+
+      res.json({
+        success: true,
+        tag: {
+          id: updatedTag.id.toString(),
+          fontSize: contentData.fontSize,
+          contentData: contentData,
+          updatedAt: updatedTag.updatedAt
+        },
+        message: 'Font size updated successfully'
+      });
+
+    } catch (error) {
+      console.error('Update font size error:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Failed to update font size',
+        error: 'font_size_update_failed'
       });
     }
   });

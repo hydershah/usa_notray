@@ -49,8 +49,8 @@ interface EditorStore {
   // Custom tag dimensions (remembers resized dimensions per tag type)
   customTagDimensions: Partial<Record<TagType, { width: number; height: number }>>;
   
-  // Global font size for all text tags (uniform sizing)
-  globalFontSize: number;
+  // Last used font size for new text tags (individual sizing)
+  lastUsedFontSize: number;
   
   // PDF viewer state
   viewer: PDFViewerState;
@@ -105,9 +105,9 @@ interface EditorStore {
   getTagDimensions: (tagType: TagType) => { width: number; height: number } | null;
   clearCustomTagDimensions: () => void;
   
-  // Actions - Global Font Size
-  setGlobalFontSize: (fontSize: number) => void;
-  getGlobalFontSize: () => number;
+  // Actions - Last Used Font Size
+  setLastUsedFontSize: (fontSize: number) => void;
+  getLastUsedFontSize: () => number;
   
   // Actions - PDF Viewer
   setCurrentPage: (page: number) => void;
@@ -171,14 +171,14 @@ export const useEditorStore = create<EditorStore>()(
         }
       })(),
       
-      globalFontSize: (() => {
-        // Load global font size from localStorage, default to 16px
+      lastUsedFontSize: (() => {
+        // Load last used font size from localStorage, default to 12px
         try {
-          const saved = localStorage.getItem('editorGlobalFontSize');
-          return saved ? parseInt(saved, 10) : 16;
+          const saved = localStorage.getItem('editorLastUsedFontSize');
+          return saved ? parseInt(saved, 10) : 12;
         } catch (error) {
-          console.warn('Failed to load global font size from localStorage:', error);
-          return 16;
+          console.warn('Failed to load last used font size from localStorage:', error);
+          return 12;
         }
       })(),
       
@@ -425,22 +425,22 @@ export const useEditorStore = create<EditorStore>()(
         }
       },
       
-      // Global Font Size Actions
-      setGlobalFontSize: (fontSize) => {
+      // Last Used Font Size Actions
+      setLastUsedFontSize: (fontSize) => {
         const clampedFontSize = Math.min(Math.max(fontSize, 10), 40); // Clamp between 10px and 40px
-        set({ globalFontSize: clampedFontSize });
+        set({ lastUsedFontSize: clampedFontSize });
         
         // Save to localStorage for persistence
         try {
-          localStorage.setItem('editorGlobalFontSize', clampedFontSize.toString());
-          console.log(`✅ Global font size set to ${clampedFontSize}px`);
+          localStorage.setItem('editorLastUsedFontSize', clampedFontSize.toString());
+          console.log(`✅ Last used font size set to ${clampedFontSize}px`);
         } catch (error) {
-          console.warn('Failed to save global font size to localStorage:', error);
+          console.warn('Failed to save last used font size to localStorage:', error);
         }
       },
       
-      getGlobalFontSize: () => {
-        return get().globalFontSize;
+      getLastUsedFontSize: () => {
+        return get().lastUsedFontSize;
       },
       
       // PDF Viewer Actions
@@ -609,7 +609,7 @@ export const useEditorStore = create<EditorStore>()(
           selectedTagType: null,
           draggedTag: null,
           whiteoutOverlays: [],
-          customTagDimensions: {},
+          // Keep customTagDimensions and lastUsedFontSize across sessions
           cursors: [],
           lastSyncTime: null,
           isConnected: false,
