@@ -181,31 +181,79 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   
   const handleResize = (e: any, direction: any, ref: any, delta: any, position: any) => {
     if (!canEdit) return;
-    // During resize, only update size, NOT position - keep tag anchored at original location
-    const newCoordinates = validateAndSanitizeCoordinates({
-      width: ref.offsetWidth / scaleFactor,
-      height: ref.offsetHeight / scaleFactor
-    });
-    onUpdate(newCoordinates);
-    // 100px:1 font size sensitivity
-    const dragDistance = delta.width;
-    const fontSizeChange = dragDistance / (scaleFactor * 100); // 100px drag = 1px font size
-    if (Math.abs(dragDistance) > 0) {
+    
+    // For text tags, calculate font size change based on resize distance and let container auto-fit
+    if (tag.tagType === 'T') {
+      // Use the dominant resize direction (width or height) to determine font scaling
+      const widthChange = delta.width;
+      const heightChange = delta.height;
+      const primaryChange = Math.abs(widthChange) > Math.abs(heightChange) ? widthChange : heightChange;
+      
+      // More sensitive scaling: 50px = 1px font change for better control
+      const fontSizeChange = primaryChange / (scaleFactor * 50);
       let newFontSize = currentFontSize + fontSizeChange;
-      newFontSize = Math.max(10, Math.min(72, newFontSize));
-      setLiveFontSize(newFontSize); // Use exact value for instant feedback
+      newFontSize = Math.max(8, Math.min(48, newFontSize));
+      setLiveFontSize(newFontSize);
+      
+      // Let the container auto-size to text - don't update coordinates during resize
+      // This allows the container to naturally fit the text content
+    } else {
+      // For non-text tags, update size normally
+      const newCoordinates = validateAndSanitizeCoordinates({
+        width: ref.offsetWidth / scaleFactor,
+        height: ref.offsetHeight / scaleFactor
+      });
+      onUpdate(newCoordinates);
+      
+      // Apply font size change for non-text tags
+      const widthChange = delta.width;
+      const heightChange = delta.height;
+      const dragDistance = Math.abs(widthChange) > Math.abs(heightChange) ? widthChange : heightChange;
+      const fontSizeChange = dragDistance / (scaleFactor * 100);
+      if (Math.abs(dragDistance) > 0) {
+        let newFontSize = currentFontSize + fontSizeChange;
+        newFontSize = Math.max(10, Math.min(72, newFontSize));
+        setLiveFontSize(newFontSize);
+      }
     }
   };
 
   const handleResizeStop = (e: any, direction: any, ref: any, delta: any, position: any) => {
     if (!canEdit || !onSave) return;
     setLiveFontSize(undefined); // Reset live font size after drag
-    // Save to server only when resize ends - only save size, not position
-    const newCoordinates = {
-      width: Math.round(ref.offsetWidth / scaleFactor),
-      height: Math.round(ref.offsetHeight / scaleFactor)
-    };
-    onSave(newCoordinates);
+    
+    // For text tags, calculate dimensions based on text content size
+    if (tag.tagType === 'T') {
+      // Get the actual text content element to measure its natural size
+      const textElement = ref.querySelector('[data-text-content]') || ref.firstElementChild;
+      if (textElement) {
+        const textRect = textElement.getBoundingClientRect();
+        const containerRect = ref.getBoundingClientRect();
+        
+        // Add padding around text content (8px padding on each side)
+        const padding = 16; // 8px on each side
+        const newCoordinates = {
+          width: Math.round((textRect.width + padding) / scaleFactor),
+          height: Math.round((textRect.height + padding) / scaleFactor)
+        };
+        onSave(newCoordinates);
+      } else {
+        // Fallback: use current container size
+        const newCoordinates = {
+          width: Math.round(ref.offsetWidth / scaleFactor),
+          height: Math.round(ref.offsetHeight / scaleFactor)
+        };
+        onSave(newCoordinates);
+      }
+    } else {
+      // For non-text tags, save current container size
+      const newCoordinates = {
+        width: Math.round(ref.offsetWidth / scaleFactor),
+        height: Math.round(ref.offsetHeight / scaleFactor)
+      };
+      onSave(newCoordinates);
+    }
+    
     // Save rounded font size to server and update localFontSizes
     if (onFontSizeChange && liveFontSize !== undefined) {
       onFontSizeChange(tag.id, Math.round(liveFontSize));
@@ -238,6 +286,10 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       enableResizing={canEdit && !(tag.isCompleted && tag.tagType === 'T')}
       disableDragging={!canEdit}
       bounds="parent"
+      minWidth={tag.tagType === 'T' ? 40 * scaleFactor : 80 * scaleFactor}
+      minHeight={tag.tagType === 'T' ? 16 * scaleFactor : 32 * scaleFactor}
+      maxWidth={tag.tagType === 'T' ? 600 * scaleFactor : undefined}
+      maxHeight={tag.tagType === 'T' ? 300 * scaleFactor : undefined}
       onClick={(e: React.MouseEvent<HTMLDivElement>) => {
         e.stopPropagation();
         
@@ -313,7 +365,7 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       tabIndex={0}
       className={`
         transition-all cursor-pointer ${tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'overflow-visible' : 'overflow-hidden'}
-        ${isSelected ? 'ring-2 ring-blue-400 ring-opacity-60' : ''}
+        ${isSelected ? (tag.tagType === 'T' ? 'ring-1 ring-blue-500 ring-opacity-80' : 'ring-2 ring-blue-400 ring-opacity-60') : ''}
         ${canEdit ? 'hover:shadow-md' : ''}
         ${hasContent ? 'completed-tag-transparent' : ''}
       `}
@@ -352,8 +404,10 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
           ? '0 4px 12px rgba(0, 0, 0, 0.2)' 
           : '0 2px 6px rgba(0, 0, 0, 0.1)',
         
-        minWidth: (tag.tagType === 'T') ? 'auto' : ((tag.tagType === 'O' || tag.tagType === 'X') ? '200px' : '80px'), // Larger minimum for disclosure and expiry tags
-        minHeight: (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'auto' : '32px' // Allow auto height for text, disclosure, and expiry
+        minWidth: (tag.tagType === 'T') ? 'fit-content' : ((tag.tagType === 'O' || tag.tagType === 'X') ? '200px' : '80px'), // Auto-fit width for text tags
+        minHeight: (tag.tagType === 'T') ? 'fit-content' : ((tag.tagType === 'O' || tag.tagType === 'X') ? 'auto' : '32px'), // Auto-fit height for text tags
+        maxWidth: (tag.tagType === 'T') ? 'none' : 'none', // Remove width constraints for text tags to auto-fit
+        maxHeight: (tag.tagType === 'T') ? 'none' : 'none' // Remove height constraints for text tags to auto-fit
       }}
       resizeHandleStyles={canEdit ? {
         bottomRight: { 
@@ -369,8 +423,8 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
         }
       } : undefined}
     >
-      <div className={`w-full ${tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? '' : 'h-full'} flex flex-col ${tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'items-start justify-start' : 'items-center justify-center'}`} style={{
-        padding: tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? '0' : ((tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? '4px' : '8px 12px')
+      <div className={`${tag.tagType === 'T' ? 'w-fit h-fit' : 'w-full'} ${tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? '' : 'h-full'} flex flex-col ${tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'items-start justify-start' : 'items-center justify-center'}`} style={{
+        padding: tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? '0' : ((tag.tagType === 'T') ? '4px 6px' : (tag.tagType === 'O' || tag.tagType === 'X') ? '4px' : '8px 12px')
       }}>
         {mode === 'signing' ? (
           // Signing mode: Show interactive state
@@ -509,6 +563,7 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
                     return (
                       <div 
                         className="text-black"
+                        data-text-content={tag.tagType === 'T' ? 'true' : undefined}
                         style={{ 
                           fontSize: `${currentFontSize}px`, // Use current font size (local or stored)
                           lineHeight: '1.4',
@@ -560,11 +615,15 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
             // Incomplete tag in signing mode - use SAME UI as tagging mode
             <>
               {/* Tag content with proper sizing */}
-              <div className="flex items-center gap-2" style={{
-                fontSize: currentFontSize, // Use current font size (local or stored)
-                fontWeight: '600',
-                lineHeight: '1.2'
-              }}>
+              <div 
+                className="flex items-center gap-2" 
+                data-text-content={tag.tagType === 'T' ? 'true' : undefined}
+                style={{
+                  fontSize: currentFontSize, // Use current font size (local or stored)
+                  fontWeight: '600',
+                  lineHeight: '1.2'
+                }}
+              >
                 <span style={{ 
                   color: tag.tagType === 'W' ? '#374151' : '#ffffff',
                   textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
