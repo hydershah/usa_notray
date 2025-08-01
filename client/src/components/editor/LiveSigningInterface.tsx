@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, forwardRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -19,7 +19,9 @@ import {
   Zap
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/auth';
-import DailyVideoConference from './DailyVideoConference';
+import DailyVideoConference, {
+  DailyVideoConferenceHandles,
+} from './DailyVideoConference';
 import { PDFTaggingEditor } from './PDFTaggingEditor';
 import { DocumentSelector } from './DocumentSelector';
 import { ParticipantPanel } from './ParticipantPanel';
@@ -59,7 +61,10 @@ interface SessionParticipantStatus {
   lastActivity?: Date;
 }
 
-export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
+export const LiveSigningInterface = forwardRef<
+  DailyVideoConferenceHandles,
+  LiveSigningInterfaceProps
+>(({
   sessionId,
   liveSessionId,
   documents,
@@ -68,7 +73,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   jobData,
   onSessionComplete,
   onTagsChanged
-}) => {
+}, ref) => {
   const { toast } = useToast();
   
   // State management
@@ -496,10 +501,15 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     
     try {
       // Send sync command via WebSocket with current page and document info
-      webSocket.syncUsers(
-        viewer.currentPage || 1,
-        currentDocument?.id
-      );
+      if (webSocket.sendMessage) {
+        webSocket.sendMessage({
+          type: 'sync-users',
+          payload: {
+            pageNumber: viewer.currentPage || 1,
+            documentId: currentDocument?.id,
+          },
+        });
+      }
       
       // Also make API call to record the sync event
       const targetSessionId = liveSessionId || sessionId;
@@ -786,20 +796,18 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
               {/* Video Content */}
               <div className="flex-1">
                 <DailyVideoConference
+                  ref={ref}
                   sessionId={sessionId}
                   jobId={parseInt(sessionId.split('_')[1]) || parseInt(sessionId) || 1}
                   currentUser={{
                     id: parseInt(currentUserId),
                     name: currentUser?.displayName || 'Unknown User',
-                    email: currentUser?.email || '',
                     role: currentUser?.userType || 'signer'
                   }}
                   participants={participants.map(p => ({
                     userId: p.userId,
                     displayName: p.displayName,
-                    email: p.email || '',
-                    userType: p.userType,
-                    role: p.userType // Add missing role property
+                    role: p.userType
                   }))}
                   autoStart={true}
                   className="h-full"
@@ -831,4 +839,6 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
       </div>
     </div>
   );
-}; 
+});
+
+LiveSigningInterface.displayName = 'LiveSigningInterface'; 

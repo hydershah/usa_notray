@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useLocation } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { PDFTaggingEditor } from '@/components/editor';
 import { LiveSigningInterface } from '@/components/editor/LiveSigningInterface';
+import { DailyVideoConferenceHandles } from '@/components/editor/DailyVideoConference';
 import type { 
   SessionDocument, 
   SessionParticipant, 

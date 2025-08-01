@@ -313,13 +313,14 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
     const tempId = `text_temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     // Create optimistic text input for immediate positioning (not editing)
-    // Use lastUsedFontSize from editor store, fallback to 12px default
+    // Use lastUsedFontSize from editor store, fallback to 16px default
     const { lastUsedFontSize } = useEditorStore.getState();
+    const fontSize = lastUsedFontSize || 16;
     const optimisticTextInput: StreamlinedTextInput = {
       id: tempId,
       coordinates: command.coordinates,
       content: '',
-      fontSize: lastUsedFontSize || 12,
+      fontSize: fontSize,
       fontFamily: 'Arial',
       textColor: '#000000',
       assignedUserId: command.assignedUserId,
@@ -345,7 +346,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
     });
 
     try {
-      // Send to server
+      // Send to server with font size
       const response = await fetch(`/api/editor/session/${sessionId}/place-text-tag`, {
         method: 'POST',
         headers: {
@@ -356,7 +357,8 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           documentId: command.documentId,
           coordinates: command.coordinates,
           assignedUserId: command.assignedUserId,
-          immediateEdit: false // Changed to false - position first, edit second
+          immediateEdit: false, // Changed to false - position first, edit second
+          fontSize: fontSize // ✅ FIX: Send font size to server to maintain user's preferred size
         })
       });
 
@@ -464,6 +466,11 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
             }
           : input
       ));
+
+      // ✅ FIX: Update lastUsedFontSize in editor store so new text tags use the same font size
+      const { setLastUsedFontSize } = useEditorStore.getState();
+      setLastUsedFontSize(fontSize);
+      console.log(`🎨 Updated lastUsedFontSize to ${fontSize}px for future text tags`);
 
       // Debounce server updates to prevent lag during drag operations
       const existingTimeout = debouncedFontSizeUpdates.current.get(textInputId);
@@ -595,7 +602,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
     const textTags = tags.filter(tag => tag.tagType === 'T');
     const convertedInputs: StreamlinedTextInput[] = textTags.map(tag => {
       // Parse contentData if available
-      let fontSize = 12;
+      let fontSize = 16; // Updated from 12 to 16 for consistency
       let fontFamily = 'Arial';
       let textColor = '#000000';
       

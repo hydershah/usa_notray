@@ -15,7 +15,7 @@ export function registerTextTagRoutes(app: Express) {
   app.post('/api/editor/session/:sessionId/place-text-tag', verifyToken, async (req: any, res) => {
     try {
       const { sessionId } = req.params;
-      const { documentId, coordinates, assignedUserId, immediateEdit = true } = req.body;
+      const { documentId, coordinates, assignedUserId, immediateEdit = true, fontSize } = req.body;
       
       if (!documentId || !coordinates || !assignedUserId) {
         return res.status(400).json({ message: 'Missing required fields: documentId, coordinates, assignedUserId' });
@@ -53,11 +53,14 @@ export function registerTextTagRoutes(app: Express) {
       const displayLabel = `✏️ Text - ${assignedUser.firstName} ${assignedUser.lastName}`;
       const colorCode = getUserColor(assignedUser);
 
+      // ✅ FIX: Use provided font size from client, fallback to 16px if not provided
+      const defaultFontSize = fontSize && !isNaN(parseInt(fontSize)) ? parseInt(fontSize) : 16;
+      
       // Create text tag with default styling in contentData
       const defaultStyling = {
         type: 'text',
         value: '', // Start with empty content
-        fontSize: 12, // Default font size
+        fontSize: defaultFontSize, // Use client-provided font size or 16px default
         fontFamily: 'Arial', // Default font family
         textColor: '#000000', // Default text color
         immediateEdit: immediateEdit, // Flag for immediate editing

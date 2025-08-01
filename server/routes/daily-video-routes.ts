@@ -62,6 +62,35 @@ async function createVideoSession(jobId: number) {
   };
 }
 
+// Test Daily.co configuration
+router.get('/api/video/test-config', verifyToken, async (req: any, res) => {
+  try {
+    const { dailyService } = await import('../lib/daily-service');
+    const configStatus = dailyService.getConfigStatus();
+    
+    console.log('🔍 Daily.co configuration test:', configStatus);
+    
+    res.json({
+      success: true,
+      configured: configStatus.configured,
+      hasApiKey: configStatus.hasApiKey,
+      hasDomain: configStatus.hasDomain,
+      apiUrl: configStatus.apiUrl,
+      domain: configStatus.domain,
+      message: configStatus.configured 
+        ? 'Daily.co is properly configured' 
+        : 'Daily.co is not configured - using fallback mode'
+    });
+  } catch (error) {
+    console.error('Daily.co configuration test failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to check Daily.co configuration',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 // ===== VIDEO CONFERENCING ROUTES - DAILY.CO INTEGRATION =====
 
 // Create Daily video session for job
@@ -71,7 +100,15 @@ router.post('/api/jobs/:jobId/video-session', verifyToken, async (req: any, res)
     const { storage } = await import('../storage');
     const job = await storage.getJob(jobId);
     
+    console.log('🎥 Video session creation request:', {
+      jobId,
+      userId: req.user?.id,
+      userRole: req.user?.role,
+      hasToken: !!req.headers.authorization
+    });
+    
     if (!job) {
+      console.error('❌ Job not found:', jobId);
       return res.status(404).json({ 
         message: 'Job not found',
         error: 'JOB_NOT_FOUND'
@@ -99,6 +136,13 @@ router.post('/api/jobs/:jobId/video-session', verifyToken, async (req: any, res)
     try {
       const result = await sessionCreationPromise;
       activeSessionCreations.delete(jobId); // Clean up
+      console.log('✅ Video session created successfully:', {
+        jobId,
+        meetingId: result.meetingId,
+        hasRoomUrl: !!result.roomUrl,
+        configured: result.configured,
+        mode: result.mode
+      });
       res.json(result);
     } catch (error) {
       activeSessionCreations.delete(jobId); // Clean up on error
@@ -134,8 +178,20 @@ router.post('/api/jobs/:jobId/video-session', verifyToken, async (req: any, res)
         errorCode = 'API_RATE_LIMITED';
         message = 'Video service rate limit exceeded';
         statusCode = 429;
+      } else if (error.message.includes('network') || error.message.includes('fetch')) {
+        errorCode = 'NETWORK_ERROR';
+        message = 'Unable to connect to video service';
+        statusCode = 503;
       }
     }
+    
+    console.error('Video session creation failed:', {
+      errorCode,
+      statusCode,
+      message,
+      details: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: formatDate(new Date())
+    });
     
     res.status(statusCode).json({ 
       message,

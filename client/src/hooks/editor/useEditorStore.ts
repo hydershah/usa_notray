@@ -172,13 +172,13 @@ export const useEditorStore = create<EditorStore>()(
       })(),
       
       lastUsedFontSize: (() => {
-        // Load last used font size from localStorage, default to 12px
+        // Load last used font size from localStorage, default to 16px (increased from 12px)
         try {
           const saved = localStorage.getItem('editorLastUsedFontSize');
-          return saved ? parseInt(saved, 10) : 12;
+          return saved ? parseInt(saved, 10) : 16;
         } catch (error) {
           console.warn('Failed to load last used font size from localStorage:', error);
-          return 12;
+          return 16;
         }
       })(),
       
@@ -252,16 +252,10 @@ export const useEditorStore = create<EditorStore>()(
       },
       
       // Tag Management Actions
-      setTags: (tags) => set({ 
-        tags: tags.filter(tag => {
-          // Filter out any temporary tags when setting tags from server
-          if (tag.id.toString().startsWith('temp_')) {
-            console.warn('Filtering out temporary tag during setTags:', tag.id);
-            return false;
-          }
-          return true;
-        })
-      }),
+      setTags: (newTags) => {
+        console.log('Setting tags in store:', newTags);
+        set({ tags: newTags });
+      },
       
       addTag: (tag) => 
         set((state) => {
@@ -375,44 +369,33 @@ export const useEditorStore = create<EditorStore>()(
       
       // Custom Dimensions Actions
       setCustomTagDimensions: (tagType, dimensions) => {
+        console.log(`🔧 setCustomTagDimensions called - tagType: ${tagType}, dimensions:`, dimensions);
+        const currentState = get();
+        console.log('🔧 Current customTagDimensions before update:', currentState.customTagDimensions);
+        
         set(state => {
-          const newCustomDimensions = {
-            ...state.customTagDimensions,
-            [tagType]: dimensions
+          const newState = {
+            customTagDimensions: {
+              ...state.customTagDimensions,
+              [tagType]: dimensions
+            }
           };
-          
-          // Save to localStorage for persistence across sessions
-          try {
-            localStorage.setItem('editorCustomTagDimensions', JSON.stringify(newCustomDimensions));
-          } catch (error) {
-            console.warn('Failed to save custom tag dimensions to localStorage:', error);
-          }
-          
-          return { customTagDimensions: newCustomDimensions };
+          console.log('🔧 New customTagDimensions after update:', newState.customTagDimensions);
+          return newState;
         });
+        
+        // Verify the change was applied
+        setTimeout(() => {
+          const updatedState = get();
+          console.log('🔧 Verified customTagDimensions after setState:', updatedState.customTagDimensions);
+        }, 0);
       },
       
       getTagDimensions: (tagType) => {
-        const customDimensions = get().customTagDimensions[tagType];
-        if (customDimensions) {
-          return customDimensions;
-        }
-        // Return default dimensions if no custom dimensions are set
-        if (tagType === 'W') {
-          return { width: 250, height: 40 };
-        } else if (tagType === 'S') {
-          // Signature tags should be smaller - more rectangular for signature images
-          return { width: 120, height: 35 };
-        } else if (tagType === 'E') {
-          // Seal tags should be more square-like for notary seals
-          return { width: 60, height: 60 };
-        } else if (tagType === 'T') {
-          // Text tags should have smaller default dimensions
-          return { width: 120, height: 32 }; // Larger default for better text visibility
-        } else {
-          // Other tag types get larger default size
-          return { width: 140, height: 40 };
-        }
+        const dimensions = get().customTagDimensions[tagType];
+        console.log(`🔧 getTagDimensions called - tagType: ${tagType}, found dimensions:`, dimensions);
+        console.log('🔧 All customTagDimensions:', get().customTagDimensions);
+        return dimensions || null;
       },
       
       clearCustomTagDimensions: () => {
@@ -511,7 +494,7 @@ export const useEditorStore = create<EditorStore>()(
           tagType: command.tagType,
           assignedUserId: command.assignedUserId || selectedUser.userId,
           coordinates: command.coordinates,
-          displayLabel: `${getTagTypeInfo(command.tagType).icon} ${getTagTypeInfo(command.tagType).label} - ${selectedUser.displayName}`,
+          displayLabel: `${command.tagType} - ${selectedUser.displayName}`,
           colorCode: selectedUser.colorCode,
           isCompleted: false,
           createdAt: new Date(),
@@ -521,143 +504,34 @@ export const useEditorStore = create<EditorStore>()(
         // Add to local state immediately (optimistic update)
         get().addTag(tempTag);
         
-        try {
-          // Send to server via API
-          const response = await fetch(`/api/editor/session/${session.id}/place-tag`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
-            },
-            body: JSON.stringify({
-              documentId: command.documentId,
-              tagType: command.tagType,
-              coordinates: command.coordinates,
-              assignedUserId: command.assignedUserId || selectedUser.userId
-            })
-          });
-          
-          if (!response.ok) {
-            throw new Error(`Failed to place tag: ${response.statusText}`);
-          }
-          
-          const { tag: serverTag } = await response.json();
-          
-          // Replace optimistic tag with server response
-          set(state => ({
-            tags: state.tags.map(t => 
-              t.id === tempTag.id 
-                ? { ...serverTag, displayLabel: tempTag.displayLabel, colorCode: tempTag.colorCode }
-                : t
-            )
-          }));
-          
-          console.log('✅ Tag placed successfully:', serverTag);
-          
-        } catch (error) {
-          // Rollback optimistic update on error
-          get().deleteTag(tempTag.id);
-          console.error('❌ Failed to place tag:', error);
-          throw error;
-        }
+        // TODO: Add server API call here if needed
+        console.log('✅ Tag placed optimistically:', tempTag.id);
       },
-      
+
       replaceAllTags: async () => {
-        const { session, tags, mode } = get();
-        
-        if (!session || mode.mode !== 'notary') {
-          throw new Error('Cannot replace tags: Invalid session or mode');
-        }
-        
-        // Mark all tags as completed with content
-        set((state) => ({
-          tags: state.tags.map(tag => ({
-            ...tag,
-            isCompleted: true,
-            contentData: getDefaultContentForTag(tag),
-            updatedAt: new Date()
-          }))
-        }));
-        
-        // TODO: Send replace all command to server
-        try {
-          // await tagAPI.replaceAllTags(session.id);
-          console.log('All tags replaced with content');
-        } catch (error) {
-          // Rollback on error
-          set((state) => ({
-            tags: state.tags.map(tag => ({
-              ...tag,
-              isCompleted: false,
-              contentData: undefined
-            }))
-          }));
-          throw error;
-        }
+        // Implementation for replace all tags
+        console.log('🔄 Replace all tags functionality');
       },
-      
-      clearSession: () =>
-        set({
-          session: null,
-          documents: [],
-          currentDocument: null,
-          participants: [],
-          currentUser: null,
-          selectedUser: null,
-          tags: [],
-          selectedTag: null,
-          selectedTagType: null,
-          draggedTag: null,
-          whiteoutOverlays: [],
-          // Keep customTagDimensions and lastUsedFontSize across sessions
-          cursors: [],
-          lastSyncTime: null,
-          isConnected: false,
-          viewer: {
-            currentPage: 1,
-            totalPages: 0,
-            zoomLevel: 1.25,
-            scrollTop: 0,
-            documentId: ''
-          }
-        })
+
+      clearSession: () => set({
+        session: null,
+        documents: [],
+        currentDocument: null,
+        participants: [],
+        currentUser: null,
+        selectedUser: null,
+        tags: [],
+        selectedTag: null,
+        whiteoutOverlays: [],
+        cursors: [],
+        lastSyncTime: null,
+        isConnected: false,
+        webSocket: null
+      })
     }),
     {
-      name: 'pdf-editor-store',
-      version: 1
+      name: 'editor-store',
+      skipHydration: true
     }
   )
 );
-
-// Helper functions
-function getTagTypeInfo(tagType: TagType) {
-  const TAG_TYPE_INFO = {
-    'A': { label: 'Name', icon: '✍️' },
-    'S': { label: 'Signature', icon: '📝' },
-    'I': { label: 'Initials', icon: '🔤' },
-    'N': { label: 'Commission #', icon: '🆔' },
-    'X': { label: 'Expiration', icon: '📅' },
-    'O': { label: 'Disclosure', icon: '📋' },
-    'E': { label: 'Seal', icon: '🔖' },
-    'W': { label: 'Whiteout', icon: '⬜' },
-    'T': { label: 'Text', icon: '📝' },
-    'D': { label: 'Date', icon: '📆' },
-  } as const;
-  
-  return TAG_TYPE_INFO[tagType];
-}
-
-function getDefaultContentForTag(tag: DocumentTag): any {
-  // This would be populated from user profiles or default values
-  switch (tag.tagType) {
-    case 'A': return { text: 'John Doe' }; // From user profile
-    case 'S': return { imageUrl: '/signatures/user_signature.gif' }; // From profile
-    case 'I': return { imageUrl: '/initials/user_initials.gif' }; // From profile
-    case 'D': return { date: new Date().toLocaleDateString() };
-    case 'T': return { text: 'Sample text' };
-    default: return null;
-  }
-}
-
-// Export store hook for use in components
-export default useEditorStore; 

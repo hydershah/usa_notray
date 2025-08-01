@@ -1027,9 +1027,15 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         console.log('📝 Placing streamlined text input...');
         console.log('Current text inputs before placement:', textInputs);
         
-        // Get saved dimensions for text tags, or use defaults
-        const { getTagDimensions } = useEditorStore.getState();
-        const dimensions = getTagDimensions('T') || { width: 120, height: 32 }; // Larger default for better text visibility
+        // Get saved dimensions for text tags, or use defaults based on lastUsedFontSize
+        const savedDimensions = getTagDimensions('T');
+        const { lastUsedFontSize } = useEditorStore.getState();
+        const defaultHeight = Math.max(100, (lastUsedFontSize || 16) * 4); // Updated default to account for 16px font
+        const dimensions = savedDimensions || { width: 600, height: defaultHeight }; // Increased width from 400 to 600
+        
+        console.log('📏 Saved dimensions from store:', savedDimensions);
+        console.log('📏 Using dimensions for text tag:', dimensions);
+        console.log('📏 Last used font size:', lastUsedFontSize);
         
         // Use the saved dimensions instead of coordinates from click
         const textInputCoordinates = {

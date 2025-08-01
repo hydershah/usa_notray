@@ -58,4 +58,37 @@ export function isAuthenticated(): boolean {
   return !!getAuthToken();
 }
 
+// Add this helper function to test and potentially clear expired auth tokens
+export async function checkAuthAndRefresh(): Promise<boolean> {
+  try {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.error('No token found');
+      return false;
+    }
+
+    // Test the token with a simple endpoint
+    const response = await fetch('/api/users/me', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (response.ok) {
+      return true;
+    }
+
+    if (response.status === 401) {
+      console.warn('Token expired or invalid');
+      localStorage.removeItem('token');
+      return false;
+    }
+
+    return false;
+  } catch (error) {
+    console.error('Auth check failed:', error);
+    return false;
+  }
+}
+
 export default apiRequest; 

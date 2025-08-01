@@ -19,7 +19,7 @@ const measureText = (text: string, fontSize: number, fontFamily: string = 'Arial
   const textHeight = lines.length * fontSize * 1.2; // 1.2 for line spacing
   
   return {
-    width: Math.max(maxLineWidth, 50), // Minimum width
+    width: Math.max(maxLineWidth, 20), // Minimum width
     height: Math.max(textHeight, fontSize * 1.2) // Minimum height
   };
 };
@@ -79,8 +79,8 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
   coordinates,
   sessionId,
   content = '',
-  // Reduced default font size for better initial sizing
-  fontSize = 12,
+  // Updated default font size for better visibility
+  fontSize = 16,
   fontFamily = 'Arial',
   textColor = '#000000',
   assignedUserId,
@@ -111,6 +111,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
   
   // ✅ NEW: Enhanced resize state management
   const [isResizing, setIsResizing] = useState(false);
+  const resizeStartValues = useRef<{ width: number; height: number; fontSize: number } | null>(null);
   const [lastValidSize, setLastValidSize] = useState({ width: coordinates.width, height: coordinates.height });
   
   // Simplified setInputValue to prevent dependency loops
@@ -189,16 +190,24 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
   // Smart box sizing: Calculate dimensions based on text content
   const calculateSmartDimensions = useCallback((textContent: string, fontSizeValue: number): { width: number; height: number } => {
     const textDimensions = measureText(textContent, fontSizeValue, fontFamily);
-    const padding = 16; // Padding around text so box never overlaps
+    const padding = 3; // Padding around text so box never overlaps
     
     return {
-      width: Math.max(textDimensions.width + padding * 2, 120), // Minimum width
-      height: Math.max(textDimensions.height + padding * 2, 60) // Minimum height
+      width: textDimensions.width + padding * 2,
+      height: textDimensions.height + padding * 2
     };
   }, [fontFamily]);
 
   // Smart resize: Update box dimensions when text or font size changes
   useEffect(() => {
+    // ✅ DISABLED: Smart resize conflicts with user-defined dimensions
+    // Users want to maintain their custom size, not auto-shrink to content
+    return;
+    
+    if (!hasStartedEditing) {
+      return;
+    }
+
     const smartDimensions = calculateSmartDimensions(inputValue, currentFontSize);
     
     // Only update if dimensions would significantly change (avoid constant micro-adjustments)
@@ -216,7 +225,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
         newDimensions: smartDimensions
       });
     }
-  }, [inputValue, currentFontSize, calculateSmartDimensions, dimensions, id]);
+  }, [inputValue, currentFontSize, calculateSmartDimensions, dimensions, id, hasStartedEditing]);
   
   const inputRef = useRef<HTMLInputElement>(null);
   const spanRef = useRef<HTMLSpanElement>(null);
@@ -246,13 +255,11 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     const textMetrics = ctx.measureText(textToMeasure);
     const textWidth = textMetrics.width;
     
-    // ✅ GENEROUS FIT: More spacious padding for better usability
-    const minTextWidth = Math.max(textWidth + 16, 60); // 8px padding on each side, minimum 60px
-    const minTextHeight = Math.max(measureFontSize + 12, 32); // 6px padding top/bottom, minimum 32px
-    
+    const PADDING = 6; // 3px on each side
+
     return {
-      width: minTextWidth,
-      height: minTextHeight
+      width: textWidth + PADDING,
+      height: measureFontSize + PADDING
     };
   }, [inputValue, currentFontSize, fontFamily]);
 
@@ -356,17 +363,6 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
     }, 300), // Debounce auto-resize to prevent rapid calls
     [isDeleted, getExactTextDimensions, dimensions.width, dimensions.height, isNew]
   );
-
-  // ✅ FIXED: Only auto-resize for brand new text inputs that need initial sizing
-  useEffect(() => {
-    // Only auto-resize for completely new text inputs (never edited before)
-    if (isNew && !hasStartedEditing && !inputValue.trim()) {
-             console.log('📏 Initial sizing for new text input:', id);
-       // Provide a smaller visible default size that matches store defaults
-       setDimensions({ width: 120, height: 32 }); // Larger default for better text visibility
-    }
-    // Don't auto-resize existing inputs or when user is actively editing
-  }, [isNew, hasStartedEditing, inputValue, getExactTextDimensions]); // Only for truly new inputs
 
   // ✅ FIXED: Don't force empty tags back into edit mode - let user position them first
   // Removed the useEffect that was keeping empty selected tags in edit mode
@@ -727,50 +723,74 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
 
   // ✅ INSTANT CORNER DRAG: Resize handler with immediate response
   
-  const handleResize = useCallback((
-    e: any,
-    direction: any,
-    ref: HTMLElement,
-    delta: any,
-    position: { x: number; y: number }
-  ) => {
-    if (isDeleted) return;
-    const newWidth = parseInt(ref.style.width) / scaleFactor;
-    const newHeight = parseInt(ref.style.height) / scaleFactor;
-    const smartDimensions = calculateSmartDimensions(inputValue, currentFontSize);
-    setDimensions(smartDimensions);
-    // 100px:1 font size sensitivity
-    const dragDistance = delta.width;
-    const fontSizeChange = dragDistance / (scaleFactor * 100); // 100px drag = 1px font size
-    if (Math.abs(dragDistance) > 0) {
-      let newFontSize = currentFontSize + fontSizeChange;
-      newFontSize = Math.max(10, Math.min(72, newFontSize));
-      setLiveFontSize(newFontSize); // Use exact value for instant feedback
-    }
-    if (onResize) {
-      onResize({
-        x: coordinates.x,
-        y: coordinates.y,
-        width: smartDimensions.width,
-        height: smartDimensions.height
-      });
-    }
-  }, [scaleFactor, isDeleted, inputValue, currentFontSize, onResize, calculateSmartDimensions]);
+  const handleResize = useCallback(
+    (e: any, direction: any, ref: HTMLElement, delta: any, position: { x: number; y: number }) => {
+      if (isDeleted || !resizeStartValues.current) return;
+
+      const newWidth = parseInt(ref.style.width, 10) / scaleFactor;
+      const newHeight = parseInt(ref.style.height, 10) / scaleFactor;
+
+      setDimensions({ width: newWidth, height: newHeight });
+
+      const resizeSensitivity = 0.5;
+      const heightChange = newHeight - resizeStartValues.current.height;
+      const fontSizeChange = heightChange * resizeSensitivity;
+
+      const newFontSize = Math.max(8, Math.min(72, resizeStartValues.current.fontSize + fontSizeChange));
+      setLiveFontSize(newFontSize);
+    },
+    [scaleFactor, isDeleted]
+  );
 
   // ✅ ENHANCED: Handle resize stop with better feedback
-  const handleResizeStop = useCallback((e: any, direction: any, ref: HTMLElement, delta: any, positionParam: any) => {
-    setIsResizing(false);
-    setLiveFontSize(undefined); // Reset live font size after drag
-    const smartDimensions = calculateSmartDimensions(inputValue, currentFontSize);
-    // Don't update position during resize - keep original position
-    debouncedSaveRef.current(sessionId, id, coordinates.x, coordinates.y, smartDimensions.width, smartDimensions.height, coordinates.pageNumber);
-    setCustomTagDimensions('T', { width: smartDimensions.width, height: smartDimensions.height });
-    // Save rounded font size to server
-    if (onFontSizeChange && liveFontSize !== undefined) {
-      onFontSizeChange(Math.round(liveFontSize));
-    }
-    console.log('🔧 Smart resize stop. Saved optimized geometry.');
-  }, [scaleFactor, sessionId, id, coordinates.x, coordinates.y, coordinates.pageNumber, currentFontSize, setCustomTagDimensions, inputValue, liveFontSize, onFontSizeChange, calculateSmartDimensions]);
+  const handleResizeStop = useCallback(
+    (e: any, direction: any, ref: HTMLElement, delta: any, position: { x: number; y: number }) => {
+      setIsResizing(false);
+      resizeStartValues.current = null;
+
+      // Snap to smart dimensions
+      const finalWidth = parseInt(ref.style.width, 10) / scaleFactor;
+      const finalHeight = parseInt(ref.style.height, 10) / scaleFactor;
+      const finalDimensions = { width: finalWidth, height: finalHeight };
+      setDimensions(finalDimensions);
+
+      const finalFontSize = liveFontSize !== undefined ? Math.round(liveFontSize) : currentFontSize;
+
+      setLiveFontSize(undefined);
+      if (onFontSizeChange) {
+        onFontSizeChange(finalFontSize);
+      }
+
+      // Save with original position and new smart dimensions
+      debouncedSaveRef.current(
+        sessionId,
+        id,
+        coordinates.x,
+        coordinates.y,
+        finalDimensions.width,
+        finalDimensions.height,
+        coordinates.pageNumber
+      );
+
+      // Remember these dimensions for the next tag
+      console.log('🔧 About to save dimensions for next tag:', { width: finalDimensions.width, height: finalDimensions.height });
+      setCustomTagDimensions('T', { width: finalDimensions.width, height: finalDimensions.height });
+      console.log('🔧 Manual resize stop. Saved user-defined geometry.');
+    },
+    [
+      liveFontSize,
+      currentFontSize,
+      sessionId,
+      id,
+      coordinates.x,
+      coordinates.y,
+      coordinates.pageNumber,
+      onFontSizeChange,
+      setCustomTagDimensions,
+      debouncedSaveRef,
+      scaleFactor,
+    ]
+  );
 
   // Removed old handleClick function - using inline onClick handler in Rnd component
 
@@ -1155,6 +1175,11 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
             hasResizeHandle: isSelected && !isEditing
           });
           setIsResizing(true);
+          resizeStartValues.current = {
+            width: dimensions.width,
+            height: dimensions.height,
+            fontSize: currentFontSize,
+          };
         }}
         enableResizing={isSelected && !isEditing ? {
           top: false,
@@ -1266,7 +1291,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
               border: '3px dashed #3b82f6', // Thicker blue dashed border when editing
               outline: 'none',
               borderRadius: '6px',
-              padding: '8px 12px', // More generous padding for better usability
+              padding: '3px',
               margin: 0,
               fontSize: `${Math.min(Math.max(currentFontSize, 10), 40)}px`, // Fixed font size with 40px max limit
               fontFamily: fontFamily,
@@ -1290,7 +1315,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: '4px 6px', // More padding for better text visibility
+              padding: '3px',
               boxSizing: 'border-box',
               // Transparent background - only text is visible
               backgroundColor: 'transparent',
@@ -1344,7 +1369,7 @@ export const StreamlinedTextInput: React.FC<StreamlinedTextInputProps> = ({
               <div
                 style={{
                   position: 'absolute',
-                  bottom: '-20px',
+                  bottom: '20px',
                   left: '50%',
                   transform: 'translateX(-50%)',
                   backgroundColor: 'rgba(0, 0, 0, 0.8)',

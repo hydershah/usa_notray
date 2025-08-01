@@ -178,7 +178,6 @@ class DailyService {
           room_name: roomName,
           is_owner: isOwner,
           enable_screenshare: true,
-          enable_recording: isOwner,
           start_audio_off: false,
           start_video_off: false,
           // Add expiration time (1 hour from now)
