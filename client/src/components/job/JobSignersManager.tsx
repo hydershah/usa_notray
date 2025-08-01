@@ -65,6 +65,65 @@ const SIGNER_ROLES = [
   { value: 'other', label: 'Other' }
 ];
 
+// Extract SignerForm component outside to prevent recreation on each render
+const SignerForm = ({ formData, setFormData }: {
+  formData: SignerFormData;
+  setFormData: (data: SignerFormData) => void;
+}) => (
+  <div className="space-y-4">
+    <div className="space-y-2">
+      <Label htmlFor="signerName">Full Name *</Label>
+      <Input
+        id="signerName"
+        value={formData.signerName}
+        onChange={(e) => setFormData({ ...formData, signerName: e.target.value })}
+        placeholder="Enter signer's full name"
+      />
+    </div>
+
+    <div className="space-y-2">
+      <Label htmlFor="signerEmail">Email Address *</Label>
+      <Input
+        id="signerEmail"
+        type="email"
+        value={formData.signerEmail}
+        onChange={(e) => setFormData({ ...formData, signerEmail: e.target.value })}
+        placeholder="Enter signer's email"
+      />
+    </div>
+
+    <div className="space-y-2">
+      <Label htmlFor="signerPhoneNumber">Phone Number *</Label>
+      <Input
+        id="signerPhoneNumber"
+        type="tel"
+        value={formData.signerPhoneNumber}
+        onChange={(e) => setFormData({ ...formData, signerPhoneNumber: e.target.value })}
+        placeholder="Enter signer's phone number"
+      />
+    </div>
+
+    <div className="space-y-2">
+      <Label htmlFor="signerRole">Role *</Label>
+      <Select
+        value={formData.signerRole}
+        onValueChange={(value) => setFormData({ ...formData, signerRole: value })}
+      >
+        <SelectTrigger>
+          <SelectValue placeholder="Select signer role" />
+        </SelectTrigger>
+        <SelectContent>
+          {SIGNER_ROLES.map((role) => (
+            <SelectItem key={role.value} value={role.value}>
+              {role.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  </div>
+);
+
 export function JobSignersManager({ jobId, onSignersUpdated }: JobSignersManagerProps) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -295,61 +354,6 @@ export function JobSignersManager({ jobId, onSignersUpdated }: JobSignersManager
     }
   };
 
-  const SignerForm = () => (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="signerName">Full Name *</Label>
-        <Input
-          id="signerName"
-          value={formData.signerName}
-          onChange={(e) => setFormData({ ...formData, signerName: e.target.value })}
-          placeholder="Enter signer's full name"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="signerEmail">Email Address *</Label>
-        <Input
-          id="signerEmail"
-          type="email"
-          value={formData.signerEmail}
-          onChange={(e) => setFormData({ ...formData, signerEmail: e.target.value })}
-          placeholder="Enter signer's email"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="signerPhoneNumber">Phone Number *</Label>
-        <Input
-          id="signerPhoneNumber"
-          type="tel"
-          value={formData.signerPhoneNumber}
-          onChange={(e) => setFormData({ ...formData, signerPhoneNumber: e.target.value })}
-          placeholder="Enter signer's phone number"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="signerRole">Role *</Label>
-        <Select
-          value={formData.signerRole}
-          onValueChange={(value) => setFormData({ ...formData, signerRole: value })}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select signer role" />
-          </SelectTrigger>
-          <SelectContent>
-            {SIGNER_ROLES.map((role) => (
-              <SelectItem key={role.value} value={role.value}>
-                {role.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-    </div>
-  );
-
   if (isLoading) {
     return (
       <Card>
@@ -399,7 +403,7 @@ export function JobSignersManager({ jobId, onSignersUpdated }: JobSignersManager
                  <DialogHeader>
                    <DialogTitle>Add New Signer</DialogTitle>
                  </DialogHeader>
-                 <SignerForm />
+                 <SignerForm formData={formData} setFormData={setFormData} />
                  <div className="flex justify-end space-x-2 pt-4">
                    <Button 
                      variant="outline" 
@@ -531,7 +535,7 @@ export function JobSignersManager({ jobId, onSignersUpdated }: JobSignersManager
           <DialogHeader>
             <DialogTitle>Edit Signer</DialogTitle>
           </DialogHeader>
-          <SignerForm />
+          <SignerForm formData={formData} setFormData={setFormData} />
           <div className="flex justify-end space-x-2 pt-4">
             <Button 
               variant="outline" 
