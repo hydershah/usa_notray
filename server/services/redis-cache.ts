@@ -1,5 +1,7 @@
 import Redis from 'ioredis';
 import { performance } from 'perf_hooks';
+// import dotenv from 'dotenv';
+// dotenv.config();
 
 export class RedisCache {
   private redis: Redis;

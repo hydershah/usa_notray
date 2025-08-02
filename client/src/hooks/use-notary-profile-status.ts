@@ -12,20 +12,27 @@ interface NotaryProfileStatus {
 }
 
 export function useNotaryProfileStatus() {
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const [status, setStatus] = useState<NotaryProfileStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const checkProfileStatus = async () => {
-      if (!user || (!user.isNotary && user.role !== 'notary')) {
+      // Only check status if user is authenticated and has a valid token
+      if (!user || (!user.isNotary && user.role !== 'notary') || !isAuthenticated) {
+        setIsLoading(false);
+        return;
+      }
+
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.warn('No authentication token found, skipping profile status check');
         setIsLoading(false);
         return;
       }
 
       try {
-        const token = localStorage.getItem('token');
         const response = await fetch('/api/notary/profile/status', {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -47,7 +54,7 @@ export function useNotaryProfileStatus() {
     };
 
     checkProfileStatus();
-  }, [user]);
+  }, [user, isAuthenticated]);
 
   const needsProfileCompletion = status && !status.profileComplete;
   const needsApproval = status && status.profileComplete && status.approvalStatus === 'pending';

@@ -4,4 +4,5 @@ export { AdminVerification } from './AdminVerification';
 export { AdminUsers } from './AdminUsers';
 export { AdminNotaries } from './AdminNotaries';
 export { AdminCompanies } from './AdminCompanies';
-export { AdminLogs } from './AdminLogs'; 
+export { AdminLogs } from './AdminLogs';
+export { JobRequestManager } from './JobRequestManager'; 
