@@ -67,7 +67,9 @@ export class JobRequestService {
       console.log('Notifying admins of new request:', newRequest.id);
       await this.notifyAdminsOfNewRequest(newRequest);
 
-      return newRequest;
+      // Transform the new request to include documents
+      const transformedRequest = await this.transformJobRequestWithDocuments(newRequest);
+      return transformedRequest;
     } catch (error) {
       console.error('Error creating job request:', error);
       throw new Error(`Failed to create job request: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -84,9 +86,13 @@ export class JobRequestService {
         .select()
         .from(jobRequests)
         .where(eq(jobRequests.status, 'pending'))
-        .orderBy(desc(jobRequests.priority), desc(jobRequests.createdAt));
-      console.log('Pending requests fetched:', requests);
-      return requests;
+        .orderBy(desc(jobRequests.createdAt));
+
+      // Transform requests to include documents in the expected format
+      const transformedRequests = await Promise.all(requests.map(request => this.transformJobRequestWithDocuments(request)));
+
+      console.log('Pending requests fetched:', transformedRequests);
+      return transformedRequests;
     } catch (error) {
       console.error('Error fetching pending requests:', error);
       throw new Error('Failed to fetch pending requests');
@@ -94,7 +100,7 @@ export class JobRequestService {
   }
 
   /**
-   * Get job requests by requestor (signer)
+   * Get job requests by requestor
    */
   static async getRequestsByRequestor(requestorId: number): Promise<JobRequest[]> {
     try {
@@ -104,8 +110,12 @@ export class JobRequestService {
         .from(jobRequests)
         .where(eq(jobRequests.requestorId, requestorId))
         .orderBy(desc(jobRequests.createdAt));
-      console.log('Requests fetched for requestor:', requests);
-      return requests;
+
+      // Transform requests to include documents in the expected format
+      const transformedRequests = await Promise.all(requests.map(request => this.transformJobRequestWithDocuments(request)));
+
+      console.log('Requests fetched for requestor:', transformedRequests);
+      return transformedRequests;
     } catch (error) {
       console.error('Error fetching user requests:', error);
       throw new Error('Failed to fetch user requests');
@@ -154,9 +164,12 @@ export class JobRequestService {
 
       const total = parseInt(totalResult[0]?.count?.toString() || '0');
 
-      console.log('Notary requests fetched:', { requests, total, page, limit });
+      // Transform requests to include documents in the expected format
+      const transformedRequests = await Promise.all(requests.map(request => this.transformJobRequestWithDocuments(request)));
+
+      console.log('Notary requests fetched:', { requests: transformedRequests, total, page, limit });
       return {
-        requests,
+        requests: transformedRequests,
         total,
         page,
         limit
@@ -209,9 +222,12 @@ export class JobRequestService {
 
       const total = parseInt(totalResult[0]?.count?.toString() || '0');
 
-      console.log('User requests fetched:', { requests, total, page, limit });
+      // Transform requests to include documents in the expected format
+      const transformedRequests = await Promise.all(requests.map(request => this.transformJobRequestWithDocuments(request)));
+
+      console.log('User requests fetched:', { requests: transformedRequests, total, page, limit });
       return {
-        requests,
+        requests: transformedRequests,
         total,
         page,
         limit
@@ -220,6 +236,50 @@ export class JobRequestService {
       console.error('Error fetching user job requests:', error);
       throw new Error('Failed to fetch user job requests');
     }
+  }
+
+  /**
+   * Transform job request data to include documents in the expected format
+   */
+  static async transformJobRequestWithDocuments(request: any): Promise<any> {
+    const transformed = { ...request };
+    
+    // Extract documents from metadata and add them to the documents field
+    if (request.metadata?.documents && Array.isArray(request.metadata.documents)) {
+      const { VultrUploadHandler } = await import('../vultr-upload-handler');
+      
+      const documentsWithUrls = await Promise.all(
+        request.metadata.documents.map(async (doc: any, index: number) => {
+          // Generate signed URL for the document
+          let documentUrl = doc.filePath; // Fallback to filePath
+          
+          try {
+            if (doc.filePath && !doc.filePath.startsWith('/')) {
+              // This looks like a Vultr key, generate signed URL
+              const signedUrl = await VultrUploadHandler.generateSignedUrl(doc.filePath, 1); // 1 hour expiry
+              if (signedUrl) {
+                documentUrl = signedUrl;
+              }
+            }
+          } catch (error) {
+            console.warn(`Failed to generate signed URL for document ${doc.fileName}:`, error);
+          }
+          
+          return {
+            id: index + 1, // Generate a simple ID for the frontend
+            name: doc.originalName || doc.fileName,
+            url: documentUrl,
+            uploadedAt: request.createdAt // Use request creation date as upload date
+          };
+        })
+      );
+      
+      transformed.documents = documentsWithUrls;
+    } else {
+      transformed.documents = [];
+    }
+    
+    return transformed;
   }
 
   /**
@@ -262,10 +322,13 @@ export class JobRequestService {
         .where(whereConditions.length > 0 ? and(...whereConditions) : undefined);
   
       const total = parseInt(totalResult[0]?.count?.toString() || '0');
+
+      // Transform requests to include documents in the expected format
+      const transformedRequests = await Promise.all(requests.map(request => this.transformJobRequestWithDocuments(request)));
   
-      console.log('All job requests fetched:', { requests, total, page, limit });
+      console.log('All job requests fetched:', { requests: transformedRequests, total, page, limit });
       return {
-        requests,
+        requests: transformedRequests,
         total,
         page,
         limit
@@ -344,7 +407,9 @@ export class JobRequestService {
         await this.notifyNotaryOfAssignment(updatedRequest);
       }
 
-      return updatedRequest;
+      // Transform the updated request to include documents
+      const transformedRequest = await this.transformJobRequestWithDocuments(updatedRequest);
+      return transformedRequest;
     } catch (error) {
       console.error('Error reviewing job request:', error);
       throw new Error('Failed to review job request');
@@ -413,7 +478,9 @@ export class JobRequestService {
         .where(eq(jobRequests.id, requestId))
         .returning();
 
-      return { request: updatedRequest, job: newJob };
+      // Transform the updated request to include documents
+      const transformedRequest = await this.transformJobRequestWithDocuments(updatedRequest);
+      return { request: transformedRequest, job: newJob };
     } catch (error) {
       console.error('Error converting request to job:', error);
       throw new Error('Failed to convert request to job');
@@ -637,8 +704,37 @@ export class JobRequestService {
         return [];
       }
 
-      console.log('Documents fetched for job request:', requestId, request.metadata.documents);
-      return request.metadata.documents;
+      const { VultrUploadHandler } = await import('../vultr-upload-handler');
+      
+      // Transform documents to include signed URLs
+      const documentsWithUrls = await Promise.all(
+        request.metadata.documents.map(async (doc: any, index: number) => {
+          // Generate signed URL for the document
+          let documentUrl = doc.filePath; // Fallback to filePath
+          
+          try {
+            if (doc.filePath && !doc.filePath.startsWith('/')) {
+              // This looks like a Vultr key, generate signed URL
+              const signedUrl = await VultrUploadHandler.generateSignedUrl(doc.filePath, 1); // 1 hour expiry
+              if (signedUrl) {
+                documentUrl = signedUrl;
+              }
+            }
+          } catch (error) {
+            console.warn(`Failed to generate signed URL for document ${doc.fileName}:`, error);
+          }
+          
+          return {
+            id: index + 1,
+            name: doc.originalName || doc.fileName,
+            url: documentUrl,
+            uploadedAt: new Date().toISOString() // Use current time as fallback
+          };
+        })
+      );
+
+      console.log('Documents fetched for job request:', requestId, documentsWithUrls);
+      return documentsWithUrls;
     } catch (error) {
       console.error('Error fetching job request documents:', error);
       throw new Error('Failed to fetch documents');
@@ -744,7 +840,9 @@ export class JobRequestService {
         await this.updateJobRequestDocuments(requestId, updateData.documents);
       }
 
-      return updatedRequest;
+      // Transform the updated request to include documents
+      const transformedRequest = await this.transformJobRequestWithDocuments(updatedRequest);
+      return transformedRequest;
     } catch (error) {
       console.error('Error updating job request:', error);
       throw new Error('Failed to update job request');
