@@ -84,9 +84,14 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
     maxReconnectAttempts = 10
   } = config;
 
-  // Get authentication token
+  // Get authentication token with validation
   const getAuthToken = useCallback(() => {
-    return localStorage.getItem('token');
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.warn('⚠️ No authentication token found in localStorage');
+      return null;
+    }
+    return token;
   }, []);
 
   // Create WebSocket URL
@@ -95,7 +100,12 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
     const host = window.location.host;
     const token = getAuthToken();
     
-    return `${protocol}//${host}/ws/editor?token=${encodeURIComponent(token || '')}&sessionId=${encodeURIComponent(sessionId)}`;
+    if (!token) {
+      console.error('🚫 Cannot create WebSocket URL: No authentication token');
+      throw new Error('Authentication token required for WebSocket connection');
+    }
+    
+    return `${protocol}//${host}/ws/editor?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}`;
   }, [sessionId, getAuthToken]);
 
   // Send message via WebSocket
@@ -184,6 +194,22 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
               (window as any).textInputSyncCallback('tag_updated', {
                 id: message.payload.tagId,
                 updates: message.payload.updates
+              });
+            }
+          }
+          break;
+
+        case 'tag_saved':
+          console.log('💾 Tag saved by another user (coordinates updated)');
+          // Handle tag_saved similar to tag_updated, but specifically for coordinate changes
+          if (message.payload.tagId && message.payload.coordinates) {
+            updateTag(message.payload.tagId, { coordinates: message.payload.coordinates });
+            
+            // 🔧 SYNC TEXT INPUTS: If it's a text tag, also update text inputs state
+            if (typeof window !== 'undefined' && (window as any).textInputSyncCallback) {
+              (window as any).textInputSyncCallback('tag_updated', {
+                id: message.payload.tagId,
+                updates: { coordinates: message.payload.coordinates }
               });
             }
           }
@@ -358,11 +384,24 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
       return; // Already connected
     }
 
+    // Check authentication before attempting connection
+    const token = getAuthToken();
+    if (!token) {
+      console.error('🚫 Cannot connect WebSocket: User not authenticated');
+      setConnectionState(prev => ({
+        ...prev,
+        isConnecting: false,
+        lastError: 'Authentication required'
+      }));
+      return;
+    }
+
     try {
       setConnectionState(prev => ({ ...prev, isConnecting: true }));
       
       const wsUrl = createWebSocketUrl();
       console.log('🔗 Attempting WebSocket connection to:', wsUrl);
+      console.log('🔍 Auth token present:', !!token);
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
@@ -507,6 +546,13 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
       });
     },
 
+    tagSelected: (tagId: string, userId: string) => {
+      sendMessage({
+        type: 'tag_selected',
+        payload: { tagId, userId }
+      });
+    },
+
     tagContentUpdated: (tagId: string, content: any, contentType: string, isCompleted: boolean, source?: string) => {
       sendMessage({
         type: 'tag_content_updated',
@@ -537,6 +583,13 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
     documentSwitched: (documentId: string) => {
       sendMessage({
         type: 'document_switched',
+        payload: { documentId }
+      });
+    },
+
+    documentChanged: (documentId: string) => {
+      sendMessage({
+        type: 'document_changed',
         payload: { documentId }
       });
     },

@@ -218,6 +218,10 @@ export class WebSocketService {
           this.handleTagUpdated(user, message);
           break;
           
+        case 'tag_saved':
+          this.handleTagSaved(user, message);
+          break;
+          
         case 'tag_deleted':
           this.handleTagDeleted(user, message);
           break;
@@ -305,6 +309,17 @@ export class WebSocketService {
    * Handle tag updates (drag, resize, etc.)
    */
   private handleTagUpdated(user: ConnectedUser, message: WSMessage): void {
+    // Add to message history
+    this.addToMessageHistory(user.sessionId, message);
+    
+    // Broadcast to all users in session
+    this.broadcastToSession(user.sessionId, message, user.userId);
+  }
+  
+  /**
+   * Handle tag saved (coordinate changes)
+   */
+  private handleTagSaved(user: ConnectedUser, message: WSMessage): void {
     // Add to message history
     this.addToMessageHistory(user.sessionId, message);
     

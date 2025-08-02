@@ -7475,6 +7475,26 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       const { JobCompletionReportService } = await import('./services/job-completion-report-service');
       const reportResult = await JobCompletionReportService.generateJobCompletionReport(jobId);
       
+      // 🔥 INVALIDATE COMPLETION REPORT CACHE AFTER MANUAL GENERATION
+      if (reportResult.success) {
+        try {
+          const { redisCache } = await import('./services/redis-cache');
+          const cachePatterns = [
+            `*completion-report*${jobId}*`,
+            `*jobs*${jobId}*completion*`,
+            `response:*/api/jobs/${jobId}/completion-report:*`
+          ];
+          
+          for (const pattern of cachePatterns) {
+            await redisCache.delPattern(pattern);
+          }
+          
+          console.log(`🧹 Invalidated completion report cache for job ${jobId} (manual generation)`);
+        } catch (cacheError) {
+          console.warn('Failed to invalidate completion report cache:', cacheError);
+        }
+      }
+      
       if (reportResult.success) {
         res.json({
           success: true,
@@ -10003,6 +10023,24 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           
           if (reportResult.success) {
             console.log(`✅ Job completion report generated: ${reportResult.reportPath}`);
+            
+            // 🔥 INVALIDATE COMPLETION REPORT CACHE
+            try {
+              const { redisCache } = await import('./services/redis-cache');
+              const cachePatterns = [
+                `*completion-report*${session.jobId}*`,
+                `*jobs*${session.jobId}*completion*`,
+                `response:*/api/jobs/${session.jobId}/completion-report:*`
+              ];
+              
+              for (const pattern of cachePatterns) {
+                await redisCache.delPattern(pattern);
+              }
+              
+              console.log(`🧹 Invalidated completion report cache for job ${session.jobId}`);
+            } catch (cacheError) {
+              console.warn('Failed to invalidate completion report cache:', cacheError);
+            }
           } else {
             console.error(`❌ Failed to generate completion report: ${reportResult.error}`);
           }

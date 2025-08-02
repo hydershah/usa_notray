@@ -109,9 +109,19 @@ export const authApi = {
     const response = await apiRequest('POST', '/api/auth/login', credentials);
     const data = await response.json();
     
-    // Store token in localStorage
-    localStorage.setItem('token', data.token);
-    localStorage.setItem('user', JSON.stringify(data.user));
+    // Validate and store token in localStorage
+    if (data.token && data.token !== 'undefined') {
+      localStorage.setItem('token', data.token);
+    } else {
+      console.error('Invalid token received from login response');
+    }
+    
+    // Validate and store user data
+    if (data.user && typeof data.user === 'object') {
+      localStorage.setItem('user', JSON.stringify(data.user));
+    } else {
+      console.error('Invalid user data received from login response');
+    }
     
     return data;
   },
@@ -136,12 +146,32 @@ export const authApi = {
   },
 
   getStoredUser: (): User | null => {
-    const user = localStorage.getItem('user');
-    return user ? JSON.parse(user) : null;
+    try {
+      const user = localStorage.getItem('user');
+      
+      // Handle cases where localStorage contains invalid data
+      if (!user || user === 'undefined' || user === 'null' || user.trim() === '') {
+        return null;
+      }
+      
+      return JSON.parse(user);
+    } catch (error) {
+      console.warn('Failed to parse user data from localStorage:', error);
+      // Clear invalid data
+      localStorage.removeItem('user');
+      return null;
+    }
   },
 
   getStoredToken: (): string | null => {
-    return localStorage.getItem('token');
+    const token = localStorage.getItem('token');
+    
+    // Handle cases where localStorage contains invalid token data
+    if (!token || token === 'undefined' || token === 'null' || token.trim() === '') {
+      return null;
+    }
+    
+    return token;
   },
 
   isAuthenticated: (): boolean => {
@@ -157,6 +187,11 @@ export const authApi = {
   },
 
   setStoredUser: (user: User): void => {
-    localStorage.setItem('user', JSON.stringify(user));
+    if (user && typeof user === 'object') {
+      localStorage.setItem('user', JSON.stringify(user));
+    } else {
+      console.error('Invalid user data provided to setStoredUser');
+      localStorage.removeItem('user');
+    }
   }
 };

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Rnd } from 'react-rnd';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
@@ -15,6 +15,14 @@ import type {
 import type { WebSocketConnection } from '@/hooks/editor/useWebSocket';
 import { TAG_TYPE_INFO } from '../../types/editor';
 import { StreamlinedTextInput } from './StreamlinedTextInput';
+import { 
+  getTagDimensions, 
+  snapToGrid,
+  TAG_TYPE_CONFIG,
+  PROFESSIONAL_COLORS,
+  TYPOGRAPHY,
+  LAYOUT
+} from '@/lib/constants/tagConstants';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Loader2 } from 'lucide-react';
 
@@ -67,6 +75,7 @@ interface PDFViewerProps {
   onTextInputSelect?: (textInputId: string | null) => void;
   onSaveTextContent?: (textInputId: string, content: string) => void;
   onDeleteTextInput?: (textInputId: string) => void;
+  onMoveTextInput?: (textInputId: string, coordinates: { x: number; y: number }) => void;
   onFontSizeChange?: (textInputId: string, fontSize: number) => void;
   // Sync functionality for live signing
   onSyncUsers?: () => void;
@@ -113,26 +122,45 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       ? liveFontSize
       : localFontSize || tag.contentData?.fontSize || 12;
   
-  console.log('🏷️ TagRenderer debug:', {
-    tagId: tag.id,
-    tagType: tag.tagType,
-    canEdit,
-    currentFontSize,
-    localFontSize,
-    storedFontSize: tag.contentData?.fontSize,
-    isCompleted: tag.isCompleted,
-    enableResizing: canEdit && !(tag.isCompleted && tag.tagType === 'T')
-  });
+  // Remove debug logs for better performance during drag operations
   
-  // Convert PDF coordinates to display coordinates
-  const displayCoords = {
+  // Convert PDF coordinates to display coordinates - memoized for performance
+  const fixedDimensions = useMemo(() => getTagDimensions(tag.tagType), [tag.tagType]);
+  
+  const displayCoords = useMemo(() => ({
     x: Math.round(tag.coordinates.x * scaleFactor),
     y: Math.round(tag.coordinates.y * scaleFactor),
-    width: Math.round(tag.coordinates.width * scaleFactor),
-    height: Math.round(tag.coordinates.height * scaleFactor)
-  };
+    width: Math.round(fixedDimensions.width * scaleFactor),
+    height: Math.round(fixedDimensions.height * scaleFactor)
+  }), [tag.coordinates.x, tag.coordinates.y, scaleFactor, fixedDimensions.width, fixedDimensions.height]);
 
-  const hasContent = !!(tag.content || tag.contentData || tag.isCompleted);
+  const hasContent = useMemo(() => !!(tag.content || tag.contentData || tag.isCompleted), [tag.content, tag.contentData, tag.isCompleted]);
+
+  // Memoized style object to prevent recalculation on every render
+  const tagStyle = useMemo(() => ({
+    backgroundColor: hasContent 
+      ? PROFESSIONAL_COLORS.completed 
+      : PROFESSIONAL_COLORS.background,
+    border: `2px solid ${
+      hasContent 
+        ? PROFESSIONAL_COLORS.borderCompleted
+      : isSelected
+          ? PROFESSIONAL_COLORS.borderActive 
+          : PROFESSIONAL_COLORS.border
+    }`,
+    borderRadius: '4px',
+    color: hasContent 
+      ? PROFESSIONAL_COLORS.text 
+      : PROFESSIONAL_COLORS.textPlaceholder,
+    zIndex: isSelected ? 1000 : 100,
+    pointerEvents: 'auto' as const,
+    cursor: canEdit ? 'grab' as const : 'default' as const,
+    fontFamily: TYPOGRAPHY.fontFamily,
+    fontSize: TYPOGRAPHY.fontSize.tag,
+    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    transition: 'none', // Remove transitions during drag for better performance
+    boxShadow: isSelected ? '0 0 0 2px ' + PROFESSIONAL_COLORS.borderActive : 'none'
+  }), [hasContent, isSelected, canEdit]);
 
   const validateAndSanitizeCoordinates = (coords: any) => {
     const sanitized: any = {};
@@ -153,29 +181,46 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     return sanitized;
   };
 
-  const handleDrag = (e: any, data: any) => {
-    if (!canEdit) return;
+  // Throttle drag updates for smoother performance
+  const throttledOnUpdate = useRef<((coords: any) => void) | null>(null);
+  
+  useEffect(() => {
+    let lastUpdate = 0;
+    throttledOnUpdate.current = (coords: any) => {
+      const now = Date.now();
+      if (now - lastUpdate > 8) { // ~120fps throttling for smooth drag
+        onUpdate(coords);
+        lastUpdate = now;
+      }
+    };
+  }, [onUpdate]);
+
+  const handleDrag = useCallback((e: any, data: any) => {
+    if (!canEdit || !throttledOnUpdate.current) return;
     
-    // Update coordinates during drag for smooth visual feedback
-    const newCoordinates = validateAndSanitizeCoordinates({
+    // Optimized smooth drag - minimal processing during drag for better performance
+    const newCoordinates = {
       x: data.x / scaleFactor,
       y: data.y / scaleFactor
-    });
+    };
     
-    onUpdate(newCoordinates);
-  };
+    throttledOnUpdate.current(newCoordinates);
+  }, [canEdit, scaleFactor]);
 
-  const handleDragStop = (e: any, data: any) => {
+  const handleDragStop = useCallback((e: any, data: any) => {
     if (!canEdit || !onSave) return;
     
-    // Save to server only when drag ends
-    const newCoordinates = validateAndSanitizeCoordinates({
-      x: data.x / scaleFactor,
-      y: data.y / scaleFactor
-    });
+    // Professional snap-to-grid on drop - DocuSign style
+    const snappedX = snapToGrid(data.x / scaleFactor);
+    const snappedY = snapToGrid(data.y / scaleFactor);
+    
+    const newCoordinates = {
+      x: snappedX,
+      y: snappedY
+    };
     
     onSave(newCoordinates);
-  };
+  }, [canEdit, onSave, scaleFactor]);
 
   // Instant font size updates
   
@@ -219,7 +264,20 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   };
 
   const handleResizeStop = (e: any, direction: any, ref: any, delta: any, position: any) => {
-    if (!canEdit || !onSave) return;
+    console.log('📏 Tag resize stop triggered:', {
+      tagId: tag.id,
+      tagType: tag.tagType,
+      canEdit,
+      hasOnSave: !!onSave,
+      newWidth: ref.offsetWidth,
+      newHeight: ref.offsetHeight,
+      scaleFactor
+    });
+    
+    if (!canEdit || !onSave) {
+      console.warn('❌ Cannot resize tag - missing permissions or save function:', { canEdit, hasOnSave: !!onSave });
+      return;
+    }
     setLiveFontSize(undefined); // Reset live font size after drag
     
     // For text tags, calculate dimensions based on text content size
@@ -251,6 +309,13 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
         width: Math.round(ref.offsetWidth / scaleFactor),
         height: Math.round(ref.offsetHeight / scaleFactor)
       };
+      console.log('📏 Saving non-text tag resize:', {
+        tagId: tag.id,
+        tagType: tag.tagType,
+        newCoordinates,
+        originalWidth: tag.coordinates.width,
+        originalHeight: tag.coordinates.height
+      });
       onSave(newCoordinates);
     }
     
@@ -270,10 +335,8 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   return (
     <Rnd
       size={{
-        width: tag.isCompleted && (tag.tagType === 'O' || tag.tagType === 'X')
-          ? Math.max(displayCoords.width, 300) // Expand disclosure and expiry tags to at least 300px width
-          : displayCoords.width,
-        height: tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'auto' : displayCoords.height
+        width: displayCoords.width,
+        height: displayCoords.height
       }}
       position={{
         x: displayCoords.x,
@@ -283,13 +346,28 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       onDragStop={handleDragStop}
       onResize={handleResize}
       onResizeStop={handleResizeStop}
-      enableResizing={canEdit && !(tag.isCompleted && tag.tagType === 'T')}
+      enableResizing={(() => {
+        const allowResize = TAG_TYPE_CONFIG[tag.tagType]?.allowResize;
+        console.log('🔧 Tag resize configuration:', {
+          tagType: tag.tagType,
+          allowResize,
+          resizeConfig: allowResize ? 'enabled' : 'disabled'
+        });
+        return allowResize ? {
+          top: false,
+          right: true,
+          bottom: true,
+          left: false,
+          topRight: false,
+          bottomRight: true,
+          bottomLeft: false,
+          topLeft: false
+        } : false;
+      })()} // Enable resizing based on tag configuration
       disableDragging={!canEdit}
       bounds="parent"
-      minWidth={tag.tagType === 'T' ? 40 * scaleFactor : 80 * scaleFactor}
-      minHeight={tag.tagType === 'T' ? 16 * scaleFactor : 32 * scaleFactor}
-      maxWidth={tag.tagType === 'T' ? 600 * scaleFactor : undefined}
-      maxHeight={tag.tagType === 'T' ? 300 * scaleFactor : undefined}
+      dragHandleClassName="professional-tag"
+      cancel=".no-drag"
       onClick={(e: React.MouseEvent<HTMLDivElement>) => {
         e.stopPropagation();
         
@@ -299,22 +377,12 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
           return;
         }
         
-        console.log('🏷️ Tag clicked in PDFViewer:', {
-          tagId: tag.id,
-          tagType: tag.tagType,
-          mode,
-          isCompleted: tag.isCompleted,
-          hasOnTagClick: !!onTagClick,
-          canEdit,
-          isSelected,
-          clickDetail: e.detail,
-          timeStamp: e.timeStamp
-        });
+        // Optimized click handling without console logging for better performance
         
         // ✅ FIX: Special handling for whiteout tags
         if (tag.tagType === 'W') {
           if (mode === 'signing' && onTagClick && !tag.isCompleted) {
-            console.log('🎯 Whiteout tag clicked - applying immediately');
+            // Whiteout tag clicked - applying immediately
             onTagClick(tag, {
               x: e.currentTarget.getBoundingClientRect().left,
               y: e.currentTarget.getBoundingClientRect().top,
@@ -331,13 +399,14 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
         if (mode === 'signing' && onTagClick && !tag.isCompleted) {
           // Improved double-click detection with timing check
           const clickTime = e.timeStamp;
-          const lastClickTime = (e.currentTarget as any)._lastClickTime || 0;
+          const currentTarget = e.currentTarget as any; // Capture reference before setTimeout
+          const lastClickTime = currentTarget._lastClickTime || 0;
           const timeDiff = clickTime - lastClickTime;
-          (e.currentTarget as any)._lastClickTime = clickTime;
+          currentTarget._lastClickTime = clickTime;
           
           if (e.detail === 2 && timeDiff < 500) {
             // Confirmed double-click within reasonable time
-            const rect = e.currentTarget.getBoundingClientRect();
+            const rect = currentTarget.getBoundingClientRect();
             console.log('🎯 Double-click confirmed - triggering interactive input for tag:', tag.id);
             onTagClick(tag, {
               x: rect.left,
@@ -348,7 +417,7 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
           } else if (e.detail === 1) {
             // Single-click: just select the tag (with debouncing)
             setTimeout(() => {
-              const currentClickTime = (e.currentTarget as any)._lastClickTime || 0;
+              const currentClickTime = currentTarget._lastClickTime || 0;
               if (Math.abs(currentClickTime - clickTime) < 50) { // Only if no subsequent clicks
                 console.log('🔗 Single-click confirmed - selecting tag:', tag.id);
                 onSelect();
@@ -363,377 +432,52 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       }}
       onKeyDown={handleKeyDown}
       tabIndex={0}
-      className={`
-        transition-all cursor-pointer ${tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'overflow-visible' : 'overflow-hidden'}
-        ${isSelected ? (tag.tagType === 'T' ? 'ring-1 ring-blue-500 ring-opacity-80' : 'ring-2 ring-blue-400 ring-opacity-60') : ''}
-        ${canEdit ? 'hover:shadow-md' : ''}
-        ${hasContent ? 'completed-tag-transparent' : ''}
-      `}
-      style={{
-        backgroundColor: hasContent 
-          ? (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X' ? 'rgba(255, 255, 255, 0.95)' : 'transparent')
-          : tag.tagType === 'W' ? '#ffffff' : (tag.colorCode || '#1e40af'),
-        
-        ...(hasContent && tag.tagType !== 'T' && tag.tagType !== 'O' && tag.tagType !== 'X' && {
-          background: 'transparent',
-          backgroundColor: 'transparent',
-          backgroundImage: 'none',
-        }),
-        
-        border: hasContent 
-          ? 'none' 
-          : isSelected
-          ? '2px solid #3b82f6' 
-          : tag.tagType === 'W'
-          ? '1px solid #d1d5db' 
-          : 'none',
-        
-        borderRadius: '6px', 
-        
-        color: hasContent 
-          ? '#000000' 
-          : tag.tagType === 'W' ? '#374151' : '#ffffff',
-        
-        zIndex: tag.tagType === 'W' ? (isSelected ? 1000 : 10) : (isSelected ? 1000 : 100),
-        pointerEvents: 'auto',
-        cursor: mode === 'signing' && !tag.isCompleted ? 'pointer' : 'default',
-        
-        boxShadow: hasContent 
-          ? 'none' 
-          : isSelected 
-          ? '0 4px 12px rgba(0, 0, 0, 0.2)' 
-          : '0 2px 6px rgba(0, 0, 0, 0.1)',
-        
-        minWidth: (tag.tagType === 'T') ? 'fit-content' : ((tag.tagType === 'O' || tag.tagType === 'X') ? '200px' : '80px'), // Auto-fit width for text tags
-        minHeight: (tag.tagType === 'T') ? 'fit-content' : ((tag.tagType === 'O' || tag.tagType === 'X') ? 'auto' : '32px'), // Auto-fit height for text tags
-        maxWidth: (tag.tagType === 'T') ? 'none' : 'none', // Remove width constraints for text tags to auto-fit
-        maxHeight: (tag.tagType === 'T') ? 'none' : 'none' // Remove height constraints for text tags to auto-fit
-      }}
-      resizeHandleStyles={canEdit ? {
-        bottomRight: { 
-          width: '16px', 
-          height: '16px', 
-          backgroundColor: tag.colorCode || '#3b82f6',
-          border: '2px solid white',
-          borderRadius: '50%',
-          right: '-8px', 
-          bottom: '-8px', 
-          boxShadow: '0 2px 6px rgba(0,0,0,0.2)', 
-          cursor: 'se-resize'
-        }
-      } : undefined}
-    >
-      <div className={`${tag.tagType === 'T' ? 'w-fit h-fit' : 'w-full'} ${tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? '' : 'h-full'} flex flex-col ${tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'items-start justify-start' : 'items-center justify-center'}`} style={{
-        padding: tag.isCompleted && (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? '0' : ((tag.tagType === 'T') ? '4px 6px' : (tag.tagType === 'O' || tag.tagType === 'X') ? '4px' : '8px 12px')
-      }}>
-        {mode === 'signing' ? (
-          // Signing mode: Show interactive state
-          tag.isCompleted ? (
-            // Completed tag - show actual content as plain text/image OR whiteout
-            tag.tagType === 'W' ? (
-              // Whiteout tag: Show as solid white rectangle with border to keep it visible
-              <div className="w-full h-full bg-white border border-gray-300" />
-            ) : (
-              // Regular completed tag - show actual content as plain text/image
-              <div className="relative" style={{ width: '100%', minHeight: '100%' }}>
-                {(tag.contentData || tag.content) && (() => {
-                  // Parse contentData if it's a string, fallback to content
-                  let contentData;
-                  try {
-                    if (tag.contentData) {
-                      contentData = typeof tag.contentData === 'string' ? JSON.parse(tag.contentData) : tag.contentData;
-                      console.log('📋 Parsed contentData for tag', tag.id, ':', {
-                        tagType: tag.tagType,
-                        contentDataType: contentData.type,
-                        hasValue: !!contentData.value,
-                        valueType: typeof contentData.value,
-                        valuePreview: typeof contentData.value === 'string' ? contentData.value.substring(0, 100) + '...' : contentData.value,
-                        isBase64Image: typeof contentData.value === 'string' && contentData.value.startsWith('data:image/'),
-                        isVultrUrl: typeof contentData.value === 'string' && contentData.value.includes('vultrobjects.com')
-                      });
-                    } else if (tag.content) {
-                      contentData = {
-                        type: 'text',
-                        value: tag.content
-                      };
-                      console.log('📋 Using raw content for tag', tag.id, ':', {
-                        tagType: tag.tagType,
-                        contentPreview: tag.content.substring(0, 100) + '...',
-                        isBase64Image: tag.content.startsWith('data:image/'),
-                        isVultrUrl: tag.content.includes('vultrobjects.com')
-                      });
-                    } else {
-                      contentData = { type: 'text', value: '' };
-                    }
-                  } catch (e) {
-                    console.error('Failed to parse contentData for tag', tag.id, ':', e, 'Raw contentData:', tag.contentData);
-                    contentData = {
-                      type: 'text',
-                      value: tag.content || tag.contentData || ''
-                    };
-                  }
-                  
-                  // Enhanced image detection logic
-                  const isImageContent = () => {
-                    // CRITICAL: Whiteout tags should NEVER be treated as images
-                    if (tag.tagType === 'W') {
-                      return false; // Whiteout is always text/solid color, never an image
-                    }
-                    
-                    console.log('🔍 Image detection for tag', tag.id, ':', {
-                      tagType: tag.tagType,
-                      hasContentData: !!contentData,
-                      contentDataType: contentData?.type,
-                      contentDataValue: contentData?.value ? contentData.value.substring(0, 50) + '...' : null,
-                      hasTagContent: !!tag.content,
-                      tagContentPreview: tag.content ? tag.content.substring(0, 50) + '...' : null,
-                      contentType: tag.contentType
-                    });
-                    
-                    // Check contentData.value first (most reliable)
-                    if (contentData?.value && typeof contentData.value === 'string') {
-                      const value = contentData.value;
-                      const hasImageData = (
-                        value.startsWith('data:image/') ||
-                        value.startsWith('https://') ||
-                        value.includes('vultrobjects.com') ||
-                        value.includes('.png') ||
-                        value.includes('.jpg') ||
-                        value.includes('.jpeg') ||
-                        value.includes('.webp') ||
-                        value.includes('.gif') ||
-                        value.includes('.svg')
-                      );
-                      
-                      if (hasImageData) {
-                        console.log('✅ Image detected in contentData.value for tag', tag.id, 'Value type:', value.substring(0, 30) + '...');
-                        return true;
-                      }
-                    }
-                    
-                    // Check raw content field as fallback (for direct image data)
-                    if (tag.content && typeof tag.content === 'string') {
-                      const hasImageData = (
-                        tag.content.startsWith('data:image/') ||
-                        tag.content.startsWith('https://') ||
-                        tag.content.includes('vultrobjects.com') ||
-                        tag.content.includes('.png') ||
-                        tag.content.includes('.jpg') ||
-                        tag.content.includes('.jpeg') ||
-                        tag.content.includes('.webp')
-                      );
-                      
-                      if (hasImageData) {
-                        console.log('✅ Image detected in raw content for tag', tag.id);
-                        return true;
-                      }
-                    }
-                    
-                    // Check contentType field
-                    if (contentData?.contentType === 'image' || tag.contentType === 'image') {
-                      console.log('✅ Image detected via contentType for tag', tag.id);
-                      return true;
-                    }
-                    
-                    // Check if it's a signature/initials/seal type with content
-                    if (contentData?.type && ['signature', 'initials', 'seal', 'stamp'].includes(contentData.type)) {
-                      // Only return true if there's actual image-like content
-                      const contentToCheck = contentData.value || tag.content;
-                      const isImageLike = !!(contentToCheck && 
-                              typeof contentToCheck === 'string' && 
-                              contentToCheck.length > 50 && // Must be substantial content
-                              (contentToCheck.startsWith('data:image/') || 
-                               contentToCheck.startsWith('https://') ||
-                               contentToCheck.includes('vultrobjects.com')));
-                      
-                      if (isImageLike) {
-                        console.log('✅ Image detected via signature/seal type for tag', tag.id);
-                      }
-                      
-                      return isImageLike;
-                    }
-                    
-                    const result = false;
-                    console.log('🔍 Image detection result for tag', tag.id, ':', result);
-                    return result;
-                  };
-                  
-                  // If image failed to load or not image content, show text content
-                  if (imageLoadError || !isImageContent()) {
-                    return (
-                      <div 
-                        className="text-black"
-                        data-text-content={tag.tagType === 'T' ? 'true' : undefined}
-                        style={{ 
-                          fontSize: `${currentFontSize}px`, // Use current font size (local or stored)
-                          lineHeight: '1.4',
-                          wordBreak: 'break-word',
-                          fontFamily: 'inherit',
-                          width: '100%', // Fill container width
-                          maxWidth: 'none', // Remove max width constraint
-                          whiteSpace: 'normal',
-                          padding: '4px',
-                          textAlign: 'left'
-                        }}
-                      >
-                        {/* Always show the actual content, never "Applied" messages */}
-                        {typeof contentData?.value === 'string' ? contentData.value : 
-                         contentData?.value ? JSON.stringify(contentData.value) :
-                         tag.content || '[No content]'}
-                      </div>
-                    );
-                  }
-                  
-                  // Determine the best image source from available data
-                  const imageSource = contentData.value || tag.content || '';
-                  
-                  return (
-                    <img 
-                      src={imageSource} 
-                      alt={contentData.type === 'signature' ? 'Signature' : 
-                           contentData.type === 'initials' ? 'Initials' : 
-                           contentData.type === 'seal' || contentData.type === 'stamp' ? 'Notary Seal' : 'Image'} 
-                      className="max-h-full max-w-full object-contain"
-                      style={{ 
-                        filter: 'none',
-                        maxHeight: '100%',
-                        maxWidth: '100%'
-                      }}
-                      onError={(e) => {
-                        console.error('🖼️ Image failed to load for tag:', tag.id, 'Source:', imageSource, 'ContentData:', contentData);
-                        setImageLoadError(true);
-                      }}
-                      onLoad={() => {
-                        console.log('✅ Image loaded successfully for tag:', tag.id, 'Type:', tag.tagType);
-                      }}
-                    />
-                  );
-                })()}
-              </div>
-            )
-          ) : (
-            // Incomplete tag in signing mode - use SAME UI as tagging mode
-            <>
-              {/* Tag content with proper sizing */}
-              <div 
-                className="flex items-center gap-2" 
-                data-text-content={tag.tagType === 'T' ? 'true' : undefined}
-                style={{
-                  fontSize: currentFontSize, // Use current font size (local or stored)
-                  fontWeight: '600',
-                  lineHeight: '1.2'
-                }}
-              >
-                <span style={{ 
-                  color: tag.tagType === 'W' ? '#374151' : '#ffffff',
-                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
-                }}>
-                  {tagInfo.icon}
-                </span>
-                <span style={{ 
-                  color: tag.tagType === 'W' ? '#374151' : '#ffffff',
-                  textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)',
-                  whiteSpace: (tag.tagType === 'O' || tag.tagType === 'X') ? 'normal' : 'nowrap',
-                  overflow: (tag.tagType === 'O' || tag.tagType === 'X') ? 'visible' : 'hidden',
-                  textOverflow: (tag.tagType === 'O' || tag.tagType === 'X') ? 'unset' : 'ellipsis'
-                }}>
-                  {tagInfo.label}
-                </span>
-                
-                {/* User indicator */}
-                {tag.displayLabel && tag.displayLabel.includes(' - ') && displayCoords.width > 70 && (
-                  <div 
-                    style={{
-                      width: '8px',
-                      height: '8px',
-                      borderRadius: '50%',
-                      backgroundColor: tag.colorCode,
-                      border: '1px solid rgba(255, 255, 255, 0.8)',
-                      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
-                      marginLeft: '4px',
-                      flexShrink: 0
-                    }}
-                    title={tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
-                  />
-                )}
-              </div>
-              
+      className="professional-tag"
+      style={tagStyle}
 
-            </>
-          )
+    >
+      <div 
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-start',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          padding: `${LAYOUT.tagPadding.vertical}px ${LAYOUT.tagPadding.horizontal}px`
+        }}
+      >
+        {hasContent ? (
+          <span style={{ 
+            fontFamily: TYPOGRAPHY.fontFamily,
+            fontSize: TYPOGRAPHY.fontSize.content,
+            fontWeight: TYPOGRAPHY.fontWeight.medium,
+            color: PROFESSIONAL_COLORS.text
+          }}>
+            {tag.content || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Content'}
+          </span>
         ) : (
-          // Tagging mode: Show tag info - improved sizing
-          <>
-            {/* Tag content with proper sizing */}
-            <div className="flex items-center gap-2" style={{
-              fontSize: currentFontSize, // Use current font size (local or stored)
-              fontWeight: '600',
-              lineHeight: '1.2'
-            }}>
-              <span style={{ 
-                color: tag.tagType === 'W' ? '#374151' : '#ffffff',
-                textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)'
-              }}>
-                {tagInfo.icon}
-              </span>
-              <span style={{ 
-                color: tag.tagType === 'W' ? '#374151' : '#ffffff',
-                textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)',
-                whiteSpace: (tag.tagType === 'O' || tag.tagType === 'X') ? 'normal' : 'nowrap',
-                overflow: (tag.tagType === 'O' || tag.tagType === 'X') ? 'visible' : 'hidden',
-                textOverflow: (tag.tagType === 'O' || tag.tagType === 'X') ? 'unset' : 'ellipsis'
-              }}>
-                {tagInfo.label}
-              </span>
-              
-              {/* User indicator */}
-              {tag.displayLabel && tag.displayLabel.includes(' - ') && displayCoords.width > 70 && (
-                <div 
-                  style={{
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    backgroundColor: tag.colorCode,
-                    border: '1px solid rgba(255, 255, 255, 0.8)',
-                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
-                    marginLeft: '4px',
-                    flexShrink: 0
-                  }}
-                  title={tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
-                />
-              )}
-            </div>
-          </>
+          <span style={{ 
+            fontFamily: TYPOGRAPHY.fontFamily,
+            fontSize: TYPOGRAPHY.fontSize.label,
+            fontWeight: TYPOGRAPHY.fontWeight.normal,
+            color: PROFESSIONAL_COLORS.textPlaceholder,
+            fontStyle: 'italic'
+          }}>
+            {TAG_TYPE_CONFIG[tag.tagType]?.placeholder || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Field'}
+          </span>
         )}
       </div>
-
-      {/* Font Size Indicator - show when selected */}
-      {isSelected && canEdit && (
-        <div 
-          style={{
-            position: 'absolute',
-            top: '-30px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-            color: 'white',
-            padding: '4px 8px',
-            borderRadius: '4px',
-            fontSize: '11px',
-            fontWeight: '500',
-            whiteSpace: 'nowrap',
-            zIndex: 1002,
-            pointerEvents: 'none',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-            animation: 'fadeIn 0.3s ease-out'
-          }}
-        >
-          {currentFontSize}px • Drag corner handle to resize font
-        </div>
-      )}
     </Rnd>
   );
 };
+
+// Memoize TagRenderer for better performance during drag operations
+const MemoizedTagRenderer = memo(TagRenderer);
+
+
 
 export const PDFViewer: React.FC<PDFViewerProps> = ({
   documentUrl,
@@ -755,6 +499,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   onTextInputSelect,
   onSaveTextContent,
   onDeleteTextInput,
+  onMoveTextInput,
   onFontSizeChange,
   onSyncUsers,
   currentUser,
@@ -796,12 +541,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     // In both tagging and signing modes, check if user can place tags
     // This ensures signers cannot place new tags in signing mode
     const result = editorMode.canPlaceTags && (mode === 'tagging' || mode === 'signing');
-    console.log('🏷️ Can edit tags calculation (FIXED):', { 
-      mode, 
-      canPlaceTags: editorMode.canPlaceTags, 
-      editorMode: editorMode,
-      result 
-    });
+    // Can edit tags calculation optimized for performance
     return result;
   }, [mode, editorMode.canPlaceTags]);
 
@@ -821,7 +561,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         return newMap;
       });
       
-      console.log(`🚀 Immediately updated local font size for tag ${tagId} to ${fontSize}px`);
+      // Immediately updated local font size for better UX
 
       // Clear any existing timeout for this tag
       const existingTimeout = debouncedTagFontSizeUpdates.current.get(tagId);
@@ -845,7 +585,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
             throw new Error('Failed to update font size');
           }
 
-          console.log(`✅ Server updated font size for tag ${tagId} to ${fontSize}px`);
+          // Server updated font size successfully
           debouncedTagFontSizeUpdates.current.delete(tagId);
           
         } catch (serverError) {
@@ -1544,7 +1284,13 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       mode,
       canEditTags,
       hasOnCoordinateClick: !!onCoordinateClick,
-      editorMode: editorMode
+      editorMode: editorMode,
+      editorModeCanPlaceTags: editorMode.canPlaceTags,
+      calculationBreakdown: {
+        canPlaceTagsFromStore: editorMode.canPlaceTags,
+        modeCheck: mode === 'tagging' || mode === 'signing',
+        finalCanEditTags: editorMode.canPlaceTags && (mode === 'tagging' || mode === 'signing')
+      }
     });
     
     // ❌ SIGNERS CANNOT PLACE NEW TAGS - Only notary/admin can click canvas to place tags
@@ -1683,8 +1429,21 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     }
   }, [onTagUpdate, webSocket, sessionId]);
 
-  // ✅ ENHANCED: Broadcasting tag save changes via WebSocket with detailed info
+  // ✅ ENHANCED: Save tag changes locally and broadcast via WebSocket
   const broadcastTagSave = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {
+    // First, update the tag locally and save to backend
+    if (onTagUpdate) {
+      console.log('💾 Updating tag position locally:', { tagId, coordinates });
+      onTagUpdate(tagId, coordinates);
+    }
+    
+    // Also save to server - this is what was missing!
+    if (onTagResize) {
+      console.log('🚀 Saving tag coordinates to server:', { tagId, coordinates });
+      onTagResize(tagId, coordinates as TagCoordinates);
+    }
+
+    // Then broadcast via WebSocket for real-time collaboration
     if (webSocket?.isConnected && webSocket?.isReady) {
       // Find the tag to get its full coordinates if needed
       const tag = tags?.find(t => t.id === tagId);
@@ -1716,7 +1475,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     } else {
       console.warn('⚠️ WebSocket not available for tag save broadcast, state:', webSocket?.readyState);
     }
-  }, [webSocket, sessionId, tags]);
+  }, [onTagUpdate, onTagResize, webSocket, sessionId, tags]);
 
   const handleTagDelete = useCallback((tagId: string) => {
     onTagDelete?.(tagId);
@@ -1976,7 +1735,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                     // Regular tag (text tags are handled separately via textInputs)
                     return (
                       <div key={`${tag.id}-${scaleFactor}`} className="absolute top-0 left-0 w-full h-full pointer-events-none">
-                        <TagRenderer
+                        <MemoizedTagRenderer
                           tag={tag}
                           scaleFactor={scaleFactor}
                           isSelected={selectedTag?.id === tag.id}
@@ -2004,8 +1763,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                       `text-temp-${textInput.coordinates.x}-${textInput.coordinates.y}-${textInput.coordinates.pageNumber}-${scaleFactor}`;
                     
                     return (
-                    <div key={primaryKey} className="absolute top-0 left-0 w-full h-full" style={{ pointerEvents: 'none' }}>
                       <StreamlinedTextInput
+                        key={primaryKey}
                         id={textInput.id}
                         coordinates={textInput.coordinates}
                         sessionId={sessionId || ''}
@@ -2028,7 +1787,10 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                           console.log('🎯 Text tag selected for resizing:', textInput.id);
                           onTextInputSelect?.(textInput.id);
                         }}
-                        onMove={() => {}}
+                        onMove={(newCoordinates) => {
+                          console.log('📍 Text input moved:', newCoordinates);
+                          onMoveTextInput?.(textInput.id, newCoordinates);
+                        }}
                         onResize={(newCoordinates) => {
                           // ✅ ENHANCED: Handle text tag resize with proper WebSocket sync
                           console.log('📏 Text tag resized - broadcasting update:', {
@@ -2037,21 +1799,13 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                             newCoords: newCoordinates
                           });
 
-                          // Update coordinates immediately for responsive UI
-                          if (onTagResize) {
-                            onTagResize(textInput.id, {
-                              x: newCoordinates.x,
-                              y: newCoordinates.y,
-                              width: newCoordinates.width,
-                              height: newCoordinates.height,
-                              pageNumber: textInput.coordinates.pageNumber
-                            });
-                          }
+                          // Update coordinates using the text input specific function
+                          onMoveTextInput?.(textInput.id, newCoordinates);
 
                           // 🚀 REAL-TIME SYNC: Broadcast text tag resize via WebSocket
                           if (webSocket && webSocket.isConnected && webSocket.isReady) {
                             const updateMessage = {
-                              type: 'text_input_position_updated',
+                              type: 'text_input_changed',
                               payload: {
                                 textInputId: textInput.id,
                                 coordinates: {
@@ -2085,7 +1839,6 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                         }}
                         webSocket={webSocket?.webSocketInstance}
                       />
-                    </div>
                     );
                   })}
                 </div>

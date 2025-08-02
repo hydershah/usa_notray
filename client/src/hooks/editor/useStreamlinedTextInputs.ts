@@ -452,6 +452,54 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
   // Debounced font size API calls to prevent lag
   const debouncedFontSizeUpdates = useRef<Map<string, NodeJS.Timeout>>(new Map());
   
+  // Move text input to new coordinates
+  const moveTextInput = useCallback(async (textInputId: string, coordinates: { x: number; y: number; width?: number; height?: number }) => {
+    try {
+      // Update local state immediately for responsive UI
+      setTextInputs(prev => prev.map(input => 
+                input.id === textInputId
+          ? {
+              ...input,
+              coordinates: {
+                ...input.coordinates,
+                x: coordinates.x,
+                y: coordinates.y,
+                ...(coordinates.width !== undefined && { width: coordinates.width }),
+                ...(coordinates.height !== undefined && { height: coordinates.height })
+              }
+            }
+          : input
+      ));
+
+      // Update server with new coordinates
+      const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${textInputId}/coordinates`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          x: coordinates.x,
+          y: coordinates.y,
+          width: coordinates.width,
+          height: coordinates.height
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update text input coordinates');
+      }
+
+      console.log(`✅ Text input ${textInputId} moved to coordinates:`, coordinates);
+    } catch (error) {
+      console.error('❌ Failed to move text input:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update text input position",
+        variant: "destructive",
+      });
+    }
+  }, [toast]);
+
   // Update font size with debouncing
   const updateFontSize = useCallback(async (textInputId: string, fontSize: number, fontFamily?: string, textColor?: string) => {
     try {
@@ -652,6 +700,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
     placeTextInput,
     saveTextContent,
     updateFontSize,
+    moveTextInput,
     deleteTextInput,
     loadTextInputsFromTags,
     getTextInput,

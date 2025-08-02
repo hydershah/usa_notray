@@ -40,15 +40,99 @@ export async function apiRequest(method: string, url: string, data?: any): Promi
  * Get current user token
  */
 export function getAuthToken(): string | null {
-  return localStorage.getItem('token');
+  const token = localStorage.getItem('token');
+  if (!token) {
+    console.warn('🔐 No authentication token found. User may need to log in.');
+  }
+  return token;
+}
+
+/**
+ * Debug authentication status
+ */
+export function debugAuthStatus() {
+  const token = localStorage.getItem('token');
+  const user = localStorage.getItem('user');
+  
+  console.log('🔍 Authentication Debug:', {
+    hasToken: !!token,
+    tokenLength: token?.length || 0,
+    hasUser: !!user,
+    tokenPreview: token ? `${token.substring(0, 10)}...` : 'none',
+    tokenValue: token,
+    userValue: user,
+    userLength: user?.length || 0,
+    isValidUser: user && user !== 'undefined' && user !== 'null'
+  });
+  
+  // Try to parse user data safely
+  let userData = null;
+  try {
+    userData = user && user !== 'undefined' && user !== 'null' ? JSON.parse(user) : null;
+  } catch (error) {
+    console.error('User data is corrupted:', error);
+  }
+  
+  return { hasToken: !!token, hasUser: !!user, userData };
+}
+
+/**
+ * Clear corrupted localStorage data
+ */
+export function clearCorruptedAuth() {
+  console.log('🧹 Clearing potentially corrupted authentication data...');
+  
+  const token = localStorage.getItem('token');
+  const user = localStorage.getItem('user');
+  
+  if (token === 'undefined' || token === 'null') {
+    localStorage.removeItem('token');
+    console.log('✅ Removed corrupted token');
+  }
+  
+  if (user === 'undefined' || user === 'null') {
+    localStorage.removeItem('user');
+    console.log('✅ Removed corrupted user data');
+  }
+  
+  // Try to parse user data and remove if invalid
+  if (user && user !== 'undefined' && user !== 'null') {
+    try {
+      JSON.parse(user);
+    } catch (error) {
+      localStorage.removeItem('user');
+      console.log('✅ Removed invalid JSON user data');
+    }
+  }
+  
+  console.log('🧹 Auth cleanup complete');
+}
+
+// Make debugging functions available globally in development
+if (typeof window !== 'undefined' && import.meta.env.DEV) {
+  (window as any).debugAuthStatus = debugAuthStatus;
+  (window as any).clearCorruptedAuth = clearCorruptedAuth;
 }
 
 /**
  * Get current user data
  */
 export function getCurrentUser(): any | null {
-  const userData = localStorage.getItem('user');
-  return userData ? JSON.parse(userData) : null;
+  try {
+    const userData = localStorage.getItem('user');
+    
+    // Handle cases where localStorage contains invalid data
+    if (!userData || userData === 'undefined' || userData === 'null' || userData.trim() === '') {
+      return null;
+    }
+    
+    return JSON.parse(userData);
+  } catch (error) {
+    console.warn('Failed to parse user data from localStorage:', error);
+    // Clear invalid data
+    localStorage.removeItem('user');
+    return null;
+  }
 }
 
 /**

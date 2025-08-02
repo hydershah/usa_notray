@@ -30,6 +30,7 @@ interface StreamlinedTextLayerProps {
   onSaveContent?: (textInputId: string, content: string) => void;
   onDeleteTextInput?: (textInputId: string) => void;
   onFontSizeChange?: (textInputId: string, fontSize: number) => void;
+  moveTextInput?: (textInputId: string, coordinates: { x: number; y: number; width?: number; height?: number }) => void;
   debug?: boolean;
 }
 
@@ -45,6 +46,7 @@ export const StreamlinedTextLayer: React.FC<StreamlinedTextLayerProps> = ({
   onSaveContent,
   onDeleteTextInput,
   onFontSizeChange,
+  moveTextInput,
   debug = false
 }) => {
   const layerRef = useRef<HTMLDivElement>(null);
@@ -71,6 +73,15 @@ export const StreamlinedTextLayer: React.FC<StreamlinedTextLayerProps> = ({
     // You can add logic here to update the text input's position in your state
     // For now, the position is saved directly to the backend in StreamlinedTextInput
   }, []);
+
+  // Handle text input resize updates
+  const handleTextInputResize = useCallback((textInputId: string, newCoordinates: { x: number; y: number; width: number; height: number }) => {
+    console.log(`📐 Text input ${textInputId} resized to:`, newCoordinates);
+    // Use moveTextInput to update both position and dimensions
+    if (moveTextInput) {
+      moveTextInput(textInputId, newCoordinates);
+    }
+  }, [moveTextInput]);
 
   if (debug || pageTextInputs.length > 0) {
     console.log('🔍 StreamlinedTextLayer render check:', {
@@ -160,10 +171,7 @@ export const StreamlinedTextLayer: React.FC<StreamlinedTextLayerProps> = ({
             }
           }}
           onMove={(newCoordinates) => handleTextInputMove(textInput.id, newCoordinates)}
-          onResize={(newCoordinates) => {
-            console.log(`📐 Text input ${textInput.id} resized:`, newCoordinates);
-            // Handle resize - could update state or call parent handler
-          }}
+          onResize={(newCoordinates) => handleTextInputResize(textInput.id, newCoordinates)}
           onFontSizeChange={(fontSize) => {
             if (onFontSizeChange) {
               onFontSizeChange(textInput.id, fontSize);

@@ -10,6 +10,7 @@ import { Badge } from '../ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useTagOperations } from '../../hooks/editor/useTagOperations';
 import { useStreamlinedTextInputs } from '../../hooks/editor/useStreamlinedTextInputs';
+import { getTagDimensions } from '@/lib/constants/tagConstants';
 import type { 
   EditorSession, 
   SessionDocument, 
@@ -89,6 +90,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     placeTextInput,
     saveTextContent,
     updateFontSize,
+    moveTextInput,
     deleteTextInput,
     loadTextInputsFromTags,
     selectTextInput
@@ -319,9 +321,22 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         const isNotary = currentParticipant?.userType === 'notary' || currentParticipant?.role === 'notary';
         const isAdmin = currentParticipant?.role === 'admin';
         
+        const canPlaceTags = mode === 'tagging' || (mode === 'signing' && (isNotary || isAdmin));
+        
+        console.log('🔧 Setting editor mode:', {
+          mode,
+          currentUserId,
+          currentParticipant,
+          isNotary,
+          isAdmin,
+          canPlaceTags,
+          userType: currentParticipant?.userType,
+          role: currentParticipant?.role
+        });
+        
         setMode({
           mode: mode === 'signing' ? 'tagging' : mode as 'tagging' | 'notary',
-          canPlaceTags: mode === 'tagging' || (mode === 'signing' && (isNotary || isAdmin)), // ❌ SIGNERS CANNOT PLACE NEW TAGS
+          canPlaceTags, // ❌ SIGNERS CANNOT PLACE NEW TAGS
           canModifyContent: mode === 'notary' || mode === 'signing',
           showPlaceholders: mode === 'tagging' || mode === 'signing'
         });
@@ -1012,11 +1027,22 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
 
   // Handle tag placement from PDF click
   const handleTagPlacement = useCallback(async (coordinates: TagCoordinates) => {
+    console.log('🎯 handleTagPlacement called with coordinates:', coordinates);
+    console.log('🔍 Tag placement data check:', {
+      selectedTagType,
+      selectedUser,
+      currentDocument: currentDocument?.id,
+      hasSelectedUser: !!selectedUser,
+      hasCurrentDocument: !!currentDocument
+    });
+    
     if (!selectedTagType || !selectedUser || !currentDocument) {
       console.error('❌ Missing required data for tag placement:', {
         selectedTagType,
         selectedUser: !!selectedUser,
-        currentDocument: !!currentDocument
+        currentDocument: !!currentDocument,
+        selectedUserDetails: selectedUser,
+        currentDocumentDetails: currentDocument
       });
       return;
     }
@@ -1027,21 +1053,16 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         console.log('📝 Placing streamlined text input...');
         console.log('Current text inputs before placement:', textInputs);
         
-        // Get saved dimensions for text tags, or use defaults based on lastUsedFontSize
-        const savedDimensions = getTagDimensions('T');
-        const { lastUsedFontSize } = useEditorStore.getState();
-        const defaultHeight = Math.max(100, (lastUsedFontSize || 16) * 4); // Updated default to account for 16px font
-        const dimensions = savedDimensions || { width: 600, height: defaultHeight }; // Increased width from 400 to 600
+        // Use professional fixed dimensions for text tags
+        const dimensions = getTagDimensions('T');
         
-        console.log('📏 Saved dimensions from store:', savedDimensions);
-        console.log('📏 Using dimensions for text tag:', dimensions);
-        console.log('📏 Last used font size:', lastUsedFontSize);
+        console.log('📏 Using professional fixed dimensions for text tag:', dimensions);
         
-        // Use the saved dimensions instead of coordinates from click
+        // Use the fixed dimensions instead of coordinates from click
         const textInputCoordinates = {
           ...coordinates,
-          width: dimensions.width,
-          height: dimensions.height
+          width: dimensions?.width || 200,
+          height: dimensions?.height || 32
         };
         
         console.log('📏 Using dimensions for text tag:', dimensions);
@@ -1109,10 +1130,18 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
           tags: tags.map(t => ({ id: t.id, type: t.tagType }))
         });
         
+        // Use professional fixed dimensions for all tag types
+        const tagDimensions = getTagDimensions(selectedTagType);
+        const professionalCoordinates = {
+          ...coordinates,
+          width: tagDimensions?.width || 120,
+          height: tagDimensions?.height || 32
+        };
+        
         await placeTag({
           documentId: currentDocument.id,
           tagType: selectedTagType,
-          coordinates,
+          coordinates: professionalCoordinates,
           assignedUserId: selectedUser.userId
         });
         
@@ -1334,6 +1363,10 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
             onTextInputSelect={selectTextInput}
             onSaveTextContent={saveTextContent}
             onDeleteTextInput={deleteTextInput}
+            onMoveTextInput={(textInputId, coordinates) => {
+              console.log('📍 Text input moved:', textInputId, coordinates);
+              moveTextInput(textInputId, coordinates);
+            }}
             onFontSizeChange={updateFontSize}
             onSyncUsers={onSyncUsers}
             currentUser={currentUser}
