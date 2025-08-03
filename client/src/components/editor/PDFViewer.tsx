@@ -167,26 +167,29 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   }, [tag.content, tag.tagType, currentFontSize, fixedDimensions.width, fixedDimensions.height]);
   
   const displayCoords = useMemo(() => {
+    // Use actual saved coordinates for width/height instead of optimal dimensions
+    const savedWidth = tag.coordinates.width || optimalDimensions.width;
+    const savedHeight = tag.coordinates.height || optimalDimensions.height;
+    
     const coords = {
       x: Math.round(tag.coordinates.x * scaleFactor),
       y: Math.round(tag.coordinates.y * scaleFactor),
-      width: Math.round(optimalDimensions.width * scaleFactor),
-      height: Math.round(optimalDimensions.height * scaleFactor)
+      width: Math.round(savedWidth * scaleFactor),
+      height: Math.round(savedHeight * scaleFactor)
     };
     
-    // Debug logging for text tags
-    if (tag.tagType === 'T') {
-      console.log('🔍 DEBUG: TagRenderer displayCoords calculation:', {
-        tagId: tag.id,
-        tagType: tag.tagType,
-        scaleFactor,
-        optimalDimensions,
-        finalCoords: coords
-      });
-    }
+    // Debug logging for all tags
+    console.log('🔍 DEBUG: TagRenderer displayCoords calculation:', {
+      tagId: tag.id,
+      tagType: tag.tagType,
+      scaleFactor,
+      savedCoordinates: tag.coordinates,
+      optimalDimensions,
+      finalCoords: coords
+    });
     
     return coords;
-  }, [tag.coordinates.x, tag.coordinates.y, scaleFactor, optimalDimensions.width, optimalDimensions.height]);
+  }, [tag.coordinates.x, tag.coordinates.y, tag.coordinates.width, tag.coordinates.height, scaleFactor, optimalDimensions.width, optimalDimensions.height]);
 
   const hasContent = useMemo(() => !!(tag.content || tag.contentData || tag.isCompleted), [tag.content, tag.contentData, tag.isCompleted]);
 
@@ -342,34 +345,52 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     }
     setLiveFontSize(undefined); // Reset live font size after drag
     
-    // Calculate optimal dimensions based on content for all tag types
-    const content = tag.content || '';
-    const optimalWidth = calculateOptimalWidth(content, currentFontSize, TYPOGRAPHY.fontFamily);
-    const optimalHeight = calculateOptimalHeight(content, currentFontSize);
-    
-    // Use the larger of manual resize or optimal dimensions
+    // Get manual resize dimensions
     const manualWidth = ref.offsetWidth / scaleFactor;
     const manualHeight = ref.offsetHeight / scaleFactor;
     
-    const finalWidth = Math.max(manualWidth, optimalWidth);
-    const finalHeight = Math.max(manualHeight, optimalHeight);
+    let finalWidth = manualWidth;
+    let finalHeight = manualHeight;
+    
+    // Only calculate optimal dimensions for text tags (type 'T')
+    if (tag.tagType === 'T') {
+      const content = tag.content || '';
+      const optimalWidth = calculateOptimalWidth(content, currentFontSize, TYPOGRAPHY.fontFamily);
+      const optimalHeight = calculateOptimalHeight(content, currentFontSize);
+      
+      // For text tags, use the larger of manual resize or optimal dimensions
+      finalWidth = Math.max(manualWidth, optimalWidth);
+      finalHeight = Math.max(manualHeight, optimalHeight);
+      
+      console.log('📏 Text tag resize with optimal dimensions:', {
+        tagId: tag.id,
+        content,
+        currentFontSize,
+        optimalWidth,
+        optimalHeight,
+        manualWidth,
+        manualHeight,
+        finalWidth,
+        finalHeight
+      });
+    } else {
+      // For non-text tags (Name, Signature, Initials, Date, etc.), use manual dimensions directly
+      console.log('📏 Non-text tag resize with manual dimensions:', {
+        tagId: tag.id,
+        tagType: tag.tagType,
+        manualWidth,
+        manualHeight
+      });
+    }
     
     const newCoordinates = {
       width: Math.round(finalWidth),
       height: Math.round(finalHeight)
     };
     
-    console.log('📏 Saving tag resize with optimal dimensions:', {
+    console.log('📏 Saving tag resize:', {
       tagId: tag.id,
       tagType: tag.tagType,
-      content,
-      currentFontSize,
-      optimalWidth,
-      optimalHeight,
-      manualWidth,
-      manualHeight,
-      finalWidth,
-      finalHeight,
       newCoordinates
     });
     

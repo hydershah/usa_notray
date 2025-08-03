@@ -57,19 +57,18 @@ const getPoolConfig = () => {
     connectionString: DATABASE_URL,
     ssl: getSSLConfig(),
     // Connection pool settings for optimal performance
-    max: 50,                    // Maximum pool size (was default 10)
-    min: 10,                     // Minimum pool size for faster response
-    idleTimeoutMillis: 300000,   // Close idle connections after 30 seconds
-    connectionTimeoutMillis: 100000, // Connection timeout
+    max: 100,                   // Maximum pool size for enterprise
+    min: 20,                    // Minimum pool size for faster response
+    idleTimeoutMillis: 1800000, // Keep connections alive for 30 minutes
+    connectionTimeoutMillis: 60000, // Connection timeout
     // Query timeouts for better performance
-    query_timeout: 250000,       // 25 second query timeout
-    statement_timeout: 205000,   // 25 second statement timeout
+    query_timeout: 300000,      // 5 minute query timeout
+    statement_timeout: 300000,  // 5 minute statement timeout
     // Keep alive settings for Supabase
     keepAlive: true,
-    keepAliveInitialDelayMillis: 50000,
+    keepAliveInitialDelayMillis: 10000, // 10s aggressive keep-alive
     // Application name for monitoring
-    application_name: 
-    'usa_notary_api'
+    application_name: 'usa_notary_api'
   };
 
   // 💰 ENTERPRISE TIER CONFIGURATION - $3000/month BEAST MODE! 💰
@@ -79,39 +78,39 @@ const getPoolConfig = () => {
   if (DATABASE_URL.includes('supabase.co') || DATABASE_URL.includes('supabase.com')) {
     return {
       ...baseConfig,
-      max: 500,                 // 💥 ENTERPRISE BEAST: 500 concurrent connections (8x Pro tier)
-      min: 50,                  // 💥 ALWAYS READY: 50 connections always hot and ready
-      idleTimeoutMillis: 1800000, // 💥 30 MINUTES: Keep connections alive for maximum reuse
-      connectionTimeoutMillis: 60000, // 💥 1 MINUTE: Very patient connection establishment
-      query_timeout: 300000,   // 💥 5 MINUTES: Handle any query, no matter how complex
-      statement_timeout: 300000, // 💥 5 MINUTES: Maximum patience for statements
+      max: 1000,                // 💥 ENTERPRISE BEAST: 1000 concurrent connections (MAXIMUM!)
+      min: 100,                 // 💥 ALWAYS READY: 100 connections always hot and ready
+      idleTimeoutMillis: 3600000, // 💥 60 MINUTES: Keep connections alive for maximum reuse
+      connectionTimeoutMillis: 120000, // 💥 2 MINUTES: Very patient connection establishment
+      query_timeout: 600000,   // 💥 10 MINUTES: Handle any query, no matter how complex
+      statement_timeout: 600000, // 💥 10 MINUTES: Maximum patience for statements
       
       // 💰 ENTERPRISE PERFORMANCE FEATURES
       keepAlive: true,
-      keepAliveInitialDelayMillis: 10000, // 10s aggressive keep-alive
+      keepAliveInitialDelayMillis: 5000, // 5s ultra-aggressive keep-alive
       
       // 🚀 ULTRA-AGGRESSIVE CONNECTION MANAGEMENT
-      acquireTimeoutMillis: 60000,  // 1 minute to acquire (generous for high load)
-      createTimeoutMillis: 30000,   // 30s to create (fast creation)
-      destroyTimeoutMillis: 10000,  // 10s to destroy (quick cleanup)
-      reapIntervalMillis: 15000,    // Check every 15s (aggressive reaping)
-      createRetryIntervalMillis: 500, // Retry every 500ms (super fast)
+      acquireTimeoutMillis: 120000,  // 2 minutes to acquire (maximum patience for high load)
+      createTimeoutMillis: 60000,   // 1 minute to create (fast creation)
+      destroyTimeoutMillis: 30000,  // 30s to destroy (quick cleanup)
+      reapIntervalMillis: 10000,    // Check every 10s (ultra-aggressive reaping)
+      createRetryIntervalMillis: 100, // Retry every 100ms (super fast)
       
       // 💪 ENTERPRISE-GRADE TCP OPTIMIZATIONS
       application_name: 'usa_notary_enterprise_beast_3k_monthly',
-      tcp_keepalives_idle: 300,     // TCP keep-alive (5 minutes)
-      tcp_keepalives_interval: 15,  // TCP ping every 15s
-      tcp_keepalives_count: 9,      // 9 failed pings before disconnect
+      tcp_keepalives_idle: 60,      // TCP keep-alive (1 minute - ultra aggressive)
+      tcp_keepalives_interval: 10,  // TCP ping every 10s (ultra aggressive)
+      tcp_keepalives_count: 15,     // 15 failed pings before disconnect (maximum resilience)
       
       // 🔥 MAXIMUM PERFORMANCE TUNING
       ssl: {
         rejectUnauthorized: false,
         keepAlive: true,
-        keepAliveInitialDelay: 10000
+        keepAliveInitialDelay: 5000  // 5s ultra-aggressive
       },
       
       // 💥 CONNECTION POOL BEAST MODE
-      allowExitOnIdle: false,       // Never let pool idle (always ready)
+      allowExitOnIdle: false,        // Never let pool idle (always ready)
       log: (message, level) => {    // Enterprise monitoring
         if (level === 'error') {
           console.error(`🚨 ENTERPRISE DB ERROR: ${message}`);
@@ -123,8 +122,8 @@ const getPoolConfig = () => {
       // 🎯 ENTERPRISE SCALING PARAMETERS
       Promise: Promise,             // Native Promise for performance
       parseInputDatesAsUTC: true,   // UTC consistency
-      max_prepared_statements: 100, // Prepared statement cache
-      statement_cache_size: 1000,   // Large statement cache
+      max_prepared_statements: 200, // Maximum prepared statement cache
+      statement_cache_size: 2000,   // Maximum statement cache
     };
   }
 

@@ -4,7 +4,7 @@ import { performance } from 'perf_hooks';
 // dotenv.config();
 
 export class RedisCache {
-  private redis: Redis;
+  private redis!: Redis; // Added ! to indicate it will be initialized
   private isConnected: boolean = false;
   private connectionAttempts: number = 0;
   private maxRetries: number = 3;
@@ -63,16 +63,16 @@ export class RedisCache {
     
     // Redis connection options with environment-specific settings
     const redisOptions = {
-      retryDelayOnFailover: 100,
-      maxRetriesPerRequest: isFlyIo ? 1 : 3, // Fewer retries for Fly.io
+      retryDelayOnFailover: 50,  // Reduced from 100 for faster recovery
+      maxRetriesPerRequest: isFlyIo ? 5 : 10, // Increased to maximum retries
       lazyConnect: true,
-      connectTimeout: isFlyIo ? 5000 : 10000, // Shorter timeout for Fly.io
-      commandTimeout: 5000,
+      connectTimeout: isFlyIo ? 10000 : 20000, // Increased timeouts for enterprise
+      commandTimeout: 10000, // Increased from 3000 to 10000 for enterprise
       keepAlive: 30000,
       family: 4,
-      maxLoadingTimeout: 1000,
+      maxLoadingTimeout: 5000, // Increased from 1000 to 5000
       enableReadyCheck: !isFlyIo, // Disable ready check for Fly.io
-      reconnectOnError: (err) => {
+      reconnectOnError: (err: any) => {
         console.log('Redis reconnection error:', err.message);
         
         // Don't retry for DNS resolution failures
@@ -84,7 +84,8 @@ export class RedisCache {
         
         const shouldReconnect = err.message.includes('READONLY') || 
                                err.message.includes('ECONNRESET') ||
-                               err.message.includes('ETIMEDOUT');
+                               err.message.includes('ETIMEDOUT') ||
+                               err.message.includes('ECONNREFUSED'); // Added more error types
         
         if (!shouldReconnect) {
           this.disabled = true;
@@ -98,15 +99,15 @@ export class RedisCache {
     // Add Fly.io specific options
     if (isFlyIo) {
       redisOptions.enableReadyCheck = false;
-      redisOptions.maxRetriesPerRequest = 1;
-      redisOptions.connectTimeout = 5000;
+      redisOptions.maxRetriesPerRequest = 10; // Increased from 1 to 10
+      redisOptions.connectTimeout = 15000; // Increased from 3000 to 15000
     }
     
     // Add Railway-specific connection options
     if (isRailway) {
       redisOptions.enableReadyCheck = false;
-      redisOptions.maxRetriesPerRequest = 5;
-      redisOptions.connectTimeout = 20000;
+      redisOptions.maxRetriesPerRequest = 15; // Increased from 3 to 15
+      redisOptions.connectTimeout = 30000; // Increased from 10000 to 30000
     }
     
     this.redis = new Redis(redisUrl, redisOptions);
