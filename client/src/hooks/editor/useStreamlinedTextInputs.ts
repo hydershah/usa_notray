@@ -1,6 +1,7 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useEditorStore } from './useEditorStore';
+import { getTagDimensions } from '@/lib/constants/tagConstants';
 
 interface StreamlinedTextInput {
   id: string;
@@ -452,12 +453,28 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
   // Debounced font size API calls to prevent lag
   const debouncedFontSizeUpdates = useRef<Map<string, NodeJS.Timeout>>(new Map());
   
+  // Debounced coordinate updates to prevent excessive API calls during drag
+  const debouncedCoordinateUpdates = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  
+  // Cleanup debounced timeouts on unmount
+  useEffect(() => {
+    return () => {
+      // Clear all pending coordinate updates
+      debouncedCoordinateUpdates.current.forEach(timeout => clearTimeout(timeout));
+      debouncedCoordinateUpdates.current.clear();
+      
+      // Clear all pending font size updates
+      debouncedFontSizeUpdates.current.forEach(timeout => clearTimeout(timeout));
+      debouncedFontSizeUpdates.current.clear();
+    };
+  }, []);
+  
   // Move text input to new coordinates
   const moveTextInput = useCallback(async (textInputId: string, coordinates: { x: number; y: number; width?: number; height?: number }) => {
     try {
       // Update local state immediately for responsive UI
       setTextInputs(prev => prev.map(input => 
-                input.id === textInputId
+        input.id === textInputId
           ? {
               ...input,
               coordinates: {
@@ -471,25 +488,42 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           : input
       ));
 
-      // Update server with new coordinates
-      const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${textInputId}/coordinates`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          x: coordinates.x,
-          y: coordinates.y,
-          width: coordinates.width,
-          height: coordinates.height
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update text input coordinates');
+      // Clear existing timeout for this text input
+      const existingTimeout = debouncedCoordinateUpdates.current.get(textInputId);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
       }
 
-      console.log(`✅ Text input ${textInputId} moved to coordinates:`, coordinates);
+      // Debounce server updates to prevent excessive API calls during drag
+      const timeout = setTimeout(async () => {
+        try {
+          // Update server with new coordinates after debounce delay
+          const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${textInputId}/coordinates`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              x: coordinates.x,
+              y: coordinates.y,
+              width: coordinates.width,
+              height: coordinates.height
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to update text input coordinates');
+          }
+
+          console.log(`✅ Text input ${textInputId} moved to coordinates:`, coordinates);
+          debouncedCoordinateUpdates.current.delete(textInputId);
+        } catch (error) {
+          console.error('❌ Failed to update text input coordinates on server:', error);
+          // Don't show toast for debounced server errors during drag
+        }
+      }, 200); // 200ms debounce delay - smooth but not overwhelming server
+
+      debouncedCoordinateUpdates.current.set(textInputId, timeout);
     } catch (error) {
       console.error('❌ Failed to move text input:', error);
       toast({
@@ -566,14 +600,6 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       });
     }
   }, [sessionId, toast]);
-
-  // Cleanup debounced font size updates on unmount
-  useEffect(() => {
-    return () => {
-      debouncedFontSizeUpdates.current.forEach(timeout => clearTimeout(timeout));
-      debouncedFontSizeUpdates.current.clear();
-    };
-  }, []);
 
   // Delete text input
   const deleteTextInput = useCallback(async (textInputId: string) => {
@@ -667,9 +693,18 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
         }
       }
 
+      // Get tag dimensions from constants instead of database
+      const tagDimensions = getTagDimensions('T');
+
       return {
         id: tag.id,
-        coordinates: tag.coordinates,
+        coordinates: {
+          x: tag.coordinates.x,
+          y: tag.coordinates.y,
+          width: tagDimensions.width,  // Use tag constants instead of stored width
+          height: tagDimensions.height, // Use tag constants instead of stored height
+          pageNumber: tag.coordinates.pageNumber
+        },
         content: tag.content || '',
         fontSize,
         fontFamily,
@@ -707,4 +742,4 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
     selectTextInput,
     isProcessing: pendingCreations.current.size > 0
   };
-}; 
+};

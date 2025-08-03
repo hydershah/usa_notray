@@ -1,26 +1,26 @@
 import type { TagType } from '@/types/editor';
 
-// Professional color palette for the application
+// Professional color palette for the application - DocuSign Style
 export const PROFESSIONAL_COLORS = {
   // Background colors
   background: '#ffffff',
-  backgroundHover: '#f9fafb',
-  backgroundActive: '#f3f4f6',
+  backgroundHover: '#f8fafc',
+  backgroundActive: '#f1f5f9',
   
-  // Border colors
-  border: '#d1d5db',
-  borderHover: '#9ca3af',
+  // Border colors - DocuSign style
+  border: '#e2e8f0',
+  borderHover: '#cbd5e1',
   borderActive: '#3b82f6',
   borderCompleted: '#10b981',
   
   // Text colors
-  text: '#111827',
-  textSecondary: '#6b7280',
-  textPlaceholder: '#9ca3af',
-  textMuted: '#d1d5db',
+  text: '#1e293b',
+  textSecondary: '#64748b',
+  textPlaceholder: '#94a3b8',
+  textMuted: '#cbd5e1',
   
   // Status colors
-  completed: '#dcfce7',
+  completed: '#f0fdf4',
   success: '#10b981',
   warning: '#f59e0b',
   error: '#ef4444',
@@ -30,13 +30,19 @@ export const PROFESSIONAL_COLORS = {
   primaryHover: '#2563eb',
   accent: '#8b5cf6',
   
-  // Semantic colors for different tag types
+  // Semantic colors for different tag types - DocuSign inspired
   signature: '#3b82f6',
   initials: '#8b5cf6',
   date: '#10b981',
-  textTag: '#6b7280',
+  textTag: '#64748b',
   checkbox: '#f59e0b',
-  witness: '#ef4444'
+  witness: '#ef4444',
+  
+  // DocuSign specific colors
+  docuSignBlue: '#0070d2',
+  docuSignGreen: '#04844b',
+  docuSignGray: '#f8f9fa',
+  docuSignBorder: '#dde1e6'
 };
 
 // Typography system
@@ -68,15 +74,15 @@ export const TYPOGRAPHY = {
   }
 };
 
-// Layout constants
+// Layout constants - DocuSign Style
 export const LAYOUT = {
   // Grid settings
   gridSize: 8,
   
-  // Tag-specific padding
+  // Tag-specific padding - DocuSign style
   tagPadding: {
-    vertical: 4,    // 4px
-    horizontal: 8   // 8px
+    vertical: 6,    // 6px - slightly more padding
+    horizontal: 10  // 10px - more horizontal padding
   },
   
   // Spacing
@@ -89,22 +95,22 @@ export const LAYOUT = {
     xxl: '3rem'      // 48px
   },
   
-  // Border radius
+  // Border radius - DocuSign style
   borderRadius: {
     sm: '0.125rem',  // 2px
-    base: '0.25rem', // 4px
-    md: '0.375rem',  // 6px
-    lg: '0.5rem',    // 8px
-    xl: '0.75rem'    // 12px
+    base: '0.375rem', // 6px - slightly more rounded
+    md: '0.5rem',    // 8px
+    lg: '0.75rem',   // 12px
+    xl: '1rem'       // 16px
   },
   
-  // Shadows
+  // Shadows - DocuSign style
   shadow: {
     sm: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-    base: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
-    md: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-    lg: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-    xl: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+    base: '0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px 0 rgba(0, 0, 0, 0.04)',
+    md: '0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04)',
+    lg: '0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.03)',
+    xl: '0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 10px 10px -5px rgba(0, 0, 0, 0.03)'
   }
 };
 
@@ -128,10 +134,10 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Full Name',
     color: PROFESSIONAL_COLORS.primary,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 150,
-    defaultHeight: 30,
-    minWidth: 100,
-    minHeight: 25,
+    defaultWidth: 140,
+    defaultHeight: 28,
+    minWidth: 80,
+    minHeight: 24,
     allowResize: true,
     allowTextInput: true
   },
@@ -141,10 +147,10 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Sign here',
     color: PROFESSIONAL_COLORS.signature,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 200,
-    defaultHeight: 60,
-    minWidth: 120,
-    minHeight: 40,
+    defaultWidth: 180,
+    defaultHeight: 50,
+    minWidth: 100,
+    minHeight: 35,
     allowResize: true,
     allowTextInput: false
   },
@@ -178,8 +184,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     label: 'Commission Expiration',
     icon: '📅',
     placeholder: 'Expiration Date',
-    color: PROFESSIONAL_COLORS.warning,
-    borderColor: PROFESSIONAL_COLORS.borderActive,
+    color: '#fef3c7', // Light yellow background
+    borderColor: '#d97706', // Darker orange border for better contrast
     defaultWidth: 120,
     defaultHeight: 30,
     minWidth: 100,
@@ -191,12 +197,12 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     label: 'Disclosure',
     icon: '📋',
     placeholder: 'Disclosure info',
-    color: PROFESSIONAL_COLORS.textSecondary,
-    borderColor: PROFESSIONAL_COLORS.border,
-    defaultWidth: 150,
-    defaultHeight: 40,
-    minWidth: 100,
-    minHeight: 30,
+    color: '#fef3c7', // Light yellow background for high visibility
+    borderColor: '#d97706', // Dark orange border for maximum contrast
+    defaultWidth: 200, // Wider for disclosure text
+    defaultHeight: 50, // Taller for better readability
+    minWidth: 120,
+    minHeight: 35,
     allowResize: true,
     allowTextInput: true
   },
@@ -215,13 +221,13 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
   },
   'W': {
     label: 'Whiteout',
-    icon: '🗞️',
-    placeholder: 'Correction area',
-    color: '#ffffff',
-    borderColor: PROFESSIONAL_COLORS.border,
+    icon: '⬜',
+    placeholder: 'Whiteout area',
+    color: '#ffffff', // Pure white background for true whiteout
+    borderColor: '#e5e7eb', // Light gray border
     defaultWidth: 100,
-    defaultHeight: 30,
-    minWidth: 60,
+    defaultHeight: 25,
+    minWidth: 50,
     minHeight: 20,
     allowResize: true,
     allowTextInput: false
@@ -230,12 +236,12 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     label: 'Text',
     icon: '📄',
     placeholder: 'Enter text',
-    color: PROFESSIONAL_COLORS.text,
-    borderColor: PROFESSIONAL_COLORS.border,
-    defaultWidth: 150,   // Much smaller width like reference image
-    defaultHeight: 40,  // Very slim height like reference image
-    minWidth: 40,
-    minHeight: 15,
+    color: '#f8fafc', // Slightly lighter background
+    borderColor: '#475569', // Darker border for better contrast
+    defaultWidth: 200,    // Updated width for text tags
+    defaultHeight: 40,    // Updated height for text tags
+    minWidth: 100,
+    minHeight: 20,        // Updated minimum height
     allowResize: true,
     allowTextInput: true
   },
@@ -243,8 +249,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     label: 'Date',
     icon: '📅',
     placeholder: 'MM/DD/YYYY',
-    color: PROFESSIONAL_COLORS.date,
-    borderColor: PROFESSIONAL_COLORS.borderActive,
+    color: '#fef3c7', // Light yellow background
+    borderColor: '#d97706', // Darker orange border for better contrast
     defaultWidth: 120,
     defaultHeight: 30,
     minWidth: 100,
@@ -282,26 +288,28 @@ export const getTagStyle = (tagType: TagType, isSelected = false, isCompleted = 
       backgroundColor: isCompleted ? PROFESSIONAL_COLORS.completed : PROFESSIONAL_COLORS.background,
       borderColor: isSelected ? PROFESSIONAL_COLORS.borderActive : PROFESSIONAL_COLORS.border,
       color: PROFESSIONAL_COLORS.text,
-      borderWidth: '2px',
+      borderWidth: '1.5px',
       borderStyle: 'solid',
       borderRadius: LAYOUT.borderRadius.base,
       padding: LAYOUT.spacing.sm,
       fontFamily: TYPOGRAPHY.fontFamily,
       fontSize: TYPOGRAPHY.fontSize.tag,
-      fontWeight: TYPOGRAPHY.fontWeight.medium
+      fontWeight: TYPOGRAPHY.fontWeight.medium,
+      boxShadow: isSelected ? LAYOUT.shadow.base : 'none'
     };
   }
   return {
     backgroundColor: isCompleted ? PROFESSIONAL_COLORS.completed : config.color,
     borderColor: isSelected ? PROFESSIONAL_COLORS.borderActive : config.borderColor,
     color: PROFESSIONAL_COLORS.text,
-    borderWidth: '2px',
+    borderWidth: '1.5px',
     borderStyle: 'solid',
     borderRadius: LAYOUT.borderRadius.base,
     padding: LAYOUT.spacing.sm,
     fontFamily: TYPOGRAPHY.fontFamily,
     fontSize: TYPOGRAPHY.fontSize.tag,
-    fontWeight: TYPOGRAPHY.fontWeight.medium
+    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    boxShadow: isSelected ? LAYOUT.shadow.base : 'none'
   };
 };
 
@@ -318,6 +326,66 @@ export const isWithinBounds = (
   containerHeight: number
 ): boolean => {
   return x >= 0 && y >= 0 && x + width <= containerWidth && y + height <= containerHeight;
+};
+
+// Calculate optimal width based on text content and font size
+export const calculateOptimalWidth = (text: string, fontSize: number = 12, fontFamily: string = 'Arial'): number => {
+  if (!text || text.trim().length === 0) {
+    return 100; // Default minimum width
+  }
+  
+  // Create a temporary canvas to measure text width
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (!context) {
+    return 100; // Fallback if canvas is not available
+  }
+  
+  // Set font properties
+  context.font = `${fontSize}px ${fontFamily}`;
+  
+  // Measure text width
+  const textMetrics = context.measureText(text);
+  const textWidth = textMetrics.width;
+  
+  // Add generous padding for better visual appearance
+  const padding = 40; // 20px on each side - more generous padding
+  const minWidth = 80; // Minimum width for any tag
+  
+  // Ensure we always have enough space for the text
+  const requiredWidth = Math.max(textWidth + padding, minWidth);
+  
+  // For very long text, add extra space to prevent cramped appearance
+  if (text.length > 50) {
+    return Math.max(requiredWidth, 200); // Minimum 200px for long text
+  }
+  
+  return requiredWidth;
+};
+
+// Calculate optimal height based on text content and font size
+export const calculateOptimalHeight = (text: string, fontSize: number = 12): number => {
+  if (!text || text.trim().length === 0) {
+    return 30; // Default minimum height
+  }
+  
+  // For single line text, use font size + padding
+  const lineHeight = fontSize * 1.2; // 1.2 line height
+  const padding = 8; // 4px top and bottom padding
+  
+  // Estimate number of lines based on text length and typical character width
+  const avgCharWidth = fontSize * 0.6; // Approximate character width
+  const estimatedWidth = text.length * avgCharWidth;
+  const maxWidth = 200; // Assume max width before wrapping
+  
+  // Calculate number of lines needed
+  const estimatedLines = Math.ceil(estimatedWidth / maxWidth);
+  const actualLines = Math.max(1, estimatedLines);
+  
+  // Calculate height based on number of lines
+  const totalHeight = (lineHeight * actualLines) + padding;
+  
+  return Math.max(totalHeight, 25); // Minimum height of 25px
 };
 
 // Animation constants

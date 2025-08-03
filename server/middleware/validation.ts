@@ -117,8 +117,19 @@ export const rateLimiters = {
   
   general: rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 1000,
+    max: 5000, // Increased from 1000 to 5000 for editor operations
     message: { error: 'Too many requests', retryAfter: '15 minutes' }
+  }),
+  
+  editor: rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10000, // Higher limit for editor operations
+    message: { error: 'Editor rate limit exceeded', retryAfter: '15 minutes' },
+    keyGenerator: (req) => {
+      // Use session ID for editor rate limiting
+      const sessionId = req.params?.sessionId || req.body?.sessionId;
+      return req.ip + ':' + (sessionId || 'unknown');
+    }
   }),
   
   fileUpload: rateLimit({

@@ -80,14 +80,19 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
   const sanitizeCoordinates = (coordinates: Partial<TagCoordinates>, tagType?: string): Partial<TagCoordinates> => {
     const sanitized: Partial<TagCoordinates> = {};
     
+    // Debug tag type
+    console.log('🔍 sanitizeCoordinates - tagType:', tagType, 'type:', typeof tagType);
+    
     // Get dimensions from store (includes custom dimensions if set by user)
     const storeDimensions = getTagDimensions(tagType as any);
+    console.log('🔍 sanitizeCoordinates - storeDimensions:', storeDimensions);
+    
     const defaultDimensions = storeDimensions || (
       tagType === 'W' ? { width: 100, height: 25 } :
       tagType === 'S' ? { width: 120, height: 35 } :
       tagType === 'E' ? { width: 60, height: 60 } :
-              tagType === 'T' ? { width: 120, height: 32 } : // Larger default for better text visibility
-      { width: 97, height: 26 }
+      tagType === 'O' ? { width: 200, height: 50 } : // Disclosure tag dimensions
+      { width: 97, height: 26 } // Default fallback for all other tag types
     );
     
     if (coordinates.x !== undefined) {
@@ -342,7 +347,19 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
 
   // Place tag with optimistic update
   const placeTag = useCallback(async (command: PlaceTagCommand) => {
+    console.log('🎯 placeTag called with command:', {
+      tagType: command.tagType,
+      tagTypeType: typeof command.tagType,
+      documentId: command.documentId,
+      coordinates: command.coordinates,
+      assignedUserId: command.assignedUserId
+    });
+    
     if (!selectedUser || !currentDocument) {
+      console.error('❌ Missing user or document selection:', {
+        selectedUser: !!selectedUser,
+        currentDocument: !!currentDocument
+      });
       throw new Error('Missing user or document selection');
     }
 
@@ -574,45 +591,55 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       
       const result = await response.json();
       
-      // Convert the server response to a proper DocumentTag and add to tags array
-      // The server actually creates a completed whiteout tag, not an overlay
-      const whiteoutTag = {
-        id: result.overlay.id,
-        documentId: result.overlay.documentId,
-        sessionId: result.overlay.sessionId,
-        tagType: 'W' as const,
-        assignedUserId: localStorage.getItem('userId') || '0',
-        coordinates: {
-          x: result.overlay.coordinates.x,
-          y: result.overlay.coordinates.y,
-          width: result.overlay.coordinates.width,
-          height: result.overlay.coordinates.height,
-          pageNumber: result.overlay.coordinates.pageNumber
-        },
-        isCompleted: true, // Whiteout is immediately completed
-        content: 'WHITEOUT',
-        contentType: 'whiteout',
-        contentData: JSON.stringify({
-          type: 'whiteout',
-          value: 'WHITEOUT',
-          timestamp: new Date().toISOString()
-        }),
-        displayLabel: 'Whiteout',
-        createdAt: new Date(result.overlay.createdAt),
-        updatedAt: new Date(result.overlay.createdAt),
-        completedAt: new Date(result.overlay.createdAt),
-        colorCode: '#FFFFFF' // White color for whiteout
-      };
-      
-      // Add the completed whiteout tag to the tags array (not overlay array)
-      useEditorStore.getState().addTag(whiteoutTag);
-      console.log('✅ Whiteout tag created and added to tags:', result);
+      // Add the overlay to the store's whiteoutOverlays array (not tags array)
+      useEditorStore.getState().addWhiteoutOverlay(overlay);
+      console.log('✅ Whiteout overlay created and added to overlays:', result);
       
     } catch (error) {
       console.error('❌ Failed to place whiteout overlay:', error);
       throw error;
     }
   }, [sessionId]);
+
+  // Update whiteout overlay position/size
+  const updateWhiteoutOverlay = useCallback((overlayId: string, coordinates: Partial<TagCoordinates>) => {
+    // Validate coordinates before updating
+    if (!validateCoordinates(coordinates)) {
+      console.error('❌ Invalid coordinates for whiteout overlay update:', coordinates);
+      return;
+    }
+    
+    const sanitizedCoordinates = sanitizeCoordinates(coordinates);
+    
+    // Update store immediately for smooth UX
+    useEditorStore.getState().updateWhiteoutOverlay(overlayId, { coordinates: sanitizedCoordinates as TagCoordinates });
+    
+    // Save to server
+    const operation: TagOperation = {
+      type: 'update',
+      tagId: overlayId,
+      data: { coordinates: sanitizedCoordinates },
+      timestamp: Date.now()
+    };
+    
+    debouncedSave(operation);
+  }, []);
+
+  // Delete whiteout overlay
+  const deleteWhiteoutOverlay = useCallback((overlayId: string) => {
+    // Remove from store immediately
+    useEditorStore.getState().deleteWhiteoutOverlay(overlayId);
+    
+    // Save to server
+    const operation: TagOperation = {
+      type: 'delete',
+      tagId: overlayId,
+      data: {},
+      timestamp: Date.now()
+    };
+    
+    debouncedSave(operation);
+  }, []);
 
   return {
     placeTag,
@@ -622,6 +649,8 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
     deleteTag,
     batchSaveChanges,
     isProcessing,
-    placeWhiteoutOverlay
+    placeWhiteoutOverlay,
+    updateWhiteoutOverlay,
+    deleteWhiteoutOverlay
   };
 }; 

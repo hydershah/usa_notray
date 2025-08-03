@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import { getTagDimensions as getDefaultTagDimensions } from '../../lib/constants/tagConstants';
 import type {
   EditorSession,
   SessionDocument,
@@ -94,10 +95,12 @@ interface EditorStore {
   getCurrentDocumentTags: () => DocumentTag[];
   getDocumentTags: (documentId: string) => DocumentTag[];
   loadTagsForDocument: (documentId: string) => Promise<void>;
+  loadWhiteoutOverlays: (documentId: string) => Promise<void>;
   
   // Actions - Whiteout Overlay Management
   setWhiteoutOverlays: (overlays: Array<any>) => void;
   addWhiteoutOverlay: (overlay: any) => void;
+  updateWhiteoutOverlay: (overlayId: string, updates: Partial<any>) => void;
   deleteWhiteoutOverlay: (overlayId: string) => void;
   
   // Actions - Custom Dimensions
@@ -308,7 +311,10 @@ export const useEditorStore = create<EditorStore>()(
       
       selectTag: (tag) => set({ selectedTag: tag }),
       
-      setSelectedTagType: (tagType) => set({ selectedTagType: tagType }),
+      setSelectedTagType: (tagType) => {
+        console.log('🔧 setSelectedTagType called with:', tagType, 'type:', typeof tagType);
+        set({ selectedTagType: tagType });
+      },
       
       setDraggedTag: (tag) => set({ draggedTag: tag }),
       
@@ -362,9 +368,52 @@ export const useEditorStore = create<EditorStore>()(
         }
       },
       
+      loadWhiteoutOverlays: async (documentId: string) => {
+        const { session } = get();
+        if (!session) {
+          console.warn('Cannot load whiteout overlays: No active session');
+          return;
+        }
+        
+        try {
+          console.log(`⬜ Loading whiteout overlays for document ${documentId}...`);
+          const response = await fetch(`/api/editor/session/${session.id}/whiteout-overlays?documentId=${documentId}&t=${Date.now()}`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`,
+              'Cache-Control': 'no-cache'
+            }
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Failed to load whiteout overlays: ${response.status}`);
+          }
+          
+          const { overlays: documentOverlays } = await response.json();
+          
+          // Update only overlays for this specific document
+          set(state => ({
+            whiteoutOverlays: [
+              ...state.whiteoutOverlays.filter(overlay => overlay.documentId !== documentId), // Remove old overlays for this document
+              ...documentOverlays // Add fresh overlays for this document
+            ]
+          }));
+          
+          console.log(`✅ Loaded ${documentOverlays.length} whiteout overlays for document ${documentId}`);
+          
+        } catch (error) {
+          console.error(`❌ Failed to load whiteout overlays for document ${documentId}:`, error);
+          // Don't throw error for whiteout overlays - they're optional
+        }
+      },
+      
       // Whiteout Overlay Management Actions
       setWhiteoutOverlays: (overlays) => set({ whiteoutOverlays: overlays }),
       addWhiteoutOverlay: (overlay) => set(state => ({ whiteoutOverlays: [...state.whiteoutOverlays, overlay] })),
+      updateWhiteoutOverlay: (overlayId, updates) => set(state => ({
+        whiteoutOverlays: state.whiteoutOverlays.map(overlay => 
+          overlay.id === overlayId ? { ...overlay, ...updates } : overlay
+        )
+      })),
       deleteWhiteoutOverlay: (overlayId) => set(state => ({ whiteoutOverlays: state.whiteoutOverlays.filter(o => o.id !== overlayId) })),
       
       // Custom Dimensions Actions
@@ -392,10 +441,25 @@ export const useEditorStore = create<EditorStore>()(
       },
       
       getTagDimensions: (tagType) => {
-        const dimensions = get().customTagDimensions[tagType];
-        console.log(`🔧 getTagDimensions called - tagType: ${tagType}, found dimensions:`, dimensions);
-        console.log('🔧 All customTagDimensions:', get().customTagDimensions);
-        return dimensions || null;
+        // First check for custom dimensions
+        const customDimensions = get().customTagDimensions[tagType];
+        console.log(`🔧 getTagDimensions called - tagType: ${tagType}, custom dimensions:`, customDimensions);
+        
+        if (customDimensions) {
+          console.log(`✅ Using custom dimensions for ${tagType}:`, customDimensions);
+          return customDimensions;
+        }
+        
+        // Fall back to default dimensions from tagConstants
+        try {
+          const defaultDimensions = getDefaultTagDimensions(tagType);
+          console.log(`✅ Using default dimensions for ${tagType}:`, defaultDimensions);
+          return defaultDimensions;
+        } catch (error) {
+          console.error(`❌ Could not get dimensions for tag type: ${tagType}`, error);
+          // Return a safe fallback
+          return { width: 120, height: 32 };
+        }
       },
       
       clearCustomTagDimensions: () => {

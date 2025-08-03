@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import type { DocumentTag } from '../../types/editor';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
+import { getTagDimensions } from '../../lib/constants/tagConstants';
 
 interface DraggableTagProps {
   tag: DocumentTag;
@@ -167,6 +168,11 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
   // Check if tag has content (should be transparent)
   const hasContent = !!(tag.content || tag.contentData || tag.isCompleted);
 
+  // Get dimensions - use tag constants for text tags, otherwise use stored coordinates
+  const tagDimensions = getTagDimensions(tag.tagType);
+  const displayWidth = tag.tagType === 'T' ? tagDimensions.width : tag.coordinates.width;
+  const displayHeight = tag.tagType === 'T' ? tagDimensions.height : tag.coordinates.height;
+
   console.log('🎨 DraggableTag render debug:', {
     tagId: tag.id.substring(0, 8),
     tagType: tag.tagType,
@@ -186,8 +192,8 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
         position: 'absolute',
         left: `${tag.coordinates.x * scaleFactor}px`,
         top: `${tag.coordinates.y * scaleFactor}px`,
-        width: `${tag.coordinates.width * scaleFactor}px`,
-        height: `${tag.coordinates.height * scaleFactor}px`,
+        width: `${displayWidth * scaleFactor}px`,
+        height: `${displayHeight * scaleFactor}px`,
         // ✅ TRANSPARENT BACKGROUND FOR TAGS WITH CONTENT
         backgroundColor: hasContent 
           ? 'transparent' 

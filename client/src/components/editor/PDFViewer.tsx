@@ -21,7 +21,9 @@ import {
   TAG_TYPE_CONFIG,
   PROFESSIONAL_COLORS,
   TYPOGRAPHY,
-  LAYOUT
+  LAYOUT,
+  calculateOptimalWidth,
+  calculateOptimalHeight
 } from '@/lib/constants/tagConstants';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Loader2 } from 'lucide-react';
@@ -113,54 +115,118 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   localFontSize
 }) => {
   const [imageLoadError, setImageLoadError] = React.useState(false);
+  const [isDragging, setIsDragging] = React.useState(false);
   const tagInfo = TAG_TYPE_INFO[tag.tagType];
   
   // Use local font size if available, otherwise fall back to stored font size
   const [liveFontSize, setLiveFontSize] = React.useState<number | undefined>(undefined);
+  
+  // Parse contentData to get font size
+  let contentDataFontSize: number | undefined;
+  if (tag.contentData) {
+    try {
+      const parsedContentData = JSON.parse(tag.contentData);
+      contentDataFontSize = parsedContentData.fontSize;
+    } catch (e) {
+      console.warn('Could not parse contentData for font size:', e);
+    }
+  }
+  
   const currentFontSize =
     liveFontSize !== undefined
       ? liveFontSize
-      : localFontSize || tag.contentData?.fontSize || 12;
+      : localFontSize || contentDataFontSize || 12;
   
   // Remove debug logs for better performance during drag operations
   
   // Convert PDF coordinates to display coordinates - memoized for performance
   const fixedDimensions = useMemo(() => getTagDimensions(tag.tagType), [tag.tagType]);
   
-  const displayCoords = useMemo(() => ({
-    x: Math.round(tag.coordinates.x * scaleFactor),
-    y: Math.round(tag.coordinates.y * scaleFactor),
-    width: Math.round(fixedDimensions.width * scaleFactor),
-    height: Math.round(fixedDimensions.height * scaleFactor)
-  }), [tag.coordinates.x, tag.coordinates.y, scaleFactor, fixedDimensions.width, fixedDimensions.height]);
+  // Calculate optimal dimensions based on content
+  const optimalDimensions = useMemo(() => {
+    const content = tag.content || '';
+    const fontSize = currentFontSize;
+    
+    // For text tags, always use the tag constants instead of calculating optimal dimensions
+    if (tag.tagType === 'T') {
+      return {
+        width: fixedDimensions.width,
+        height: fixedDimensions.height
+      };
+    }
+    
+    // For other tag types, calculate optimal dimensions based on content
+    const optimalWidth = calculateOptimalWidth(content, fontSize, TYPOGRAPHY.fontFamily);
+    const optimalHeight = calculateOptimalHeight(content, fontSize);
+    
+    // Use the larger of fixed dimensions or optimal dimensions
+    const width = Math.max(fixedDimensions.width, optimalWidth);
+    const height = Math.max(fixedDimensions.height, optimalHeight);
+    
+    return { width, height };
+  }, [tag.content, tag.tagType, currentFontSize, fixedDimensions.width, fixedDimensions.height]);
+  
+  const displayCoords = useMemo(() => {
+    const coords = {
+      x: Math.round(tag.coordinates.x * scaleFactor),
+      y: Math.round(tag.coordinates.y * scaleFactor),
+      width: Math.round(optimalDimensions.width * scaleFactor),
+      height: Math.round(optimalDimensions.height * scaleFactor)
+    };
+    
+    // Debug logging for text tags
+    if (tag.tagType === 'T') {
+      console.log('🔍 DEBUG: TagRenderer displayCoords calculation:', {
+        tagId: tag.id,
+        tagType: tag.tagType,
+        scaleFactor,
+        optimalDimensions,
+        finalCoords: coords
+      });
+    }
+    
+    return coords;
+  }, [tag.coordinates.x, tag.coordinates.y, scaleFactor, optimalDimensions.width, optimalDimensions.height]);
 
   const hasContent = useMemo(() => !!(tag.content || tag.contentData || tag.isCompleted), [tag.content, tag.contentData, tag.isCompleted]);
 
-  // Memoized style object to prevent recalculation on every render
-  const tagStyle = useMemo(() => ({
-    backgroundColor: hasContent 
+  // Memoized style object to prevent recalculation on every render - DocuSign Style
+  const tagStyle = useMemo(() => {
+    const config = TAG_TYPE_CONFIG[tag.tagType];
+    const backgroundColor = hasContent 
       ? PROFESSIONAL_COLORS.completed 
-      : PROFESSIONAL_COLORS.background,
-    border: `2px solid ${
-      hasContent 
-        ? PROFESSIONAL_COLORS.borderCompleted
+      : config?.color || PROFESSIONAL_COLORS.background;
+    const borderColor = hasContent 
+      ? PROFESSIONAL_COLORS.borderCompleted
       : isSelected
           ? PROFESSIONAL_COLORS.borderActive 
-          : PROFESSIONAL_COLORS.border
-    }`,
-    borderRadius: '4px',
-    color: hasContent 
-      ? PROFESSIONAL_COLORS.text 
-      : PROFESSIONAL_COLORS.textPlaceholder,
-    zIndex: isSelected ? 1000 : 100,
-    pointerEvents: 'auto' as const,
-    cursor: canEdit ? 'grab' as const : 'default' as const,
-    fontFamily: TYPOGRAPHY.fontFamily,
-    fontSize: TYPOGRAPHY.fontSize.tag,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
-    transition: 'none', // Remove transitions during drag for better performance
-    boxShadow: isSelected ? '0 0 0 2px ' + PROFESSIONAL_COLORS.borderActive : 'none'
-  }), [hasContent, isSelected, canEdit]);
+          : config?.borderColor || PROFESSIONAL_COLORS.border;
+    
+    return {
+      backgroundColor,
+      border: `1.5px solid ${borderColor}`,
+      borderRadius: LAYOUT.borderRadius.base,
+      color: hasContent 
+        ? PROFESSIONAL_COLORS.text 
+        : PROFESSIONAL_COLORS.textPlaceholder,
+      zIndex: isSelected ? 1000 : 100,
+      pointerEvents: 'auto' as const,
+      cursor: canEdit ? 'grab' as const : 'default' as const,
+      fontFamily: TYPOGRAPHY.fontFamily,
+      fontSize: TYPOGRAPHY.fontSize.tag,
+      fontWeight: TYPOGRAPHY.fontWeight.medium,
+      transition: 'none', // Remove transitions during drag for better performance
+      boxShadow: isSelected 
+        ? `0 0 0 2px ${PROFESSIONAL_COLORS.borderActive}, ${LAYOUT.shadow.base}` 
+        : hasContent 
+          ? LAYOUT.shadow.sm 
+          : 'none',
+      // DocuSign style enhancements
+      position: 'relative' as const,
+      overflow: 'visible' as const, // Allow content to expand beyond container
+      minHeight: 'fit-content' as const // Ensure container fits content
+    };
+  }, [hasContent, isSelected, canEdit, tag.tagType]);
 
   const validateAndSanitizeCoordinates = (coords: any) => {
     const sanitized: any = {};
@@ -207,7 +273,12 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     throttledOnUpdate.current(newCoordinates);
   }, [canEdit, scaleFactor]);
 
+  const handleDragStart = useCallback(() => {
+    setIsDragging(true);
+  }, []);
+
   const handleDragStop = useCallback((e: any, data: any) => {
+    setIsDragging(false);
     if (!canEdit || !onSave) return;
     
     // Professional snap-to-grid on drop - DocuSign style
@@ -243,23 +314,12 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       // Let the container auto-size to text - don't update coordinates during resize
       // This allows the container to naturally fit the text content
     } else {
-      // For non-text tags, update size normally
+      // For non-text tags, update size normally (NO font size change)
       const newCoordinates = validateAndSanitizeCoordinates({
         width: ref.offsetWidth / scaleFactor,
         height: ref.offsetHeight / scaleFactor
       });
       onUpdate(newCoordinates);
-      
-      // Apply font size change for non-text tags
-      const widthChange = delta.width;
-      const heightChange = delta.height;
-      const dragDistance = Math.abs(widthChange) > Math.abs(heightChange) ? widthChange : heightChange;
-      const fontSizeChange = dragDistance / (scaleFactor * 100);
-      if (Math.abs(dragDistance) > 0) {
-        let newFontSize = currentFontSize + fontSizeChange;
-        newFontSize = Math.max(10, Math.min(72, newFontSize));
-        setLiveFontSize(newFontSize);
-      }
     }
   };
 
@@ -280,44 +340,38 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     }
     setLiveFontSize(undefined); // Reset live font size after drag
     
-    // For text tags, calculate dimensions based on text content size
-    if (tag.tagType === 'T') {
-      // Get the actual text content element to measure its natural size
-      const textElement = ref.querySelector('[data-text-content]') || ref.firstElementChild;
-      if (textElement) {
-        const textRect = textElement.getBoundingClientRect();
-        const containerRect = ref.getBoundingClientRect();
-        
-        // Add padding around text content (8px padding on each side)
-        const padding = 16; // 8px on each side
-        const newCoordinates = {
-          width: Math.round((textRect.width + padding) / scaleFactor),
-          height: Math.round((textRect.height + padding) / scaleFactor)
-        };
-        onSave(newCoordinates);
-      } else {
-        // Fallback: use current container size
-        const newCoordinates = {
-          width: Math.round(ref.offsetWidth / scaleFactor),
-          height: Math.round(ref.offsetHeight / scaleFactor)
-        };
-        onSave(newCoordinates);
-      }
-    } else {
-      // For non-text tags, save current container size
-      const newCoordinates = {
-        width: Math.round(ref.offsetWidth / scaleFactor),
-        height: Math.round(ref.offsetHeight / scaleFactor)
-      };
-      console.log('📏 Saving non-text tag resize:', {
-        tagId: tag.id,
-        tagType: tag.tagType,
-        newCoordinates,
-        originalWidth: tag.coordinates.width,
-        originalHeight: tag.coordinates.height
-      });
-      onSave(newCoordinates);
-    }
+    // Calculate optimal dimensions based on content for all tag types
+    const content = tag.content || '';
+    const optimalWidth = calculateOptimalWidth(content, currentFontSize, TYPOGRAPHY.fontFamily);
+    const optimalHeight = calculateOptimalHeight(content, currentFontSize);
+    
+    // Use the larger of manual resize or optimal dimensions
+    const manualWidth = ref.offsetWidth / scaleFactor;
+    const manualHeight = ref.offsetHeight / scaleFactor;
+    
+    const finalWidth = Math.max(manualWidth, optimalWidth);
+    const finalHeight = Math.max(manualHeight, optimalHeight);
+    
+    const newCoordinates = {
+      width: Math.round(finalWidth),
+      height: Math.round(finalHeight)
+    };
+    
+    console.log('📏 Saving tag resize with optimal dimensions:', {
+      tagId: tag.id,
+      tagType: tag.tagType,
+      content,
+      currentFontSize,
+      optimalWidth,
+      optimalHeight,
+      manualWidth,
+      manualHeight,
+      finalWidth,
+      finalHeight,
+      newCoordinates
+    });
+    
+    onSave(newCoordinates);
     
     // Save rounded font size to server and update localFontSizes
     if (onFontSizeChange && liveFontSize !== undefined) {
@@ -334,7 +388,9 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
 
   return (
     <Rnd
-      size={{
+      default={{
+        x: displayCoords.x,
+        y: displayCoords.y,
         width: displayCoords.width,
         height: displayCoords.height
       }}
@@ -342,31 +398,26 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
         x: displayCoords.x,
         y: displayCoords.y
       }}
+      size={{
+        width: displayCoords.width,
+        height: displayCoords.height
+      }}
+      onDragStart={handleDragStart}
       onDrag={handleDrag}
       onDragStop={handleDragStop}
       onResize={handleResize}
       onResizeStop={handleResizeStop}
-      enableResizing={(() => {
-        const allowResize = TAG_TYPE_CONFIG[tag.tagType]?.allowResize;
-        console.log('🔧 Tag resize configuration:', {
-          tagType: tag.tagType,
-          allowResize,
-          resizeConfig: allowResize ? 'enabled' : 'disabled'
-        });
-        return allowResize ? {
-          top: false,
-          right: true,
-          bottom: true,
-          left: false,
-          topRight: false,
-          bottomRight: true,
-          bottomLeft: false,
-          topLeft: false
-        } : false;
-      })()} // Enable resizing based on tag configuration
-      disableDragging={!canEdit}
-      bounds="parent"
-      dragHandleClassName="professional-tag"
+      enableResizing={{
+        top: canEdit,
+        right: canEdit,
+        bottom: canEdit,
+        left: canEdit,
+        topRight: canEdit,
+        bottomRight: canEdit,
+        bottomLeft: canEdit,
+        topLeft: false
+      }} // Enable corner and edge resizing for text tags
+        bounds="parent"
       cancel=".no-drag"
       onClick={(e: React.MouseEvent<HTMLDivElement>) => {
         e.stopPropagation();
@@ -407,7 +458,7 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
           if (e.detail === 2 && timeDiff < 500) {
             // Confirmed double-click within reasonable time
             const rect = currentTarget.getBoundingClientRect();
-            console.log('🎯 Double-click confirmed - triggering interactive input for tag:', tag.id);
+            console.log('🎯 Double-click confirmed - triggering interactive input for tag:', tag.id, 'type:', tag.tagType);
             onTagClick(tag, {
               x: rect.left,
               y: rect.top,
@@ -419,22 +470,35 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
             setTimeout(() => {
               const currentClickTime = currentTarget._lastClickTime || 0;
               if (Math.abs(currentClickTime - clickTime) < 50) { // Only if no subsequent clicks
-                console.log('🔗 Single-click confirmed - selecting tag:', tag.id);
+                console.log('🔗 Single-click confirmed - selecting tag:', tag.id, 'type:', tag.tagType);
                 onSelect();
               }
             }, 250); // Wait to see if double click follows
           }
         } else {
           // In tagging mode or for completed tags, just select immediately
-          console.log('🔗 Selecting tag:', tag.id, 'onSelect function:', typeof onSelect);
+          console.log('🔗 Selecting tag:', tag.id, 'type:', tag.tagType, 'onSelect function:', typeof onSelect);
           onSelect();
         }
       }}
       onKeyDown={handleKeyDown}
       tabIndex={0}
-      className="professional-tag"
-      style={tagStyle}
-
+      className={`
+        professional-tag
+        ${isSelected ? 'selected' : ''}
+        ${isDragging ? 'dragging' : ''}
+        ${hasContent ? 'has-content' : 'empty'}
+      `}
+      style={{
+        ...tagStyle,
+        position: 'absolute',
+        zIndex: isSelected ? 1000 : isDragging ? 999 : 100,
+        pointerEvents: 'auto',
+        width: 'auto', // Let the tag expand naturally with content
+        height: 'auto', // Let the tag expand naturally with content
+        minWidth: 'fit-content', // Ensure minimum width fits content
+        minHeight: 'fit-content' // Ensure minimum height fits content
+      }}
     >
       <div 
         style={{
@@ -443,39 +507,232 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'flex-start',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          padding: `${LAYOUT.tagPadding.vertical}px ${LAYOUT.tagPadding.horizontal}px`
+          overflow: 'visible', // Allow content to expand naturally
+          textOverflow: 'clip', // Don't clip text
+          whiteSpace: 'normal', // Allow text to wrap
+          padding: `${LAYOUT.tagPadding.vertical}px ${LAYOUT.tagPadding.horizontal}px`,
+          position: 'relative',
+          wordWrap: 'break-word',
+          overflowWrap: 'break-word'
         }}
       >
+        {/* DocuSign style tag content */}
         {hasContent ? (
-          <span style={{ 
-            fontFamily: TYPOGRAPHY.fontFamily,
-            fontSize: TYPOGRAPHY.fontSize.content,
-            fontWeight: TYPOGRAPHY.fontWeight.medium,
-            color: PROFESSIONAL_COLORS.text
-          }}>
+          <span 
+            data-text-content
+            style={{ 
+              fontFamily: TYPOGRAPHY.fontFamily,
+              fontSize: `${currentFontSize}px`,
+              fontWeight: TYPOGRAPHY.fontWeight.medium,
+              color: '#1e293b', // Dark text for maximum visibility
+              lineHeight: '1.2',
+              display: 'block',
+              width: '100%',
+              wordWrap: 'break-word',
+              overflowWrap: 'break-word',
+              whiteSpace: 'normal', // Allow text to wrap to multiple lines
+              overflow: 'visible' // Show all content, don't hide overflow
+            }}
+          >
             {tag.content || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Content'}
           </span>
         ) : (
           <span style={{ 
             fontFamily: TYPOGRAPHY.fontFamily,
-            fontSize: TYPOGRAPHY.fontSize.label,
-            fontWeight: TYPOGRAPHY.fontWeight.normal,
-            color: PROFESSIONAL_COLORS.textPlaceholder,
-            fontStyle: 'italic'
+            fontSize: `${Math.max(10, currentFontSize - 2)}px`,
+            fontWeight: TYPOGRAPHY.fontWeight.medium, // Increased weight for better visibility
+            color: '#475569', // Darker placeholder text for better contrast
+            fontStyle: 'italic',
+            lineHeight: '1.2',
+            wordWrap: 'break-word',
+            overflowWrap: 'break-word',
+            whiteSpace: 'normal', // Allow text to wrap
+            overflow: 'visible' // Show all content
           }}>
             {TAG_TYPE_CONFIG[tag.tagType]?.placeholder || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Field'}
           </span>
+        )}
+        
+        {/* DocuSign style completion indicator */}
+        {hasContent && (
+          <div 
+            style={{
+              position: 'absolute',
+              top: '2px',
+              right: '4px',
+              width: '8px',
+              height: '8px',
+              backgroundColor: PROFESSIONAL_COLORS.success,
+              borderRadius: '50%',
+              border: '1px solid #ffffff'
+            }}
+          />
+        )}
+        
+        {/* Special indicator for disclosure tags */}
+        {tag.tagType === 'O' && (
+          <div 
+            style={{
+              position: 'absolute',
+              top: '2px',
+              left: '4px',
+              width: '12px',
+              height: '12px',
+              backgroundColor: '#d97706',
+              borderRadius: '50%',
+              border: '1px solid #ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            title="Disclosure Tag"
+          >
+            <span style={{ fontSize: '8px', color: '#ffffff', fontWeight: 'bold' }}>D</span>
+          </div>
         )}
       </div>
     </Rnd>
   );
 };
 
-// Memoize TagRenderer for better performance during drag operations
-const MemoizedTagRenderer = memo(TagRenderer);
+  // Memoize TagRenderer for better performance during drag operations
+  const MemoizedTagRenderer = memo(TagRenderer);
+
+  // Whiteout Overlay Component - Interactive white rectangle that covers text
+  const WhiteoutOverlay: React.FC<{
+    overlay: {
+      id: string;
+      coordinates: TagCoordinates;
+      sessionId: string;
+      createdAt: Date;
+    };
+    scaleFactor: number;
+    onUpdate?: (coordinates: Partial<TagCoordinates>) => void;
+    onDelete?: () => void;
+    canEdit?: boolean;
+  }> = ({ overlay, scaleFactor, onUpdate, onDelete, canEdit = false }) => {
+    const displayCoords = {
+      x: overlay.coordinates.x * scaleFactor,
+      y: overlay.coordinates.y * scaleFactor,
+      width: overlay.coordinates.width * scaleFactor,
+      height: overlay.coordinates.height * scaleFactor
+    };
+
+    return (
+      <Rnd
+        default={{
+          x: displayCoords.x,
+          y: displayCoords.y,
+          width: displayCoords.width,
+          height: displayCoords.height
+        }}
+        onDrag={(e, d) => {
+          if (onUpdate && canEdit) {
+            onUpdate({
+              x: d.x / scaleFactor,
+              y: d.y / scaleFactor
+            });
+          }
+        }}
+        onDragStop={(e, d) => {
+          if (onUpdate && canEdit) {
+            onUpdate({
+              x: d.x / scaleFactor,
+              y: d.y / scaleFactor
+            });
+          }
+        }}
+        onResize={(e, direction, ref, delta, position) => {
+          if (onUpdate && canEdit) {
+            onUpdate({
+              x: position.x / scaleFactor,
+              y: position.y / scaleFactor,
+              width: ref.style.width ? parseInt(ref.style.width) / scaleFactor : overlay.coordinates.width,
+              height: ref.style.height ? parseInt(ref.style.height) / scaleFactor : overlay.coordinates.height
+            });
+          }
+        }}
+        onResizeStop={(e, direction, ref, delta, position) => {
+          if (onUpdate && canEdit) {
+            onUpdate({
+              x: position.x / scaleFactor,
+              y: position.y / scaleFactor,
+              width: ref.style.width ? parseInt(ref.style.width) / scaleFactor : overlay.coordinates.width,
+              height: ref.style.height ? parseInt(ref.style.height) / scaleFactor : overlay.coordinates.height
+            });
+          }
+        }}
+        enableResizing={canEdit ? {
+          top: true,
+          right: true,
+          bottom: true,
+          left: true,
+          topRight: true,
+          bottomRight: true,
+          bottomLeft: true,
+          topLeft: true
+        } : false}
+        disableDragging={!canEdit}
+        bounds="parent"
+        style={{
+          backgroundColor: '#FFFFFF',
+          border: canEdit ? '2px solid #3B82F6' : '1px solid #E5E7EB',
+          borderRadius: '2px',
+          zIndex: 10, // Ensure it's above the PDF content
+          cursor: canEdit ? 'move' : 'default',
+          boxShadow: canEdit ? '0 2px 4px rgba(59, 130, 246, 0.2)' : 'none'
+        }}
+        title="Whiteout overlay"
+      >
+        {/* Optional delete button for editable whiteouts */}
+        {canEdit && onDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            style={{
+              position: 'absolute',
+              top: '-8px',
+              right: '-8px',
+              width: '16px',
+              height: '16px',
+              backgroundColor: '#ef4444',
+              color: 'white',
+              border: 'none',
+              borderRadius: '50%',
+              cursor: 'pointer',
+              fontSize: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 11
+            }}
+            title="Delete whiteout"
+          >
+            ×
+          </button>
+        )}
+        
+        {/* Editable indicator for whiteout overlays */}
+        {canEdit && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '2px',
+              left: '2px',
+              width: '8px',
+              height: '8px',
+              backgroundColor: '#3B82F6',
+              borderRadius: '50%',
+              zIndex: 11
+            }}
+            title="Editable whiteout"
+          />
+        )}
+      </Rnd>
+    );
+  };
 
 
 
@@ -523,8 +780,45 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     setZoomLevel,
     setScrollTop,
     mode: editorMode,
-    whiteoutOverlays
+    whiteoutOverlays,
+    lastUsedFontSize,
+    setLastUsedFontSize
   } = useEditorStore();
+
+  // Local state for immediate font size updates (for responsive UI)
+  const [localFontSizes, setLocalFontSizes] = useState<Map<string, number>>(new Map());
+
+  // Memoize current font size to prevent excessive re-renders
+  const currentFontSize = useMemo(() => {
+    if (selectedTag) {
+      console.log('🎯 Selected tag for font size:', selectedTag.tagType, selectedTag.id, 'contentData:', selectedTag.contentData);
+      // Check local font sizes first, then contentData, then fallback
+      const localFontSize = localFontSizes.get(selectedTag.id);
+      if (localFontSize !== undefined) {
+        console.log('🎯 Using local font size:', localFontSize);
+        return localFontSize;
+      }
+      const contentFontSize = selectedTag.contentData?.fontSize;
+      if (contentFontSize !== undefined && contentFontSize > 0) {
+        console.log('🎯 Using contentData font size:', contentFontSize);
+        return contentFontSize;
+      }
+      // For text tags, try to get font size from the actual rendered content
+      if (selectedTag.tagType === 'T' && selectedTag.content) {
+        // Try to extract font size from the content or use a reasonable default
+        const defaultTextFontSize = 16; // Default text size
+        console.log('🎯 Using default text font size:', defaultTextFontSize);
+        return defaultTextFontSize;
+      }
+      console.log('🎯 Using lastUsedFontSize:', lastUsedFontSize);
+      return lastUsedFontSize;
+    } else if (selectedTextInputId) {
+      const selectedTextInput = textInputs?.find(ti => ti.id === selectedTextInputId);
+      console.log('🎯 Selected text input for font size:', selectedTextInputId, 'fontSize:', selectedTextInput?.fontSize);
+      return selectedTextInput?.fontSize || lastUsedFontSize;
+    }
+    return lastUsedFontSize;
+  }, [selectedTag?.id, selectedTag?.contentData?.fontSize, selectedTag?.tagType, selectedTag?.content, selectedTextInputId, textInputs, lastUsedFontSize, localFontSizes]);
   
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [loading, setLoading] = useState(true);
@@ -547,9 +841,6 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
   // Debounced font size updates to prevent API spam during drag
   const debouncedTagFontSizeUpdates = useRef<Map<string, NodeJS.Timeout>>(new Map());
-  
-  // Local state for immediate font size updates (for responsive UI)
-  const [localFontSizes, setLocalFontSizes] = useState<Map<string, number>>(new Map());
 
   // Function to update tag font size with immediate local update + debounced server sync
   const updateTagFontSize = useCallback(async (tagId: string, fontSize: number) => {
@@ -1347,12 +1638,33 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       return;
     }
     
-    // Position tag so mouse pointer is at bottom-left corner of visible text
-    // Account for border (2px) + padding (6px) = 8px total visual offset, scaled properly
-    // Y: Bottom edge aligns with click point (tag appears above cursor)
-    const visualOffset = 8 / scaleFactor; // Border + padding offset divided by scale factor
-    const finalTagX = Math.max(0, Math.round(pdfX - visualOffset));
-    const finalTagY = Math.max(0, Math.round(pdfY - dimensions.height));
+    // Adjust positioning based on tag type for better placement
+    let finalTagX: number;
+    let finalTagY: number;
+    
+    if (selectedTagType === 'T') {
+      // For text tags, position with a small offset so the text field appears just above the click point
+      // This makes text fields appear close to where you click but not too far up
+      finalTagX = Math.max(0, Math.round(pdfX));
+      finalTagY = Math.max(0, Math.round(pdfY - (dimensions.height * 0.2)));
+    } else {
+      // For other tags, use visual offset for proper alignment
+      const visualOffset = 8 / scaleFactor; // Border + padding offset divided by scale factor
+      finalTagX = Math.max(0, Math.round(pdfX - visualOffset));
+      
+      if (selectedTagType === 'S') {
+        // For signature tags, position so the bottom edge is closer to the pointer
+        // This makes signature tags appear closer to where you click
+        finalTagY = Math.max(0, Math.round(pdfY - (dimensions.height * 0.3)));
+      } else if (selectedTagType === 'D') {
+        // For date tags, position so the bottom edge is closer to the pointer
+        // This makes date tags appear closer to where you click
+        finalTagY = Math.max(0, Math.round(pdfY - (dimensions.height * 0.4)));
+      } else {
+        // For other tags, use the original positioning logic
+        finalTagY = Math.max(0, Math.round(pdfY - dimensions.height));
+      }
+    }
     
     const coordinates: TagCoordinates = {
       x: finalTagX,
@@ -1363,7 +1675,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     };
 
     onCoordinateClick(coordinates);
-  }, [canEditTags, onCoordinateClick, scaleFactors]);
+  }, [canEditTags, onCoordinateClick, scaleFactors, selectedTagType]);
 
   // Handle scroll tracking
   const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
@@ -1482,7 +1794,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   }, [onTagDelete]);
 
   const handleTagSelect = useCallback((tag: DocumentTag) => {
-    selectTag(tag.id === selectedTag?.id ? null : tag);
+    console.log('🎯 handleTagSelect called for tag:', tag.id, tag.tagType, 'current selected:', selectedTag?.id);
+    // Always select the tag, never deselect
+    selectTag(tag);
   }, [selectTag, selectedTag]);
 
   // ✅ CLEANED UP: Whiteout overlay functions removed - whiteout tags now use regular tag system
@@ -1634,6 +1948,73 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
           >
             Fit to View
           </button>
+          
+                    {/* Font Size Control - Only show when a text tag is selected */}
+          {(selectedTag || selectedTextInputId) && (
+            // Show for any tag that allows text input
+            selectedTag?.tagType === 'T' || selectedTag?.tagType === 'O' || selectedTag?.tagType === 'D' || 
+            selectedTag?.tagType === 'A' || selectedTag?.tagType === 'N' || selectedTag?.tagType === 'X' ||
+            selectedTextInputId
+          ) && (
+            console.log('🎨 Font control should show for tag:', selectedTag?.tagType, selectedTag?.id, 'textInputId:', selectedTextInputId),
+            <div 
+              className="flex items-center gap-2 bg-gray-100 rounded-lg p-1"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            >
+              <label className="text-sm font-medium text-gray-700">Font:</label>
+              <select
+                value={currentFontSize}
+                onChange={(e) => {
+                  const newSize = parseInt(e.target.value);
+                  let targetId = '';
+                  
+                  if (selectedTag) {
+                    targetId = selectedTag.id;
+                    console.log('🎨 Changing font size for selected tag:', targetId, 'from', currentFontSize, 'to', newSize);
+                  } else if (selectedTextInputId) {
+                    const selectedTextInput = textInputs?.find(ti => ti.id === selectedTextInputId);
+                    if (selectedTextInput) {
+                      targetId = selectedTextInput.id;
+                      console.log('🎨 Changing font size for selected text input:', targetId, 'from', currentFontSize, 'to', newSize);
+                    }
+                  }
+                  
+                  if (!targetId) {
+                    console.log('❌ No target found for font size change');
+                    return;
+                  }
+                  
+                  setLastUsedFontSize(newSize);
+                  
+                  // Update local font size immediately for instant feedback
+                  setLocalFontSizes(prev => {
+                    const newMap = new Map(prev);
+                    newMap.set(targetId, newSize);
+                    return newMap;
+                  });
+                  
+                  if (onFontSizeChange) {
+                    console.log('🎨 Calling onFontSizeChange with:', targetId, newSize);
+                    onFontSizeChange(targetId, newSize);
+                  }
+                }}
+                className="px-2 py-1 bg-white border rounded text-sm font-medium min-w-16 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="Select font size"
+              >
+                {Array.from({ length: 17 }, (_, i) => {
+                  const size = 8 + (i * 2); // 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40
+                  return (
+                    <option key={size} value={size}>
+                      {size}px
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
         </div>
         
         <div className="flex items-center gap-2">
@@ -1668,6 +2049,32 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         ref={containerRef}
         className="flex-1 overflow-auto bg-gray-50 py-6 px-4"
         onScroll={handleScroll}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          console.log('🎯 Drop event detected');
+          console.log('🎯 Drop coordinates:', { clientX: e.clientX, clientY: e.clientY });
+          
+          try {
+            const dragData = e.dataTransfer.getData('application/json');
+            console.log('🎯 Raw drag data:', dragData);
+            
+            if (dragData) {
+              const dragInfo = JSON.parse(dragData);
+              console.log('📄 Drag data received:', dragInfo);
+              
+              // Text input drop handling removed
+              console.log('📄 Drop data received but text input handling is disabled');
+            } else {
+              console.log('❌ No drag data found');
+            }
+          } catch (error) {
+            console.error('❌ Error handling drop:', error);
+          }
+        }}
         style={{ 
           maxWidth: '100%',
           overflowX: 'auto',
@@ -1713,6 +2120,32 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                     }}
                     data-page-number={pageNumber}
                     onClick={handleCanvasClick}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'copy';
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      console.log('🎯 Drop event detected on canvas');
+                      console.log('🎯 Canvas drop coordinates:', { clientX: e.clientX, clientY: e.clientY });
+                      
+                      try {
+                        const dragData = e.dataTransfer.getData('application/json');
+                        console.log('🎯 Canvas raw drag data:', dragData);
+                        
+                        if (dragData) {
+                          const dragInfo = JSON.parse(dragData);
+                          console.log('📄 Canvas drag data received:', dragInfo);
+                          
+                          // Text input drop handling removed from canvas
+                          console.log('📄 Canvas drop data received but text input handling is disabled');
+                        } else {
+                          console.log('❌ No drag data found on canvas');
+                        }
+                      } catch (error) {
+                        console.error('❌ Error handling drop on canvas:', error);
+                      }
+                    }}
                     className={`
                       block transition-all duration-200
                       ${mode === 'tagging' && canEditTags
@@ -1730,8 +2163,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                     }}
                   />
                   
-                  {/* Tags overlay */}
-                  {pageTags.map(tag => {
+                  {/* Tags overlay - Filter out whiteout tags and text tags (text tags are handled separately via textInputs) */}
+                  {pageTags.filter(tag => tag.tagType !== 'W' && tag.tagType !== 'T').map(tag => {
                     // Regular tag (text tags are handled separately via textInputs)
                     return (
                       <div key={`${tag.id}-${scaleFactor}`} className="absolute top-0 left-0 w-full h-full pointer-events-none">
@@ -1753,7 +2186,27 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                     );
                   })}
                   
-                  {/* ✅ SIMPLIFIED: Whiteout overlays removed - whiteout tags now render as regular tags */}
+                  {/* Whiteout overlays - Interactive white rectangles that cover text */}
+                  {whiteoutOverlays
+                    .filter(overlay => overlay.coordinates.pageNumber === pageNumber)
+                    .map(overlay => (
+                      <WhiteoutOverlay
+                        key={`whiteout-${overlay.id}-${scaleFactor}`}
+                        overlay={overlay}
+                        scaleFactor={scaleFactor}
+                        canEdit={canEditTags}
+                        onUpdate={(coordinates) => {
+                          console.log('⬜ Whiteout overlay updated:', overlay.id, coordinates);
+                          // Update the overlay in the store
+                          useEditorStore.getState().updateWhiteoutOverlay(overlay.id, coordinates);
+                        }}
+                        onDelete={() => {
+                          console.log('⬜ Whiteout overlay deleted:', overlay.id);
+                          // Remove the overlay from the store
+                          useEditorStore.getState().deleteWhiteoutOverlay(overlay.id);
+                        }}
+                      />
+                    ))}
 
                   {/* Text inputs overlay (separate from regular tags) - FIXED KEY GENERATION */}
                   {textInputs?.filter(textInput => textInput.coordinates.pageNumber === pageNumber).map((textInput) => {

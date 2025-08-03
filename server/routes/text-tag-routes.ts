@@ -67,6 +67,10 @@ export function registerTextTagRoutes(app: Express) {
         timestamp: new Date().toISOString()
       };
 
+      console.log('🔍 DEBUG: Server received coordinates:', coordinates);
+      console.log('🔍 DEBUG: Server received width:', coordinates.width);
+      console.log('🔍 DEBUG: Server received height:', coordinates.height);
+      
       const tagData = {
         documentId: parseInt(documentId),
         sessionId: session.id,

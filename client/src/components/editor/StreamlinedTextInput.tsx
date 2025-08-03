@@ -67,6 +67,9 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   coordinates,
   sessionId,
   content = '',
+  fontSize = 16,
+  fontFamily = 'Arial',
+  textColor = '#000000',
   assignedUserId,
   userColor,
   isNew = false,
@@ -91,13 +94,37 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   const fixedDimensions = useMemo(() => getTagDimensions('T'), []);
   const hasContent = useMemo(() => inputValue.trim().length > 0, [inputValue]);
   
-  // Memoized display coordinates - use actual coordinates for width/height if available
+  // Debug logging for scale factor
+  useEffect(() => {
+    console.log('🔍 DEBUG: StreamlinedTextInput scale factor analysis:', {
+      fixedDimensions,
+      scaleFactor,
+      scaledWidth: fixedDimensions.width * scaleFactor,
+      scaledHeight: fixedDimensions.height * scaleFactor
+    });
+  }, [fixedDimensions, scaleFactor]);
+  
+  // State for controlled dimensions - use fixed dimensions for text tags (no scaling)
+  const [controlledSize, setControlledSize] = useState({
+    width: fixedDimensions.width,  // Don't scale for text tags
+    height: fixedDimensions.height  // Don't scale for text tags
+  });
+  
+  // Update controlled size when scale factor changes (but don't scale for text tags)
+  useEffect(() => {
+    setControlledSize({
+      width: fixedDimensions.width,  // Don't scale for text tags
+      height: fixedDimensions.height  // Don't scale for text tags
+    });
+  }, [scaleFactor, fixedDimensions.width, fixedDimensions.height]);
+  
+  // Memoized display coordinates - use controlled size
   const displayCoords = useMemo(() => ({
     x: Math.round(coordinates.x * scaleFactor),
     y: Math.round(coordinates.y * scaleFactor),
-    width: Math.round((coordinates.width || fixedDimensions.width) * scaleFactor),
-    height: Math.round((coordinates.height || fixedDimensions.height) * scaleFactor)
-  }), [coordinates.x, coordinates.y, coordinates.width, coordinates.height, scaleFactor, fixedDimensions.width, fixedDimensions.height]);
+    width: Math.round(controlledSize.width),
+    height: Math.round(controlledSize.height)
+  }), [coordinates.x, coordinates.y, scaleFactor, controlledSize.width, controlledSize.height]);
   
   // Memoized professional styling
   const professionalStyle = useMemo(() => getTagStyle('T', isSelected, hasContent), [hasContent, isSelected]);
@@ -231,7 +258,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     let lastUpdate = 0;
     throttledOnMove.current = (coords: any) => {
       const now = Date.now();
-      if (now - lastUpdate > 8) { // ~120fps throttling for smooth drag
+      if (now - lastUpdate > 33) { // ~30fps throttling for smooth drag (reduced from 120fps)
         if (onMove) {
           onMove(coords);
         }
@@ -272,7 +299,13 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
 
   // Handle resize
   const handleResize = useCallback((e: any, direction: any, ref: any, delta: any, position: any) => {
-    // Update coordinates during resize for live feedback
+    // Update controlled size immediately for responsive UI
+    setControlledSize({
+      width: ref.offsetWidth,
+      height: ref.offsetHeight
+    });
+    
+    // Also call onResize if provided
     if (onResize) {
       const newCoordinates = {
         x: position.x / scaleFactor,
@@ -285,6 +318,12 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   }, [scaleFactor, onResize]);
 
   const handleResizeStop = useCallback((e: any, direction: any, ref: any, delta: any, position: any) => {
+    // Update controlled size
+    setControlledSize({
+      width: ref.offsetWidth,
+      height: ref.offsetHeight
+    });
+    
     // Final resize update with snapped coordinates
     if (onResize) {
       const snappedX = snapToGrid(position.x / scaleFactor);
@@ -325,21 +364,19 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   };
 
   return (
-      <Rnd
-        size={{
+    <Rnd
+      default={{
+        x: displayCoords.x,
+        y: displayCoords.y,
         width: displayCoords.width,
         height: displayCoords.height
-        }}
-        position={{
-        x: displayCoords.x,
-        y: displayCoords.y
       }}
       onDragStart={handleDragStart}
       onDrag={handleDrag}
       onDragStop={handleDragStop}
       onResize={handleResize}
       onResizeStop={handleResizeStop}
-        disableDragging={isEditing}
+      disableDragging={isEditing}
       dragHandleClassName="drag-handle"
       enableResizing={{
         top: false,
@@ -350,8 +387,8 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
         bottomRight: true,
         bottomLeft: false,
         topLeft: false
-      }} // Enable corner and edge resizing for text tags
-        bounds="parent"
+      }}
+      bounds="parent"
       cancel=".no-drag"
       className={`
         professional-text-tag
@@ -359,17 +396,29 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
         ${isDragging ? 'dragging' : ''}
         ${hasContent ? 'has-content' : 'empty'}
       `}
-        style={{
+      style={{
         position: 'absolute',
         zIndex: isSelected ? 1000 : isDragging ? 999 : 100,
-        pointerEvents: 'auto'
+        pointerEvents: 'auto',
+        backgroundColor: hasContent ? 'rgba(220, 252, 231, 0.8)' : 'rgba(255, 255, 255, 0.8)',
+        border: `1.5px solid ${isSelected ? PROFESSIONAL_COLORS.borderActive : hasContent ? PROFESSIONAL_COLORS.borderCompleted : PROFESSIONAL_COLORS.border}`,
+        borderRadius: '4px',
+        padding: '4px 8px',
+        cursor: isEditing ? 'text' : (isSelected ? 'pointer' : 'grab'),
+        outline: isSelected && !isEditing ? '2px solid #3b82f6' : 'none',
+        overflow: 'visible',
+        minWidth: 'fit-content',
+        minHeight: 'fit-content',
+        fontFamily: fontFamily,
+        fontSize: `${fontSize}px`,
+        fontWeight: TYPOGRAPHY.fontWeight.medium,
+        color: textColor
       }}
     >
       <div
         onClick={handleContainerClick}
         onDoubleClick={handleDoubleClick}
         onKeyDown={(e) => {
-          // Handle delete key when text input is focused but not editing
           if ((e.key === 'Delete' || e.key === 'Backspace') && !isEditing) {
             e.preventDefault();
             onDelete();
@@ -381,14 +430,19 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
         tabIndex={0}
         className={isEditing ? '' : 'drag-handle'}
         style={{
-          ...professionalStyle,
-          backgroundColor: hasContent ? 'rgba(220, 252, 231, 0.8)' : 'rgba(255, 255, 255, 0.8)', // Semi-transparent background
           width: '100%',
           height: '100%',
-          position: 'relative',
+          display: 'flex',
+          alignItems: 'center',
+          border: 'none',
+          background: 'transparent',
+          outline: 'none',
+          fontFamily: fontFamily,
+          fontSize: `${fontSize}px`,
+          fontWeight: TYPOGRAPHY.fontWeight.medium,
+          color: textColor,
           cursor: isEditing ? 'text' : (isSelected ? 'pointer' : 'grab'),
-          pointerEvents: 'auto', // Ensure interactions work
-          outline: isSelected && !isEditing ? '2px solid #3b82f6' : 'none' // Show selection state
+          pointerEvents: 'auto'
         }}
       >
         {isEditing ? (
@@ -406,10 +460,10 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
               border: 'none',
               background: 'transparent',
               outline: 'none',
-              fontFamily: TYPOGRAPHY.fontFamily,
-              fontSize: TYPOGRAPHY.fontSize.tag,
+              fontFamily: fontFamily,
+              fontSize: `${fontSize}px`,
               fontWeight: TYPOGRAPHY.fontWeight.medium,
-              color: PROFESSIONAL_COLORS.text,
+              color: textColor,
               padding: '0'
             }}
           />
@@ -420,39 +474,43 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
               height: '100%',
               display: 'flex',
               alignItems: 'center',
-                  overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              color: hasContent ? PROFESSIONAL_COLORS.text : PROFESSIONAL_COLORS.textPlaceholder,
-              fontStyle: hasContent ? 'normal' : 'italic'
+              overflow: 'visible',
+              textOverflow: 'clip',
+              whiteSpace: 'normal',
+              color: hasContent ? textColor : PROFESSIONAL_COLORS.textPlaceholder,
+              fontStyle: hasContent ? 'normal' : 'italic',
+              fontFamily: fontFamily,
+              fontSize: `${fontSize}px`,
+              wordWrap: 'break-word',
+              overflowWrap: 'break-word'
             }}
           >
             {hasContent ? inputValue : TAG_TYPE_CONFIG.T.placeholder}
           </div>
         )}
-        
-        {/* Professional selection indicator */}
-        {isSelected && (
-          <div 
-            style={{
-              position: 'absolute',
-              top: '-24px',
-              left: '0',
-              backgroundColor: PROFESSIONAL_COLORS.text,
-              color: 'white',
-              padding: '2px 8px',
-              borderRadius: '2px',
-              fontSize: '11px',
-              fontWeight: TYPOGRAPHY.fontWeight.medium,
-              whiteSpace: 'nowrap',
-              zIndex: 1001
-            }}
-          >
-            Text Field
-          </div>
-        )}
       </div>
-      </Rnd>
+      
+      {/* Professional selection indicator */}
+      {isSelected && (
+        <div 
+          style={{
+            position: 'absolute',
+            top: '-24px',
+            left: '0',
+            backgroundColor: PROFESSIONAL_COLORS.text,
+            color: 'white',
+            padding: '2px 8px',
+            borderRadius: '2px',
+            fontSize: '11px',
+            fontWeight: TYPOGRAPHY.fontWeight.medium,
+            whiteSpace: 'nowrap',
+            zIndex: 1001
+          }}
+        >
+          Text Field
+        </div>
+      )}
+    </Rnd>
   );
 };
 
@@ -476,12 +534,12 @@ const professionalStyles = `
 }
 
 .professional-text-tag.has-content {
-  background-color: ${PROFESSIONAL_COLORS.completed};
+  background-color: rgba(220, 252, 231, 0.8);
   border-color: ${PROFESSIONAL_COLORS.borderCompleted};
 }
 
 .professional-text-tag.empty {
-  background-color: ${PROFESSIONAL_COLORS.background};
+  background-color: rgba(255, 255, 255, 0.8);
   border-color: ${PROFESSIONAL_COLORS.border};
 }
 `;

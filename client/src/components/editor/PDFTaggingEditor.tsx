@@ -7,6 +7,7 @@ import { HotkeyHandler } from './HotkeyHandler';
 import { TagInputModal } from './TagInputModal';
 import { SealConfigDialog } from './SealConfigDialog';
 import { Badge } from '../ui/badge';
+import { TAG_TYPE_CONFIG } from '../../lib/constants/tagConstants';
 import { useToast } from '@/hooks/use-toast';
 import { useTagOperations } from '../../hooks/editor/useTagOperations';
 import { useStreamlinedTextInputs } from '../../hooks/editor/useStreamlinedTextInputs';
@@ -98,6 +99,12 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
 
   // Flag to suppress global click handler after placing text input
   const [justPlacedTextInput, setJustPlacedTextInput] = useState(false);
+  
+  // Get current page and scale factor
+  const currentPage = useEditorStore.getState().viewer.currentPage || 1;
+  const scaleFactor = useEditorStore.getState().viewer.zoomLevel || 1;
+  
+
 
   // Store state - MOVED UP to fix initialization order
   const {
@@ -127,6 +134,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     getTagDimensions
   } = useEditorStore();
 
+
+
   // Handle page load from PDFViewer to get canvas element
   const handlePageLoad = useCallback((pageNumber: number, canvas: HTMLCanvasElement, scaleFactor: number) => {
     console.log(`📄 Canvas updated for page ${pageNumber}:`, canvas);
@@ -150,6 +159,9 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       
       // Load tags for the new document
       await loadTagsForDocument(document.id);
+      
+      // Load whiteout overlays for the new document
+      await useEditorStore.getState().loadWhiteoutOverlays(document.id);
       
       // Load streamlined text inputs for this document
       loadTextInputsFromTags(getDocumentTags(document.id));
@@ -203,6 +215,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         return;
       }
 
+
+
       // Check if the click is outside any text input or control
       const target = e.target as HTMLElement;
       
@@ -233,7 +247,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     
     document.addEventListener('click', handleGlobalClick);
     return () => document.removeEventListener('click', handleGlobalClick);
-  }, [selectedTextInputId, selectTextInput, justPlacedTextInput]);
+  }, [selectedTextInputId, selectTextInput, justPlacedTextInput, scaleFactor, currentPage]);
 
   // Store WebSocket instance in editor store for global access - stabilized to prevent infinite loops
   const stableWebSocket = useMemo(() => {
@@ -372,8 +386,9 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
           );
           loadTextInputsFromTags(currentDocTags);
           
-          // ✅ SIMPLIFIED: Whiteout tags now render as regular tags, no need for separate overlay system
-          console.log('✅ Whiteout tags will render as regular tags');
+          // Load whiteout overlays for the current document
+          await useEditorStore.getState().loadWhiteoutOverlays(documents[0]?.id);
+          
           console.log(`📄 Loaded ${currentDocTags.length} tags for current document ${documents[0]?.fileName}`);
           
           if (validTags.length > 0) {
@@ -1007,6 +1022,54 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       );
       setTags(updatedTags);
 
+      // Auto-resize tag based on new content
+      const contentValue = typeof content === 'string' ? content : content.value || '';
+      if (contentValue.trim().length > 0) {
+        // Calculate optimal dimensions for the tag
+        const { calculateOptimalWidth, calculateOptimalHeight } = await import('@/lib/constants/tagConstants');
+        
+        const optimalWidth = calculateOptimalWidth(contentValue, 12, 'Arial');
+        const optimalHeight = calculateOptimalHeight(contentValue, 12);
+        
+        // Get current tag dimensions
+        const currentTag = tags.find(tag => tag.id === selectedTagForInput.id);
+        if (currentTag) {
+          const currentWidth = currentTag.coordinates.width || 100;
+          const currentHeight = currentTag.coordinates.height || 30;
+          
+          // Use the larger of current dimensions or optimal dimensions
+          const newWidth = Math.max(currentWidth, optimalWidth);
+          const newHeight = Math.max(currentHeight, optimalHeight);
+          
+          // Only update if dimensions need to change
+          if (newWidth !== currentWidth || newHeight !== currentHeight) {
+            // Update tag coordinates
+            const updateResponse = await fetch(`/api/editor/session/${sessionId}/tag/${selectedTagForInput.id}/coordinates`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+              },
+              body: JSON.stringify({
+                width: newWidth,
+                height: newHeight
+              })
+            });
+            
+            if (updateResponse.ok) {
+              console.log('✅ Tag auto-resized based on content:', {
+                tagId: selectedTagForInput.id,
+                oldWidth: currentWidth,
+                oldHeight: currentHeight,
+                newWidth,
+                newHeight,
+                content: contentValue.substring(0, 50)
+              });
+            }
+          }
+        }
+      }
+
       toast({
         title: "Tag Completed",
         description: "Content saved successfully.",
@@ -1036,6 +1099,18 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       hasCurrentDocument: !!currentDocument
     });
     
+            // Special debugging for disclosure tags
+        if (selectedTagType === 'O') {
+          console.log('📋 DISCLOSURE TAG PLACEMENT DEBUG:', {
+            selectedTagType,
+            selectedTagTypeType: typeof selectedTagType,
+            selectedUser: selectedUser?.displayName,
+            currentDocument: currentDocument?.fileName,
+            coordinates,
+            mode
+          });
+        }
+    
     if (!selectedTagType || !selectedUser || !currentDocument) {
       console.error('❌ Missing required data for tag placement:', {
         selectedTagType,
@@ -1056,14 +1131,20 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         // Use professional fixed dimensions for text tags
         const dimensions = getTagDimensions('T');
         
-        console.log('📏 Using professional fixed dimensions for text tag:', dimensions);
+        console.log('🔍 DEBUG: Text tag placement - dimensions from getTagDimensions:', dimensions);
+        console.log('🔍 DEBUG: TAG_TYPE_CONFIG T dimensions:', TAG_TYPE_CONFIG['T']);
+        console.log('🔍 DEBUG: Original coordinates:', coordinates);
         
         // Use the fixed dimensions instead of coordinates from click
         const textInputCoordinates = {
           ...coordinates,
           width: dimensions?.width || 200,
-          height: dimensions?.height || 32
+          height: dimensions?.height || 40
         };
+        
+        console.log('🔍 DEBUG: Final textInputCoordinates being sent to server:', textInputCoordinates);
+        console.log('🔍 DEBUG: width being sent:', textInputCoordinates.width);
+        console.log('🔍 DEBUG: height being sent:', textInputCoordinates.height);
         
         console.log('📏 Using dimensions for text tag:', dimensions);
         
@@ -1131,12 +1212,27 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         });
         
         // Use professional fixed dimensions for all tag types
+        console.log('🔍 About to get dimensions for tagType:', selectedTagType, 'type:', typeof selectedTagType);
         const tagDimensions = getTagDimensions(selectedTagType);
+        console.log('🔍 Retrieved tagDimensions:', tagDimensions);
+        
         const professionalCoordinates = {
           ...coordinates,
           width: tagDimensions?.width || 120,
-          height: tagDimensions?.height || 32
+          height: tagDimensions?.height || 30
         };
+        
+        console.log('🔍 Final professionalCoordinates:', professionalCoordinates);
+        
+        // Special debugging for disclosure tags
+        if (selectedTagType === 'O') {
+          console.log('📋 DISCLOSURE TAG - About to call placeTag with:', {
+            documentId: currentDocument.id,
+            tagType: selectedTagType,
+            coordinates: professionalCoordinates,
+            assignedUserId: selectedUser.userId
+          });
+        }
         
         await placeTag({
           documentId: currentDocument.id,
@@ -1146,6 +1242,11 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         });
         
         console.log('✅ Tag placed successfully!');
+        
+        // Special confirmation for disclosure tags
+        if (selectedTagType === 'O') {
+          console.log('📋 DISCLOSURE TAG - Successfully placed!');
+        }
         
         // Auto-switch back to pointer mode after placing tag
         setSelectedTagType(null);
@@ -1377,18 +1478,23 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
 
         {/* Right Column - Simplified Controls */}
         <div className="w-72 bg-white border-l border-gray-200">
-          <div className="h-full">
-            <TaggingToolbar
-              participants={participants}
-              sessionId={sessionId}
-              mode={mode}
-              onDocumentSwitch={handleDocumentSwitch}
-              onSessionComplete={handleSessionComplete}
-              liveSessionState={liveSessionState}
-              onSetActiveUser={onSetActiveUser}
-              canControlSession={mode === 'signing' && (currentUser?.userType === 'notary' || currentUser?.role === 'admin')}
-              className="h-full"
-            />
+          <div className="h-full flex flex-col">
+
+            
+            {/* Tagging Toolbar */}
+            <div className="flex-1">
+              <TaggingToolbar
+                participants={participants}
+                sessionId={sessionId}
+                mode={mode}
+                onDocumentSwitch={handleDocumentSwitch}
+                onSessionComplete={handleSessionComplete}
+                liveSessionState={liveSessionState}
+                onSetActiveUser={onSetActiveUser}
+                canControlSession={mode === 'signing' && (currentUser?.userType === 'notary' || currentUser?.role === 'admin')}
+                className="h-full"
+              />
+            </div>
           </div>
         </div>
       </div>
