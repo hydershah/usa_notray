@@ -19,6 +19,9 @@ import {
   CheckCircle,
   XCircle
 } from 'lucide-react';
+import { useAuth } from '@/hooks/use-auth';
+import { apiRequest } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 
 interface UserData {
   id: number;
@@ -158,7 +161,9 @@ const UserTable: React.FC<{
   loading: boolean;
   onViewUser: (user: UserData) => void;
   onEmailUser: (user: UserData) => void;
-}> = ({ users, loading, onViewUser, onEmailUser }) => {
+  onApproveUser: (user: UserData) => void;
+  onRejectUser: (user: UserData) => void;
+}> = ({ users, loading, onViewUser, onEmailUser, onApproveUser, onRejectUser }) => {
   const getStatusBadge = (user: UserData) => {
     if (user.approvalStatus === 'pending') {
       return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">Pending</Badge>;
@@ -273,6 +278,30 @@ const UserTable: React.FC<{
                     >
                       <Mail className="h-4 w-4" />
                     </Button>
+                    
+                    {/* Approval/Rejection buttons for pending users */}
+                    {user.approvalStatus === 'pending' && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onApproveUser(user)}
+                          className="h-8 w-8 p-0 text-green-600 hover:text-green-700 hover:bg-green-50"
+                          title="Approve User"
+                        >
+                          <CheckCircle className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onRejectUser(user)}
+                          className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          title="Reject User"
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -285,6 +314,8 @@ const UserTable: React.FC<{
 };
 
 export function AdminUsers() {
+  const { user } = useAuth();
+  const { toast } = useToast();
   const [allUsers, setAllUsers] = useState<UserData[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
   const [isUserDetailsModalOpen, setIsUserDetailsModalOpen] = useState(false);
@@ -343,6 +374,68 @@ export function AdminUsers() {
       setAllUsers([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleApproveUser = async (user: UserData) => {
+    try {
+      const response = await apiRequest("PATCH", `/api/users/${user.id}`, {
+        approvalStatus: 'approved',
+        isActive: true
+      });
+      
+      if (response.ok) {
+        toast({
+          title: "User Approved",
+          description: `${user.fullName} has been approved successfully.`,
+        });
+        fetchUsersData(); // Refresh the list
+      } else {
+        const errorData = await response.json();
+        toast({
+          title: "Error",
+          description: errorData.error || "Failed to approve user",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error approving user:', error);
+      toast({
+        title: "Error",
+        description: "Failed to approve user. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleRejectUser = async (user: UserData) => {
+    try {
+      const response = await apiRequest("PATCH", `/api/users/${user.id}`, {
+        approvalStatus: 'rejected',
+        isActive: false
+      });
+      
+      if (response.ok) {
+        toast({
+          title: "User Rejected",
+          description: `${user.fullName} has been rejected.`,
+        });
+        fetchUsersData(); // Refresh the list
+      } else {
+        const errorData = await response.json();
+        toast({
+          title: "Error",
+          description: errorData.error || "Failed to reject user",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error rejecting user:', error);
+      toast({
+        title: "Error",
+        description: "Failed to reject user. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -410,6 +503,8 @@ export function AdminUsers() {
         loading={loading}
         onViewUser={handleViewUser}
         onEmailUser={handleEmailUser}
+        onApproveUser={handleApproveUser}
+        onRejectUser={handleRejectUser}
       />
 
       {/* User Details Modal */}

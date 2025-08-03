@@ -513,8 +513,8 @@ export function Sidebar() {
                 <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
                 <span className="text-xs font-medium text-gray-600">System Online</span>
               </div>
-              <p className="text-xs text-gray-500 font-medium">© 2024 Sharp Note</p>
-              <p className="text-xs text-gray-400">Digital Notarization Platform</p>
+              <p className="text-xs text-gray-500 font-medium">© 2024 Digital Notarization</p>
+              <p className="text-xs text-gray-400">Professional Platform</p>
             </div>
           </div>
         </div>

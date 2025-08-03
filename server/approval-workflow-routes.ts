@@ -206,7 +206,12 @@ export function registerApprovalWorkflowRoutes(app: Express) {
    */
   app.get('/api/approval-workflow/admin-queue', verifyToken, async (req: any, res) => {
     try {
-      if (req.user.role !== 'admin' && !req.user.isAdmin) {
+      // Check if user has admin privileges (either role is admin or has admin privileges)
+      const hasAdminAccess = req.user.role === 'admin' || 
+                           req.user.isAdmin || 
+                           (req.user.privileges && req.user.privileges.includes('admin'));
+      
+      if (!hasAdminAccess) {
         return res.status(403).json({ error: 'Only admins can access admin approval queue' });
       }
 

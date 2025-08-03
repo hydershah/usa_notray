@@ -100,15 +100,11 @@ export function Header() {
             <div className="relative">
               <img 
                 src="/logo.jpeg" 
-                alt="Sharp Note Logo" 
+                alt="Digital Notarization Logo" 
                 className="h-10 w-auto object-contain"
               />
             </div>
             <div className="ml-3">
-              <h1 className="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
-                Sharp Note
-              </h1>
-              <p className="text-xs font-medium text-gray-500 hidden sm:block">Digital Notarization</p>
             </div>
           </div>
           

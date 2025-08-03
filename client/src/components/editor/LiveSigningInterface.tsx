@@ -798,7 +798,7 @@ export const LiveSigningInterface = forwardRef<
                 <DailyVideoConference
                   ref={ref}
                   sessionId={sessionId}
-                  jobId={parseInt(sessionId.split('_')[1]) || parseInt(sessionId) || 1}
+                  jobId={parseInt(sessionId.split('_')[1]) || parseInt(sessionId) || jobData?.id || 0}
                   currentUser={{
                     id: parseInt(currentUserId),
                     name: currentUser?.displayName || 'Unknown User',
