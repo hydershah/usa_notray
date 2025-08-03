@@ -189,6 +189,14 @@ const menuItems: MenuItem[] = [
         description: 'User and company approvals'
       },
       {
+        id: 'approvals-hub',
+        label: 'Approvals Hub',
+        icon: Activity,
+        path: '/admin/approvals-hub',
+        roles: ['admin'],
+        description: 'Centralized approvals dashboard'
+      },
+      {
         id: 'job-requests',
         label: 'Job Requests',
         icon: FileText,

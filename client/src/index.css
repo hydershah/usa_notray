@@ -200,10 +200,15 @@
 .completed-tag-transparent:focus,
 .completed-tag-transparent:active,
 div.completed-tag-transparent,
-[class*="completed-tag-transparent"] {
+[class*="completed-tag-transparent"],
+div[class*="completed-tag-transparent"] {
   background-color: transparent !important;
   background: transparent !important;
+  background-image: none !important;
   border: none !important;
   box-shadow: none !important;
   opacity: 1 !important;
+  /* Additional properties to ensure transparency */
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }

@@ -294,6 +294,13 @@ export function AdminUsers() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Check for URL parameters to set initial filters
+    const urlParams = new URLSearchParams(window.location.search);
+    const filterParam = urlParams.get('filter');
+    if (filterParam === 'pending') {
+      setStatusFilter('pending');
+    }
+    
     fetchUsersData();
   }, []);
 

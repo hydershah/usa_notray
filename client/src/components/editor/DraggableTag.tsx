@@ -140,8 +140,8 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
     
     if (isInSigningMode) {
       if (isCompleted) {
-        backgroundColor = 'rgba(34, 197, 94, 0.1)';
-        borderColor = '#22c55e';
+        backgroundColor = 'transparent'; // Make completed tags transparent
+        borderColor = 'transparent';
         cursor = 'default';
       } else if (isCurrentUserTag) {
         backgroundColor = 'rgba(59, 130, 246, 0.1)';

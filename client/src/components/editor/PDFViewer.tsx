@@ -194,17 +194,19 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   const tagStyle = useMemo(() => {
     const config = TAG_TYPE_CONFIG[tag.tagType];
     const backgroundColor = hasContent 
-      ? PROFESSIONAL_COLORS.completed 
+      ? 'transparent' // Make filled tags transparent
       : config?.color || PROFESSIONAL_COLORS.background;
     const borderColor = hasContent 
-      ? PROFESSIONAL_COLORS.borderCompleted
+      ? 'transparent' // Make border transparent for filled tags
       : isSelected
           ? PROFESSIONAL_COLORS.borderActive 
           : config?.borderColor || PROFESSIONAL_COLORS.border;
     
     return {
       backgroundColor,
-      border: `1.5px solid ${borderColor}`,
+      border: hasContent 
+        ? 'none' // No border for filled tags
+        : `1.5px solid ${borderColor}`,
       borderRadius: LAYOUT.borderRadius.base,
       color: hasContent 
         ? PROFESSIONAL_COLORS.text 
@@ -219,7 +221,7 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       boxShadow: isSelected 
         ? `0 0 0 2px ${PROFESSIONAL_COLORS.borderActive}, ${LAYOUT.shadow.base}` 
         : hasContent 
-          ? LAYOUT.shadow.sm 
+          ? 'none' // No shadow for filled tags
           : 'none',
       // DocuSign style enhancements
       position: 'relative' as const,

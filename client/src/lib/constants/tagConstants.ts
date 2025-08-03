@@ -285,31 +285,31 @@ export const getTagStyle = (tagType: TagType, isSelected = false, isCompleted = 
   if (!config) {
     console.warn(`Unknown tag type: ${tagType}, using default style`);
     return {
-      backgroundColor: isCompleted ? PROFESSIONAL_COLORS.completed : PROFESSIONAL_COLORS.background,
+      backgroundColor: isCompleted ? 'transparent' : PROFESSIONAL_COLORS.background,
       borderColor: isSelected ? PROFESSIONAL_COLORS.borderActive : PROFESSIONAL_COLORS.border,
       color: PROFESSIONAL_COLORS.text,
-      borderWidth: '1.5px',
+      borderWidth: isCompleted ? '0px' : '1.5px',
       borderStyle: 'solid',
       borderRadius: LAYOUT.borderRadius.base,
       padding: LAYOUT.spacing.sm,
       fontFamily: TYPOGRAPHY.fontFamily,
       fontSize: TYPOGRAPHY.fontSize.tag,
       fontWeight: TYPOGRAPHY.fontWeight.medium,
-      boxShadow: isSelected ? LAYOUT.shadow.base : 'none'
+      boxShadow: isCompleted ? 'none' : (isSelected ? LAYOUT.shadow.base : 'none')
     };
   }
   return {
-    backgroundColor: isCompleted ? PROFESSIONAL_COLORS.completed : config.color,
+    backgroundColor: isCompleted ? 'transparent' : config.color,
     borderColor: isSelected ? PROFESSIONAL_COLORS.borderActive : config.borderColor,
     color: PROFESSIONAL_COLORS.text,
-    borderWidth: '1.5px',
+    borderWidth: isCompleted ? '0px' : '1.5px',
     borderStyle: 'solid',
     borderRadius: LAYOUT.borderRadius.base,
     padding: LAYOUT.spacing.sm,
     fontFamily: TYPOGRAPHY.fontFamily,
     fontSize: TYPOGRAPHY.fontSize.tag,
     fontWeight: TYPOGRAPHY.fontWeight.medium,
-    boxShadow: isSelected ? LAYOUT.shadow.base : 'none'
+    boxShadow: isCompleted ? 'none' : (isSelected ? LAYOUT.shadow.base : 'none')
   };
 };
 

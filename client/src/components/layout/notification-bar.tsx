@@ -13,7 +13,10 @@ import {
   Calendar,
   ChevronRight,
   Building,
-  User
+  User,
+  FileText,
+  Shield,
+  CheckSquare
 } from 'lucide-react';
 
 interface NotificationBarProps {
@@ -22,12 +25,13 @@ interface NotificationBarProps {
 
 interface PendingTask {
   id: string;
-  type: 'job_invitation' | 'verification_required' | 'profile_approval' | 'document_review';
+  type: 'job_invitation' | 'verification_required' | 'profile_approval' | 'document_review' | 'job_request_approval' | 'company_approval';
   title: string;
   count: number;
   priority: 'low' | 'medium' | 'high' | 'urgent';
   path: string;
   icon: any;
+  description?: string;
 }
 
 export function NotificationBar({ className }: NotificationBarProps) {
@@ -70,7 +74,7 @@ export function NotificationBar({ className }: NotificationBarProps) {
                 tasks.push({
                   id: 'job_invitations',
                   type: 'job_invitation',
-                  title: 'Job Invitations',
+                  title: 'Job Approvals',
                   count: pendingInvitations.length,
                   priority: pendingInvitations.some((job: any) => {
                     if (!job.selected_date) return false;
@@ -79,8 +83,9 @@ export function NotificationBar({ className }: NotificationBarProps) {
                     tomorrow.setDate(tomorrow.getDate() + 1);
                     return jobDate <= tomorrow;
                   }) ? 'urgent' : 'high',
-                  path: '/dashboard?tab=invitations',
-                  icon: Briefcase
+                  path: '/notary-approval-dashboard',
+                  icon: Briefcase,
+                  description: 'Jobs waiting for your approval'
                 });
               }
             }
@@ -90,10 +95,10 @@ export function NotificationBar({ className }: NotificationBarProps) {
         }
       }
 
-      // Admin-specific notifications - ONLY actionable items
+      // Admin-specific notifications - Categorized by approval type
       if (user.role === 'admin' || user.isAdmin) {
         try {
-          // Use the main users endpoint and filter locally for more reliability
+          // User Profile Approvals
           const usersResponse = await fetch('/api/users', {
             headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
           });
@@ -108,21 +113,98 @@ export function NotificationBar({ className }: NotificationBarProps) {
                 (u.role === 'notary' && u.approvalStatus === 'pending')
               );
               
-              if (pendingUsers.length > 0 && pendingUsers.length <= 50) { // Cap at 50 for safety
+              if (pendingUsers.length > 0 && pendingUsers.length <= 50) {
                 tasks.push({
                   id: 'user_approvals',
                   type: 'profile_approval',
-                  title: 'User Approvals',
+                  title: 'User Profile Approvals',
                   count: pendingUsers.length,
                   priority: 'high',
-                  path: '/admin/users',
-                  icon: Users
+                  path: '/admin/users?filter=pending',
+                  icon: Users,
+                  description: 'Users waiting for profile approval'
                 });
               }
             }
           }
+
+          // Job Request Approvals
+          try {
+            const jobRequestsResponse = await fetch('/api/job-requests?status=pending', {
+              headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            });
+            
+            if (jobRequestsResponse.ok) {
+              const jobRequests = await jobRequestsResponse.json();
+              if (Array.isArray(jobRequests) && jobRequests.length > 0) {
+                tasks.push({
+                  id: 'job_request_approvals',
+                  type: 'job_request_approval',
+                  title: 'Job Request Approvals',
+                  count: jobRequests.length,
+                  priority: 'medium',
+                  path: '/admin/job-requests?status=pending',
+                  icon: FileText,
+                  description: 'Signer requests waiting for approval'
+                });
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching job requests:', error);
+          }
+
+          // Company Approvals
+          try {
+            const companiesResponse = await fetch('/api/companies?status=pending', {
+              headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            });
+            
+            if (companiesResponse.ok) {
+              const companies = await companiesResponse.json();
+              if (Array.isArray(companies) && companies.length > 0) {
+                tasks.push({
+                  id: 'company_approvals',
+                  type: 'company_approval',
+                  title: 'Company Approvals',
+                  count: companies.length,
+                  priority: 'medium',
+                  path: '/admin/companies?status=pending',
+                  icon: Building,
+                  description: 'Companies waiting for approval'
+                });
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching company approvals:', error);
+          }
+
+          // Notary Job Approvals (for admin oversight)
+          try {
+            const notaryApprovalsResponse = await fetch('/api/approval-workflow/admin-queue', {
+              headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            });
+            
+            if (notaryApprovalsResponse.ok) {
+              const notaryApprovals = await notaryApprovalsResponse.json();
+              if (Array.isArray(notaryApprovals) && notaryApprovals.length > 0) {
+                tasks.push({
+                  id: 'notary_job_approvals',
+                  type: 'job_invitation',
+                  title: 'Notary Job Approvals',
+                  count: notaryApprovals.length,
+                  priority: 'high',
+                  path: '/admin/notary-approvals',
+                  icon: Shield,
+                  description: 'Jobs waiting for notary approval'
+                });
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching notary job approvals:', error);
+          }
+
         } catch (error) {
-          console.error('Error fetching user approvals:', error);
+          console.error('Error fetching admin approvals:', error);
         }
       }
 
@@ -204,7 +286,8 @@ export function NotificationBar({ className }: NotificationBarProps) {
                     variant="ghost"
                     size="sm"
                     onClick={() => setLocation(task.path)}
-                    className="h-8 px-3 bg-white/70 hover:bg-white hover:shadow-sm border border-orange-200/50 text-orange-900 transition-all duration-200"
+                    className="h-8 px-3 bg-white/70 hover:bg-white hover:shadow-sm border border-orange-200/50 text-orange-900 transition-all duration-200 group"
+                    title={task.description}
                   >
                     <div className="flex items-center gap-2">
                       <TaskIcon className="h-3.5 w-3.5" />
@@ -229,6 +312,15 @@ export function NotificationBar({ className }: NotificationBarProps) {
           </div>
           
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setLocation('/admin/approvals-hub')}
+              className="h-8 bg-white/70 hover:bg-white border-orange-200 text-orange-900 hover:text-orange-950"
+            >
+              <span className="text-xs font-medium">Approvals Hub</span>
+              <ChevronRight className="h-3 w-3 ml-1" />
+            </Button>
             <Button
               variant="outline"
               size="sm"

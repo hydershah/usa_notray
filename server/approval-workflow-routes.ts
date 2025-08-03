@@ -201,6 +201,60 @@ export function registerApprovalWorkflowRoutes(app: Express) {
   });
 
   /**
+   * GET /api/approval-workflow/admin-queue
+   * Get all pending notary approvals for admin oversight
+   */
+  app.get('/api/approval-workflow/admin-queue', verifyToken, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'admin' && !req.user.isAdmin) {
+        return res.status(403).json({ error: 'Only admins can access admin approval queue' });
+      }
+
+      const adminQueue = await db
+        .select({
+          id: notaryApprovalQueue.id,
+          jobId: notaryApprovalQueue.jobId,
+          notaryId: notaryApprovalQueue.notaryId,
+          titleCompany: notaryApprovalQueue.titleCompany,
+          priority: notaryApprovalQueue.priority,
+          deadline: notaryApprovalQueue.deadline,
+          specialInstructions: notaryApprovalQueue.specialInstructions,
+          createdAt: notaryApprovalQueue.createdAt,
+          // Job details
+          closingType: jobs.closingType,
+          propertyAddress: jobs.propertyAddressOne,
+          propertyCity: jobs.propertyCity,
+          propertyState: jobs.propertyState,
+          scheduledDate: jobs.selectedDate,
+          scheduledTime: jobs.selectedTime,
+          jobStatus: jobs.jobStatus,
+          notaryApprovalStatus: jobs.notaryApprovalStatus,
+          kbaRequired: jobs.kbaRequired,
+          requiresNSA: jobs.requiresNSA,
+          requiresSpanishSpeaking: jobs.requiresSpanishSpeaking,
+          // Notary details
+          notaryName: users.fullName,
+          notaryEmail: users.email,
+          notaryPhone: users.phoneNumber
+        })
+        .from(notaryApprovalQueue)
+        .innerJoin(jobs, eq(notaryApprovalQueue.jobId, jobs.id))
+        .innerJoin(users, eq(notaryApprovalQueue.notaryId, users.id))
+        .where(eq(jobs.notaryApprovalStatus, 'assigned_pending_approval'))
+        .orderBy(
+          desc(notaryApprovalQueue.priority),
+          asc(notaryApprovalQueue.deadline),
+          asc(notaryApprovalQueue.createdAt)
+        );
+
+      res.json(adminQueue);
+    } catch (error) {
+      console.error('Error fetching admin approval queue:', error);
+      res.status(500).json({ error: 'Failed to fetch admin approval queue' });
+    }
+  });
+
+  /**
    * GET /api/approval/stats
    * Get approval statistics for the notary
    */

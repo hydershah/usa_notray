@@ -476,6 +476,30 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      <Route path="/admin/approvals-hub">
+        <ProtectedRoute allowedRoles={['admin']}>
+          <MainLayout>
+            <ErrorBoundary fallback={<LoadingFallback />}>
+              <React.Suspense fallback={<LoadingFallback />}>
+                {React.createElement(React.lazy(() => import("@/pages/admin/approvals-hub")))}
+              </React.Suspense>
+            </ErrorBoundary>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/notary-approvals">
+        <ProtectedRoute allowedRoles={['admin']}>
+          <MainLayout>
+            <ErrorBoundary fallback={<LoadingFallback />}>
+              <React.Suspense fallback={<LoadingFallback />}>
+                {React.createElement(React.lazy(() => import("@/pages/admin/notary-approvals")))}
+              </React.Suspense>
+            </ErrorBoundary>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+
       <Route path="/admin/verification">
         <ProtectedRoute allowedRoles={['admin']}>
           <MainLayout>
