@@ -88,7 +88,7 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
     console.log('🔍 sanitizeCoordinates - storeDimensions:', storeDimensions);
     
     const defaultDimensions = storeDimensions || (
-      tagType === 'W' ? { width: 100, height: 25 } :
+      tagType === 'W' ? { width: 150, height: 30 } : // FIXED: Use updated whiteout dimensions
       tagType === 'S' ? { width: 120, height: 35 } :
       tagType === 'E' ? { width: 60, height: 60 } :
       tagType === 'O' ? { width: 200, height: 50 } : // Disclosure tag dimensions

@@ -84,6 +84,10 @@ interface PDFViewerProps {
   currentUser?: SessionParticipant | null;
   isSyncLoading?: boolean;
   webSocket?: WebSocketConnection | null; // Add WebSocket for real-time updates
+  // Missing tags navigation props
+  highlightedTagId?: string;
+  incompleteTags?: string[];
+  onScrollToTag?: (tagId: string, pageNumber: number) => void;
 }
 
 interface TagRendererProps {
@@ -98,6 +102,8 @@ interface TagRendererProps {
   onTagClick?: (tag: DocumentTag, position: { x: number; y: number; width: number; height: number }) => void;
   mode?: string;
   onFontSizeChange?: (tagId: string, fontSize: number) => void;
+  isHighlighted?: boolean;
+  isMissing?: boolean;
 }
 
 const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
@@ -112,10 +118,13 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   onTagClick,
   mode,
   onFontSizeChange,
-  localFontSize
+  localFontSize,
+  isHighlighted = false,
+  isMissing = false
 }) => {
   const [imageLoadError, setImageLoadError] = React.useState(false);
   const [isDragging, setIsDragging] = React.useState(false);
+  const [dragCoords, setDragCoords] = React.useState<{x: number; y: number} | null>(null);
   const tagInfo = TAG_TYPE_INFO[tag.tagType];
   
   // Use local font size if available, otherwise fall back to stored font size
@@ -172,10 +181,11 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     const savedHeight = tag.coordinates.height || optimalDimensions.height;
     
     const coords = {
-      x: Math.round(tag.coordinates.x * scaleFactor),
-      y: Math.round(tag.coordinates.y * scaleFactor),
-      width: Math.round(savedWidth * scaleFactor),
-      height: Math.round(savedHeight * scaleFactor)
+      x: isDragging && dragCoords ? dragCoords.x : Math.round(tag.coordinates.x * scaleFactor),
+      y: isDragging && dragCoords ? dragCoords.y : Math.round(tag.coordinates.y * scaleFactor),
+      // For text tags, use fixed dimensions without scaling to maintain consistent 200x30 size
+      width: tag.tagType === 'T' ? 200 : Math.round(savedWidth * scaleFactor),
+      height: tag.tagType === 'T' ? 30 : Math.round(savedHeight * scaleFactor)
     };
     
     // Debug logging for all tags
@@ -196,42 +206,56 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   // Memoized style object to prevent recalculation on every render - DocuSign Style
   const tagStyle = useMemo(() => {
     const config = TAG_TYPE_CONFIG[tag.tagType];
-    const backgroundColor = hasContent 
+    let backgroundColor = hasContent 
       ? 'transparent' // Make filled tags transparent
       : config?.color || PROFESSIONAL_COLORS.background;
-    const borderColor = hasContent 
+    let borderColor = hasContent 
       ? 'transparent' // Make border transparent for filled tags
       : isSelected
           ? PROFESSIONAL_COLORS.borderActive 
           : config?.borderColor || PROFESSIONAL_COLORS.border;
+    let boxShadow = isSelected 
+      ? `0 0 0 2px ${PROFESSIONAL_COLORS.borderActive}, ${LAYOUT.shadow.base}` 
+      : hasContent 
+        ? 'none' // No shadow for filled tags
+        : 'none';
+
+    // Apply missing tag styling
+    if (isMissing && !hasContent) {
+      backgroundColor = '#fef3c7'; // Light orange background
+      borderColor = '#f59e0b'; // Orange border
+      boxShadow = '0 0 0 2px #f59e0b, 0 0 8px rgba(245, 158, 11, 0.3)'; // Orange glow
+    }
+    
+    // Apply highlighted styling (takes precedence over missing)
+    if (isHighlighted) {
+      boxShadow = '0 0 0 3px #3b82f6, 0 0 12px rgba(59, 130, 246, 0.5)'; // Blue glow
+    }
     
     return {
       backgroundColor,
       border: hasContent 
         ? 'none' // No border for filled tags
-        : `1.5px solid ${borderColor}`,
+        : `${isMissing && !hasContent ? '2px' : '1.5px'} solid ${borderColor}`,
       borderRadius: LAYOUT.borderRadius.base,
       color: hasContent 
         ? PROFESSIONAL_COLORS.text 
         : PROFESSIONAL_COLORS.textPlaceholder,
-      zIndex: isSelected ? 1000 : 100,
+      zIndex: isSelected ? 1000 : (isHighlighted || isMissing) ? 500 : 100,
       pointerEvents: 'auto' as const,
       cursor: canEdit ? 'grab' as const : 'default' as const,
       fontFamily: TYPOGRAPHY.fontFamily,
       fontSize: TYPOGRAPHY.fontSize.tag,
       fontWeight: TYPOGRAPHY.fontWeight.medium,
       transition: 'none', // Remove transitions during drag for better performance
-      boxShadow: isSelected 
-        ? `0 0 0 2px ${PROFESSIONAL_COLORS.borderActive}, ${LAYOUT.shadow.base}` 
-        : hasContent 
-          ? 'none' // No shadow for filled tags
-          : 'none',
+      boxShadow,
       // DocuSign style enhancements
       position: 'relative' as const,
       overflow: 'visible' as const, // Allow content to expand beyond container
-      minHeight: 'fit-content' as const // Ensure container fits content
+      minHeight: 'fit-content' as const, // Ensure container fits content
+      animation: isMissing && !hasContent ? 'pulse 2s infinite' : 'none'
     };
-  }, [hasContent, isSelected, canEdit, tag.tagType]);
+  }, [hasContent, isSelected, canEdit, tag.tagType, isMissing, isHighlighted]);
 
   const validateAndSanitizeCoordinates = (coords: any) => {
     const sanitized: any = {};
@@ -411,23 +435,23 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
 
   return (
     <Rnd
-      default={{
-        x: displayCoords.x,
-        y: displayCoords.y,
-        width: displayCoords.width,
-        height: displayCoords.height
-      }}
-      position={{
-        x: displayCoords.x,
-        y: displayCoords.y
-      }}
-      size={{
-        width: displayCoords.width,
-        height: displayCoords.height
+      size={{ width: displayCoords.width, height: displayCoords.height }}
+      position={{ x: displayCoords.x, y: displayCoords.y }}
+      onDrag={(e, d) => {
+        setIsDragging(true);
+        setDragCoords({ x: d.x, y: d.y });
       }}
       onDragStart={handleDragStart}
-      onDrag={handleDrag}
-      onDragStop={handleDragStop}
+      onDragStop={(e, d) => {
+        setIsDragging(false);
+        setDragCoords(null);
+        if (onUpdate && canEdit) {
+          onUpdate({
+            x: d.x / scaleFactor,
+            y: d.y / scaleFactor
+          });
+        }
+      }}
       onResize={handleResize}
       onResizeStop={handleResizeStop}
       enableResizing={{
@@ -528,12 +552,12 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
           width: '100%',
           height: '100%',
           display: 'flex',
-          alignItems: 'center',
+          alignItems: 'center', // SIMPLE CENTER: Center the text like PDF
           justifyContent: 'flex-start',
           overflow: 'visible', // Allow content to expand naturally
           textOverflow: 'clip', // Don't clip text
           whiteSpace: 'normal', // Allow text to wrap
-          padding: `${LAYOUT.tagPadding.vertical}px ${LAYOUT.tagPadding.horizontal}px`,
+          paddingLeft: '4px', // Same 4px left padding as text tags
           position: 'relative',
           wordWrap: 'break-word',
           overflowWrap: 'break-word'
@@ -634,30 +658,21 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     onDelete?: () => void;
     canEdit?: boolean;
   }> = ({ overlay, scaleFactor, onUpdate, onDelete, canEdit = false }) => {
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragCoords, setDragCoords] = useState<{x: number; y: number} | null>(null);
+    
     const displayCoords = {
-      x: overlay.coordinates.x * scaleFactor,
-      y: overlay.coordinates.y * scaleFactor,
+      x: isDragging && dragCoords ? dragCoords.x : overlay.coordinates.x * scaleFactor,
+      y: isDragging && dragCoords ? dragCoords.y : overlay.coordinates.y * scaleFactor,
       width: overlay.coordinates.width * scaleFactor,
       height: overlay.coordinates.height * scaleFactor
     };
 
     return (
       <Rnd
-        default={{
-          x: displayCoords.x,
-          y: displayCoords.y,
-          width: displayCoords.width,
-          height: displayCoords.height
-        }}
+        size={{ width: displayCoords.width, height: displayCoords.height }}
+        position={{ x: displayCoords.x, y: displayCoords.y }}
         onDrag={(e, d) => {
-          if (onUpdate && canEdit) {
-            onUpdate({
-              x: d.x / scaleFactor,
-              y: d.y / scaleFactor
-            });
-          }
-        }}
-        onDragStop={(e, d) => {
           if (onUpdate && canEdit) {
             onUpdate({
               x: d.x / scaleFactor,
@@ -701,9 +716,12 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
           backgroundColor: '#FFFFFF',
           border: canEdit ? '2px solid #3B82F6' : '1px solid #E5E7EB',
           borderRadius: '2px',
-          zIndex: 10, // Ensure it's above the PDF content
+          zIndex: 1000,
           cursor: canEdit ? 'move' : 'default',
-          boxShadow: canEdit ? '0 2px 4px rgba(59, 130, 246, 0.2)' : 'none'
+          boxShadow: canEdit ? '0 2px 4px rgba(59, 130, 246, 0.2)' : 'none',
+          opacity: 1,
+          pointerEvents: 'auto',
+          position: 'absolute'
         }}
         title="Whiteout overlay"
       >
@@ -784,7 +802,10 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   onSyncUsers,
   currentUser,
   isSyncLoading = false,
-  webSocket
+  webSocket,
+  highlightedTagId,
+  incompleteTags = [],
+  onScrollToTag
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRefs = useRef<HTMLCanvasElement[]>([]);
@@ -849,6 +870,41 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const [renderedPages, setRenderedPages] = useState<Set<number>>(new Set());
   const [scaleFactors, setScaleFactors] = useState<Map<number, number>>(new Map());
   const isMountedRef = useRef<boolean>(true);
+
+  // Scroll to tag functionality
+  const scrollToTag = useCallback((tagId: string, pageNumber: number) => {
+    const tag = tags.find(t => t.id === tagId);
+    if (!tag || !containerRef.current) return;
+
+    // First scroll to the page
+    const pageContainer = pageContainerRefs.current[pageNumber - 1];
+    if (pageContainer) {
+      const scrollContainer = containerRef.current;
+      const scrollTop = pageContainer.offsetTop - 100; // 100px offset from top
+      
+      scrollContainer.scrollTo({
+        top: scrollTop,
+        behavior: 'smooth'
+      });
+
+      // After scrolling, highlight the tag briefly
+      setTimeout(() => {
+        if (onScrollToTag) {
+          onScrollToTag(tagId, pageNumber);
+        }
+      }, 500); // Wait for scroll to complete
+    }
+  }, [tags, onScrollToTag]);
+
+  // Expose scroll to tag function for external use
+  React.useEffect(() => {
+    if (highlightedTagId) {
+      const tag = tags.find(t => t.id === highlightedTagId);
+      if (tag) {
+        scrollToTag(highlightedTagId, tag.coordinates.pageNumber);
+      }
+    }
+  }, [highlightedTagId, scrollToTag, tags]);
 
   // Create a stable reference for document switching
   const documentSwitchTimeoutRef = useRef<NodeJS.Timeout>();
@@ -1604,6 +1660,14 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         canPlaceTagsFromStore: editorMode.canPlaceTags,
         modeCheck: mode === 'tagging' || mode === 'signing',
         finalCanEditTags: editorMode.canPlaceTags && (mode === 'tagging' || mode === 'signing')
+      },
+      // Add immediate click position logging
+      clickPosition: {
+        clientX: event.clientX,
+        clientY: event.clientY,
+        target: event.currentTarget.tagName,
+        targetId: event.currentTarget.id,
+        targetClassName: event.currentTarget.className
       }
     });
     
@@ -1630,6 +1694,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     
     const canvasX = event.clientX - rect.left;
     const canvasY = event.clientY - rect.top;
+    
+
     
     // Validate mouse coordinates
     if (isNaN(canvasX) || isNaN(canvasY) || !isFinite(canvasX) || !isFinite(canvasY)) {
@@ -1665,33 +1731,44 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     let finalTagX: number;
     let finalTagY: number;
     
-    if (selectedTagType === 'T') {
-      // For text tags, position with a small offset so the text field appears just above the click point
-      // This makes text fields appear close to where you click but not too far up
-      finalTagX = Math.max(0, Math.round(pdfX));
-      finalTagY = Math.max(0, Math.round(pdfY - (dimensions.height * 0.2)));
-    } else {
-      // For other tags, use visual offset for proper alignment
-      const visualOffset = 8 / scaleFactor; // Border + padding offset divided by scale factor
-      finalTagX = Math.max(0, Math.round(pdfX - visualOffset));
-      
-      if (selectedTagType === 'S') {
-        // For signature tags, position so the bottom edge is closer to the pointer
-        // This makes signature tags appear closer to where you click
-        finalTagY = Math.max(0, Math.round(pdfY - (dimensions.height * 0.3)));
-      } else if (selectedTagType === 'D') {
-        // For date tags, position so the bottom edge is closer to the pointer
-        // This makes date tags appear closer to where you click
-        finalTagY = Math.max(0, Math.round(pdfY - (dimensions.height * 0.4)));
-      } else {
-        // For other tags, use the original positioning logic
-        finalTagY = Math.max(0, Math.round(pdfY - dimensions.height));
+    // Position tags with lower-left corner at cursor position
+    // Store coordinates as the lower-left corner for consistent PDF generation
+    finalTagX = Math.max(0, Math.round(pdfX));
+    finalTagY = Math.max(0, Math.round(pdfY)); // Store as lower-left corner
+    
+    // Debug: Log the exact coordinates being sent
+    console.log('🎯 TAG PLACEMENT DEBUG:', {
+      mousePosition: { x: event.clientX, y: event.clientY },
+      canvasPosition: { x: canvasX, y: canvasY },
+      pdfPosition: { x: pdfX, y: pdfY },
+      finalPosition: { x: finalTagX, y: finalTagY },
+      tagDimensions: dimensions,
+      selectedTagType
+    });
+    
+    // Add visual indicator at click position for debugging
+    const indicator = document.createElement('div');
+    indicator.style.position = 'absolute';
+    indicator.style.left = `${event.clientX - 5}px`;
+    indicator.style.top = `${event.clientY - 5}px`;
+    indicator.style.width = '10px';
+    indicator.style.height = '10px';
+    indicator.style.backgroundColor = 'red';
+    indicator.style.borderRadius = '50%';
+    indicator.style.zIndex = '9999';
+    indicator.style.pointerEvents = 'none';
+    document.body.appendChild(indicator);
+    
+    // Remove indicator after 3 seconds
+    setTimeout(() => {
+      if (document.body.contains(indicator)) {
+        document.body.removeChild(indicator);
       }
-    }
+    }, 3000);
     
     const coordinates: TagCoordinates = {
       x: finalTagX,
-      y: finalTagY,
+      y: finalTagY, // This is now the lower-left corner
       width: dimensions.width,
       height: dimensions.height,
       pageNumber
@@ -2087,7 +2164,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
             
             if (dragData) {
               const dragInfo = JSON.parse(dragData);
-              console.log('📄 Drag data received:', dragInfo);
+              console.log('�� Drag data received:', dragInfo);
               
               // Text input drop handling removed
               console.log('📄 Drop data received but text input handling is disabled');
@@ -2204,6 +2281,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                           mode={mode}
                           onFontSizeChange={updateTagFontSize}
                           localFontSize={localFontSizes.get(tag.id)}
+                          isHighlighted={highlightedTagId === tag.id}
+                          isMissing={incompleteTags.includes(tag.id)}
                         />
                       </div>
                     );
@@ -2220,8 +2299,12 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                         canEdit={canEditTags}
                         onUpdate={(coordinates) => {
                           console.log('⬜ Whiteout overlay updated:', overlay.id, coordinates);
-                          // Update the overlay in the store
-                          useEditorStore.getState().updateWhiteoutOverlay(overlay.id, coordinates);
+                          // Update overlay coordinates directly without validation conflicts
+                          const updatedCoordinates = {
+                            ...overlay.coordinates,
+                            ...coordinates
+                          };
+                          useEditorStore.getState().updateWhiteoutOverlay(overlay.id, { coordinates: updatedCoordinates });
                         }}
                         onDelete={() => {
                           console.log('⬜ Whiteout overlay deleted:', overlay.id);

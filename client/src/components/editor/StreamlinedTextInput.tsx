@@ -118,13 +118,28 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     });
   }, [scaleFactor, fixedDimensions.width, fixedDimensions.height]);
   
-  // Memoized display coordinates - use controlled size
-  const displayCoords = useMemo(() => ({
-    x: Math.round(coordinates.x * scaleFactor),
-    y: Math.round(coordinates.y * scaleFactor),
-    width: Math.round(controlledSize.width),
-    height: Math.round(controlledSize.height)
-  }), [coordinates.x, coordinates.y, scaleFactor, controlledSize.width, controlledSize.height]);
+  // Create display coordinates scaled for current zoom level
+  const displayCoords = {
+    x: coordinates.x * scaleFactor,
+    y: coordinates.y * scaleFactor,
+    // For text inputs, use fixed dimensions without scaling to maintain consistent 200x30 size
+    width: 200,
+    height: 30
+  };
+
+  // Simple resize and edit controls
+  const enableResizing = {
+    top: false,
+    right: true,
+    bottom: true,
+    left: false,
+    topRight: false,
+    bottomRight: true,
+    bottomLeft: false,
+    topLeft: false
+  };
+  
+  const canEdit = true; // Always allow editing for text inputs
   
   // Memoized professional styling
   const professionalStyle = useMemo(() => getTagStyle('T', isSelected, hasContent), [hasContent, isSelected]);
@@ -365,29 +380,14 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
 
   return (
     <Rnd
-      default={{
-        x: displayCoords.x,
-        y: displayCoords.y,
-        width: displayCoords.width,
-        height: displayCoords.height
-      }}
-      onDragStart={handleDragStart}
+      size={{ width: displayCoords.width, height: displayCoords.height }}
+      position={{ x: displayCoords.x, y: displayCoords.y }}
       onDrag={handleDrag}
       onDragStop={handleDragStop}
       onResize={handleResize}
       onResizeStop={handleResizeStop}
-      disableDragging={isEditing}
-      dragHandleClassName="drag-handle"
-      enableResizing={{
-        top: false,
-        right: true,
-        bottom: true,
-        left: false,
-        topRight: false,
-        bottomRight: true,
-        bottomLeft: false,
-        topLeft: false
-      }}
+      enableResizing={enableResizing}
+      disableDragging={!canEdit}
       bounds="parent"
       cancel=".no-drag"
       className={`
@@ -397,22 +397,17 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
         ${hasContent ? 'has-content' : 'empty'}
       `}
       style={{
-        position: 'absolute',
-        zIndex: isSelected ? 1000 : isDragging ? 999 : 100,
+        border: isSelected 
+          ? `2px solid ${PROFESSIONAL_COLORS.borderActive}` 
+          : hasContent 
+            ? 'none' 
+            : `1px solid ${PROFESSIONAL_COLORS.border}`,
+        borderRadius: LAYOUT.borderRadius.base,
+        backgroundColor: hasContent ? 'transparent' : PROFESSIONAL_COLORS.background,
         pointerEvents: 'auto',
-        backgroundColor: hasContent ? 'rgba(220, 252, 231, 0.8)' : 'rgba(255, 255, 255, 0.8)',
-        border: `1.5px solid ${isSelected ? PROFESSIONAL_COLORS.borderActive : hasContent ? PROFESSIONAL_COLORS.borderCompleted : PROFESSIONAL_COLORS.border}`,
-        borderRadius: '4px',
-        padding: '4px 8px',
-        cursor: isEditing ? 'text' : (isSelected ? 'pointer' : 'grab'),
-        outline: isSelected && !isEditing ? '2px solid #3b82f6' : 'none',
-        overflow: 'visible',
-        minWidth: 'fit-content',
-        minHeight: 'fit-content',
-        fontFamily: fontFamily,
-        fontSize: `${fontSize}px`,
-        fontWeight: TYPOGRAPHY.fontWeight.medium,
-        color: textColor
+        zIndex: isSelected ? 1000 : 100,
+        padding: '0', // SIMPLE: No padding on container
+        boxSizing: 'border-box'
       }}
     >
       <div
@@ -464,7 +459,10 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
               fontSize: `${fontSize}px`,
               fontWeight: TYPOGRAPHY.fontWeight.medium,
               color: textColor,
-              padding: '0'
+              padding: '0',
+              paddingLeft: '4px', // Same 4px left padding as PDF
+              textAlign: 'left',
+              lineHeight: '1'
             }}
           />
         ) : (
@@ -473,7 +471,9 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
               width: '100%',
               height: '100%',
               display: 'flex',
-              alignItems: 'center',
+              alignItems: 'center', // Same center alignment as working tags
+              justifyContent: 'flex-start',
+              paddingLeft: '4px', // Same 4px left padding as PDF processor
               overflow: 'visible',
               textOverflow: 'clip',
               whiteSpace: 'normal',
@@ -482,7 +482,8 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
               fontFamily: fontFamily,
               fontSize: `${fontSize}px`,
               wordWrap: 'break-word',
-              overflowWrap: 'break-word'
+              overflowWrap: 'break-word',
+              lineHeight: '1'
             }}
           >
             {hasContent ? inputValue : TAG_TYPE_CONFIG.T.placeholder}

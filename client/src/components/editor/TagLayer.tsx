@@ -68,10 +68,47 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   const fixedDimensions = getTagDimensions(tag.tagType);
   const displayCoords = {
     x: Math.round(tag.coordinates.x * scaleFactor),
-    y: Math.round(tag.coordinates.y * scaleFactor),
-    width: Math.round(fixedDimensions.width * scaleFactor),
-    height: Math.round(fixedDimensions.height * scaleFactor)
+    // For lower-left positioning, we need to subtract the height from the Y coordinate
+    y: Math.round((tag.coordinates.y - (tag.tagType === 'T' ? 30 : fixedDimensions.height)) * scaleFactor),
+    // For text tags, use fixed dimensions without scaling to maintain consistent 200x30 size
+    width: tag.tagType === 'T' ? 200 : Math.round(fixedDimensions.width * scaleFactor),
+    height: tag.tagType === 'T' ? 30 : Math.round(fixedDimensions.height * scaleFactor)
   };
+  
+  // Debug: Log the rendering coordinates
+  console.log('🎨 TAG RENDERING DEBUG:', {
+    tagType: tag.tagType,
+    originalCoordinates: tag.coordinates,
+    scaleFactor,
+    displayCoords,
+    fixedDimensions
+  });
+  
+  // Add visual indicator for debugging tag position
+  React.useEffect(() => {
+    if (tag.tagType === 'T') {
+      const indicator = document.createElement('div');
+      indicator.style.position = 'absolute';
+      indicator.style.left = `${displayCoords.x}px`;
+      indicator.style.top = `${displayCoords.y + displayCoords.height}px`; // Show where bottom-left should be
+      indicator.style.width = '8px';
+      indicator.style.height = '8px';
+      indicator.style.backgroundColor = 'blue';
+      indicator.style.borderRadius = '50%';
+      indicator.style.zIndex = '9998';
+      indicator.style.pointerEvents = 'none';
+      indicator.style.border = '2px solid white';
+      document.body.appendChild(indicator);
+      
+      // Remove indicator after 2 seconds
+      setTimeout(() => {
+        if (document.body.contains(indicator)) {
+          document.body.removeChild(indicator);
+        }
+      }, 2000);
+    }
+  }, [displayCoords.x, displayCoords.y, displayCoords.height, tag.tagType]);
+
 
   // Handle drag stop with snap-to-grid - DocuSign style
   const handleDragStop = useCallback((e: any, data: any) => {
@@ -113,7 +150,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   }, [onDelete]);
 
   // Professional styling based on tag state
-  const professionalStyle = getTagStyle(tag.tagType, hasContent, isSelected, false);
+  const professionalStyle = getTagStyle(tag.tagType, hasContent, isSelected);
 
   return (
     <Rnd
@@ -129,7 +166,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       disableDragging={!canModifyTag}
       enableResizing={false} // Professional fixed sizing - no resize
       bounds="parent"
-      onClick={(e) => {
+      onClick={(e: React.MouseEvent) => {
         e.stopPropagation();
           onSelect();
       }}

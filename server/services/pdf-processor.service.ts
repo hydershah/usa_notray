@@ -121,8 +121,9 @@ export class PDFProcessorService {
     pageHeight: number
   ): Promise<void> {
     try {
-      // Convert coordinates (PDF origin is bottom-left, but tags are positioned from top-left)
-      const pdfY = pageHeight - tag.y - tag.height;
+      // Convert coordinates (PDF origin is bottom-left, tags are stored as lower-left corner)
+      // Since tags are stored as lower-left corner, we need to convert to PDF's bottom-left
+      const pdfY = pageHeight - tag.y;
       
       const tagInfo = TAG_TYPES[tag.tagType as keyof typeof TAG_TYPES];
       
@@ -178,7 +179,9 @@ export class PDFProcessorService {
           break;
           
         default: // Text fields
-          this.drawTextField(page, tag.x, pdfY, tag.width, tag.height, content, currentFont, fontSize, textColor);
+          // SPECIFIC ADJUSTMENT: Text tags need a slight upward offset
+          const adjustedY = tag.tagType === 'T' ? pdfY + (fontSize * 0.1) : pdfY;
+          this.drawTextField(page, tag.x, adjustedY, tag.width, tag.height, content, currentFont, fontSize, textColor);
           break;
       }
       
@@ -206,10 +209,13 @@ export class PDFProcessorService {
   ): void {
     // No background rectangle - transparent background for clean appearance
     
+    // SIMPLE CENTER: Position text in the center of the container like the editor
+    const textY = y + (height / 2) - (fontSize / 4); // Center the text vertically
+    
     // Draw text with black color for consistency
     page.drawText(text, {
-      x: x + 4,
-      y: y + (height / 2) - (fontSize / 2),
+      x: x + 4, // Same 4px left padding as editor
+      y: textY,
       size: fontSize,
       font: font,
       color: rgb(0, 0, 0), // Force black text color
@@ -256,13 +262,18 @@ export class PDFProcessorService {
     width: number,
     height: number
   ): void {
+    // FIXED: Draw white rectangle to cover text
     page.drawRectangle({
       x: x,
       y: y,
       width: width,
       height: height,
-      color: rgb(1, 1, 1), // White
+      color: rgb(1, 1, 1), // Pure white
+      borderColor: rgb(0.9, 0.9, 0.9), // Light gray border for visibility
+      borderWidth: 1,
     });
+    
+    console.log(`⬜ Whiteout applied at (${x}, ${y}) with size ${width}x${height}`);
   }
 
   /**

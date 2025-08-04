@@ -225,8 +225,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Whiteout area',
     color: '#ffffff', // Pure white background for true whiteout
     borderColor: '#e5e7eb', // Light gray border
-    defaultWidth: 100,
-    defaultHeight: 25,
+    defaultWidth: 150, // INCREASED: More practical size for covering text
+    defaultHeight: 30, // INCREASED: Better height for text coverage
     minWidth: 50,
     minHeight: 20,
     allowResize: true,
@@ -239,7 +239,7 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     color: '#f8fafc', // Slightly lighter background
     borderColor: '#475569', // Darker border for better contrast
     defaultWidth: 200,    // Updated width for text tags
-    defaultHeight: 40,    // Updated height for text tags
+    defaultHeight: 30,    // Updated height for text tags
     minWidth: 100,
     minHeight: 20,        // Updated minimum height
     allowResize: true,

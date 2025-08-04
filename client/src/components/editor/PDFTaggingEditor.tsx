@@ -111,6 +111,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     session,
     currentDocument,
     selectedUser,
+    selectedTag,
     selectedTagType,
     tags,
     viewer,
@@ -131,7 +132,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     getCurrentDocumentTags,
     getDocumentTags,
     loadTagsForDocument,
-    getTagDimensions
+    getTagDimensions,
+    selectTag
   } = useEditorStore();
 
 
@@ -215,8 +217,6 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         return;
       }
 
-
-
       // Check if the click is outside any text input or control
       const target = e.target as HTMLElement;
       
@@ -230,6 +230,11 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       
       // Don't deselect if clicking on toolbar or controls
       if (target.closest('.tagging-toolbar') || target.closest('.tag-input-modal')) {
+        return;
+      }
+      
+      // Don't deselect if clicking on a tag (let tag click handler manage selection)
+      if (target.closest('.professional-tag') || target.closest('[data-tag-id]')) {
         return;
       }
       
@@ -248,6 +253,42 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     document.addEventListener('click', handleGlobalClick);
     return () => document.removeEventListener('click', handleGlobalClick);
   }, [selectedTextInputId, selectTextInput, justPlacedTextInput, scaleFactor, currentPage]);
+
+  // ✅ NEW: Clear text input selection when tag selection changes to a different tag
+  // This ensures no multi-selection conflicts between text inputs and tags
+  useEffect(() => {    
+    // If a tag is selected and it's not a text tag, clear text input selection
+    if (selectedTag && selectedTag.tagType !== 'T' && selectedTextInputId) {
+      console.log('🧹 Auto-clearing text input selection - non-text tag selected:', {
+        selectedTag: selectedTag.id,
+        tagType: selectedTag.tagType,
+        clearingTextInput: selectedTextInputId
+      });
+      selectTextInput(null);
+    }
+    
+    // If a text tag is selected, ensure the corresponding text input is selected
+    if (selectedTag && selectedTag.tagType === 'T') {
+      const matchingTextInput = textInputs.find(input => input.id === selectedTag.id.toString());
+      if (matchingTextInput && selectedTextInputId !== matchingTextInput.id) {
+        console.log('🔗 Syncing text input selection with text tag selection:', {
+          tagId: selectedTag.id,
+          textInputId: matchingTextInput.id
+        });
+        selectTextInput(matchingTextInput.id);
+      }
+    }
+  }, [selectedTag, selectedTextInputId, selectTextInput, textInputs]);
+
+  // ✅ CLEANUP: Clear text input selection when session changes or component unmounts
+  useEffect(() => {
+    return () => {
+      if (selectedTextInputId) {
+        console.log('🧹 Cleanup - clearing text input selection on unmount/session change');
+        selectTextInput(null);
+      }
+    };
+  }, [sessionId, selectedTextInputId, selectTextInput]);
 
   // Store WebSocket instance in editor store for global access - stabilized to prevent infinite loops
   const stableWebSocket = useMemo(() => {
@@ -772,8 +813,21 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
 
   // Handle tag click in signing mode - FIXED VERSION
   const handleTagClick = useCallback(async (tag: DocumentTag, position: { x: number; y: number; width: number; height: number }) => {
-    if (mode !== 'signing') return;
     
+    // ✅ CRITICAL FIX: Clear text input selection when clicking any tag
+    // This prevents the multi-selection issue where text tags stay selected
+    if (selectedTextInputId) {
+      console.log('🧹 Clearing text input selection before tag interaction:', selectedTextInputId);
+      selectTextInput(null);
+    }
+    
+    // Clear any existing tag selection first to prevent conflicts
+    const currentSelectedTag = useEditorStore.getState().selectedTag;
+    if (currentSelectedTag && currentSelectedTag.id !== tag.id) {
+      console.log('🧹 Clearing previous tag selection:', currentSelectedTag.id);
+      selectTag(null);
+    }
+
     console.log('🏷️ Tag click in PDFTaggingEditor:', {
       tagId: tag.id,
       tagType: tag.tagType,
@@ -1138,8 +1192,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         // Use the fixed dimensions instead of coordinates from click
         const textInputCoordinates = {
           ...coordinates,
-          width: dimensions?.width || 200,
-          height: dimensions?.height || 40
+          width: 200,  // Fixed width for text tags
+          height: 30   // Fixed height for text tags - must match PDFViewer calculation
         };
         
         console.log('🔍 DEBUG: Final textInputCoordinates being sent to server:', textInputCoordinates);
@@ -1185,9 +1239,17 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       if (selectedTagType === 'W') {
         console.log('⬜ Placing whiteout overlay directly...');
         
+        // Use fixed dimensions for whiteout like other tags
+        const whiteoutDimensions = getTagDimensions('W');
+        const whiteoutCoordinates = {
+          ...coordinates,
+          width: whiteoutDimensions?.width || 150,
+          height: whiteoutDimensions?.height || 30
+        };
+        
         await placeWhiteoutOverlay({
           documentId: currentDocument.id,
-          coordinates,
+          coordinates: whiteoutCoordinates,
           sessionId
         });
         
