@@ -145,7 +145,7 @@ export class VultrUploadHandler {
   }
 
   /**
-   * Handle video recording uploads to Vultr
+   * Handle video recording uploads to Vultr (for Daily.co recordings)
    */
   static async handleVideoRecordingUpload(
     fileBuffer: Buffer,

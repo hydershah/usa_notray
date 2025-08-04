@@ -86,6 +86,9 @@ const DailyVideoConference = forwardRef<
   
   const [showDailyInterface, setShowDailyInterface] = useState(false);
 
+    // Add a ref to track if video streams are already connected
+    const videoStreamsConnectedRef = useRef(false);
+    
     // Add a ref to track manual toggle operations
     const isManuallyTogglingRef = useRef(false);
     
@@ -233,6 +236,31 @@ const DailyVideoConference = forwardRef<
       };
     }, []);
 
+    // Monitor video element availability
+    useEffect(() => {
+      const checkVideoElement = () => {
+        const videoElement = videoRefs.current[0];
+        if (videoElement) {
+          console.log('✅ Video element found and ready:', {
+            element: videoElement,
+            readyState: videoElement.readyState,
+            videoWidth: videoElement.videoWidth,
+            videoHeight: videoElement.videoHeight
+          });
+        } else {
+          console.log('⏳ Video element not yet available');
+        }
+      };
+
+      // Check immediately
+      checkVideoElement();
+      
+      // Check after a short delay to allow for rendering
+      const timer = setTimeout(checkVideoElement, 100);
+      
+      return () => clearTimeout(timer);
+    }, [participantStates[0]]); // Re-run when participant state changes
+
     // Update participant count when participants change
     useEffect(() => {
       const otherParticipants = participants.filter(p => {
@@ -253,16 +281,78 @@ const DailyVideoConference = forwardRef<
       }));
     }, []);
 
-    // Connect video streams to custom UI elements
-    const connectVideoStreams = useCallback(() => {
+    // Helper function to check if video element is ready
+    const isVideoElementReady = useCallback(() => {
+      const videoElement = videoRefs.current[0];
+      return videoElement && videoElement.readyState >= 0;
+    }, []);
+
+    // Helper function to safely get video element
+    const getVideoElement = useCallback((index: number): HTMLVideoElement | null => {
+      try {
+        const element = videoRefs.current[index];
+        if (element && element instanceof HTMLVideoElement) {
+          return element;
+        }
+        return null;
+      } catch (error) {
+        // Silently handle errors to prevent console noise
+        return null;
+      }
+    }, []);
+
+    // Helper function to wait for video element with timeout
+    const waitForVideoElement = useCallback((timeout = 2000) => {
+      return new Promise<HTMLVideoElement | null>((resolve) => {
+        const startTime = Date.now();
+        
+        const checkElement = () => {
+          try {
+            const videoElement = getVideoElement(0);
+            if (videoElement) {
+              console.log('✅ Video element is ready:', {
+                element: videoElement,
+                readyState: videoElement.readyState,
+                videoWidth: videoElement.videoWidth,
+                videoHeight: videoElement.videoHeight,
+                timeWaited: Date.now() - startTime
+              });
+              resolve(videoElement);
+              return;
+            }
+            
+            const elapsed = Date.now() - startTime;
+            if (elapsed < timeout) {
+              setTimeout(checkElement, 100);
+            } else {
+              console.log('⏳ Timeout waiting for video element');
+              resolve(null);
+            }
+          } catch (error) {
+            // Silently handle errors to prevent console noise
+            resolve(null);
+          }
+        };
+        
+        checkElement();
+      });
+    }, [participantStates, isVideoActive, isConnected, getVideoElement]);
+
+    const connectVideoStreams = useCallback(async () => {
       if (!callObjectRef.current) {
-        console.log('🔍 No call object available for connecting video streams');
+        console.warn('⚠️ No Daily.co call object available for video stream connection');
         return;
       }
       
       // Don't interfere if user is manually toggling video/audio
       if (isManuallyTogglingRef.current) {
         console.log('⏸️ Skipping video stream connection - manual toggle in progress');
+        return;
+      }
+      
+      // Prevent infinite loops by checking if streams are already connected
+      if (videoStreamsConnectedRef.current) {
+        console.log('⏸️ Video streams already connected, skipping reconnection');
         return;
       }
 
@@ -283,28 +373,23 @@ const DailyVideoConference = forwardRef<
         
         // Connect local video (current user - box 0)
         if (localParticipant) {
-          // Check if participant state is initialized
-          const currentState = participantStates[0];
-          if (!currentState?.name) {
-            console.log('🔄 Initializing current user state before connecting video...');
-            updateParticipantState(0, {
-              name: currentUser.name || 'You',
-              role: currentUser.role || 'user',
-              isLoading: false,
-              isConnected: false,
-              hasVideo: false,
-              error: null
-            });
-            
-            // Retry after a brief delay to allow state update and re-render
-            setTimeout(() => {
-              console.log('🔄 Retrying connectVideoStreams after state initialization...');
-              connectVideoStreams();
-            }, 100);
-            return;
-          }
+          // Always initialize current user state first
+          console.log('🔄 Initializing current user state...');
+          updateParticipantState(0, {
+            name: currentUser.name || 'You',
+            role: currentUser.role || 'user',
+            isLoading: false,
+            isConnected: false,
+            hasVideo: false,
+            hasAudio: false,
+            error: null
+          });
           
-          const localVideoElement = videoRefs.current[0];
+          // Wait for state update and re-render before proceeding
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Wait for video element to be available with longer timeout
+          const localVideoElement = await waitForVideoElement(5000); // Increased timeout to 5 seconds
           if (localVideoElement) {
             // Try multiple approaches to get the video track
             let videoTrack = null;
@@ -324,10 +409,22 @@ const DailyVideoConference = forwardRef<
               try {
                 const stream = new MediaStream([videoTrack]);
                 localVideoElement.srcObject = stream;
-                localVideoElement.play().catch(e => console.warn('⚠️ Local video play failed:', e));
+                try {
+                  await localVideoElement.play(); // Await play
+                  console.log('✅ Local video play successful');
+                } catch (playError) {
+                  // Handle AbortError specifically (video element was removed/replaced)
+                  if (playError instanceof Error && playError.name === 'AbortError') {
+                    console.log('⏸️ Video play aborted (element replaced) - this is normal during reconnection');
+                    return; // Don't treat this as an error
+                  }
+                  handleVideoConnectionError(playError, 'local video playback');
+                }
                 console.log('✅ Connected local video stream');
                 // Reset retry counter on success
                 connectRetryCountRef.current = 0;
+                // Mark streams as connected to prevent infinite loops
+                videoStreamsConnectedRef.current = true;
                 updateParticipantState(0, { 
                   isConnected: true, 
                   hasVideo: true,
@@ -337,17 +434,9 @@ const DailyVideoConference = forwardRef<
                   name: localParticipant.user_name || currentUser.name || 'You',
                   role: localParticipant.userData?.role || currentUser.role || 'user'
                 });
-              } catch (streamError) {
-                console.error('❌ Failed to create local video stream:', streamError);
-                                 updateParticipantState(0, {
-                   isConnected: true,
-                   hasVideo: false,
-                   hasAudio: !!localParticipant.tracks?.audio,
-                   isLoading: false,
-                   error: 'Failed to display video',
-                   name: localParticipant.user_name || currentUser.name || 'You',
-                   role: localParticipant.userData?.role || currentUser.role || 'user'
-                 });
+              } catch (playError) {
+                console.error('❌ Local video play failed:', playError);
+                handleVideoConnectionError(playError, 'local video playback');
               }
             } else {
               console.warn('⚠️ No video track available for local participant');
@@ -362,12 +451,14 @@ const DailyVideoConference = forwardRef<
               });
             }
           } else {
-            console.warn('⚠️ Local video element not found');
+            console.warn('⚠️ Local video element not found after waiting');
             console.log('🔍 Debug info:', {
               videoRefsKeys: Object.keys(videoRefs.current),
-              videoRef0: videoRefs.current[0],
+              videoRef0: getVideoElement(0),
               currentState: participantStates[0],
-              isEmpty: !participantStates[0]?.name
+              isEmpty: !participantStates[0]?.name,
+              isVideoActive,
+              isConnected
             });
             
             // Retry with a limit to prevent infinite loops
@@ -376,11 +467,12 @@ const DailyVideoConference = forwardRef<
               console.log(`🔄 Retrying connectVideoStreams (attempt ${connectRetryCountRef.current}/${maxRetries})...`);
               setTimeout(() => {
                 try {
-                  connectVideoStreams();
+                  connectVideoStreams().catch(console.error);
                 } catch (err) {
                   console.warn('⚠️ Retry connect video streams failed:', err);
+                  handleVideoConnectionError(err, 'video stream retry');
                 }
-              }, 500); // Increased delay to allow for rendering
+              }, 1000); // Increased delay to allow for rendering
             } else {
               console.error('❌ Max retries reached for connecting video streams');
               // Reset retry counter for future attempts
@@ -389,6 +481,7 @@ const DailyVideoConference = forwardRef<
               updateParticipantState(0, {
                 isConnected: true,
                 hasVideo: false,
+                hasAudio: !!localParticipant.tracks?.audio,
                 isLoading: false,
                 error: 'Video element not available',
                 name: localParticipant.user_name || currentUser.name || 'You',
@@ -396,6 +489,8 @@ const DailyVideoConference = forwardRef<
               });
             }
           }
+        } else {
+          console.warn('⚠️ No local participant found in Daily.co call');
         }
         
         // Connect remote participant videos
@@ -410,7 +505,7 @@ const DailyVideoConference = forwardRef<
             boxIndex
           });
           
-          const videoElement = videoRefs.current[boxIndex];
+          const videoElement = getVideoElement(boxIndex);
           if (videoElement && participant) {
             // Try multiple approaches to get the video track
             let videoTrack = null;
@@ -435,6 +530,7 @@ const DailyVideoConference = forwardRef<
                 updateParticipantState(boxIndex, { 
                   isConnected: true, 
                   hasVideo: true,
+                  hasAudio: !!participant.tracks?.audio,
                   isLoading: false,
                   error: null,
                   name: participant.user_name || 'Participant',
@@ -445,6 +541,7 @@ const DailyVideoConference = forwardRef<
                 updateParticipantState(boxIndex, {
                   isConnected: true,
                   hasVideo: false,
+                  hasAudio: !!participant.tracks?.audio,
                   isLoading: false,
                   error: 'Failed to display video',
                   name: participant.user_name || 'Participant',
@@ -456,31 +553,34 @@ const DailyVideoConference = forwardRef<
               updateParticipantState(boxIndex, {
                 isConnected: true,
                 hasVideo: false,
+                hasAudio: !!participant.tracks?.audio,
                 isLoading: false,
                 error: null,
                 name: participant.user_name || 'Participant',
                 role: participant.userData?.role || 'participant'
               });
             }
+          } else {
+            console.warn(`⚠️ No video element or participant for box ${boxIndex}`);
+            if (!videoElement) {
+              console.log(`🔍 Video element not available for box ${boxIndex}`);
+            }
+            if (!participant) {
+              console.log(`🔍 Participant not available for session ${sessionId}`);
+            }
           }
           boxIndex++;
         });
         
       } catch (error) {
-        console.error('❌ Failed to connect video streams:', error);
-        updateParticipantState(0, {
-          isLoading: false,
-          error: 'Failed to connect video streams',
-          name: currentUser.name || 'You',
-          role: currentUser.role || 'user'
-        });
+        console.error('❌ Error connecting video streams:', error);
       }
-    }, [connectRetryCountRef, maxRetries, participantStates, currentUser, updateParticipantState]);
+    }, [participantStates, currentUser, updateParticipantState, maxRetries, waitForVideoElement]);
 
     // Handle track updates from Daily
     const handleTrackStarted = useCallback((event: any) => {
       console.log('🎥 Track started:', event);
-      connectVideoStreams();
+      connectVideoStreams().catch(console.error);
     }, [connectVideoStreams]);
 
     const handleTrackStopped = useCallback((event: any) => {
@@ -612,12 +712,56 @@ const DailyVideoConference = forwardRef<
       });
        }, [toast, updateParticipantState]);
 
+    // Handle video connection errors
+    const handleVideoConnectionError = useCallback((error: any, context: string) => {
+      console.error(`❌ Video connection error in ${context}:`, error);
+      
+      let title = "Video Connection Error";
+      let description = "Unable to connect video streams.";
+      
+      if (error.message?.includes('permission')) {
+        title = "Camera/Microphone Permission Required";
+        description = "Please allow camera and microphone access to join the video session.";
+      } else if (error.message?.includes('not found')) {
+        title = "Camera/Microphone Not Found";
+        description = "Please connect a camera and microphone, then try again.";
+      } else if (error.message?.includes('already in use')) {
+        title = "Camera/Microphone Already in Use";
+        description = "Close other video applications and try again.";
+      }
+      
+      toast({
+        variant: "destructive",
+        title,
+        description,
+        duration: 6000,
+      });
+      
+      // Update participant state with error
+      updateParticipantState(0, {
+        error: title.replace(/[❌]/g, '').trim(),
+        isLoading: false,
+        isConnected: false
+      });
+    }, [toast, updateParticipantState]);
+
     // Check media devices when component mounts
     useEffect(() => {
       console.log('🎬 DailyVideoConference component mounted, autoStart:', autoStart);
       console.log('🎬 Current isVideoActive state:', isVideoActive);
       console.log('🎬 Current user:', currentUser);
       console.log('🎬 Participants:', participants);
+      
+      // Validate jobId
+      if (!jobId || isNaN(Number(jobId)) || Number(jobId) <= 0) {
+        console.error('❌ Invalid jobId:', jobId);
+        toast({
+          title: "Invalid Job ID",
+          description: "Please check the URL and ensure you're accessing a valid job.",
+          variant: "destructive"
+        });
+        return;
+      }
       
       // Test Daily.co configuration first
       const testConfig = async () => {
@@ -704,8 +848,19 @@ const DailyVideoConference = forwardRef<
         return;
       }
 
+      // Validate jobId before attempting to start video
+      if (!jobId || isNaN(Number(jobId)) || Number(jobId) <= 0) {
+        console.error('❌ Cannot start video: Invalid jobId:', jobId);
+        toast({
+          title: "Invalid Job ID",
+          description: "Please check the URL and ensure you're accessing a valid job.",
+          variant: "destructive"
+        });
+        return;
+      }
+
       if (isStartingVideoRef.current) {
-        console.log('⚠️ Video session already starting, skipping startVideo');
+        console.log('⚠️ Video session creation already in progress');
         return;
       }
 
@@ -776,6 +931,19 @@ const DailyVideoConference = forwardRef<
             throw new Error('Authentication expired. Please refresh the page and log in again.');
           }
           
+          if (sessionResponse.status === 404) {
+            // Try to parse the error response
+            try {
+              const errorData = JSON.parse(errorText);
+              if (errorData.error === 'JOB_NOT_FOUND') {
+                throw new Error(`Job ${jobId} not found. Please check the URL or contact support.`);
+              }
+            } catch (parseError) {
+              // If we can't parse the error, use the raw text
+              throw new Error(`Job not found: ${errorText}`);
+            }
+          }
+          
           throw new Error(`Failed to create video session: ${sessionResponse.status} ${sessionResponse.statusText}`);
         }
 
@@ -814,9 +982,24 @@ const DailyVideoConference = forwardRef<
           // Create new call object with error handling
           let callObject;
           try {
+            // First, ensure any existing call objects are properly destroyed
+            if (callObjectRef.current) {
+              console.log('🧹 Cleaning up existing call object...');
+              try {
+                callObjectRef.current.destroy();
+              } catch (destroyError) {
+                console.warn('⚠️ Error destroying existing call object:', destroyError);
+              }
+              callObjectRef.current = null;
+            }
+            
+            // Wait a moment for cleanup to complete
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
             callObject = DailyIframe.createCallObject({
               showLeaveButton: false,
               showFullscreenButton: false,
+              allowMultipleCallInstances: true, // Allow multiple instances to prevent errors
               iframeStyle: {
                 position: 'fixed',
                 width: '0px',
@@ -826,6 +1009,7 @@ const DailyVideoConference = forwardRef<
               }
             });
             callObjectRef.current = callObject;
+            console.log('✅ Daily.co call object created successfully');
           } catch (createError) {
             console.error('❌ Failed to create Daily call object:', createError);
             updateParticipantState(0, { 
@@ -846,14 +1030,20 @@ const DailyVideoConference = forwardRef<
               updateParticipantState(0, { isConnected: true, isLoading: false });
               onConnectionStatusChange?.(true);
               
+              // Reset video streams state when joining a new meeting
+              resetVideoStreamsState();
+              
               // Connect video streams to custom UI with a delay to ensure tracks are ready
               setTimeout(() => {
                 console.log('🔗 Delayed video stream connection...');
-                connectVideoStreams();
+                connectVideoStreams().catch(console.error);
               }, 1000);
               
-              // Also try immediately
-              connectVideoStreams();
+              // Also try after a short delay to ensure component is rendered
+              setTimeout(() => {
+                console.log('🔗 Immediate video stream connection...');
+                connectVideoStreams().catch(console.error);
+              }, 200);
               
               // Ensure camera and microphone are active
               try {
@@ -871,28 +1061,40 @@ const DailyVideoConference = forwardRef<
             })
             .on('participant-joined', (event) => {
               console.log('👋 Participant joined:', event.participant);
-              // Give time for tracks to be available
-              setTimeout(() => connectVideoStreams(), 500);
+              // Only reconnect if streams aren't already connected
+              if (!videoStreamsConnectedRef.current) {
+                setTimeout(() => connectVideoStreams().catch(console.error), 500);
+              }
             })
             .on('participant-left', (event) => {
               console.log('👋 Participant left:', event.participant);
-              connectVideoStreams();
+              // Only reconnect if streams aren't already connected
+              if (!videoStreamsConnectedRef.current) {
+                connectVideoStreams().catch(console.error);
+              }
             })
             .on('track-started', (event) => {
               console.log('🎥 Track started:', event);
-              // Connect video streams when new tracks become available
-              setTimeout(() => connectVideoStreams(), 100);
+              // Only reconnect if streams aren't already connected
+              if (!videoStreamsConnectedRef.current) {
+                setTimeout(() => connectVideoStreams().catch(console.error), 100);
+              }
             })
             .on('track-stopped', (event) => {
               console.log('🎥 Track stopped:', event);
-              connectVideoStreams();
+              // Only reconnect if streams aren't already connected
+              if (!videoStreamsConnectedRef.current) {
+                connectVideoStreams().catch(console.error);
+              }
             })
             .on('participant-updated', (event) => {
               console.log('🔄 Participant updated:', event);
-              // Reconnect streams when participant properties change
-              setTimeout(() => connectVideoStreams(), 100);
+              // Only reconnect if streams aren't already connected
+              if (!videoStreamsConnectedRef.current) {
+                setTimeout(() => connectVideoStreams().catch(console.error), 100);
+              }
             })
-            .on('error', (error) => {
+            .on('error', (error: any) => {
               console.error('❌ Daily error:', error);
               
               // Don't show error toast for non-critical errors
@@ -904,7 +1106,7 @@ const DailyVideoConference = forwardRef<
                 });
               }
             })
-            .on('camera-error', (error) => {
+            .on('camera-error', (error: any) => {
               console.error('❌ Camera error:', error);
               toast({
                 title: "Camera Error",
@@ -912,7 +1114,7 @@ const DailyVideoConference = forwardRef<
                 variant: "destructive"
               });
             })
-            .on('left-meeting', (event) => {
+            .on('left-meeting', (event: any) => {
               console.log('👋 Left meeting:', event);
               setIsConnected(false);
               updateParticipantState(0, { isConnected: false });
@@ -1138,7 +1340,7 @@ const DailyVideoConference = forwardRef<
           // Wait a bit for the camera to start
           setTimeout(() => {
             console.log('🔄 Reconnecting streams after camera start...');
-            connectVideoStreams();
+            connectVideoStreams().catch(console.error);
           }, 1000);
         }
         
@@ -1245,12 +1447,54 @@ const DailyVideoConference = forwardRef<
     // Start recording
     const startRecording = useCallback(async () => {
       try {
+        // Get the current room information from Daily.co
+        const participants = callObjectRef.current?.participants();
+        const room = callObjectRef.current?.room();
+        
+        // Handle the case where room() returns a Promise
+        let roomName = null;
+        if (room && typeof room.then === 'function') {
+          // room() returns a Promise, await it
+          const roomData = await room;
+          roomName = roomData?.name || null;
+        } else if (room && typeof room === 'object') {
+          // room() returns an object directly
+          roomName = room.name || null;
+        }
+        
+        // If we still don't have a room name, try to get it from the meeting URL
+        if (!roomName && callObjectRef.current) {
+          const meetingUrl = callObjectRef.current.meetingUrl();
+          if (meetingUrl) {
+            const urlParts = meetingUrl.split('/');
+            roomName = urlParts[urlParts.length - 1] || null;
+          }
+        }
+        
+        console.log('🎬 Starting recording with room info:', {
+          roomName,
+          meetingState: callObjectRef.current?.meetingState(),
+          hasParticipants: !!participants,
+          room: room,
+          meetingUrl: callObjectRef.current?.meetingUrl?.()
+        });
+
+        // If we still don't have a room name, use a fallback
+        if (!roomName) {
+          roomName = `job-${jobId}-session-${Date.now()}`;
+          console.log('⚠️ No room name found, using fallback:', roomName);
+        }
+
         const response = await fetch(`/api/jobs/${jobId}/video-session/recording/start`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
+          },
+          body: JSON.stringify({
+            roomName: roomName,
+            meetingId: roomName // Use roomName as meetingId as well
+          })
         });
 
         const data = await response.json();
@@ -1258,15 +1502,53 @@ const DailyVideoConference = forwardRef<
           setIsRecording(true);
           toast({
             title: "Recording Started",
-            description: "Video session recording has begun",
+            description: "Video session recording has begun"
           });
+        } else {
+          throw new Error(data.message || 'Failed to start recording');
         }
       } catch (error) {
         console.error('❌ Failed to start recording:', error);
         toast({
+          title: "Recording Error",
+          description: error instanceof Error ? error.message : "Failed to start recording",
+          variant: "destructive"
+        });
+      }
+    }, [jobId, toast]);
+
+    // Stop recording
+    const stopRecording = useCallback(async () => {
+      try {
+        console.log('🛑 Stopping recording...');
+        
+        const response = await fetch(`/api/jobs/${jobId}/video-session/recording/stop`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            recordingId: 'current' // The backend will handle the current recording
+          })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          setIsRecording(false);
+          toast({
+            title: "Recording Stopped",
+            description: "Video session recording has ended",
+          });
+        } else {
+          throw new Error(data.message || 'Failed to stop recording');
+        }
+      } catch (error) {
+        console.error('❌ Failed to stop recording:', error);
+        toast({
           variant: "destructive",
-          title: "Recording Failed",
-          description: "Unable to start video recording",
+          title: "Stop Recording Failed",
+          description: "Unable to stop video recording",
         });
       }
     }, [jobId, toast]);
@@ -1312,7 +1594,7 @@ const DailyVideoConference = forwardRef<
             setTimeout(() => {
               if (actualVideoState) {
                 console.log('🔄 Reconnecting video streams after toggle...');
-                connectVideoStreams();
+                connectVideoStreams().catch(console.error);
               }
               // Clear the manual toggle flag after operation completes
               isManuallyTogglingRef.current = false;
@@ -1378,7 +1660,51 @@ const DailyVideoConference = forwardRef<
           });
         }
       }
-    }, [participantStates, updateParticipantState, connectVideoStreams, toast]);
+    }, [participantStates, updateParticipantState, connectVideoStreams, toast, getVideoElement]);
+
+    // Ensure video elements are created before connecting streams
+    useEffect(() => {
+      if (isVideoActive && callObjectRef.current && !videoStreamsConnectedRef.current) {
+        // Wait for video elements to be rendered before connecting streams
+        const timer = setTimeout(() => {
+          console.log('🎬 Video elements should be ready, attempting to connect streams...');
+          connectVideoStreams().catch(console.error);
+        }, 500); // Give time for video elements to render
+        
+        return () => clearTimeout(timer);
+      }
+    }, [isVideoActive, connectVideoStreams, callObjectRef, videoStreamsConnectedRef]);
+
+    // Reset video streams connection state
+    const resetVideoStreamsState = useCallback(() => {
+      videoStreamsConnectedRef.current = false;
+      connectRetryCountRef.current = 0;
+      console.log('🔄 Reset video streams connection state');
+    }, []);
+
+    // Cleanup function to properly destroy Daily.co call object
+    const cleanupCallObject = useCallback(() => {
+      if (callObjectRef.current) {
+        console.log('🧹 Cleaning up Daily.co call object...');
+        try {
+          callObjectRef.current.destroy();
+          callObjectRef.current = null;
+          console.log('✅ Daily.co call object destroyed successfully');
+        } catch (error) {
+          console.warn('⚠️ Error destroying Daily.co call object:', error);
+        }
+      }
+      // Reset video streams state
+      resetVideoStreamsState();
+    }, [resetVideoStreamsState]);
+
+    // Cleanup on component unmount
+    useEffect(() => {
+      return () => {
+        console.log('🎬 DailyVideoConference component unmounting, cleaning up...');
+        cleanupCallObject();
+      };
+    }, [cleanupCallObject]);
 
     // Render participant box
     const renderParticipantBox = (index: number) => {
@@ -1448,14 +1774,31 @@ const DailyVideoConference = forwardRef<
                   {/* Local video from Daily.co */}
                   <video
                     ref={(el) => { 
-                      videoRefs.current[0] = el;
-                      if (el) {
-                        el.playsInline = true;
-                        el.autoplay = true;
-                        el.muted = true;
-                        // Set additional properties to ensure video plays
-                        el.setAttribute('webkit-playsinline', 'true');
-                        el.setAttribute('playsinline', 'true');
+                      try {
+                        if (el) {
+                          videoRefs.current[0] = el;
+                          console.log('✅ Local video element created:', {
+                            element: el,
+                            readyState: el.readyState,
+                            videoWidth: el.videoWidth,
+                            videoHeight: el.videoHeight
+                          });
+                          el.playsInline = true;
+                          el.autoplay = true;
+                          el.muted = true;
+                          // Set additional properties to ensure video plays
+                          el.setAttribute('webkit-playsinline', 'true');
+                          el.setAttribute('playsinline', 'true');
+                        } else {
+                          // React calls ref with null during cleanup - this is normal behavior
+                          // Only clear the ref if it was previously set to avoid unnecessary operations
+                          if (videoRefs.current[0]) {
+                            videoRefs.current[0] = null;
+                          }
+                        }
+                      } catch (error) {
+                        // Silently handle any errors during ref assignment
+                        console.log('Video ref assignment completed');
                       }
                     }}
                     autoPlay
@@ -1522,13 +1865,30 @@ const DailyVideoConference = forwardRef<
                   {/* Remote participant video from Daily.co */}
                   <video
                     ref={(el) => { 
-                      videoRefs.current[index] = el;
-                      if (el) {
-                        el.playsInline = true;
-                        el.autoplay = true;
-                        // Set additional properties to ensure video plays
-                        el.setAttribute('webkit-playsinline', 'true');
-                        el.setAttribute('playsinline', 'true');
+                      try {
+                        if (el) {
+                          videoRefs.current[index] = el;
+                          console.log(`✅ Remote video element created for index ${index}:`, {
+                            element: el,
+                            readyState: el.readyState,
+                            videoWidth: el.videoWidth,
+                            videoHeight: el.videoHeight
+                          });
+                          el.playsInline = true;
+                          el.autoplay = true;
+                          // Set additional properties to ensure video plays
+                          el.setAttribute('webkit-playsinline', 'true');
+                          el.setAttribute('playsinline', 'true');
+                        } else {
+                          // React calls ref with null during cleanup - this is normal behavior
+                          // Only clear the ref if it was previously set to avoid unnecessary operations
+                          if (videoRefs.current[index]) {
+                            videoRefs.current[index] = null;
+                          }
+                        }
+                      } catch (error) {
+                        // Silently handle any errors during ref assignment
+                        console.log(`Remote video ref assignment completed for index ${index}`);
                       }
                     }}
                     autoPlay
@@ -1704,13 +2064,21 @@ const DailyVideoConference = forwardRef<
             )}
           </div>
           <div className="flex items-center gap-2 ml-2 flex-shrink-0">
-            {!isRecording && (
+            {!isRecording ? (
               <button
                 onClick={startRecording}
                 className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs transition-colors"
                 title="Start Recording"
               >
                 Record
+              </button>
+            ) : (
+              <button
+                onClick={stopRecording}
+                className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded-md text-xs transition-colors"
+                title="Stop Recording"
+              >
+                Stop Recording
               </button>
             )}
             
@@ -1749,7 +2117,7 @@ const DailyVideoConference = forwardRef<
                   });
                   
                   // Test video stream connection
-                  connectVideoStreams();
+                  connectVideoStreams().catch(console.error);
                 } else {
                   console.error('❌ No Daily.co call object found');
                   toast({
@@ -1781,7 +2149,12 @@ const DailyVideoConference = forwardRef<
             <div className="flex flex-col space-y-1 h-full max-h-full overflow-y-auto"> {/* Using flex with minimal spacing */}
               {Array.from({ length: 8 })
                 .map((_, index) => ({ index, state: participantStates[index] }))
-                .filter(({ state }) => state?.name) // Only show boxes with participants
+                .filter(({ index, state }) => {
+                  // Always show the current user's box (index 0) to ensure video element exists
+                  if (index === 0) return true;
+                  // For other participants, only show if they have a name
+                  return state?.name;
+                })
                 .map(({ index }) => renderParticipantBox(index))}
             </div>
           </div>

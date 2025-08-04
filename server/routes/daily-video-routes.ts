@@ -91,6 +91,38 @@ router.get('/api/video/test-config', verifyToken, async (req: any, res) => {
   }
 });
 
+// Test Daily.co API connection
+router.get('/api/video/test-api', verifyToken, async (req: any, res) => {
+  try {
+    const { dailyService } = await import('../lib/daily-service');
+    const testResult = await dailyService.testApiConnection();
+    
+    console.log('🔍 Daily.co API test result:', testResult);
+    
+    if (testResult.success) {
+      res.json({
+        success: true,
+        message: 'Daily.co API connection successful',
+        details: testResult.details
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: 'Daily.co API connection failed',
+        error: testResult.error,
+        details: testResult.details
+      });
+    }
+  } catch (error) {
+    console.error('❌ Daily.co API test error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to test Daily.co API',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 // ===== VIDEO CONFERENCING ROUTES - DAILY.CO INTEGRATION =====
 
 // Create Daily video session for job
@@ -234,26 +266,93 @@ router.get('/api/jobs/:jobId/video-session', verifyToken, async (req: any, res) 
 router.post('/api/jobs/:jobId/video-session/recording/start', verifyToken, async (req: any, res) => {
   try {
     const jobId = parseInt(req.params.jobId);
-    const { roomName, meetingId } = req.body;
+    let { roomName, meetingId } = req.body;
     
+    // If roomName is not provided, try to get it from the job's video session
+    if (!roomName && !meetingId) {
+      console.log('🔍 No room name provided, checking job video session...');
+      
+      // Get the job to see if there's an active video session
+      const { storage } = await import('../storage');
+      const job = await storage.getJob(jobId);
+      
+      if (job && job.recordingSessionId) {
+        // Extract room name from the video session ID or URL
+        const sessionParts = job.recordingSessionId.split('-');
+        if (sessionParts.length > 2) {
+          roomName = sessionParts.slice(0, -1).join('-'); // Remove timestamp suffix
+          console.log('✅ Extracted room name from job session:', roomName);
+        }
+      }
+    }
+    
+    // If we still don't have a room name, create one
+    if (!roomName && !meetingId) {
+      roomName = `job-${jobId}-session-${Date.now()}`;
+      console.log('🔧 Created new room name:', roomName);
+    }
+    
+    // Use roomName as meetingId if meetingId is not provided
+    if (!meetingId && roomName) {
+      meetingId = roomName;
+    }
+    
+    if (!roomName && !meetingId) {
+      return res.status(400).json({
+        success: false,
+        message: 'No room name or meeting ID provided'
+      });
+    }
+
+    console.log('🎬 Starting recording for Daily session:', {
+      jobId,
+      roomName: roomName || meetingId,
+      meetingId
+    });
+
     const { dailyService } = await import('../lib/daily-service');
     const recording = await dailyService.startRecording(roomName || meetingId);
     
     console.log('Recording started for Daily session:', {
       jobId,
-      roomName,
+      roomName: roomName || meetingId,
       recordingId: recording.recordingId
     });
+
+    // Save recording metadata to the job
+    try {
+      const { storage } = await import('../storage');
+      const recordingMetadata = {
+        recordingId: recording.recordingId,
+        roomName: roomName || meetingId,
+        startedAt: new Date().toISOString(),
+        startedBy: req.user.id,
+        technology: 'daily'
+      };
+      
+      await storage.updateJob(jobId, {
+        recordingMetadata: JSON.stringify(recordingMetadata),
+        recordingStartedAt: new Date(),
+        recordingSessionId: roomName || meetingId // Save the session ID
+      });
+      
+      console.log('✅ Recording metadata saved to job:', jobId);
+    } catch (metadataError) {
+      console.warn('⚠️ Failed to save recording metadata:', metadataError);
+      // Don't fail the recording start if metadata save fails
+    }
 
     res.json({
       success: true,
       recordingId: recording.recordingId,
-      message: 'Recording started successfully',
-      technology: 'daily'
+      message: 'Recording started successfully'
     });
   } catch (error) {
-    console.error('Start recording error:', error);
-    res.status(500).json({ message: 'Failed to start recording' });
+    console.error('❌ Failed to start recording:', error);
+    res.status(500).json({
+      success: false,
+      message: error instanceof Error ? error.message : 'Failed to start recording'
+    });
   }
 });
 
@@ -261,7 +360,35 @@ router.post('/api/jobs/:jobId/video-session/recording/start', verifyToken, async
 router.post('/api/jobs/:jobId/video-session/recording/stop', verifyToken, async (req: any, res) => {
   try {
     const jobId = parseInt(req.params.jobId);
-    const { recordingId } = req.body;
+    let { recordingId } = req.body;
+    
+    // If recordingId is not provided, try to get it from the job's recording metadata
+    if (!recordingId || recordingId === 'current') {
+      console.log('🔍 No recording ID provided, checking job recording metadata...');
+      
+      // Get the job to see if there's recording metadata
+      const { storage } = await import('../storage');
+      const job = await storage.getJob(jobId);
+      
+      if (job && job.recordingMetadata) {
+        const metadata = typeof job.recordingMetadata === 'string' 
+          ? JSON.parse(job.recordingMetadata) 
+          : job.recordingMetadata;
+        
+        if (metadata.recordingId) {
+          recordingId = metadata.recordingId;
+          console.log('✅ Found recording ID from job metadata:', recordingId);
+        }
+      }
+    }
+    
+    if (!recordingId) {
+      console.error('❌ No recording ID available for stopping recording');
+      return res.status(400).json({ 
+        success: false,
+        message: 'No active recording found to stop.' 
+      });
+    }
     
     const { dailyService } = await import('../lib/daily-service');
     const result = await dailyService.stopRecording(recordingId);
@@ -280,7 +407,11 @@ router.post('/api/jobs/:jobId/video-session/recording/stop', verifyToken, async 
     });
   } catch (error) {
     console.error('Stop recording error:', error);
-    res.status(500).json({ message: 'Failed to stop recording' });
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to stop recording',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 });
 

@@ -18,7 +18,6 @@ import { registerJobEditingRoutes } from "./routes/job-editing-routes";
 import adminLogsRoutes from "./routes/admin-logs-routes";
 import notaryVerificationRoutes from "./routes/notary-verification-routes";
 import notaryJobApprovalRoutes from "./routes/notary-job-approval-routes";
-import screenRecordingRoutes from "./routes/screen-recording-api";
 import { auditLoggingService } from "./services/audit-logging-service";
 import { notificationService } from "./notification-service";
 import { verifyToken, hasAdminPrivileges, hasNotaryPrivileges, type AuthUser } from "./auth";
@@ -8510,7 +8509,6 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   app.use('/api/admin', adminLogsRoutes);
   app.use('/api/notary', notaryVerificationRoutes);
   app.use('/api/notary', notaryJobApprovalRoutes);
-  app.use('/api', screenRecordingRoutes);
   
   // Register job details routes
   const { jobDetailsRoutes } = await import('./routes/job-details-routes');
