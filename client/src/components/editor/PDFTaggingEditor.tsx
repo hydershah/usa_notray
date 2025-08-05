@@ -1195,8 +1195,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         // Use the fixed dimensions instead of coordinates from click
         const textInputCoordinates = {
           ...coordinates,
-          width: 200,  // Fixed width for text tags
-          height: 30   // Fixed height for text tags - must match PDFViewer calculation
+          width: dimensions?.width || 150,  // Use constant dimensions for text tags
+          height: dimensions?.height || 30   // Use constant dimensions for text tags
         };
         
         console.log('🔍 DEBUG: Final textInputCoordinates being sent to server:', textInputCoordinates);

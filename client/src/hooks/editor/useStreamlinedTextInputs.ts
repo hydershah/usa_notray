@@ -185,11 +185,21 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           
         case 'tag_updated':
           if (data.updates.coordinates) {
-            setTextInputs(prev => prev.map(input => 
-              input.id === data.id 
-                ? { ...input, coordinates: { ...input.coordinates, ...data.updates.coordinates } }
-                : input
-            ));
+            // ✅ FIX: Don't override local changes with WebSocket updates from the same user
+            // This prevents text tag resize reversion when user resizes and WebSocket broadcasts old data
+            const isOwnUpdate = data.updatedBy === useEditorStore.getState().currentUser?.id?.toString();
+            
+            if (!isOwnUpdate) {
+              // Only apply coordinate updates from other users to prevent overriding local changes
+              setTextInputs(prev => prev.map(input => 
+                input.id === data.id 
+                  ? { ...input, coordinates: { ...input.coordinates, ...data.updates.coordinates } }
+                  : input
+              ));
+              console.log(`🔄 Applied text tag coordinate update from another user: ${data.id}`);
+            } else {
+              console.log(`⚠️ Skipped text tag coordinate update from self to prevent override: ${data.id}`);
+            }
           }
           break;
           
@@ -498,10 +508,12 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       const timeout = setTimeout(async () => {
         try {
           // Update server with new coordinates after debounce delay
-          const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${textInputId}/coordinates`, {
-            method: 'PATCH',
+          // Use the correct endpoint that handles both position and dimensions
+          const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${textInputId}/dimensions`, {
+            method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
             },
             body: JSON.stringify({
               x: coordinates.x,
@@ -693,7 +705,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
         }
       }
 
-      // Get tag dimensions from constants instead of database
+      // Use stored dimensions from database, only fallback to constants for new tags
       const tagDimensions = getTagDimensions('T');
 
       return {
@@ -701,8 +713,8 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
         coordinates: {
           x: tag.coordinates.x,
           y: tag.coordinates.y,
-          width: tagDimensions.width,  // Use tag constants instead of stored width
-          height: tagDimensions.height, // Use tag constants instead of stored height
+          width: tag.coordinates.width || tagDimensions.width,  // Use stored width, fallback to constants
+          height: tag.coordinates.height || tagDimensions.height, // Use stored height, fallback to constants
           pageNumber: tag.coordinates.pageNumber
         },
         content: tag.content || '',

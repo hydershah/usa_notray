@@ -163,16 +163,8 @@ export const useEditorStore = create<EditorStore>()(
       
       whiteoutOverlays: [],
       
-      customTagDimensions: (() => {
-        // Load custom dimensions from localStorage on initialization
-        try {
-          const saved = localStorage.getItem('editorCustomTagDimensions');
-          return saved ? JSON.parse(saved) : {};
-        } catch (error) {
-          console.warn('Failed to load custom tag dimensions from localStorage:', error);
-          return {};
-        }
-      })(),
+      // Initialize empty custom tag dimensions (session-only, no localStorage)
+      customTagDimensions: {},
       
       lastUsedFontSize: (() => {
         // Load last used font size from localStorage, default to 16px (increased from 12px)
@@ -205,7 +197,18 @@ export const useEditorStore = create<EditorStore>()(
       webSocket: null,
       
       // Session Management Actions
-      setSession: (session) => set({ session }),
+      setSession: (session) => {
+        // Clear custom tag dimensions when setting a new session (fresh start)
+        if (session) {
+          set({ customTagDimensions: {} });
+          try {
+            localStorage.removeItem('editorCustomTagDimensions');
+          } catch (error) {
+            console.warn('Failed to clear custom tag dimensions from localStorage:', error);
+          }
+        }
+        set({ session });
+      },
       
       setDocuments: (documents) => set({ documents }),
       
@@ -607,21 +610,31 @@ export const useEditorStore = create<EditorStore>()(
         console.log('🔄 Replace all tags functionality');
       },
 
-      clearSession: () => set({
-        session: null,
-        documents: [],
-        currentDocument: null,
-        participants: [],
-        currentUser: null,
-        selectedUser: null,
-        tags: [],
-        selectedTag: null,
-        whiteoutOverlays: [],
-        cursors: [],
-        lastSyncTime: null,
-        isConnected: false,
-        webSocket: null
-      })
+      clearSession: () => {
+        // Clear custom tag dimensions when clearing session (fresh start)
+        set({ customTagDimensions: {} });
+        try {
+          localStorage.removeItem('editorCustomTagDimensions');
+        } catch (error) {
+          console.warn('Failed to clear custom tag dimensions from localStorage:', error);
+        }
+        
+        set({
+          session: null,
+          documents: [],
+          currentDocument: null,
+          participants: [],
+          currentUser: null,
+          selectedUser: null,
+          tags: [],
+          selectedTag: null,
+          whiteoutOverlays: [],
+          cursors: [],
+          lastSyncTime: null,
+          isConnected: false,
+          webSocket: null
+        });
+      }
     }),
     {
       name: 'editor-store',

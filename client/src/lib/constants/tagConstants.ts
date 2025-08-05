@@ -134,8 +134,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Full Name',
     color: PROFESSIONAL_COLORS.primary,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 140,
-    defaultHeight: 28,
+    defaultWidth: 150,  // Standardized width
+    defaultHeight: 30,  // Standardized height
     minWidth: 80,
     minHeight: 24,
     allowResize: true,
@@ -147,8 +147,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Sign here',
     color: PROFESSIONAL_COLORS.signature,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 180,
-    defaultHeight: 50,
+    defaultWidth: 160,  // Reduced from 180 - slightly bigger for signatures
+    defaultHeight: 40,  // Reduced from 50 - slightly bigger for signatures
     minWidth: 100,
     minHeight: 35,
     allowResize: true,
@@ -160,8 +160,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Initial here',
     color: PROFESSIONAL_COLORS.accent,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 80,
-    defaultHeight: 40,
+    defaultWidth: 150,  // Standardized width
+    defaultHeight: 30,  // Standardized height
     minWidth: 60,
     minHeight: 30,
     allowResize: true,
@@ -173,8 +173,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Commission #',
     color: PROFESSIONAL_COLORS.success,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 120,
-    defaultHeight: 30,
+    defaultWidth: 150,  // Standardized width
+    defaultHeight: 30,  // Standardized height
     minWidth: 100,
     minHeight: 25,
     allowResize: true,
@@ -186,8 +186,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Expiration Date',
     color: '#fef3c7', // Light yellow background
     borderColor: '#d97706', // Darker orange border for better contrast
-    defaultWidth: 120,
-    defaultHeight: 30,
+    defaultWidth: 150,  // Standardized width
+    defaultHeight: 30,  // Standardized height
     minWidth: 100,
     minHeight: 25,
     allowResize: true,
@@ -199,10 +199,10 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Disclosure info',
     color: '#fef3c7', // Light yellow background for high visibility
     borderColor: '#d97706', // Dark orange border for maximum contrast
-    defaultWidth: 200, // Wider for disclosure text
-    defaultHeight: 50, // Taller for better readability
+    defaultWidth: 150,  // Standardized width
+    defaultHeight: 30,  // Standardized height
     minWidth: 120,
-    minHeight: 35,
+    minHeight: 25,
     allowResize: true,
     allowTextInput: true
   },
@@ -212,8 +212,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Notary seal',
     color: PROFESSIONAL_COLORS.primary,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 80,
-    defaultHeight: 80,
+    defaultWidth: 80,   // Reduced from 100 - slightly bigger for seals
+    defaultHeight: 80,  // Reduced from 100 - slightly bigger for seals (square shape)
     minWidth: 60,
     minHeight: 60,
     allowResize: true,
@@ -225,8 +225,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Whiteout area',
     color: '#ffffff', // Pure white background for true whiteout
     borderColor: '#e5e7eb', // Light gray border
-    defaultWidth: 150, // INCREASED: More practical size for covering text
-    defaultHeight: 30, // INCREASED: Better height for text coverage
+    defaultWidth: 150,  // Standardized width
+    defaultHeight: 30,  // Standardized height
     minWidth: 50,
     minHeight: 20,
     allowResize: true,
@@ -238,10 +238,10 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Enter text',
     color: '#f8fafc', // Slightly lighter background
     borderColor: '#475569', // Darker border for better contrast
-    defaultWidth: 200,    // Updated width for text tags
-    defaultHeight: 30,    // Updated height for text tags
+    defaultWidth: 150,  // Standardized width
+    defaultHeight: 30,  // Standardized height
     minWidth: 100,
-    minHeight: 20,        // Updated minimum height
+    minHeight: 20,
     allowResize: true,
     allowTextInput: true
   },
@@ -251,8 +251,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'MM/DD/YYYY',
     color: '#fef3c7', // Light yellow background
     borderColor: '#d97706', // Darker orange border for better contrast
-    defaultWidth: 120,
-    defaultHeight: 30,
+    defaultWidth: 150,  // Standardized width
+    defaultHeight: 30,  // Standardized height
     minWidth: 100,
     minHeight: 25,
     allowResize: true,

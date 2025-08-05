@@ -19,7 +19,7 @@ export function registerWhiteoutOverlayRoutes(app: Express) {
 
       // Verify session exists and user has access
       const session = await db.query.editorSessions.findFirst({
-        where: eq(editorSessions.id, parseInt(sessionId))
+        where: eq(editorSessions.sessionId, sessionId)
       });
 
       if (!session) {
@@ -58,7 +58,7 @@ export function registerWhiteoutOverlayRoutes(app: Express) {
 
       // Verify session exists and user has access
       const session = await db.query.editorSessions.findFirst({
-        where: eq(editorSessions.id, parseInt(sessionId))
+        where: eq(editorSessions.sessionId, sessionId)
       });
 
       if (!session) {
@@ -103,7 +103,7 @@ export function registerWhiteoutOverlayRoutes(app: Express) {
 
       // Verify session exists and user has access
       const session = await db.query.editorSessions.findFirst({
-        where: eq(editorSessions.id, parseInt(sessionId))
+        where: eq(editorSessions.sessionId, sessionId)
       });
 
       if (!session) {

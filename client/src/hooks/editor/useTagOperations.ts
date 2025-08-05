@@ -87,13 +87,10 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
     const storeDimensions = getTagDimensions(tagType as any);
     console.log('🔍 sanitizeCoordinates - storeDimensions:', storeDimensions);
     
-    const defaultDimensions = storeDimensions || (
-      tagType === 'W' ? { width: 150, height: 30 } : // FIXED: Use updated whiteout dimensions
-      tagType === 'S' ? { width: 120, height: 35 } :
-      tagType === 'E' ? { width: 60, height: 60 } :
-      tagType === 'O' ? { width: 200, height: 50 } : // Disclosure tag dimensions
-      { width: 97, height: 26 } // Default fallback for all other tag types
-    );
+    const defaultDimensions = storeDimensions || {
+      width: 150, // Use standardized width as fallback
+      height: 30  // Use standardized height as fallback
+    };
     
     if (coordinates.x !== undefined) {
       sanitized.x = isFinite(coordinates.x) ? Math.round(coordinates.x) : 0;

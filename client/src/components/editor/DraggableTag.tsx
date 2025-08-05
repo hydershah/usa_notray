@@ -234,8 +234,8 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
         alignItems: 'center',
         justifyContent: 'center',
         pointerEvents: 'auto',
-        minWidth: (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'auto' : '80px', // Allow text, disclosure, and expiry tags to size naturally
-        minHeight: (tag.tagType === 'T' || tag.tagType === 'O' || tag.tagType === 'X') ? 'auto' : '32px' // Allow text, disclosure, and expiry tags to size naturally
+        minWidth: tagDimensions.minWidth ? `${tagDimensions.minWidth}px` : '80px', // Use minimum dimensions from constants
+        minHeight: tagDimensions.minHeight ? `${tagDimensions.minHeight}px` : '30px' // Use minimum dimensions from constants
       }}
     >
       {/* Compact tag content layout */}

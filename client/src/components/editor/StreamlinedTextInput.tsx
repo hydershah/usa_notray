@@ -122,9 +122,9 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   const displayCoords = {
     x: coordinates.x * scaleFactor,
     y: coordinates.y * scaleFactor,
-    // For text inputs, use fixed dimensions without scaling to maintain consistent 200x30 size
-    width: 200,
-    height: 30
+    // For text inputs, use consistent dimensions from constants
+    width: fixedDimensions.width,
+    height: fixedDimensions.height
   };
 
   // Simple resize and edit controls

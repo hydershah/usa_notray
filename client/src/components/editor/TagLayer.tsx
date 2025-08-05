@@ -69,10 +69,10 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   const displayCoords = {
     x: Math.round(tag.coordinates.x * scaleFactor),
     // For lower-left positioning, we need to subtract the height from the Y coordinate
-    y: Math.round((tag.coordinates.y - (tag.tagType === 'T' ? 30 : fixedDimensions.height)) * scaleFactor),
-    // For text tags, use fixed dimensions without scaling to maintain consistent 200x30 size
-    width: tag.tagType === 'T' ? 200 : Math.round(fixedDimensions.width * scaleFactor),
-    height: tag.tagType === 'T' ? 30 : Math.round(fixedDimensions.height * scaleFactor)
+    y: Math.round((tag.coordinates.y - fixedDimensions.height) * scaleFactor),
+    // Use consistent dimensions from constants for all tag types
+    width: Math.round(fixedDimensions.width * scaleFactor),
+    height: Math.round(fixedDimensions.height * scaleFactor)
   };
   
   // Debug: Log the rendering coordinates
