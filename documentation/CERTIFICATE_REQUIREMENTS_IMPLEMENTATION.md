@@ -2,7 +2,7 @@
 
 ## Overview
 
-This implementation adds certificate verification requirements to the job workflow, ensuring all participants have valid digital certificates BEFORE jobs can start. This prevents signing sessions from failing due to missing or invalid certificates.
+This implementation adds certificate verification requirements to the job workflow, ensuring that notaries have valid digital certificates BEFORE jobs can start. Signer certificates are optional but provide enhanced security when available. This prevents signing sessions from failing due to missing notary certificates.
 
 ## Features Implemented
 
@@ -114,8 +114,8 @@ Update UI with new status
   "success": true,
   "data": {
     "jobId": 123,
-    "canStartJob": false,
-    "allParticipantsReady": false,
+    "canStartJob": true,
+    "allParticipantsReady": true,
     "participantStatuses": [
       {
         "userId": 1,
@@ -139,18 +139,16 @@ Update UI with new status
         "hasCertificate": false,
         "certificateValid": false,
         "certificateExpired": false,
-        "requiresCertificate": true,
-        "canProceed": false,
-        "issues": ["No digital certificate found"]
+        "requiresCertificate": false,
+        "canProceed": true,
+        "issues": []
       }
     ],
-    "blockedBy": [
-      "Jane Signer (signer@example.com) - No digital certificate found"
-    ],
+    "blockedBy": [],
     "summary": {
       "totalParticipants": 2,
       "withValidCertificates": 1,
-      "withoutCertificates": 1,
+      "withoutCertificates": 0,
       "withExpiredCertificates": 0
     }
   }
@@ -162,11 +160,7 @@ Update UI with new status
 {
   "success": true,
   "data": {
-    "canStart": false,
-    "reason": "Missing or invalid certificates",
-    "missingCertificates": [
-      "Jane Signer (signer@example.com) - No digital certificate found"
-    ]
+    "canStart": true
   }
 }
 ```
@@ -179,9 +173,9 @@ Update UI with new status
 - **Blocks**: Both tagging and live sessions if missing
 
 ### Signer/Witness
-- **REQUIRED**: Valid digital certificate (if registered user)
-- **Blocks**: Live sessions if missing
-- **External signers**: Certificate generated during registration process
+- **OPTIONAL**: Digital certificates are optional for signers and witnesses
+- **Benefit**: Having a certificate enables enhanced security and digital signatures
+- **External signers**: Can participate without certificates
 
 ### Admin
 - **OPTIONAL**: Certificates not required for admin functions

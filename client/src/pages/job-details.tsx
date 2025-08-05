@@ -227,7 +227,7 @@ export default function JobDetailsPage() {
       toast({
         variant: "destructive",
         title: "Cannot Start Session",
-        description: "All participants must have valid digital certificates before starting the live session.",
+        description: "The notary must have a valid digital certificate before starting the live session.",
       });
       return;
     }

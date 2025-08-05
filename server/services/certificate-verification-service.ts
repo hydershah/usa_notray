@@ -314,12 +314,12 @@ export class CertificateVerificationService {
    * Check if user role requires a certificate
    */
   private userRequiresCertificate(role: string): boolean {
-    // Only notaries and registered signers require certificates
+    // Only notaries require certificates - signers and witnesses are optional
     // External signers who haven't registered don't need certificates initially
     if (!role) {
       return false;
     }
-    return ['notary', 'signer', 'witness'].includes(role);
+    return ['notary'].includes(role);
   }
 
   /**
