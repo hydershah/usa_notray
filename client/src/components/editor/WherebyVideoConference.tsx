@@ -263,7 +263,7 @@ const WherebyVideoConference: React.FC<WherebyVideoConferenceProps> = ({
         </div>
 
         <div className="flex items-center gap-3">
-          {currentUser.role === 'notary' && !isRecording && (
+          {(currentUser.role === 'notary' || currentUser.role === 'admin') && !isRecording && (
             <button
               onClick={startRecording}
               className="p-3 bg-red-600/80 hover:bg-red-600 rounded-xl transition-all duration-200 hover:scale-105 backdrop-blur-sm"

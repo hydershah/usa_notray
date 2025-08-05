@@ -17,7 +17,7 @@ import {
   Minimize2
 } from 'lucide-react';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
-import DailyVideoConference from './DailyVideoConference';
+import { NotaryVideoSession } from '@/components/video';
 
 interface VideoIntegrationProps {
   sessionId: string;
@@ -334,16 +334,28 @@ export const VideoIntegration: React.FC<VideoIntegrationProps> = ({
   // Render active video conference
   return (
     <div className={className}>
-      <DailyVideoConference
-        sessionId={sessionId}
-        jobId={jobId}
-        currentUser={effectiveCurrentUser}
-        participants={effectiveParticipants}
-        onParticipantJoined={handleParticipantJoined}
-        onParticipantLeft={handleParticipantLeft}
-        onConnectionStatusChange={handleConnectionStatusChange}
-        autoStart={autoStart}
+      <NotaryVideoSession
+        jobId={jobId?.toString() || sessionId}
+        currentUser={{
+          id: effectiveCurrentUser.id,
+          name: effectiveCurrentUser.name,
+          role: effectiveCurrentUser.role,
+          email: effectiveCurrentUser.email
+        }}
+        participants={effectiveParticipants.map(p => ({
+          id: p.userId,
+          name: p.displayName,
+          role: p.userType,
+          email: p.email
+        }))}
+        autoJoin={autoStart}
         className="h-full"
+        onSessionComplete={() => {
+          console.log('Video session completed');
+        }}
+        onSessionError={(error) => {
+          console.error('Video session error:', error);
+        }}
       />
     </div>
   );

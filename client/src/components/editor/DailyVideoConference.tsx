@@ -63,37 +63,63 @@ export interface DailyVideoConferenceHandles {
 const DailyVideoConference = forwardRef<
   DailyVideoConferenceHandles,
   DailyVideoConferenceProps
->(
-  (
-    {
-      sessionId,
-      jobId,
-      currentUser,
-      participants = [],
-      onParticipantJoined,
-      onParticipantLeft,
-      onConnectionStatusChange,
-      autoStart = true,
-      className = ''
-    },
-    ref
-  ) => {
+>((
+  {
+    sessionId,
+    jobId,
+    currentUser,
+    participants = [],
+    onParticipantJoined,
+    onParticipantLeft,
+    onConnectionStatusChange,
+    autoStart = true,
+    className = ''
+  },
+  ref
+) => {
+    // All hooks must be called in the same order every render
     const { toast } = useToast();
+    
+    // All useRef hooks
     const containerRef = useRef<HTMLDivElement>(null);
     const callObjectRef = useRef<any>(null);
-      const isStartingVideoRef = useRef(false);
-  const connectRetryCountRef = useRef(0);
-  
-  const [showDailyInterface, setShowDailyInterface] = useState(false);
-
-    // Add a ref to track if video streams are already connected
+    const isStartingVideoRef = useRef(false);
+    const connectRetryCountRef = useRef(0);
     const videoStreamsConnectedRef = useRef(false);
-    
-    // Add a ref to track manual toggle operations
     const isManuallyTogglingRef = useRef(false);
-    
-    // Add a ref to track if component is mounted to prevent setState warnings
     const isMountedRef = useRef(true);
+    const lastToggleTimeRef = useRef(0);
+    const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const connectVideoDebounceRef = useRef<NodeJS.Timeout | null>(null);
+    const videoRefs = useRef<{[key: number]: HTMLVideoElement | null}>({});
+    const startVideoRef = useRef<(() => Promise<void>) | null>(null);
+    
+    // All useState hooks
+    const [showDailyInterface, setShowDailyInterface] = useState(false);
+    const [isVideoActive, setIsVideoActive] = useState(false);
+    const [isConnected, setIsConnected] = useState(false);
+    const [participantCount, setParticipantCount] = useState(0);
+    const [isRecording, setIsRecording] = useState(false);
+    const [retryCount, setRetryCount] = useState(0);
+    const [mediaDeviceStatus, setMediaDeviceStatus] = useState<{
+      hasCamera: boolean;
+      hasMicrophone: boolean;
+      cameraPermission: boolean;
+      microphonePermission: boolean;
+      errorMessage: string | null;
+    }>({
+      hasCamera: false,
+      hasMicrophone: false,
+      cameraPermission: false,
+      microphonePermission: false,
+      errorMessage: null
+    });
+    const [participantStates, setParticipantStates] = useState<{
+      [index: number]: ParticipantState;
+    }>({});
+    
+    // Constants
+    const maxRetries = 3;
     
     // Safe state update wrapper to prevent "setState on unmounted component" warnings
     const safeSetIsVideoActive = useCallback((value: React.SetStateAction<boolean>) => {
@@ -119,34 +145,6 @@ const DailyVideoConference = forwardRef<
         console.warn('⚠️ Prevented setParticipantStates on unmounted component');
       }
     }, []);
-
-    // Video element refs for each participant box
-    const videoRefs = useRef<{[key: number]: HTMLVideoElement | null}>({});
-  
-    const [isVideoActive, setIsVideoActive] = useState(false);
-    const [isConnected, setIsConnected] = useState(false);
-    const [participantCount, setParticipantCount] = useState(0);
-    const [isRecording, setIsRecording] = useState(false);
-    const [retryCount, setRetryCount] = useState(0);
-    const maxRetries = 3;
-    const [mediaDeviceStatus, setMediaDeviceStatus] = useState<{
-      hasCamera: boolean;
-      hasMicrophone: boolean;
-      cameraPermission: boolean;
-      microphonePermission: boolean;
-      errorMessage: string | null;
-    }>({
-      hasCamera: false,
-      hasMicrophone: false,
-      cameraPermission: false,
-      microphonePermission: false,
-      errorMessage: null
-    });
-  
-    // Participant state management - 8 boxes
-    const [participantStates, setParticipantStates] = useState<{
-      [index: number]: ParticipantState;
-    }>({});
 
     // Reset video state on component mount
     useEffect(() => {
@@ -222,8 +220,7 @@ const DailyVideoConference = forwardRef<
       resetVideoState,
     }));
 
-    // Ref to store the startVideo function
-    const startVideoRef = useRef<(() => Promise<void>) | null>(null);
+
 
     useEffect(() => {
       // Cleanup function to destroy the call object on unmount
@@ -240,26 +237,19 @@ const DailyVideoConference = forwardRef<
     useEffect(() => {
       const checkVideoElement = () => {
         const videoElement = videoRefs.current[0];
-        if (videoElement) {
-          console.log('✅ Video element found and ready:', {
-            element: videoElement,
-            readyState: videoElement.readyState,
-            videoWidth: videoElement.videoWidth,
-            videoHeight: videoElement.videoHeight
-          });
-        } else {
-          console.log('⏳ Video element not yet available');
+        if (videoElement && process.env.NODE_ENV === 'development') {
+          console.log('✅ Video element found and ready');
         }
       };
 
-      // Check immediately
-      checkVideoElement();
-      
-      // Check after a short delay to allow for rendering
-      const timer = setTimeout(checkVideoElement, 100);
-      
-      return () => clearTimeout(timer);
-    }, [participantStates[0]]); // Re-run when participant state changes
+      // Only check if we don't have a video element yet
+      if (!videoRefs.current[0]) {
+        checkVideoElement();
+        // Check after a short delay to allow for rendering
+        const timer = setTimeout(checkVideoElement, 100);
+        return () => clearTimeout(timer);
+      }
+    }, [participants.length]); // Only re-run when participant count changes
 
     // Update participant count when participants change
     useEffect(() => {
@@ -338,43 +328,57 @@ const DailyVideoConference = forwardRef<
       });
     }, [participantStates, isVideoActive, isConnected, getVideoElement]);
 
+
+
     const connectVideoStreams = useCallback(async () => {
       if (!callObjectRef.current) {
-        console.warn('⚠️ No Daily.co call object available for video stream connection');
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('⚠️ No Daily.co call object available for video stream connection');
+        }
         return;
       }
       
       // Don't interfere if user is manually toggling video/audio
       if (isManuallyTogglingRef.current) {
-        console.log('⏸️ Skipping video stream connection - manual toggle in progress');
+        if (process.env.NODE_ENV === 'development') {
+          console.log('⏸️ Skipping video stream connection - manual toggle in progress');
+        }
         return;
       }
       
       // Prevent infinite loops by checking if streams are already connected
       if (videoStreamsConnectedRef.current) {
-        console.log('⏸️ Video streams already connected, skipping reconnection');
+        if (process.env.NODE_ENV === 'development') {
+          console.log('⏸️ Video streams already connected, skipping reconnection');
+        }
         return;
       }
 
       try {
-        console.log('🔗 Connecting video streams to custom UI...');
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔗 Connecting video streams to custom UI...');
+        }
         
         // Get participants from Daily
         const participants = callObjectRef.current.participants();
         const localParticipant = participants.local;
         
-        console.log('🎯 Daily participants:', {
-          total: Object.keys(participants).length,
-          local: !!localParticipant,
-          localVideo: !!localParticipant?.tracks?.video,
-          localVideoTrack: !!localParticipant?.tracks?.video?.persistentTrack,
-          remoteCount: Object.keys(participants).length - 1
-        });
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🎯 Daily participants:', {
+            total: Object.keys(participants).length,
+            local: !!localParticipant,
+            localVideo: !!localParticipant?.tracks?.video,
+            localVideoTrack: !!localParticipant?.tracks?.video?.persistentTrack,
+            remoteCount: Object.keys(participants).length - 1
+          });
+        }
         
         // Connect local video (current user - box 0)
         if (localParticipant) {
           // Always initialize current user state first
-          console.log('🔄 Initializing current user state...');
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🔄 Initializing current user state...');
+          }
           updateParticipantState(0, {
             name: currentUser.name || 'You',
             role: currentUser.role || 'user',
@@ -577,11 +581,22 @@ const DailyVideoConference = forwardRef<
       }
     }, [participantStates, currentUser, updateParticipantState, maxRetries, waitForVideoElement]);
 
+    // Debounced version of connectVideoStreams to prevent rapid successive calls
+    const debouncedConnectVideoStreams = useCallback(() => {
+      if (connectVideoDebounceRef.current) {
+        clearTimeout(connectVideoDebounceRef.current);
+      }
+      
+      connectVideoDebounceRef.current = setTimeout(() => {
+        connectVideoStreams().catch(console.error);
+      }, 100); // 100ms debounce
+    }, [connectVideoStreams]);
+
     // Handle track updates from Daily
     const handleTrackStarted = useCallback((event: any) => {
       console.log('🎥 Track started:', event);
-      connectVideoStreams().catch(console.error);
-    }, [connectVideoStreams]);
+      debouncedConnectVideoStreams();
+    }, [debouncedConnectVideoStreams]);
 
     const handleTrackStopped = useCallback((event: any) => {
       console.log('🛑 Track stopped:', event);
@@ -1365,6 +1380,16 @@ const DailyVideoConference = forwardRef<
         isStartingVideoRef.current = false;
         isMountedRef.current = false;
         
+        // Clear debounce timeouts
+        if (debounceTimeoutRef.current) {
+          clearTimeout(debounceTimeoutRef.current);
+          debounceTimeoutRef.current = null;
+        }
+        if (connectVideoDebounceRef.current) {
+          clearTimeout(connectVideoDebounceRef.current);
+          connectVideoDebounceRef.current = null;
+        }
+        
         // Clear connect retry timeout
         connectRetryCountRef.current = 0;
         
@@ -1553,121 +1578,146 @@ const DailyVideoConference = forwardRef<
       }
     }, [jobId, toast]);
 
-    // Toggle participant media
+    // Toggle participant media with debouncing
     const toggleParticipantMedia = useCallback(async (index: number, mediaType: 'video' | 'audio') => {
-      if (index === 0 && callObjectRef.current) {
-        // Only allow current user to control their own media
+      if (index !== 0 || !callObjectRef.current) return;
+      
+      // Debounce rapid clicks
+      const now = Date.now();
+      if (now - lastToggleTimeRef.current < 1000) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`⚠️ Ignoring rapid ${mediaType} toggle (debounced)`);
+        }
+        return;
+      }
+      lastToggleTimeRef.current = now;
+      
+      // Clear any pending debounce timeout
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+      
+      // Only allow current user to control their own media
+      if (process.env.NODE_ENV === 'development') {
         console.log(`🎛️ Toggling ${mediaType} for current user`);
-        
-        // Set flag to prevent interference from other state updates
-        isManuallyTogglingRef.current = true;
-        
-        try {
-          if (mediaType === 'video') {
-            const currentState = participantStates[0]?.hasVideo || false;
+      }
+      
+      // Set flag to prevent interference from other state updates
+      isManuallyTogglingRef.current = true;
+      
+      try {
+        if (mediaType === 'video') {
+          const currentState = participantStates[0]?.hasVideo || false;
+          if (process.env.NODE_ENV === 'development') {
             console.log(`📹 Current video state: ${currentState}, toggling to: ${!currentState}`);
-            
-            // Call Daily.co API with proper await
-            const result = await callObjectRef.current.setLocalVideo(!currentState);
-            console.log(`📹 Daily.co setLocalVideo result:`, result);
-            
-            // Wait a moment for the API call to fully process
-            await new Promise(resolve => setTimeout(resolve, 200));
-            
-            // Verify the state change
-            const participants = callObjectRef.current.participants();
-            const actualVideoState = !!participants.local?.tracks?.video;
-            console.log(`📹 Actual video state after API call: ${actualVideoState}`);
-            
-            // Update state with the actual result - but prevent conflicting updates
-            updateParticipantState(0, { 
-              hasVideo: actualVideoState,
-              error: null 
-            });
-            
-            toast({
-              title: actualVideoState ? "Camera On" : "Camera Off",
-              description: actualVideoState ? "Your camera is now enabled" : "Your camera is now disabled",
-            });
-            
-            // Delayed reconnection to avoid conflicts
-            setTimeout(() => {
-              if (actualVideoState) {
-                console.log('🔄 Reconnecting video streams after toggle...');
-                connectVideoStreams().catch(console.error);
-              }
-              // Clear the manual toggle flag after operation completes
-              isManuallyTogglingRef.current = false;
-            }, 800);
-            
-          } else {
-            const currentState = participantStates[0]?.hasAudio || false;
-            console.log(`🎤 Current audio state: ${currentState}, toggling to: ${!currentState}`);
-            
-            // Call Daily.co API with proper await
-            const result = await callObjectRef.current.setLocalAudio(!currentState);
-            console.log(`🎤 Daily.co setLocalAudio result:`, result);
-            
-            // Wait a moment for the API call to fully process
-            await new Promise(resolve => setTimeout(resolve, 200));
-            
-            // Verify the state change
-            const participants = callObjectRef.current.participants();
-            const actualAudioState = !!participants.local?.tracks?.audio;
-            console.log(`🎤 Actual audio state after API call: ${actualAudioState}`);
-            
-            // Update state with the actual result
-            updateParticipantState(0, { 
-              hasAudio: actualAudioState,
-              error: null 
-            });
-            
-            toast({
-              title: actualAudioState ? "Microphone On" : "Microphone Off", 
-              description: actualAudioState ? "Your microphone is now enabled" : "Your microphone is now muted",
-            });
-            
-            // Clear the manual toggle flag
-            setTimeout(() => {
-              isManuallyTogglingRef.current = false;
-            }, 500);
           }
           
-        } catch (error) {
-          console.error(`❌ Failed to toggle ${mediaType}:`, error);
+          // Call Daily.co API with proper await
+          const result = await callObjectRef.current.setLocalVideo(!currentState);
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`📹 Daily.co setLocalVideo result:`, result);
+          }
           
+          // Wait a moment for the API call to fully process
+          await new Promise(resolve => setTimeout(resolve, 200));
+          
+          // Verify the state change
+          const participants = callObjectRef.current.participants();
+          const actualVideoState = !!participants.local?.tracks?.video;
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`📹 Actual video state after API call: ${actualVideoState}`);
+          }
+          
+          // Update state with the actual result - but prevent conflicting updates
           updateParticipantState(0, { 
-            error: `Failed to toggle ${mediaType}. Please try again.`
+            hasVideo: actualVideoState,
+            error: null 
           });
           
           toast({
-            variant: "destructive",
-            title: `${mediaType === 'video' ? 'Camera' : 'Microphone'} Error`,
-            description: `Unable to toggle ${mediaType}. Please check your device permissions and try again.`,
+            title: actualVideoState ? "Camera On" : "Camera Off",
+            description: actualVideoState ? "Your camera is now enabled" : "Your camera is now disabled",
           });
           
-          // Clear the manual toggle flag on error
-          isManuallyTogglingRef.current = false;
+          // Delayed reconnection to avoid conflicts
+          debounceTimeoutRef.current = setTimeout(() => {
+            if (actualVideoState) {
+              if (process.env.NODE_ENV === 'development') {
+                console.log('🔄 Reconnecting video streams after toggle...');
+              }
+              connectVideoStreams().catch(console.error);
+            }
+            // Clear the manual toggle flag after operation completes
+            isManuallyTogglingRef.current = false;
+            debounceTimeoutRef.current = null;
+          }, 800);
+          
+        } else {
+          const currentState = participantStates[0]?.hasAudio || false;
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`🎤 Current audio state: ${currentState}, toggling to: ${!currentState}`);
+          }
+          
+          // Call Daily.co API with proper await
+          const result = await callObjectRef.current.setLocalAudio(!currentState);
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`🎤 Daily.co setLocalAudio result:`, result);
+          }
+          
+          // Wait a moment for the API call to fully process
+          await new Promise(resolve => setTimeout(resolve, 200));
+          
+          // Verify the state change
+          const participants = callObjectRef.current.participants();
+          const actualAudioState = !!participants.local?.tracks?.audio;
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`🎤 Actual audio state after API call: ${actualAudioState}`);
+          }
+          
+          // Update state with the actual result
+          updateParticipantState(0, { 
+            hasAudio: actualAudioState,
+            error: null 
+          });
+          
+          toast({
+            title: actualAudioState ? "Microphone On" : "Microphone Off", 
+            description: actualAudioState ? "Your microphone is now enabled" : "Your microphone is now muted",
+          });
+          
+          // Clear the manual toggle flag
+          debounceTimeoutRef.current = setTimeout(() => {
+            isManuallyTogglingRef.current = false;
+            debounceTimeoutRef.current = null;
+          }, 500);
         }
-      } else {
-        console.warn(`⚠️ Cannot toggle ${mediaType}: index=${index}, callObject=${!!callObjectRef.current}`);
         
-        if (!callObjectRef.current) {
-          toast({
-            variant: "destructive", 
-            title: "Connection Error",
-            description: "Video session not connected. Please try reconnecting.",
-          });
-        }
+      } catch (error) {
+        console.error(`❌ Failed to toggle ${mediaType}:`, error);
+        
+        updateParticipantState(0, { 
+          error: `Failed to toggle ${mediaType}. Please try again.`
+        });
+        
+        toast({
+          variant: "destructive",
+          title: `${mediaType === 'video' ? 'Camera' : 'Microphone'} Error`,
+          description: `Unable to toggle ${mediaType}. Please check your device permissions and try again.`,
+        });
+        
+        // Clear the manual toggle flag on error
+        isManuallyTogglingRef.current = false;
       }
-    }, [participantStates, updateParticipantState, connectVideoStreams, toast, getVideoElement]);
+    }, [participantStates, updateParticipantState, connectVideoStreams, toast]);
 
     // Ensure video elements are created before connecting streams
     useEffect(() => {
       if (isVideoActive && callObjectRef.current && !videoStreamsConnectedRef.current) {
         // Wait for video elements to be rendered before connecting streams
         const timer = setTimeout(() => {
-          console.log('🎬 Video elements should be ready, attempting to connect streams...');
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🎬 Video elements should be ready, attempting to connect streams...');
+          }
           connectVideoStreams().catch(console.error);
         }, 500); // Give time for video elements to render
         
@@ -1706,8 +1756,8 @@ const DailyVideoConference = forwardRef<
       };
     }, [cleanupCallObject]);
 
-    // Render participant box
-    const renderParticipantBox = (index: number) => {
+    // Render participant box - memoized to prevent unnecessary re-renders
+    const renderParticipantBox = useCallback((index: number) => {
       const state = participantStates[index];
       const isEmpty = !state?.name;
       const isCurrentUser = index === 0;
@@ -1776,13 +1826,12 @@ const DailyVideoConference = forwardRef<
                     ref={(el) => { 
                       try {
                         if (el) {
+                          // Only log if this is actually a different element (not same element re-assigned)
+                          const isNewElement = videoRefs.current[0] !== el;
                           videoRefs.current[0] = el;
-                          console.log('✅ Local video element created:', {
-                            element: el,
-                            readyState: el.readyState,
-                            videoWidth: el.videoWidth,
-                            videoHeight: el.videoHeight
-                          });
+                          if (isNewElement && process.env.NODE_ENV === 'development') {
+                            console.log('✅ Local video element created');
+                          }
                           el.playsInline = true;
                           el.autoplay = true;
                           el.muted = true;
@@ -1798,7 +1847,6 @@ const DailyVideoConference = forwardRef<
                         }
                       } catch (error) {
                         // Silently handle any errors during ref assignment
-                        console.log('Video ref assignment completed');
                       }
                     }}
                     autoPlay
@@ -1867,13 +1915,12 @@ const DailyVideoConference = forwardRef<
                     ref={(el) => { 
                       try {
                         if (el) {
+                          // Only log if this is actually a different element (not same element re-assigned)
+                          const isNewElement = videoRefs.current[index] !== el;
                           videoRefs.current[index] = el;
-                          console.log(`✅ Remote video element created for index ${index}:`, {
-                            element: el,
-                            readyState: el.readyState,
-                            videoWidth: el.videoWidth,
-                            videoHeight: el.videoHeight
-                          });
+                          if (isNewElement && process.env.NODE_ENV === 'development') {
+                            console.log(`✅ Remote video element created for index ${index}`);
+                          }
                           el.playsInline = true;
                           el.autoplay = true;
                           // Set additional properties to ensure video plays
@@ -1888,7 +1935,6 @@ const DailyVideoConference = forwardRef<
                         }
                       } catch (error) {
                         // Silently handle any errors during ref assignment
-                        console.log(`Remote video ref assignment completed for index ${index}`);
                       }
                     }}
                     autoPlay
@@ -1941,7 +1987,9 @@ const DailyVideoConference = forwardRef<
                   </button>
                   <button
                     onClick={async () => {
-                      console.log('🧪 Manual video test triggered...');
+                      if (process.env.NODE_ENV === 'development') {
+                        console.log('🧪 Manual video test triggered...');
+                      }
                       try {
                         await connectVideoStreams();
                         await ensureCameraStarted();
@@ -1974,7 +2022,21 @@ const DailyVideoConference = forwardRef<
           )}
         </div>
       );
-    };
+    }, [participantStates]);
+
+    // Memoize participant grid to prevent unnecessary re-renders
+    const participantGrid = React.useMemo(() => 
+      Array.from({ length: 8 })
+        .map((_, index) => ({ index, state: participantStates[index] }))
+        .filter(({ index, state }) => {
+          // Always show the current user's box (index 0) to ensure video element exists
+          if (index === 0) return true;
+          // For other participants, only show if they have a name
+          return state?.name;
+        })
+        .map(({ index }) => renderParticipantBox(index)),
+      [participantStates, renderParticipantBox]
+    );
 
     // Main component render
     // If video hasn't started, show initialization screen
@@ -2147,15 +2209,7 @@ const DailyVideoConference = forwardRef<
         {!showDailyInterface && (
           <div className="w-full h-full p-2 pt-1"> {/* Minimal padding */}
             <div className="flex flex-col space-y-1 h-full max-h-full overflow-y-auto"> {/* Using flex with minimal spacing */}
-              {Array.from({ length: 8 })
-                .map((_, index) => ({ index, state: participantStates[index] }))
-                .filter(({ index, state }) => {
-                  // Always show the current user's box (index 0) to ensure video element exists
-                  if (index === 0) return true;
-                  // For other participants, only show if they have a name
-                  return state?.name;
-                })
-                .map(({ index }) => renderParticipantBox(index))}
+              {participantGrid}
             </div>
           </div>
         )}
@@ -2193,7 +2247,6 @@ const DailyVideoConference = forwardRef<
         )}
       </div>
     );
-  }
-);
+  });
 
 export default DailyVideoConference;

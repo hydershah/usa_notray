@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef, forwardRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -19,9 +19,7 @@ import {
   Zap
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/auth';
-import DailyVideoConference, {
-  DailyVideoConferenceHandles,
-} from './DailyVideoConference';
+import { NotaryVideoSession } from '@/components/video';
 import { PDFTaggingEditor } from './PDFTaggingEditor';
 import { DocumentSelector } from './DocumentSelector';
 import { ParticipantPanel } from './ParticipantPanel';
@@ -61,10 +59,19 @@ interface SessionParticipantStatus {
   lastActivity?: Date;
 }
 
-export const LiveSigningInterface = forwardRef<
-  DailyVideoConferenceHandles,
-  LiveSigningInterfaceProps
->(({
+interface VideoSessionData {
+  sessionId: string;
+  roomUrl: string;
+  roomName: string;
+  userToken: string;
+  userRole: string;
+  participantCount: number;
+  maxParticipants: number;
+  status: 'active' | 'recording' | 'completed';
+  createdAt: string;
+}
+
+export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   sessionId,
   liveSessionId,
   documents,
@@ -73,7 +80,7 @@ export const LiveSigningInterface = forwardRef<
   jobData,
   onSessionComplete,
   onTagsChanged
-}, ref) => {
+}) => {
   const { toast } = useToast();
   
   // State management
@@ -85,7 +92,10 @@ export const LiveSigningInterface = forwardRef<
   const [showVideo, setShowVideo] = useState(true);
   const [showParticipants, setShowParticipants] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
-  const [videoAutoStarted, setVideoAutoStarted] = useState(false);
+  const [videoSessionData, setVideoSessionData] = useState<VideoSessionData | null>(null);
+  const [videoSessionError, setVideoSessionError] = useState<string | null>(null);
+  const [hasInitializedVideoSession, setHasInitializedVideoSession] = useState(false);
+
   const [unfilledTagsError, setUnfilledTagsError] = useState<{
     unfilledTags: any[];
     message: string;
@@ -104,14 +114,73 @@ export const LiveSigningInterface = forwardRef<
   const isSigner = currentUser?.userType === 'signer';
   const canControlSession = isNotary; // Only notary can control live session
 
-  // WebSocket connection for real-time sync
-  const webSocket = useWebSocket({
+  // Memoize participant and user objects to prevent re-renders
+  const memoizedParticipants = useMemo(() => 
+    participants.map(p => ({
+      id: p.userId,
+      name: p.displayName,
+      role: p.userType,
+      email: p.email
+    })), 
+    [participants]
+  );
+
+  // Function to fetch or create video session, now resides in the parent
+  const fetchOrCreateVideoSession = useCallback(async (forceCreate = false) => {
+    setIsLoading(true);
+    setVideoSessionError(null);
+    try {
+      let response;
+      if (!forceCreate) {
+        response = await authenticatedFetch(`/api/notary/${jobData.id}/video-session`);
+        if (response.ok) {
+          const data = await response.json();
+          setVideoSessionData(data);
+          return;
+        }
+      }
+      
+      const createResponse = await authenticatedFetch(`/api/notary/${jobData.id}/video-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ participants: memoizedParticipants })
+      });
+
+      if (!createResponse.ok) throw new Error('Failed to create video session');
+      
+      const newSessionData = await createResponse.json();
+      const userParticipant = newSessionData.participants.find((p: any) => p.id === currentUserId);
+      
+      setVideoSessionData({
+        ...newSessionData,
+        userToken: userParticipant?.token,
+        userRole: userParticipant?.role
+      });
+    } catch (err: any) {
+      setVideoSessionError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [jobData.id, currentUserId, memoizedParticipants]);
+
+  useEffect(() => {
+    if (!hasInitializedVideoSession && jobData?.id && memoizedParticipants.length > 0) {
+      fetchOrCreateVideoSession();
+      setHasInitializedVideoSession(true);
+    }
+  }, [jobData?.id, hasInitializedVideoSession, memoizedParticipants.length]);
+
+  // Memoize WebSocket configuration to prevent reconnections
+  const webSocketConfig = useMemo(() => ({
     sessionId: liveSessionId || sessionId,
     userId: currentUserId,
     autoReconnect: true,
     reconnectInterval: 3000,
     maxReconnectAttempts: 10
-  });
+  }), [liveSessionId, sessionId, currentUserId]);
+
+  // WebSocket connection for real-time sync
+  const webSocket = useWebSocket(webSocketConfig);
   
   // Update WebSocket connection state tracking
   useEffect(() => {
@@ -168,7 +237,7 @@ export const LiveSigningInterface = forwardRef<
     }
   }, [liveSessionId, sessionId]);
 
-  const loadLiveSessionState = async () => {
+  const loadLiveSessionState = useCallback(async () => {
     try {
       const targetSessionId = liveSessionId || sessionId;
       const response = await authenticatedFetch(`/api/session/${targetSessionId}/state`);
@@ -190,7 +259,7 @@ export const LiveSigningInterface = forwardRef<
     } catch (error) {
       console.error('Failed to load live session state:', error);
     }
-  };
+  }, [liveSessionId, sessionId]);
 
   // Session completion with retry logic and status polling
   const completeSessionWithRetry = async (targetSessionId: string) => {
@@ -291,7 +360,7 @@ export const LiveSigningInterface = forwardRef<
   };
 
   // Bulk fill handler for filling all user's assigned tags
-  const handleBulkFillTags = async () => {
+  const handleBulkFillTags = useCallback(async () => {
     if (isLoading) return;
     
     try {
@@ -369,7 +438,7 @@ export const LiveSigningInterface = forwardRef<
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [isLoading, currentUserId, sessionId, toast]);
 
   // Session control functions
   const handleSessionAction = async (action: 'start' | 'pause' | 'resume' | 'complete') => {
@@ -463,7 +532,7 @@ export const LiveSigningInterface = forwardRef<
     }
   };
 
-  const handleSetActiveUser = async (userId: string) => {
+  const handleSetActiveUser = useCallback(async (userId: string) => {
     if (isLoading) return;
     setIsLoading(true);
     
@@ -493,9 +562,9 @@ export const LiveSigningInterface = forwardRef<
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [isLoading, liveSessionId, sessionId, loadLiveSessionState, toast]);
 
-  const handleSyncUsers = async () => {
+  const handleSyncUsers = useCallback(async () => {
     if (isLoading || !isNotary) return;
     setIsLoading(true);
     
@@ -539,7 +608,7 @@ export const LiveSigningInterface = forwardRef<
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [isLoading, isNotary, webSocket, viewer.currentPage, currentDocument?.id, liveSessionId, sessionId, toast]);
 
   const formatDuration = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
@@ -653,6 +722,30 @@ export const LiveSigningInterface = forwardRef<
       </div>
     );
   };
+
+  const memoizedCurrentUser = useMemo(() => {
+    const user = participants.find(p => p.userId === currentUserId);
+    return {
+      id: currentUserId,
+      name: user?.displayName || 'Unknown User',
+      role: user?.userType || 'signer',
+      email: user?.email
+    };
+  }, [currentUserId, participants]);
+
+  // Memoize video session callbacks to prevent re-renders
+  const handleVideoSessionComplete = useCallback(() => {
+    console.log('Video session completed');
+  }, []);
+
+  const handleVideoSessionError = useCallback((error: any) => {
+    console.error('Video session error:', error);
+    toast({
+      title: "Video Session Error",
+      description: "There was an issue with the video session",
+      variant: "destructive"
+    });
+  }, [toast]);
 
   return (
     <div className="h-screen bg-gray-50 flex flex-col">
@@ -787,31 +880,30 @@ export const LiveSigningInterface = forwardRef<
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Enhanced Video Panel - Reduced width */}
+        {/* Enhanced Video Panel - Wider for controls */}
         {showVideo && (
-          <div className="w-64 bg-gradient-to-b from-gray-50 to-gray-100 border-r border-gray-200 flex-shrink-0 shadow-sm">
+          <div className="w-96 bg-gradient-to-b from-gray-50 to-gray-100 border-r border-gray-200 flex-shrink-0 shadow-sm">
             <div className="h-full flex flex-col">
 
               
               {/* Video Content */}
               <div className="flex-1">
-                <DailyVideoConference
-                  ref={ref}
-                  sessionId={sessionId}
-                  jobId={parseInt(sessionId.split('_')[1]) || parseInt(sessionId) || jobData?.id || 0}
-                  currentUser={{
-                    id: parseInt(currentUserId),
-                    name: currentUser?.displayName || 'Unknown User',
-                    role: currentUser?.userType || 'signer'
-                  }}
-                  participants={participants.map(p => ({
-                    userId: p.userId,
-                    displayName: p.displayName,
-                    role: p.userType
-                  }))}
-                  autoStart={true}
-                  className="h-full"
-                />
+                {videoSessionData && (
+                  <NotaryVideoSession
+                    key={`video-session-${jobData?.id}`}
+                    jobId={jobData?.id?.toString() || '0'}
+                    currentUser={memoizedCurrentUser}
+                    participants={memoizedParticipants}
+                    autoJoin={true}
+                    className="h-full"
+                    sessionData={videoSessionData}
+                    error={videoSessionError}
+                    isLoading={isLoading}
+                    onSessionComplete={handleVideoSessionComplete}
+                    onSessionError={handleVideoSessionError}
+                    signingSessionState={liveSession.state}
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -839,6 +931,4 @@ export const LiveSigningInterface = forwardRef<
       </div>
     </div>
   );
-});
-
-LiveSigningInterface.displayName = 'LiveSigningInterface'; 
+}; 

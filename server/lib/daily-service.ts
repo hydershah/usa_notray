@@ -250,34 +250,11 @@ class DailyService {
     });
 
     try {
-      // Try multiple possible Daily.co recording endpoints
+      // Try the correct Daily.co recording endpoint
       const endpoints = [
-        // Primary endpoint: /rooms/{roomName}/recordings
+        // Correct endpoint: /rooms/{roomName}/recordings/start
         {
-          url: `${this.config.apiUrl}/rooms/${roomName}/recordings`,
-          body: {
-            properties: {
-              layout: {
-                preset: 'default'
-              }
-            }
-          }
-        },
-        // Alternative endpoint: /recordings with room_name in body
-        {
-          url: `${this.config.apiUrl}/recordings`,
-          body: {
-            room_name: roomName,
-            properties: {
-              layout: {
-                preset: 'default'
-              }
-            }
-          }
-        },
-        // Legacy endpoint: /rooms/{roomName}/recording
-        {
-          url: `${this.config.apiUrl}/rooms/${roomName}/recording`,
+          url: `${this.config.apiUrl}/rooms/${roomName}/recordings/start`,
           body: {
             properties: {
               layout: {

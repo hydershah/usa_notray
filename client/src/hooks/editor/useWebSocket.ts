@@ -366,6 +366,10 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
           }));
           break;
 
+        case 'pong':
+          // WebSocket pong response - connection is alive, no action needed
+          break;
+
         default:
           console.warn('Unknown message type:', message.type);
       }

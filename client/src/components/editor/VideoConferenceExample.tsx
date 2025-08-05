@@ -1,4 +1,4 @@
-import DailyVideoConference from './DailyVideoConference';
+import { NotaryVideoSession } from '@/components/video';
 import SimpleVideoConference from './SimpleVideoConference';
 import { VideoIntegration } from './VideoIntegration';
 import { useState } from 'react';
@@ -179,21 +179,27 @@ const VideoConferenceExample: React.FC<VideoConferenceExampleProps> = ({
             <CardContent>
               <div className="bg-gray-100 p-4 rounded-lg">
                 <div className="h-96 bg-white rounded border-2 border-dashed border-gray-300">
-                  <DailyVideoConference
-                    sessionId={sessionId}
-                    jobId={jobId}
-                    currentUser={dynamicCurrentUser}
-                    participants={dynamicParticipants}
-                    autoStart={demoSettings.autoStart}
+                  <NotaryVideoSession
+                    jobId={jobId.toString()}
+                    currentUser={{
+                      id: dynamicCurrentUser.id,
+                      name: dynamicCurrentUser.name,
+                      role: dynamicCurrentUser.role,
+                      email: dynamicCurrentUser.email
+                    }}
+                    participants={dynamicParticipants.map(p => ({
+                      id: p.userId,
+                      name: p.displayName,
+                      role: p.userType,
+                      email: p.email
+                    }))}
+                    autoJoin={demoSettings.autoStart}
                     className="h-full"
-                    onConnectionStatusChange={(status) => {
-                      console.log('Connection status changed:', status);
+                    onSessionComplete={(sessionData) => {
+                      console.log('Session completed:', sessionData);
                     }}
-                    onParticipantJoined={(participant) => {
-                      console.log('Participant joined:', participant);
-                    }}
-                    onParticipantLeft={(participantId) => {
-                      console.log('Participant left:', participantId);
+                    onSessionError={(error) => {
+                      console.error('Session error:', error);
                     }}
                   />
                 </div>

@@ -454,18 +454,21 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     }
   }, [sessionId, mode, documents, participants, currentUserId]);
 
-  // Set zoom level to 155% specifically for signing mode (delayed to ensure proper rendering)
+  // Set initial zoom level to 150% specifically for signing mode (only once)
+  const [hasSetInitialZoom, setHasSetInitialZoom] = useState(false);
+  
   useEffect(() => {
-    if (mode === 'signing') {
+    if (mode === 'signing' && !hasSetInitialZoom) {
       // Delay zoom setting to ensure PDF is loaded and container is ready
       const timer = setTimeout(() => {
-        setZoomLevel(1.5); // 155% zoom for signing mode
-        console.log('🔍 Set zoom level to 155% for signing mode');
+        setZoomLevel(1.5); // 150% zoom for signing mode
+        setHasSetInitialZoom(true);
+        console.log('🔍 Set initial zoom level to 150% for signing mode');
       }, 200); // Small delay to ensure PDF container is ready
       
       return () => clearTimeout(timer);
     }
-  }, [mode, setZoomLevel]);
+  }, [mode, setZoomLevel, hasSetInitialZoom]);
 
   // Load user profiles for content auto-fill
   useEffect(() => {

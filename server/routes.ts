@@ -15,9 +15,11 @@ import { registerFeeRoutes } from "./fee-routes";
 import { registerTitleCompanyNotaryRoutes } from "./title-company-notary-routes";
 import { registerAdminVerificationRoutes } from "./routes/admin-verification-routes";
 import { registerJobEditingRoutes } from "./routes/job-editing-routes";
+import { registerWhiteoutOverlayRoutes } from "./routes/whiteout-overlay-routes";
 import adminLogsRoutes from "./routes/admin-logs-routes";
 import notaryVerificationRoutes from "./routes/notary-verification-routes";
 import notaryJobApprovalRoutes from "./routes/notary-job-approval-routes";
+import videoSessionRoutes from "./routes/video-session-routes";
 import { auditLoggingService } from "./services/audit-logging-service";
 import { notificationService } from "./notification-service";
 import { verifyToken, hasAdminPrivileges, hasNotaryPrivileges, type AuthUser } from "./auth";
@@ -8494,8 +8496,12 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   registerCertificateVerificationRoutes(app);
   registerNotaryProfileRoutes(app);
   registerJobEditingRoutes(app);
+  registerWhiteoutOverlayRoutes(app);
   registerFeeRoutes(app);
   registerAdminVerificationRoutes(app);
+  
+  // Register video session routes for Daily.co integration
+  app.use('/api', videoSessionRoutes);
   
   // Register certificate management routes
   const certificateRoutes = await import('./certificate-routes');

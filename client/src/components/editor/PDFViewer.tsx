@@ -134,8 +134,14 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   let contentDataFontSize: number | undefined;
   if (tag.contentData) {
     try {
-      const parsedContentData = JSON.parse(tag.contentData);
-      contentDataFontSize = parsedContentData.fontSize;
+      // Handle both JSON string and object formats
+      let parsedContentData;
+      if (typeof tag.contentData === 'string') {
+        parsedContentData = JSON.parse(tag.contentData);
+      } else if (typeof tag.contentData === 'object') {
+        parsedContentData = tag.contentData;
+      }
+      contentDataFontSize = parsedContentData?.fontSize;
     } catch (e) {
       console.warn('Could not parse contentData for font size:', e);
     }
@@ -815,6 +821,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const currentDocumentUrlRef = useRef<string | null>(null);
   const isLoadingRef = useRef<boolean>(false);
   
+  const store = useEditorStore();
   const { 
     viewer, 
     selectedTag,
@@ -827,7 +834,44 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     whiteoutOverlays,
     lastUsedFontSize,
     setLastUsedFontSize
-  } = useEditorStore();
+  } = store;
+
+  // Debug: Log store functions to ensure they exist
+  console.log('🔍 Store functions:', {
+    setZoomLevel: typeof setZoomLevel,
+    currentZoomLevel: viewer.zoomLevel
+  });
+
+  // Zoom controls with debugging and larger increments
+  const handleZoomIn = useCallback(() => {
+    const newZoom = Math.min(viewer.zoomLevel * 1.5, 3.0);
+    console.log('🔍 Zoom In:', { current: viewer.zoomLevel, new: newZoom });
+    setZoomLevel(newZoom);
+  }, [viewer.zoomLevel, setZoomLevel]);
+  
+  const handleZoomOut = useCallback(() => {
+    const newZoom = Math.max(viewer.zoomLevel / 1.5, 0.25);
+    console.log('🔍 Zoom Out:', { current: viewer.zoomLevel, new: newZoom });
+    setZoomLevel(newZoom);
+  }, [viewer.zoomLevel, setZoomLevel]);
+  
+  const handleZoomReset = useCallback(() => {
+    console.log('🔍 Zoom Reset:', { current: viewer.zoomLevel, new: 1.0 });
+    setZoomLevel(1.0);
+  }, [viewer.zoomLevel, setZoomLevel]);
+
+  // Expose zoom functions to window for debugging
+  useEffect(() => {
+    // @ts-ignore - for debugging only
+    window.debugZoom = {
+      zoomIn: handleZoomIn,
+      zoomOut: handleZoomOut,
+      zoomReset: handleZoomReset,
+      setZoomLevel,
+      currentZoom: viewer.zoomLevel
+    };
+    console.log('🔍 Debug zoom functions exposed to window.debugZoom');
+  }, [handleZoomIn, handleZoomOut, handleZoomReset, setZoomLevel, viewer.zoomLevel]);
 
   // Local state for immediate font size updates (for responsive UI)
   const [localFontSizes, setLocalFontSizes] = useState<Map<string, number>>(new Map());
@@ -1447,7 +1491,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       // Clean up from tracking
       renderTasksRef.current.delete(pageNumber);
     }
-  }, [pdfDoc, viewer.zoomLevel, onPageLoad]);
+  }, [pdfDoc, onPageLoad]);
 
   // Load PDF on URL change with smart debouncing for rapid document switching
   useEffect(() => {
@@ -1602,32 +1646,49 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     };
     
     renderInitialPages();
-  }, [pdfDoc, renderPage]);
+  }, [pdfDoc]);
 
-  // Re-render pages on zoom change
+  // Re-render pages on zoom change with debouncing
   useEffect(() => {
     if (!pdfDoc) return;
     
-    console.log('🔄 Zoom changed, re-rendering all pages...');
-    setRenderedPages(new Set());
-    setScaleFactors(new Map());
+    console.log('🔄 Zoom changed to', viewer.zoomLevel, 're-rendering all pages...');
     
-    const renderAllPages = async () => {
+    // Debounce rapid zoom changes to prevent canvas conflicts
+    const timeoutId = setTimeout(async () => {
+      // Cancel all existing render tasks before starting new ones
+      renderTasksRef.current.forEach((task, pageNumber) => {
+        if (task && typeof task.cancel === 'function') {
+          try {
+            task.cancel();
+            console.log(`🚫 Cancelled render task for page ${pageNumber} due to zoom change`);
+          } catch (e) {
+            // Ignore cancellation errors
+          }
+        }
+      });
+      renderTasksRef.current.clear();
+      
+      // Reset rendered pages state
+      setRenderedPages(new Set());
+      setScaleFactors(new Map());
+
+      // Small delay to ensure all cancellations are processed
+      await new Promise(resolve => setTimeout(resolve, 50));
+
       // Render pages sequentially to avoid concurrent canvas operations
       for (let i = 1; i <= pdfDoc.numPages; i++) {
         try {
           await renderPage(i, true); // Force render on zoom change
-          // Small delay between renders to prevent canvas conflicts
-          await new Promise(resolve => setTimeout(resolve, 5));
         } catch (error) {
           console.error(`Failed to render page ${i} during zoom:`, error);
         }
       }
       console.log('✅ All pages re-rendered after zoom change');
-    };
-    
-    renderAllPages();
-  }, [pdfDoc, viewer.zoomLevel, renderPage]);
+    }, 150); // 150ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [pdfDoc, viewer.zoomLevel]);
 
   // Log component state changes (debounced to prevent spam)
   useEffect(() => {
@@ -1641,12 +1702,18 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         canEditTags,
         tagsCount: tags.length,
         scaleFactorsSize: scaleFactors.size,
-        renderedPagesSize: renderedPages.size
+        renderedPagesSize: renderedPages.size,
+        currentZoomLevel: viewer.zoomLevel
       });
     }, 500);
     
     return () => clearTimeout(timeout);
-  }, [documentUrl, pdfDoc, loading, error, canEditTags, tags.length, scaleFactors.size, renderedPages.size]);
+  }, [documentUrl, pdfDoc, loading, error, canEditTags, tags.length, scaleFactors.size, renderedPages.size, viewer.zoomLevel]);
+
+  // Monitor zoom level changes
+  useEffect(() => {
+    console.log('🔍 Zoom level changed to:', viewer.zoomLevel, '(' + Math.round(viewer.zoomLevel * 100) + '%)');
+  }, [viewer.zoomLevel]);
 
   // Handle canvas clicks for tag placement - SIGNER RESTRICTIONS
   const handleCanvasClick = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1978,10 +2045,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     }
   }, [webSocket]);
 
-  // Zoom controls
-  const handleZoomIn = () => setZoomLevel(Math.min(viewer.zoomLevel * 1.25, 3.0));
-  const handleZoomOut = () => setZoomLevel(Math.max(viewer.zoomLevel / 1.25, 0.25));
-  const handleZoomReset = () => setZoomLevel(0.75);
+
 
   if (loading) {
     return (
@@ -2020,31 +2084,49 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   return (
     <div className={`relative h-full flex flex-col ${className}`} style={{ maxWidth: '100%', overflow: 'hidden' }}>
       {/* Controls */}
-      <div className="flex items-center justify-between px-4 py-3 bg-white border-b shadow-sm">
+      <div className="flex items-center justify-between px-4 py-3 bg-white border-b shadow-sm relative z-50">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
+          <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1 relative z-10">
             <button 
-              onClick={handleZoomOut} 
-              className="p-2 bg-white border rounded hover:bg-gray-50 transition-colors shadow-sm"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('🔍 Zoom Out button clicked');
+                handleZoomOut();
+              }} 
+              className="p-2 bg-white border rounded hover:bg-gray-50 transition-colors shadow-sm cursor-pointer"
               title="Zoom out"
+              type="button"
             >
               −
             </button>
-            <span className="min-w-16 text-center text-sm font-medium px-2">
+            <span className="min-w-16 text-center text-sm font-medium px-2 bg-yellow-100 border border-yellow-400 rounded">
               {Math.round(viewer.zoomLevel * 100)}%
             </span>
             <button 
-              onClick={handleZoomIn} 
-              className="p-2 bg-white border rounded hover:bg-gray-50 transition-colors shadow-sm"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('🔍 Zoom In button clicked');
+                handleZoomIn();
+              }} 
+              className="p-2 bg-white border rounded hover:bg-gray-50 transition-colors shadow-sm cursor-pointer"
               title="Zoom in"
+              type="button"
             >
               +
             </button>
           </div>
           <button 
-            onClick={handleZoomReset} 
-            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm transition-colors"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log('🔍 Zoom Reset button clicked');
+              handleZoomReset();
+            }} 
+            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm transition-colors cursor-pointer"
             title="Reset zoom to fit"
+            type="button"
           >
             Fit to View
           </button>

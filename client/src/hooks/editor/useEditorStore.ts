@@ -188,7 +188,7 @@ export const useEditorStore = create<EditorStore>()(
       viewer: {
         currentPage: 1,
         totalPages: 0,
-        zoomLevel: 2.0,
+        zoomLevel: 1.0,
         scrollTop: 0,
         documentId: ''
       },
@@ -384,8 +384,31 @@ export const useEditorStore = create<EditorStore>()(
             }
           });
           
+          // If endpoint doesn't exist (404) or has server error (500), just return empty overlays
+          if (response.status === 404 || response.status === 500) {
+            console.log(`⬜ Whiteout overlays endpoint not available (${response.status}), using empty overlays for document ${documentId}`);
+            set(state => ({
+              whiteoutOverlays: state.whiteoutOverlays.filter(overlay => overlay.documentId !== documentId)
+            }));
+            return;
+          }
+
           if (!response.ok) {
-            throw new Error(`Failed to load whiteout overlays: ${response.status}`);
+            console.warn(`⚠️ Whiteout overlays request failed with status ${response.status}, using empty overlays for document ${documentId}`);
+            set(state => ({
+              whiteoutOverlays: state.whiteoutOverlays.filter(overlay => overlay.documentId !== documentId)
+            }));
+            return;
+          }
+          
+          // Check if response is JSON
+          const contentType = response.headers.get('content-type');
+          if (!contentType || !contentType.includes('application/json')) {
+            console.log(`⬜ Whiteout overlays endpoint returned non-JSON response, using empty overlays for document ${documentId}`);
+            set(state => ({
+              whiteoutOverlays: state.whiteoutOverlays.filter(overlay => overlay.documentId !== documentId)
+            }));
+            return;
           }
           
           const { overlays: documentOverlays } = await response.json();
@@ -401,8 +424,12 @@ export const useEditorStore = create<EditorStore>()(
           console.log(`✅ Loaded ${documentOverlays.length} whiteout overlays for document ${documentId}`);
           
         } catch (error) {
-          console.error(`❌ Failed to load whiteout overlays for document ${documentId}:`, error);
+          console.warn(`⚠️ Could not load whiteout overlays for document ${documentId} (optional feature):`, error);
           // Don't throw error for whiteout overlays - they're optional
+          // Set empty overlays for this document
+          set(state => ({
+            whiteoutOverlays: state.whiteoutOverlays.filter(overlay => overlay.documentId !== documentId)
+          }));
         }
       },
       
@@ -496,10 +523,12 @@ export const useEditorStore = create<EditorStore>()(
           viewer: { ...state.viewer, currentPage: page }
         })),
       
-      setZoomLevel: (zoom) =>
-        set((state) => ({
+      setZoomLevel: (zoom) => {
+        console.log('🔍 Store setZoomLevel called:', { current: get().viewer.zoomLevel, new: zoom });
+        return set((state) => ({
           viewer: { ...state.viewer, zoomLevel: zoom }
-        })),
+        }));
+      },
       
       setScrollTop: (scrollTop) =>
         set((state) => ({

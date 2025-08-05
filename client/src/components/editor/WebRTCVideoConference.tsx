@@ -538,40 +538,18 @@ export const WebRTCVideoConference: React.FC<WebRTCVideoConferenceProps> = ({
     }
   }, [isConnected, participants.length]);
 
-  // Get optimal grid layout for participant count
+  // Get optimal grid layout for participant count - stacked vertically 1 per row
   const getGridLayout = (totalParticipants: number) => {
     // Total participants includes local user
     const count = totalParticipants;
     
-    if (count <= 2) {
-      return {
-        desktop: 'grid-cols-1 md:grid-cols-2',
-        mobile: 'grid-cols-1',
-        aspectRatio: 'aspect-video',
-        maxHeight: 'max-h-[60vh]'
-      };
-    } else if (count <= 4) {
-      return {
-        desktop: 'grid-cols-2',
-        mobile: 'grid-cols-1 sm:grid-cols-2',
-        aspectRatio: 'aspect-video',
-        maxHeight: 'max-h-[70vh]'
-      };
-    } else if (count <= 6) {
-      return {
-        desktop: 'grid-cols-2 lg:grid-cols-3',
-        mobile: 'grid-cols-1 sm:grid-cols-2',
-        aspectRatio: 'aspect-video',
-        maxHeight: 'max-h-[75vh]'
-      };
-    } else {
-      return {
-        desktop: 'grid-cols-2 lg:grid-cols-3 xl:grid-cols-4',
-        mobile: 'grid-cols-1 sm:grid-cols-2',
-        aspectRatio: 'aspect-video',
-        maxHeight: 'max-h-[80vh]'
-      };
-    }
+    // All participants stacked vertically in individual boxes
+    return {
+      desktop: 'grid-cols-1',
+      mobile: 'grid-cols-1',
+      aspectRatio: 'aspect-video',
+      maxHeight: 'max-h-[80vh]'
+    };
   };
 
   const totalParticipants = participants.length + 1; // +1 for local user
