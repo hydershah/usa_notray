@@ -873,6 +873,59 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     console.log('🔍 Debug zoom functions exposed to window.debugZoom');
   }, [handleZoomIn, handleZoomOut, handleZoomReset, setZoomLevel, viewer.zoomLevel]);
 
+  // Keyboard shortcuts for zoom
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + Plus for zoom in
+      if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '=')) {
+        e.preventDefault();
+        console.log('🔍 Keyboard zoom in triggered');
+        handleZoomIn();
+      }
+      // Ctrl/Cmd + Minus for zoom out
+      else if ((e.ctrlKey || e.metaKey) && e.key === '-') {
+        e.preventDefault();
+        console.log('🔍 Keyboard zoom out triggered');
+        handleZoomOut();
+      }
+      // Ctrl/Cmd + 0 for reset zoom
+      else if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+        e.preventDefault();
+        console.log('🔍 Keyboard zoom reset triggered');
+        handleZoomReset();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleZoomIn, handleZoomOut, handleZoomReset]);
+
+  // Mouse wheel zoom functionality
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      // Only zoom if Ctrl/Cmd is held
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        
+        if (e.deltaY < 0) {
+          // Scrolling up = zoom in
+          console.log('🔍 Mouse wheel zoom in triggered');
+          handleZoomIn();
+        } else {
+          // Scrolling down = zoom out
+          console.log('🔍 Mouse wheel zoom out triggered');
+          handleZoomOut();
+        }
+      }
+    };
+
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener('wheel', handleWheel, { passive: false });
+      return () => container.removeEventListener('wheel', handleWheel);
+    }
+  }, [handleZoomIn, handleZoomOut]);
+
   // Local state for immediate font size updates (for responsive UI)
   const [localFontSizes, setLocalFontSizes] = useState<Map<string, number>>(new Map());
 
@@ -1411,9 +1464,18 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       
       const viewport = page.getViewport({ scale: 1 });
       const baseScale = Math.min((containerWidth - 120) / viewport.width, 1.0); // Reduced to 1.0x max scale for better fit
-      const finalScale = baseScale * viewer.zoomLevel;
+      
+      // Get fresh zoom level from store to avoid stale closure
+      const currentZoomLevel = useEditorStore.getState().viewer.zoomLevel;
+      const finalScale = baseScale * currentZoomLevel;
 
-      console.log(`🔍 Page ${pageNumber} scale calculation:`, { containerWidth, baseScale, zoomLevel: viewer.zoomLevel, finalScale });
+      console.log(`🔍 Page ${pageNumber} scale calculation:`, { 
+        containerWidth, 
+        baseScale, 
+        zoomLevelFromProps: viewer.zoomLevel, 
+        currentZoomLevelFromStore: currentZoomLevel, 
+        finalScale 
+      });
 
       // Store scale factor for coordinate conversion
       setScaleFactors(prev => new Map(prev.set(pageNumber, finalScale)));
@@ -1491,7 +1553,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       // Clean up from tracking
       renderTasksRef.current.delete(pageNumber);
     }
-  }, [pdfDoc, onPageLoad]);
+  }, [pdfDoc, onPageLoad, viewer.zoomLevel]);
 
   // Load PDF on URL change with smart debouncing for rapid document switching
   useEffect(() => {
@@ -2091,28 +2153,57 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('🔍 Zoom Out button clicked');
+                console.log('🔍 Zoom Out button clicked - current zoom:', viewer.zoomLevel);
                 handleZoomOut();
               }} 
-              className="p-2 bg-white border rounded hover:bg-gray-50 transition-colors shadow-sm cursor-pointer"
+              className="p-2 bg-white border rounded hover:bg-gray-50 transition-colors shadow-sm cursor-pointer select-none"
               title="Zoom out"
               type="button"
+              disabled={viewer.zoomLevel <= 0.25}
+              style={{ 
+                pointerEvents: 'auto',
+                userSelect: 'none',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                lineHeight: '1',
+                minWidth: '32px',
+                minHeight: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
             >
               −
             </button>
-            <span className="min-w-16 text-center text-sm font-medium px-2 bg-yellow-100 border border-yellow-400 rounded">
+            <span 
+              className="min-w-16 text-center text-sm font-medium px-2 bg-yellow-100 border border-yellow-400 rounded select-none"
+              style={{ userSelect: 'none', pointerEvents: 'none' }}
+            >
               {Math.round(viewer.zoomLevel * 100)}%
             </span>
             <button 
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('🔍 Zoom In button clicked');
+                console.log('🔍 Zoom In button clicked - current zoom:', viewer.zoomLevel);
                 handleZoomIn();
               }} 
-              className="p-2 bg-white border rounded hover:bg-gray-50 transition-colors shadow-sm cursor-pointer"
+              className="p-2 bg-white border rounded hover:bg-gray-50 transition-colors shadow-sm cursor-pointer select-none"
               title="Zoom in"
               type="button"
+              disabled={viewer.zoomLevel >= 3.0}
+              style={{ 
+                pointerEvents: 'auto',
+                userSelect: 'none',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                lineHeight: '1',
+                minWidth: '32px',
+                minHeight: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
             >
               +
             </button>
@@ -2121,15 +2212,48 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              console.log('🔍 Zoom Reset button clicked');
+              console.log('🔍 Zoom Reset button clicked - current zoom:', viewer.zoomLevel);
               handleZoomReset();
             }} 
-            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm transition-colors cursor-pointer"
+            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm transition-colors cursor-pointer select-none"
             title="Reset zoom to fit"
             type="button"
+            style={{ 
+              pointerEvents: 'auto',
+              userSelect: 'none'
+            }}
           >
             Fit to View
           </button>
+
+          {/* Debug zoom controls - only in development */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="flex items-center gap-1 bg-red-50 border border-red-200 rounded-lg p-1">
+              <span className="text-xs text-red-600 font-medium">Debug:</span>
+              <button 
+                onClick={() => {
+                  console.log('🔍 Debug: Testing direct setZoomLevel call');
+                  setZoomLevel(2.0);
+                }} 
+                className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200"
+                type="button"
+              >
+                Test 2x
+              </button>
+              <button 
+                onClick={() => {
+                  console.log('🔍 Debug: Testing zoom functions');
+                  console.log('Current zoom:', viewer.zoomLevel);
+                  console.log('handleZoomIn type:', typeof handleZoomIn);
+                  console.log('setZoomLevel type:', typeof setZoomLevel);
+                }} 
+                className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200"
+                type="button"
+              >
+                Log
+              </button>
+            </div>
+          )}
           
                     {/* Font Size Control - Only show when a text tag is selected */}
           {(selectedTag || selectedTextInputId) && (

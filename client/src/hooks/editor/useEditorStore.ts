@@ -525,9 +525,10 @@ export const useEditorStore = create<EditorStore>()(
       
       setZoomLevel: (zoom) => {
         console.log('🔍 Store setZoomLevel called:', { current: get().viewer.zoomLevel, new: zoom });
-        return set((state) => ({
+        set((state) => ({
           viewer: { ...state.viewer, zoomLevel: zoom }
         }));
+        console.log('🔍 Store setZoomLevel completed:', { newZoom: get().viewer.zoomLevel });
       },
       
       setScrollTop: (scrollTop) =>
