@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { UserForm } from '@/components/user/user-form';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
@@ -27,7 +28,9 @@ import {
   XCircle,
   Clock,
   Hash,
-  Plus
+  Plus,
+  Download,
+  ExternalLink
 } from 'lucide-react';
 
 interface NotaryData {
@@ -114,6 +117,7 @@ export function AdminNotaries() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [allNotaries, setAllNotaries] = useState<NotaryData[]>([]);
+  const [isDocumentsModalOpen, setIsDocumentsModalOpen] = useState(false);
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -146,13 +150,31 @@ export function AdminNotaries() {
   };
 
   const handleFormSubmit = (formData: any) => {
-    // Set role to notary and default notary type if not specified
-    const userData = {
-      ...formData,
-      role: 'notary',
-      notaryType: formData.notaryType || 'contractor'
-    };
-    createUserMutation.mutate(userData);
+    // Handle form submission
+  };
+
+  const handlePreviewDocument = async (documentType: string, fileName: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token || !selectedNotary) {
+        toast({
+          title: "Error",
+          description: "Authentication required to view documents.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const previewUrl = `/api/notary/profile/documents/${selectedNotary.id}/preview/${documentType}?token=${encodeURIComponent(token)}`;
+      window.open(previewUrl, '_blank');
+    } catch (error) {
+      console.error('Error previewing document:', error);
+      toast({
+        title: "Preview Failed",
+        description: "Unable to preview the document.",
+        variant: "destructive"
+      });
+    }
   };
 
   useEffect(() => {
@@ -703,6 +725,19 @@ export function AdminNotaries() {
                         </div>
                       ))}
                     </div>
+                    
+                    {/* View Documents Button */}
+                    <div className="mt-4 pt-3 border-t border-gray-200">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        className="w-full flex items-center justify-center gap-2"
+                        onClick={() => setIsDocumentsModalOpen(true)}
+                      >
+                        <Eye className="w-4 h-4" />
+                        View Documents
+                      </Button>
+                    </div>
                   </div>
 
                   {/* ID Verification */}
@@ -830,6 +865,100 @@ export function AdminNotaries() {
         isLoading={createUserMutation.isPending}
         defaultRole="notary"
       />
+
+      {/* Documents Modal */}
+      <Dialog open={isDocumentsModalOpen} onOpenChange={setIsDocumentsModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Documents for {selectedNotary?.fullName}</DialogTitle>
+            <DialogDescription>
+              View and download required notary documents.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {selectedNotary?.hasCommissionFile && (
+              <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-blue-600" />
+                  <span>Commission Certificate</span>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-blue-600 hover:text-blue-800"
+                  onClick={() => handlePreviewDocument('notaryCommissionFile', 'Commission Certificate')}
+                >
+                  <Eye className="h-4 w-4 mr-1" /> Preview
+                </Button>
+              </div>
+            )}
+            {selectedNotary?.hasEOInsurance && (
+              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-green-600" />
+                  <span>E&O Insurance Certificate</span>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-green-600 hover:text-green-800"
+                  onClick={() => handlePreviewDocument('eoInsuranceFile', 'E&O Insurance Certificate')}
+                >
+                  <Eye className="h-4 w-4 mr-1" /> Preview
+                </Button>
+              </div>
+            )}
+            {selectedNotary?.hasPublicCertificate && (
+              <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-purple-600" />
+                  <span>Digital Certificate</span>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-purple-600 hover:text-purple-800"
+                  onClick={() => handlePreviewDocument('publicCertificateFile', 'Digital Certificate')}
+                >
+                  <Eye className="h-4 w-4 mr-1" /> Preview
+                </Button>
+              </div>
+            )}
+            {selectedNotary?.hasBond && (
+              <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-red-600" />
+                  <span>Bond Certificate</span>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-red-600 hover:text-red-800"
+                  onClick={() => handlePreviewDocument('bondFile', 'Bond Certificate')}
+                >
+                  <Eye className="h-4 w-4 mr-1" /> Preview
+                </Button>
+              </div>
+            )}
+            {selectedNotary?.hasSigningAgentFile && (
+              <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-orange-600" />
+                  <span>Signing Agent Certificate</span>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-orange-600 hover:text-orange-800"
+                  onClick={() => handlePreviewDocument('signingAgentFile', 'Signing Agent Certificate')}
+                >
+                  <Eye className="h-4 w-4 mr-1" /> Preview
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 } 

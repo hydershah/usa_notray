@@ -274,7 +274,7 @@ export function registerNotaryProfileRoutes(app: Express) {
       }
       
       // Verify token
-      let decoded;
+      let decoded: any;
       try {
         decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
       } catch (error) {
@@ -282,7 +282,8 @@ export function registerNotaryProfileRoutes(app: Express) {
       }
       
       // Check if user can access this notary's documents
-      if (decoded.id !== notaryId && decoded.role !== 'admin') {
+      const hasAdminPrivileges = decoded.privileges && decoded.privileges.includes('admin');
+      if (decoded.id !== notaryId && !hasAdminPrivileges) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -414,7 +415,7 @@ export function registerNotaryProfileRoutes(app: Express) {
       }
       
       // Verify token
-      let decoded;
+      let decoded: any;
       try {
         decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
       } catch (error) {
@@ -422,7 +423,8 @@ export function registerNotaryProfileRoutes(app: Express) {
       }
       
       // Check if user can access this notary's documents
-      if (decoded.id !== notaryId && decoded.role !== 'admin') {
+      const hasAdminPrivileges = decoded.privileges && decoded.privileges.includes('admin');
+      if (decoded.id !== notaryId && !hasAdminPrivileges) {
         return res.status(403).json({ message: 'Access denied' });
       }
 

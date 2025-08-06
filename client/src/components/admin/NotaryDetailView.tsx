@@ -481,6 +481,22 @@ export function NotaryDetailView({ notaryId, onClose }: NotaryDetailViewProps) {
             {getFileBadge(profile.documents?.hasPublicCertificateFile || profile.hasPublicCertificateFile, 'Digital Certificate', 'publicCertificateFile')}
             {getFileBadge(profile.documents?.hasBondFile || profile.hasBondFile, 'Bond Certificate', 'bondFile')}
             {getFileBadge(profile.documents?.hasSigningAgentFile || profile.hasSigningAgentFile, 'Signing Agent Certificate', 'signingAgentFile')}
+            
+            {/* View Documents Button */}
+            <div className="pt-4 border-t border-gray-200">
+              <Button 
+                variant="default" 
+                className="w-full flex items-center justify-center gap-2"
+                onClick={() => {
+                  const token = localStorage.getItem('token');
+                  const documentsUrl = `/api/notary/profile/documents/${notaryId}?token=${token}`;
+                  window.open(documentsUrl, '_blank');
+                }}
+              >
+                <Eye className="w-4 h-4" />
+                View All Documents
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
