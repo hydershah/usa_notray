@@ -154,6 +154,35 @@ WHERE user_id IS NOT NULL;
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_signers_email_lower 
 ON signers (LOWER(signer_email));
 
+-- Critical performance indexes for session start operations
+-- This migration addresses the 2000+ms slow requests when starting sessions
+
+-- 1. CRITICAL: Index for sessionId lookups (primary query in startLiveSigningSession)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_editor_sessions_session_id 
+ON editor_sessions (session_id);
+
+-- 2. Compound index for job + live session lookups (secondary query)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_editor_sessions_job_live 
+ON editor_sessions (job_id, is_live_session, created_at DESC)
+WHERE is_live_session = true;
+
+-- 3. Index for signing state filtering  
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_editor_sessions_signing_state
+ON editor_sessions (signing_state)
+WHERE signing_state IN ('active', 'paused', 'waiting');
+
+-- 4. Compound index for session_id + signing_state (for state checks)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_editor_sessions_session_state
+ON editor_sessions (session_id, signing_state);
+
+-- 5. Index for active user updates
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_editor_sessions_active_user
+ON editor_sessions (session_id, active_user_id);
+
+-- 6. Optimize user permission checks
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_id_role_privileges
+ON users (id, role, privileges);
+
 -- Performance Analysis Comments
 -- ================================================================================
 /*

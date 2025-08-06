@@ -488,7 +488,7 @@ export const useEditorStore = create<EditorStore>()(
         } catch (error) {
           console.error(`❌ Could not get dimensions for tag type: ${tagType}`, error);
           // Return a safe fallback
-          return { width: 120, height: 32 };
+          return { width: 120, height: 25 };
         }
       },
       

@@ -60,58 +60,63 @@ export class LiveSigningSessionService {
       const result = await withDatabaseProtection(async () => {
         let session = null;
         
-        // Strategy 1: Try to find existing editor session by sessionId
-        [session] = await db
-          .select()
-          .from(editorSessions)
-          .where(eq(editorSessions.sessionId, sessionId))
-          .limit(1);
+        // Execute parallel queries for better performance
+        const [sessionResults, userResult] = await Promise.all([
+          // Query 1: Try to find existing editor session by sessionId
+          db
+            .select()
+            .from(editorSessions)
+            .where(eq(editorSessions.sessionId, sessionId))
+            .limit(1),
+          // Query 2: Get user permissions (we'll need this anyway)
+          db
+            .select({ role: users.role, privileges: users.privileges })
+            .from(users)
+            .where(eq(users.id, notaryUserId))
+            .limit(1)
+        ]);
+        
+        session = sessionResults[0];
+        const currentUser = userResult[0];
         
         // Strategy 2: If no session found by sessionId, look for existing sessions by jobId
         if (!session) {
           const jobIdNum = parseInt(sessionId);
           if (!isNaN(jobIdNum)) {
-            console.log(`🔍 No session found with sessionId ${sessionId}, looking for existing sessions for job ${jobIdNum}...`);
-            
-            // Look for completed tagging session with tags (priority #1)
-            const [taggedSession] = await db
+            // Look for existing sessions for this job
+            const existingSessions = await db
               .select()
               .from(editorSessions)
-              .where(and(
-                eq(editorSessions.jobId, jobIdNum),
-                eq(editorSessions.sessionType, 'tagging'),
-                eq(editorSessions.status, 'completed')
-              ))
-              .orderBy(desc(editorSessions.updatedAt))
+              .where(
+                and(
+                  eq(editorSessions.jobId, jobIdNum),
+                  eq(editorSessions.isLiveSession, true)
+                )
+              )
+              .orderBy(desc(editorSessions.createdAt))
               .limit(1);
             
-            if (taggedSession) {
-              // Check if this session has tags
-              const tagCount = await db
-                .select({ count: sql<number>`count(*)` })
-                .from(documentTags)
-                .where(eq(documentTags.sessionId, taggedSession.id));
+            if (existingSessions.length > 0) {
+              session = existingSessions[0];
+              console.log(`📄 Found existing session ${session.sessionId} for job ${jobIdNum}`);
               
-              if (tagCount[0]?.count > 0) {
-                console.log(`✅ Found tagged session with ${tagCount[0].count} tags: ${taggedSession.sessionId}`);
-                session = taggedSession;
-              }
-            }
-            
-            // If no tagged session with tags, look for any active session for this job
-            if (!session) {
-              [session] = await db
-                .select()
-                .from(editorSessions)
-                .where(and(
-                  eq(editorSessions.jobId, jobIdNum),
-                  eq(editorSessions.status, 'active')
-                ))
-                .orderBy(desc(editorSessions.updatedAt))
-                .limit(1);
-              
-              if (session) {
-                console.log(`✅ Found active session for job ${jobIdNum}: ${session.sessionId}`);
+              // Check if session is already in progress
+              if (session.signingState === 'active' || session.signingState === 'paused') {
+                console.log(`⚠️ Session ${session.sessionId} is already in progress (${session.signingState})`);
+                
+                // Return existing session state without modification
+                return {
+                  success: true,
+                  newState: session.signingState === 'active' ? SigningSessionState.ACTIVE : SigningSessionState.PAUSED,
+                  state: session.signingState as 'active' | 'paused',
+                  message: `Session is already ${session.signingState}`,
+                  timestamp: new Date(),
+                  sessionId: session.sessionId
+                };
+              } else if (session.signingState === 'completed') {
+                console.log(`✅ Creating new session as previous one is completed`);
+              } else {
+                console.log(`♻️ Reusing existing session ${session.sessionId}`);
               }
             }
           }
@@ -147,12 +152,6 @@ export class LiveSigningSessionService {
         }
         
         // Verify user is the notary for this session or is an admin
-        const [currentUser] = await db
-          .select({ role: users.role, privileges: users.privileges })
-          .from(users)
-          .where(eq(users.id, notaryUserId))
-          .limit(1);
-        
         const isAdmin = currentUser?.role === 'admin' || (currentUser?.privileges && currentUser.privileges.includes('admin'));
         const isAssignedNotary = session.notaryId === notaryUserId;
         
@@ -161,54 +160,53 @@ export class LiveSigningSessionService {
         }
         
         // **CRITICAL FIX**: Transition existing session to live signing mode (preserve tags!)
-        await db
-          .update(editorSessions)
-          .set({
-            sessionType: 'notary', // Change to notary session type
-            signingState: SigningSessionState.ACTIVE,
-            isLiveSession: true,
-            startedAt: new Date(),
-            activeUserId: notaryUserId,
-            status: 'active', // Reactivate if completed
-            updatedAt: new Date()
-          })
-          .where(eq(editorSessions.id, session.id));
+        // Only update if not already active
+        if (session.signingState !== 'active') {
+          console.log(`🔄 Transitioned session ${session.sessionId} to live signing mode (tags preserved)`);
+          
+          // Execute both updates in parallel for better performance
+          await Promise.all([
+            // Update 1: Set signing state to active
+            db.update(editorSessions)
+              .set({
+                signingState: 'active',
+                isLiveSession: true,
+                status: 'active',
+                updatedAt: new Date()
+              })
+              .where(eq(editorSessions.sessionId, session.sessionId)),
+            
+            // Update 2: Set active user (if needed)
+            this.setActiveUser(session.sessionId, notaryUserId)
+          ]);
+        }
         
-        console.log(`🔄 Transitioned session ${session.sessionId} to live signing mode (tags preserved)`);
+        // Clear session cache to ensure fresh data
+        if (!redisCache.isRedisDisabled()) {
+          await Promise.all([
+            redisCache.delPattern(`session:${session.sessionId}:*`),
+            redisCache.delPattern(`job:*:session:${session.jobId}:*`)
+          ]);
+          console.log(`🧹 Cleared session cache for ${session.sessionId}`);
+        }
         
-        // Log the transition
-        await this.logSessionEvent(session.id, notaryUserId, 'session_started', {
-          previousState: session.signingState,
-          newState: SigningSessionState.ACTIVE,
-          startedBy: notaryUserId,
-          transitionedFrom: session.sessionType
-        });
+        console.log(`✅ Live signing session started: ${session.sessionId}`);
         
         return {
           success: true,
           newState: SigningSessionState.ACTIVE,
-          message: 'Live signing session started successfully',
+          state: 'active',
+          message: 'Live signing session started',
           timestamp: new Date(),
-          sessionId: session.sessionId // Return the actual session ID being used
+          sessionId: session.sessionId
         };
       }, 'start_live_signing_session');
-
-      // Important: Use the actual session ID from the result
-      const actualSessionId = result.sessionId || sessionId;
-      
-      // Activate the notary as the initial active user
-      await this.setActiveUser(actualSessionId, notaryUserId);
-      
-      // Clear cache after state change
-      await this.clearSessionCache(actualSessionId);
-      
-      console.log(`✅ Live signing session started: ${actualSessionId}`);
       
       return result;
       
     } catch (error) {
       console.error('Failed to start live signing session:', error);
-      throw new Error(`Failed to start session: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
     }
   }
   
@@ -240,77 +238,32 @@ export class LiveSigningSessionService {
   }
   
   /**
-   * Set the active user who can interact with tags
+   * Set the active user for a session
    */
-  static async setActiveUser(sessionId: string, userId: number): Promise<void> {
+  static async setActiveUser(
+    sessionId: string, 
+    userId: number
+  ): Promise<void> {
     try {
-      // Use circuit breaker protection for database operations
-      await withDatabaseProtection(async () => {
-        // Get session - try sessionId first, then jobId
-        let [session] = await db
-          .select()
-          .from(editorSessions)
-          .where(eq(editorSessions.sessionId, sessionId))
-          .limit(1);
-        
-        if (!session) {
-          const jobIdNum = parseInt(sessionId);
-          if (!isNaN(jobIdNum)) {
-            [session] = await db
-              .select()
-              .from(editorSessions)
-              .where(eq(editorSessions.jobId, jobIdNum))
-              .limit(1);
-          }
-        }
-        
-        if (!session) {
-          throw new Error('Session not found');
-        }
-        
-        // Update active user
-        await db
-          .update(editorSessions)
-          .set({
-            activeUserId: userId,
-            updatedAt: new Date()
-          })
-          .where(eq(editorSessions.id, session.id));
-        
-        // Update participant status with error handling
-        try {
-          await db
-            .update(sessionParticipantsStatus)
-            .set({ isActive: false })
-            .where(eq(sessionParticipantsStatus.sessionId, session.id));
-          
-          await db
-            .update(sessionParticipantsStatus)
-            .set({ 
-              isActive: true, 
-              lastActivity: new Date(),
-              canInteract: true 
-            })
-            .where(and(
-              eq(sessionParticipantsStatus.sessionId, session.id),
-              eq(sessionParticipantsStatus.userId, userId)
-            ));
-        } catch (participantError) {
-          console.warn('Failed to update participant status:', participantError);
-          // Don't throw - this is not critical for the main flow
-        }
-        
-        // Log the user activation
-        await this.logSessionEvent(session.id, userId, 'user_activated', {
-          activeUserId: userId
-        });
-        
-        console.log(`👤 Active user set to ${userId} in session ${sessionId}`);
-        
-      }, 'set_active_user');
+      console.log(`👤 Active user set to ${userId} in session ${sessionId}`);
       
-      // Clear cache after state change
-      await this.clearSessionCache(sessionId);
+      await db.update(editorSessions)
+        .set({
+          activeUserId: userId,
+          updatedAt: new Date()
+        })
+        .where(eq(editorSessions.sessionId, sessionId));
+      
+      // Clear relevant caches
+      if (!redisCache.isRedisDisabled()) {
+        await Promise.all([
+          redisCache.delPattern(`session:${sessionId}:*`),
+          redisCache.delPattern(`job:*:session:${sessionId}:*`)
+        ]);
+        console.log(`🧹 Cleared session cache for ${sessionId}`);
+      }
+      
+      console.log(`✅ Live signing session started: ${sessionId}`);
       
     } catch (error) {
       console.error('Failed to set active user:', error);

@@ -440,10 +440,54 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     }
   }, [isLoading, currentUserId, sessionId, toast]);
 
-  // Session control functions
+  // Add request tracking refs to prevent duplicate requests
+  const activeRequestRef = useRef<AbortController | null>(null);
+  const lastRequestTimeRef = useRef<number>(0);
+  const requestDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const [sessionStarting, setSessionStarting] = useState(false);
+
+  // Session control functions with proper debouncing and request deduplication
   const handleSessionAction = async (action: 'start' | 'pause' | 'resume' | 'complete') => {
-    if (isLoading) return;
+    // Prevent multiple simultaneous requests
+    if (isLoading || sessionStarting) {
+      console.log('⚠️ Request already in progress, ignoring click');
+      return;
+    }
+    
+    // For start action, add extra protection
+    if (action === 'start' && liveSession.state === 'active') {
+      console.log('⚠️ Session already active, ignoring start request');
+      return;
+    }
+    
+    // Debounce rapid clicks (within 1000ms for start action, 500ms for others)
+    const now = Date.now();
+    const debounceTime = action === 'start' ? 1000 : 500;
+    if (now - lastRequestTimeRef.current < debounceTime) {
+      console.log(`⚠️ Debouncing rapid click (${action})`);
+      return;
+    }
+    lastRequestTimeRef.current = now;
+    
+    // Cancel any pending debounced request
+    if (requestDebounceRef.current) {
+      clearTimeout(requestDebounceRef.current);
+    }
+    
+    // Abort any existing request
+    if (activeRequestRef.current) {
+      console.log('🚫 Aborting previous request');
+      activeRequestRef.current.abort();
+    }
+    
     setIsLoading(true);
+    if (action === 'start') {
+      setSessionStarting(true);
+    }
+    
+    // Create new abort controller for this request
+    const abortController = new AbortController();
+    activeRequestRef.current = abortController;
     
     try {
       const targetSessionId = liveSessionId || sessionId;
@@ -472,32 +516,61 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         return;
       }
       
-      // Handle other actions normally
+      // Handle other actions with timeout and abort signal
       const endpoint = action === 'start' ? 'start-signing' : action;
       
-      const response = await authenticatedFetch(`/api/session/${targetSessionId}/${endpoint}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const messages = {
-          start: 'Session started successfully',
-          pause: 'Session paused',
-          resume: 'Session resumed'
-        };
-        
-        toast({
-          title: "Success",
-          description: messages[action as keyof typeof messages]
+      console.log(`📡 Sending ${action} request to /api/session/${targetSessionId}/${endpoint}`);
+      
+      // Add timeout to the request
+      const timeoutId = setTimeout(() => {
+        abortController.abort();
+      }, 10000); // 10 second timeout
+      
+      try {
+        const response = await authenticatedFetch(`/api/session/${targetSessionId}/${endpoint}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          signal: abortController.signal
         });
         
-        await loadLiveSessionState();
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.message || `Failed to ${action} session`);
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const messages = {
+            start: 'Session started successfully',
+            pause: 'Session paused',
+            resume: 'Session resumed'
+          };
+          
+          // Optimistic UI update for start action
+          if (action === 'start') {
+            setLiveSession(prev => ({
+              ...prev,
+              state: 'active'
+            }));
+          }
+          
+          toast({
+            title: "Success",
+            description: messages[action as keyof typeof messages]
+          });
+          
+          await loadLiveSessionState();
+        } else {
+          const errorData = await response.json();
+          throw new Error(errorData.message || `Failed to ${action} session`);
+        }
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        
+        // Check if the request was aborted
+        if (fetchError.name === 'AbortError') {
+          console.log('⏱️ Request was aborted or timed out');
+          throw new Error(`Request timed out. The server is taking longer than expected. Please try again.`);
+        }
+        throw fetchError;
       }
     } catch (error: any) {
       console.error(`Failed to ${action} session:`, error);
@@ -520,6 +593,8 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
           // Fallback for incomplete tags messages without detailed info
           errorMessage = error.message + '\n\nTip: Click on the orange pulsing tags to fill them automatically, or use the lightning bolt (⚡) button to fill all your tags at once.';
         }
+      } else if (error?.message?.includes('timed out')) {
+        errorMessage = 'The server is taking too long to respond. Please check your connection and try again.';
       }
       
       toast({
@@ -529,6 +604,10 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
       });
     } finally {
       setIsLoading(false);
+      activeRequestRef.current = null;
+      if (action === 'start') {
+        setSessionStarting(false);
+      }
     }
   };
 
@@ -632,23 +711,34 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
 
     // Check if WebSocket is ready for session control
     const isWebSocketReady = wsConnectionState.isReady;
-    const buttonDisabled = isLoading || !isWebSocketReady;
+    const buttonDisabled = isLoading || sessionStarting || !isWebSocketReady;
 
     return (
       <div className="flex items-center gap-2">
         {liveSession.state === 'waiting' && (
           <div className="flex items-center gap-3">
             <Button 
-              onClick={() => handleSessionAction('start')} 
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                // Provide immediate visual feedback
+                const button = e.currentTarget;
+                button.classList.add('opacity-75');
+                handleSessionAction('start');
+              }} 
               size="lg"
-              className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 px-6 py-3 text-base font-semibold"
+              className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed px-6 py-3 text-base font-semibold transition-all duration-200"
               disabled={buttonDisabled}
-              title={!isWebSocketReady ? 'Waiting for connection...' : 'Start live signing session'}
+              title={
+                !isWebSocketReady ? 'Waiting for connection...' : 
+                buttonDisabled ? 'Please wait...' : 
+                'Start live signing session'
+              }
             >
-              {isLoading ? (
+              {isLoading || sessionStarting ? (
                 <div className="flex items-center gap-2">
                   <Loader2 className="h-5 w-5 animate-spin" />
-                  <span>Starting...</span>
+                  <span>Starting Session...</span>
                 </div>
               ) : wsConnectionState.isConnecting ? (
                 <div className="flex items-center gap-2">
@@ -678,7 +768,12 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         )}
         
         {liveSession.state === 'active' && (
-          <>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-green-100 px-4 py-2 rounded-lg">
+              <CheckCircle className="h-5 w-5 text-green-600" />
+              <span className="text-green-800 font-medium">Session Active</span>
+            </div>
+            
             <Button 
               onClick={handleBulkFillTags}
               size="lg"
@@ -717,7 +812,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
                 <span>Complete Session</span>
               </div>
             </Button>
-          </>
+          </div>
         )}
       </div>
     );
@@ -880,9 +975,9 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Enhanced Video Panel - Wider for controls */}
+        {/* Enhanced Video Panel - Reduced width */}
         {showVideo && (
-          <div className="w-96 bg-gradient-to-b from-gray-50 to-gray-100 border-r border-gray-200 flex-shrink-0 shadow-sm">
+          <div className="w-80 bg-gradient-to-b from-gray-50 to-gray-100 border-r border-gray-200 flex-shrink-0 shadow-sm">
             <div className="h-full flex flex-col">
 
               

@@ -134,8 +134,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Full Name',
     color: PROFESSIONAL_COLORS.primary,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 150,  // Standardized width
-    defaultHeight: 30,  // Standardized height
+    defaultWidth: 120,  // Reduced size
+    defaultHeight: 25,  // Reduced size
     minWidth: 80,
     minHeight: 24,
     allowResize: true,
@@ -160,10 +160,10 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Initial here',
     color: PROFESSIONAL_COLORS.accent,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 150,  // Standardized width
-    defaultHeight: 30,  // Standardized height
+    defaultWidth: 120,  // Reduced size
+    defaultHeight: 25,  // Reduced size
     minWidth: 60,
-    minHeight: 30,
+    minHeight: 25,
     allowResize: true,
     allowTextInput: false
   },
@@ -173,8 +173,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Commission #',
     color: PROFESSIONAL_COLORS.success,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 150,  // Standardized width
-    defaultHeight: 30,  // Standardized height
+    defaultWidth: 120,  // Reduced size
+    defaultHeight: 25,  // Reduced size
     minWidth: 100,
     minHeight: 25,
     allowResize: true,
@@ -186,8 +186,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Expiration Date',
     color: '#fef3c7', // Light yellow background
     borderColor: '#d97706', // Darker orange border for better contrast
-    defaultWidth: 150,  // Standardized width
-    defaultHeight: 30,  // Standardized height
+    defaultWidth: 120,  // Reduced size
+    defaultHeight: 25,  // Reduced size
     minWidth: 100,
     minHeight: 25,
     allowResize: true,
@@ -199,8 +199,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Disclosure info',
     color: '#fef3c7', // Light yellow background for high visibility
     borderColor: '#d97706', // Dark orange border for maximum contrast
-    defaultWidth: 150,  // Standardized width
-    defaultHeight: 30,  // Standardized height
+    defaultWidth: 120,  // Reduced size
+    defaultHeight: 25,  // Reduced size
     minWidth: 120,
     minHeight: 25,
     allowResize: true,
@@ -225,8 +225,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Whiteout area',
     color: '#ffffff', // Pure white background for true whiteout
     borderColor: '#e5e7eb', // Light gray border
-    defaultWidth: 150,  // Standardized width
-    defaultHeight: 30,  // Standardized height
+    defaultWidth: 120,  // Reduced size
+    defaultHeight: 25,  // Reduced size
     minWidth: 50,
     minHeight: 20,
     allowResize: true,
@@ -238,8 +238,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Enter text',
     color: '#f8fafc', // Slightly lighter background
     borderColor: '#475569', // Darker border for better contrast
-    defaultWidth: 150,  // Standardized width
-    defaultHeight: 30,  // Standardized height
+    defaultWidth: 120,  // Reduced size
+    defaultHeight: 25,  // Reduced size
     minWidth: 100,
     minHeight: 20,
     allowResize: true,
@@ -251,8 +251,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'MM/DD/YYYY',
     color: '#fef3c7', // Light yellow background
     borderColor: '#d97706', // Darker orange border for better contrast
-    defaultWidth: 150,  // Standardized width
-    defaultHeight: 30,  // Standardized height
+    defaultWidth: 120,  // Reduced size
+    defaultHeight: 25,  // Reduced size
     minWidth: 100,
     minHeight: 25,
     allowResize: true,
@@ -266,8 +266,8 @@ export const getTagDimensions = (tagType: TagType) => {
   if (!config) {
     console.warn(`Unknown tag type: ${tagType}, using default dimensions`);
     return {
-      width: 100,
-      height: 30,
+      width: 120,
+      height: 25,
       minWidth: 60,
       minHeight: 25
     };
@@ -280,36 +280,50 @@ export const getTagDimensions = (tagType: TagType) => {
   };
 };
 
-export const getTagStyle = (tagType: TagType, isSelected = false, isCompleted = false) => {
+// Helper function to convert hex color to rgba with opacity
+const hexToRgba = (hex: string, opacity: number) => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+};
+
+export const getTagStyle = (tagType: TagType, isSelected = false, isCompleted = false, userColor?: string) => {
   const config = TAG_TYPE_CONFIG[tagType];
   if (!config) {
     console.warn(`Unknown tag type: ${tagType}, using default style`);
     return {
-      backgroundColor: isCompleted ? 'transparent' : PROFESSIONAL_COLORS.background,
-      borderColor: isSelected ? PROFESSIONAL_COLORS.borderActive : PROFESSIONAL_COLORS.border,
-      color: PROFESSIONAL_COLORS.text,
+      backgroundColor: isCompleted ? 'transparent' : hexToRgba(userColor || '#4ECDC4', 0.6),
+      borderColor: isSelected ? PROFESSIONAL_COLORS.borderActive : hexToRgba(userColor || '#4ECDC4', 0.9),
+      color: '#1f2937', // Darker text for better readability
       borderWidth: isCompleted ? '0px' : '1.5px',
       borderStyle: 'solid',
       borderRadius: LAYOUT.borderRadius.base,
       padding: LAYOUT.spacing.sm,
       fontFamily: TYPOGRAPHY.fontFamily,
       fontSize: TYPOGRAPHY.fontSize.tag,
-      fontWeight: TYPOGRAPHY.fontWeight.medium,
-      boxShadow: isCompleted ? 'none' : (isSelected ? LAYOUT.shadow.base : 'none')
+      fontWeight: TYPOGRAPHY.fontWeight.normal, // Lighter weight for better readability
+      boxShadow: isCompleted ? 'none' : (isSelected ? LAYOUT.shadow.base : 'none'),
+      textShadow: '0 1px 2px rgba(255, 255, 255, 0.8)' // Add text shadow for better readability
     };
   }
+  
+  // Use user's color if provided, otherwise fall back to config color
+  const effectiveColor = userColor || config.color;
+  
   return {
-    backgroundColor: isCompleted ? 'transparent' : config.color,
-    borderColor: isSelected ? PROFESSIONAL_COLORS.borderActive : config.borderColor,
-    color: PROFESSIONAL_COLORS.text,
+    backgroundColor: isCompleted ? 'transparent' : hexToRgba(effectiveColor, 0.6), // 60% transparency
+    borderColor: isSelected ? PROFESSIONAL_COLORS.borderActive : hexToRgba(effectiveColor, 0.9), // 90% transparency for border
+    color: '#1f2937', // Darker text for better readability
     borderWidth: isCompleted ? '0px' : '1.5px',
     borderStyle: 'solid',
     borderRadius: LAYOUT.borderRadius.base,
     padding: LAYOUT.spacing.sm,
     fontFamily: TYPOGRAPHY.fontFamily,
     fontSize: TYPOGRAPHY.fontSize.tag,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
-    boxShadow: isCompleted ? 'none' : (isSelected ? LAYOUT.shadow.base : 'none')
+    fontWeight: TYPOGRAPHY.fontWeight.normal, // Lighter weight for better readability
+    boxShadow: isCompleted ? 'none' : (isSelected ? LAYOUT.shadow.base : 'none'),
+    textShadow: '0 1px 2px rgba(255, 255, 255, 0.8)' // Add text shadow for better readability
   };
 };
 

@@ -189,9 +189,9 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     const coords = {
       x: isDragging && dragCoords ? dragCoords.x : Math.round(tag.coordinates.x * scaleFactor),
       y: isDragging && dragCoords ? dragCoords.y : Math.round(tag.coordinates.y * scaleFactor),
-      // For text tags, use fixed dimensions without scaling to maintain consistent 200x30 size
-      width: tag.tagType === 'T' ? 200 : Math.round(savedWidth * scaleFactor),
-      height: tag.tagType === 'T' ? 30 : Math.round(savedHeight * scaleFactor)
+      // Use consistent dimensions from constants for all tag types
+      width: Math.round(fixedDimensions.width * scaleFactor),
+      height: Math.round(fixedDimensions.height * scaleFactor)
     };
     
     // Debug logging for all tags
@@ -212,14 +212,26 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   // Memoized style object to prevent recalculation on every render - DocuSign Style
   const tagStyle = useMemo(() => {
     const config = TAG_TYPE_CONFIG[tag.tagType];
+    
+    // Helper function to convert hex color to rgba with opacity
+    const hexToRgba = (hex: string, opacity: number) => {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+    };
+    
+    // Use user's color with transparency for consistent theming
+    const userColor = tag.colorCode || config?.color || '#4ECDC4';
+    
     let backgroundColor = hasContent 
       ? 'transparent' // Make filled tags transparent
-      : config?.color || PROFESSIONAL_COLORS.background;
+      : hexToRgba(userColor, 0.6); // 60% opacity for better visibility
     let borderColor = hasContent 
       ? 'transparent' // Make border transparent for filled tags
       : isSelected
           ? PROFESSIONAL_COLORS.borderActive 
-          : config?.borderColor || PROFESSIONAL_COLORS.border;
+          : hexToRgba(userColor, 0.9); // 90% opacity for border
     let boxShadow = isSelected 
       ? `0 0 0 2px ${PROFESSIONAL_COLORS.borderActive}, ${LAYOUT.shadow.base}` 
       : hasContent 
@@ -587,22 +599,23 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
               overflow: 'visible' // Show all content, don't hide overflow
             }}
           >
-            {tag.content || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Content'}
+            {tag.content || tag.displayLabel || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Content'}
           </span>
         ) : (
           <span style={{ 
             fontFamily: TYPOGRAPHY.fontFamily,
             fontSize: `${Math.max(10, currentFontSize - 2)}px`,
-            fontWeight: TYPOGRAPHY.fontWeight.medium, // Increased weight for better visibility
-            color: '#475569', // Darker placeholder text for better contrast
-            fontStyle: 'italic',
+            fontWeight: TYPOGRAPHY.fontWeight.normal, // Lighter weight for better readability
+            color: '#1f2937', // Darker text for better readability on transparent background
+            fontStyle: 'normal', // Remove italic for better readability
             lineHeight: '1.2',
             wordWrap: 'break-word',
             overflowWrap: 'break-word',
             whiteSpace: 'normal', // Allow text to wrap
-            overflow: 'visible' // Show all content
+            overflow: 'visible', // Show all content
+            textShadow: '0 1px 2px rgba(255, 255, 255, 0.8)' // Add subtle text shadow for better readability
           }}>
-            {TAG_TYPE_CONFIG[tag.tagType]?.placeholder || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Field'}
+            {tag.displayLabel || TAG_TYPE_CONFIG[tag.tagType]?.placeholder || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Field'}
           </span>
         )}
         
@@ -642,6 +655,24 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
           >
             <span style={{ fontSize: '8px', color: '#ffffff', fontWeight: 'bold' }}>D</span>
           </div>
+        )}
+        
+        {/* User identification indicator */}
+        {tag.displayLabel && tag.displayLabel.includes(' - ') && !hasContent && (
+          <div 
+            style={{
+              position: 'absolute',
+              top: '2px',
+              right: '4px',
+              width: '8px',
+              height: '8px',
+              backgroundColor: tag.colorCode || '#4ECDC4',
+              borderRadius: '50%',
+              border: '1px solid #ffffff',
+              boxShadow: '0 1px 2px rgba(0, 0, 0, 0.3)'
+            }}
+            title={tag.displayLabel.split(' - ')[1] || 'User'}
+          />
         )}
       </div>
     </Rnd>

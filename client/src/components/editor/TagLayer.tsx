@@ -150,7 +150,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   }, [onDelete]);
 
   // Professional styling based on tag state
-  const professionalStyle = getTagStyle(tag.tagType, hasContent, isSelected);
+  const professionalStyle = getTagStyle(tag.tagType, isSelected, hasContent, tag.colorCode);
 
   return (
     <Rnd
@@ -198,17 +198,18 @@ const TagRenderer: React.FC<TagRendererProps> = ({
             fontWeight: TYPOGRAPHY.fontWeight.medium,
             color: PROFESSIONAL_COLORS.text
           }}>
-            {tag.content || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Content'}
+            {tag.content || tag.displayLabel || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Content'}
           </span>
         ) : (
           <span style={{ 
             fontFamily: TYPOGRAPHY.fontFamily,
             fontSize: TYPOGRAPHY.fontSize.label,
             fontWeight: TYPOGRAPHY.fontWeight.normal,
-            color: PROFESSIONAL_COLORS.textPlaceholder,
-            fontStyle: 'italic'
+            color: '#1f2937', // Darker text for better readability
+            fontStyle: 'normal', // Remove italic for better readability
+            textShadow: '0 1px 2px rgba(255, 255, 255, 0.8)' // Add text shadow for better readability
           }}>
-            {TAG_TYPE_CONFIG[tag.tagType]?.placeholder || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Field'}
+            {tag.displayLabel || TAG_TYPE_CONFIG[tag.tagType]?.placeholder || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Field'}
           </span>
         )}
       </div>
@@ -230,7 +231,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
             zIndex: 1001
           }}
         >
-          {TAG_TYPE_CONFIG[tag.tagType]?.label || 'Field'}
+          {tag.displayLabel || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Field'}
         </div>
       )}
     </Rnd>

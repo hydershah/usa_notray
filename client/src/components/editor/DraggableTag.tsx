@@ -168,10 +168,10 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
   // Check if tag has content (should be transparent)
   const hasContent = !!(tag.content || tag.contentData || tag.isCompleted);
 
-  // Get dimensions - use tag constants for text tags, otherwise use stored coordinates
+  // Get dimensions - use tag constants for consistent sizing across all tag types
   const tagDimensions = getTagDimensions(tag.tagType);
-  const displayWidth = tag.tagType === 'T' ? tagDimensions.width : tag.coordinates.width;
-  const displayHeight = tag.tagType === 'T' ? tagDimensions.height : tag.coordinates.height;
+  const displayWidth = tagDimensions.width;
+  const displayHeight = tagDimensions.height;
 
   console.log('🎨 DraggableTag render debug:', {
     tagId: tag.id.substring(0, 8),
@@ -197,7 +197,13 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
         // ✅ TRANSPARENT BACKGROUND FOR TAGS WITH CONTENT
         backgroundColor: hasContent 
           ? 'transparent' 
-          : tag.tagType === 'W' ? '#ffffff' : (tag.colorCode || '#1e40af'),
+          : tag.tagType === 'W' ? '#ffffff' : (() => {
+              const hex = tag.colorCode || '#1e40af';
+              const r = parseInt(hex.slice(1, 3), 16);
+              const g = parseInt(hex.slice(3, 5), 16);
+              const b = parseInt(hex.slice(5, 7), 16);
+              return `rgba(${r}, ${g}, ${b}, 0.6)`; // 60% transparency
+            })(),
         // Force transparency with additional properties
         ...(hasContent && {
           background: 'transparent',
@@ -218,7 +224,7 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
         borderRadius: '6px', // Clean rounded corners
         color: hasContent 
           ? '#000000' // Black text for tags with content
-          : tag.tagType === 'W' ? '#374151' : '#ffffff', // Dark text for whiteout, white for others
+          : tag.tagType === 'W' ? '#374151' : '#1f2937', // Dark text for better readability on transparent background
         cursor: tagStyle.cursor,
         userSelect: 'none',
         zIndex: isDragging ? 1000 : isSelected ? 500 : 100,
@@ -257,8 +263,8 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
-            color: tag.tagType === 'W' ? '#374151' : '#ffffff',
-            textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.3)',
+            color: tag.tagType === 'W' ? '#374151' : '#1f2937',
+            textShadow: tag.tagType === 'W' ? 'none' : '0 1px 2px rgba(255, 255, 255, 0.8)',
             whiteSpace: (tag.tagType === 'O' || tag.tagType === 'X') ? 'normal' : 'nowrap',
             overflow: (tag.tagType === 'O' || tag.tagType === 'X') ? 'visible' : 'hidden',
             textOverflow: (tag.tagType === 'O' || tag.tagType === 'X') ? 'unset' : 'ellipsis',

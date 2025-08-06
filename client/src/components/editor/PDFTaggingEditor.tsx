@@ -454,16 +454,21 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     }
   }, [sessionId, mode, documents, participants, currentUserId]);
 
-  // Set initial zoom level to 150% specifically for signing mode (only once)
+  // Set initial zoom level based on mode (only once)
   const [hasSetInitialZoom, setHasSetInitialZoom] = useState(false);
   
   useEffect(() => {
-    if (mode === 'signing' && !hasSetInitialZoom) {
+    if (!hasSetInitialZoom) {
       // Delay zoom setting to ensure PDF is loaded and container is ready
       const timer = setTimeout(() => {
-        setZoomLevel(1.5); // 150% zoom for signing mode
+        if (mode === 'signing') {
+          setZoomLevel(1.5); // 150% zoom for signing mode
+          console.log('🔍 Set initial zoom level to 150% for signing mode');
+        } else if (mode === 'tagging') {
+          setZoomLevel(2.0); // 200% zoom for tagging mode
+          console.log('🔍 Set initial zoom level to 200% for tagging mode');
+        }
         setHasSetInitialZoom(true);
-        console.log('🔍 Set initial zoom level to 150% for signing mode');
       }, 200); // Small delay to ensure PDF container is ready
       
       return () => clearTimeout(timer);
@@ -1195,8 +1200,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         // Use the fixed dimensions instead of coordinates from click
         const textInputCoordinates = {
           ...coordinates,
-          width: dimensions?.width || 150,  // Use constant dimensions for text tags
-          height: dimensions?.height || 30   // Use constant dimensions for text tags
+          width: dimensions?.width || 120,  // Use updated constant dimensions for text tags
+          height: dimensions?.height || 25   // Use updated constant dimensions for text tags
         };
         
         console.log('🔍 DEBUG: Final textInputCoordinates being sent to server:', textInputCoordinates);
@@ -1246,8 +1251,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
         const whiteoutDimensions = getTagDimensions('W');
         const whiteoutCoordinates = {
           ...coordinates,
-          width: whiteoutDimensions?.width || 150,
-          height: whiteoutDimensions?.height || 30
+          width: whiteoutDimensions?.width || 120,
+          height: whiteoutDimensions?.height || 25
         };
         
         await placeWhiteoutOverlay({

@@ -142,7 +142,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   const canEdit = true; // Always allow editing for text inputs
   
   // Memoized professional styling
-  const professionalStyle = useMemo(() => getTagStyle('T', isSelected, hasContent), [hasContent, isSelected]);
+  const professionalStyle = useMemo(() => getTagStyle('T', isSelected, hasContent, userColor), [hasContent, isSelected, userColor]);
 
   // Auto-focus when editing starts
   useEffect(() => {

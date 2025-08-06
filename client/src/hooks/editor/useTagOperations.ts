@@ -88,8 +88,8 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
     console.log('🔍 sanitizeCoordinates - storeDimensions:', storeDimensions);
     
     const defaultDimensions = storeDimensions || {
-      width: 150, // Use standardized width as fallback
-      height: 30  // Use standardized height as fallback
+      width: 120, // Use updated standardized width as fallback
+      height: 25  // Use updated standardized height as fallback
     };
     
     if (coordinates.x !== undefined) {
