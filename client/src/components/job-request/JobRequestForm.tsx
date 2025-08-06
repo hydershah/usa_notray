@@ -409,36 +409,23 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
           </Alert>
         )}
 
-        {/* Professional Header */}
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <FileText className="h-5 w-5 text-blue-600" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Job Request Details</h2>
-              <p className="text-sm text-gray-600">Please provide comprehensive information about your notarization needs</p>
-            </div>
-          </div>
+        {/* Simple Header */}
+        <div className="mb-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Request Notarization</h2>
+          <p className="text-gray-600">Tell us what you need notarized</p>
         </div>
 
         {/* Title */}
         <div className="space-y-2">
-          <Label htmlFor="title" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-            <FileText className="h-4 w-4 text-blue-600" />
-            Request Title *
+          <Label htmlFor="title" className="text-sm font-medium text-gray-700">
+            What do you need notarized? *
           </Label>
-          <div className="relative">
-            <Input
-              id="title"
-              placeholder="e.g., Real Estate Purchase Agreement Notarization"
-              {...register('title')}
-              className={`h-11 px-3 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors ${errors.title ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
-            />
-            <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-gray-400">
-              {watch('title')?.length || 0}/100
-            </div>
-          </div>
+          <Input
+            id="title"
+            placeholder="e.g., Real Estate Purchase Agreement"
+            {...register('title')}
+            className="h-10 border-gray-300"
+          />
           {errors.title && (
             <p className="text-sm text-red-600 flex items-center gap-1">
               <AlertCircle className="h-3 w-3" />
@@ -449,19 +436,14 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
 
         {/* Description */}
         <div className="space-y-2">
-          <Label htmlFor="description" className="text-sm font-semibold text-gray-700">Description *</Label>
-          <div className="relative">
-            <Textarea
-              id="description"
-              placeholder="Please provide detailed information about the documents that need notarization, any specific requirements, and any additional context that would help our team understand your needs."
-              rows={4}
-              {...register('description')}
-              className={`px-3 py-2 border-gray-300 focus:border-blue-500 focus:ring-blue-500 resize-none transition-colors ${errors.description ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
-            />
-            <div className="absolute bottom-2 right-2 text-xs text-gray-400">
-              {watch('description')?.length || 0}/1000
-            </div>
-          </div>
+          <Label htmlFor="description" className="text-sm font-medium text-gray-700">Tell us more about this job *</Label>
+          <Textarea
+            id="description"
+            placeholder="Describe what documents need to be notarized and any special requirements"
+            rows={3}
+            {...register('description')}
+            className="border-gray-300 resize-none"
+          />
           {errors.description && (
             <p className="text-sm text-red-600 flex items-center gap-1">
               <AlertCircle className="h-3 w-3" />
@@ -472,10 +454,10 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
 
         {/* Document Type */}
         <div className="space-y-2">
-          <Label htmlFor="documentType" className="text-sm font-semibold text-gray-700">Document Type *</Label>
+          <Label htmlFor="documentType" className="text-sm font-medium text-gray-700">Document Type *</Label>
           <Select onValueChange={(value) => setValue('documentType', value)}>
-            <SelectTrigger className={`h-11 px-3 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors ${errors.documentType ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}>
-              <SelectValue placeholder="Select the type of document that needs notarization" />
+            <SelectTrigger className="h-10 border-gray-300">
+              <SelectValue placeholder="Choose document type" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="real_estate">Real Estate Documents</SelectItem>
@@ -497,57 +479,40 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
 
         {/* Urgency */}
         <div className="space-y-2">
-          <Label className="text-sm font-semibold text-gray-700">Urgency Level</Label>
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { value: 'low', label: 'Low', description: 'Within 1 week' },
-              { value: 'normal', label: 'Normal', description: 'Within 3-5 days' },
-              { value: 'high', label: 'High', description: 'Within 1-2 days' },
-              { value: 'urgent', label: 'Urgent', description: 'Same day' }
-            ].map((level) => (
-              <button
-                key={level.value}
-                type="button"
-                onClick={() => setValue('urgency', level.value as any)}
-                className={`p-3 rounded-lg border-2 transition-all duration-200 text-left ${
-                  urgency === level.value
-                    ? getUrgencyColor(level.value) + ' border-current shadow-sm'
-                    : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                <div className="font-medium text-sm">{level.label}</div>
-                <div className="text-xs opacity-75">{level.description}</div>
-              </button>
-            ))}
-          </div>
+          <Label className="text-sm font-medium text-gray-700">How quickly do you need this?</Label>
+          <Select onValueChange={(value) => setValue('urgency', value as any)}>
+            <SelectTrigger className="h-10 border-gray-300">
+              <SelectValue placeholder="Choose timeline" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="low">Within 1 week</SelectItem>
+              <SelectItem value="normal">Within 3-5 days</SelectItem>
+              <SelectItem value="high">Within 1-2 days</SelectItem>
+              <SelectItem value="urgent">Same day</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Schedule */}
-        <div className="space-y-2">
-          <Label className="text-sm font-semibold text-gray-700">Schedule & Location</Label>
+        <div className="space-y-4">
+          <Label className="text-sm font-medium text-gray-700">When would you like this done? (optional)</Label>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label htmlFor="preferredDate" className="text-sm text-gray-600 flex items-center gap-2">
-                <Calendar className="h-4 w-4" />
-                Preferred Date
-              </Label>
+            <div>
+              <Label htmlFor="preferredDate" className="text-sm text-gray-600">Preferred Date</Label>
               <Input
                 id="preferredDate"
                 type="date"
                 {...register('preferredDate')}
-                className="h-11 px-3 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors"
+                className="h-10 border-gray-300"
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="preferredTime" className="text-sm text-gray-600 flex items-center gap-2">
-                <Clock className="h-4 w-4" />
-                Preferred Time
-              </Label>
+            <div>
+              <Label htmlFor="preferredTime" className="text-sm text-gray-600">Preferred Time</Label>
               <Input
                 id="preferredTime"
                 type="time"
                 {...register('preferredTime')}
-                className="h-11 px-3 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors"
+                className="h-10 border-gray-300"
               />
             </div>
           </div>
@@ -555,47 +520,35 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
 
         {/* Location */}
         <div className="space-y-2">
-          <Label htmlFor="location" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-            <MapPin className="h-4 w-4" />
-            Location (Optional)
-          </Label>
+          <Label htmlFor="location" className="text-sm font-medium text-gray-700">Where? (optional)</Label>
           <Input
             id="location"
-            placeholder="e.g., 123 Main Street, Suite 100, New York, NY 10001"
+            placeholder="Address or location"
             {...register('location')}
-            className="h-11 px-3 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors"
+            className="h-10 border-gray-300"
           />
         </div>
 
         {/* Phone Number */}
         <div className="space-y-2">
-          <Label htmlFor="requestorPhone" className="text-sm font-semibold text-gray-700">Phone Number (Optional)</Label>
+          <Label htmlFor="requestorPhone" className="text-sm font-medium text-gray-700">Phone Number (optional)</Label>
           <Input
             id="requestorPhone"
             type="tel"
-            placeholder="e.g., (555) 123-4567"
+            placeholder="Your phone number"
             {...register('requestorPhone')}
-            className="h-11 px-3 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors"
+            className="h-10 border-gray-300"
           />
           {errors.requestorPhone && (
-            <p className="text-sm text-red-600 flex items-center gap-1">
-              <AlertCircle className="h-3 w-3" />
-              {errors.requestorPhone.message}
-            </p>
+            <p className="text-sm text-red-600">{errors.requestorPhone.message}</p>
           )}
         </div>
 
         {/* Document Upload */}
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-              <Paperclip className="h-4 w-4" />
-              Documents (Optional)
-            </Label>
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <Info className="h-3 w-3" />
-              PDF, JPEG, PNG up to 10MB each
-            </div>
+          <div>
+            <Label className="text-sm font-medium text-gray-700">Upload Documents (optional)</Label>
+            <p className="text-xs text-gray-500 mt-1">PDF, JPEG, PNG files up to 10MB each</p>
           </div>
           
           {/* Upload Area */}
@@ -634,13 +587,12 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
               </div>
               <div className="space-y-1">
                 <div className="text-sm text-gray-600">
-                  <span className="font-medium text-blue-600 hover:text-blue-500">
-                    Click to upload
-                  </span>{' '}
-                  or drag and drop files here
+                  <span className="font-medium text-blue-600">
+                    Click to upload files
+                  </span>
                 </div>
                 <p className="text-xs text-gray-500">
-                  Supported formats: PDF, JPEG, PNG (Max 10MB per file)
+                  Or drag and drop files here
                 </p>
               </div>
             </label>
@@ -731,43 +683,22 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
 
         {/* Submit Button */}
         <div className="pt-4 border-t border-gray-200">
-          {/* Helpful Tips */}
-          <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-            <div className="flex items-start gap-2">
-              <Info className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-              <div className="space-y-1">
-                <h4 className="text-sm font-medium text-blue-900">Helpful Tips</h4>
-                <ul className="text-xs text-blue-800 space-y-0.5">
-                  <li>• Provide a clear, descriptive title that summarizes your notarization needs</li>
-                  <li>• Include specific details about document types, deadlines, and any special requirements</li>
-                  <li>• Upload relevant documents to help us better understand your needs</li>
-                  <li>• Choose the appropriate urgency level based on your timeline</li>
-                  <li>• Our team will review your request and contact you within 24 hours</li>
-                </ul>
-              </div>
-            </div>
-          </div>
+
 
           <Button
             type="submit"
             disabled={isSubmitting || isUploading}
-            className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors duration-200 shadow-sm"
+            className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-medium"
           >
             {isSubmitting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {editData ? 'Updating Request...' : 'Submitting Request...'}
+                {editData ? 'Updating...' : 'Submitting...'}
               </>
             ) : (
-              <>
-                <FileText className="mr-2 h-4 w-4" />
-                {editData ? 'Update Job Request' : 'Submit Job Request'}
-              </>
+              editData ? 'Update Request' : 'Submit Request'
             )}
           </Button>
-          <p className="text-xs text-gray-500 text-center mt-2">
-            By submitting this request, you agree to our terms of service and privacy policy.
-          </p>
         </div>
       </form>
     </div>

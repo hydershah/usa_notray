@@ -125,11 +125,10 @@ interface DocumentFile {
 }
 
 const steps = [
-  { id: 1, title: 'Client Info', description: 'Basic job information' },
-  { id: 2, title: 'Participants', description: 'Add signers and witnesses' },
-  { id: 3, title: 'Schedule', description: 'Set appointment details' },
-  { id: 4, title: 'Documents', description: 'Upload required files' },
-  { id: 5, title: 'Review', description: 'Review and submit' },
+  { id: 1, title: 'Job Info', description: 'Basic information' },
+  { id: 2, title: 'Signers', description: 'Who needs to sign' },
+  { id: 3, title: 'Schedule', description: 'When and where' },
+  { id: 4, title: 'Submit', description: 'Finish and submit' },
 ];
 
 // Internal JobWizard component
@@ -978,70 +977,10 @@ function JobWizardInternal() {
     <div className="min-h-screen bg-blue-50">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
         
-        {/* Enhanced Header */}
-        <div className="text-center mb-3">
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">Create New Job</h1>
-          <p className="text-sm text-gray-600">Follow the steps below to create your notarization job</p>
-        </div>
-
-        {/* Enhanced Progress Indicator */}
-        <div className="mb-3">
-          <div className="flex items-center justify-between mb-3">
-            {steps.map((step, index) => (
-              <div key={step.id} className="flex items-center">
-                <div className="flex flex-col items-center">
-                  {/* Step Circle */}
-                  <div className={`relative w-12 h-12 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300 ${
-                    currentStep > step.id 
-                      ? 'bg-green-500 text-white shadow-lg' 
-                      : currentStep === step.id 
-                        ? 'bg-blue-600 text-white shadow-lg ring-4 ring-blue-200' 
-                        : 'bg-gray-200 text-gray-600'
-                  }`}>
-                    {currentStep > step.id ? (
-                      <CheckCircle className="w-6 h-6" />
-                    ) : (
-                      <span>{step.id}</span>
-                    )}
-                    
-                    {/* Pulse animation for current step */}
-                    {currentStep === step.id && (
-                      <div className="absolute inset-0 rounded-full bg-blue-600 animate-ping opacity-25"></div>
-                    )}
-                  </div>
-                  
-                  {/* Step Labels */}
-                  <div className="mt-2 text-center">
-                    <div className={`text-sm font-medium transition-colors ${
-                      currentStep >= step.id ? 'text-blue-600' : 'text-gray-500'
-                    }`}>
-                      {step.title}
-                    </div>
-                    <div className={`text-xs mt-0.5 ${
-                      currentStep >= step.id ? 'text-gray-600' : 'text-gray-400'
-                    }`}>
-                      {step.description}
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Connector Line */}
-                {index < steps.length - 1 && (
-                  <div className={`flex-1 h-0.5 mx-4 transition-colors ${
-                    currentStep > step.id ? 'bg-green-500' : 'bg-gray-200'
-                  }`}></div>
-                )}
-              </div>
-            ))}
-          </div>
-          
-          {/* Progress Bar */}
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div 
-              className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-500 ease-out"
-              style={{ width: `${progress}%` }}
-            ></div>
-          </div>
+        {/* Simple Header */}
+        <div className="text-center mb-6">
+          <h1 className="text-xl font-bold text-gray-900 mb-2">Create Notarization Job</h1>
+          <p className="text-gray-600">{steps[currentStep - 1]?.title} - Step {currentStep} of {steps.length}</p>
         </div>
 
         {/* Main Content Card */}
@@ -1060,63 +999,10 @@ function JobWizardInternal() {
                 {currentStep === 1 && (
                   <div className="space-y-4">
 
-                    {/* Different messaging based on user type */}
-                    {currentUser?.role === 'notary' && currentUser?.notaryType === 'subscriber' && (
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                        <div className="flex items-start">
-                          <div className="flex-shrink-0">
-                            <UserIcon className="h-5 w-5 text-blue-600 mt-0.5" />
-                          </div>
-                          <div className="ml-3">
-                            <h4 className="text-sm font-medium text-blue-900">Personal Client Job</h4>
-                            <p className="text-sm text-blue-800 mt-1">
-                              You're creating a job for your personal clients. You will automatically be assigned as the notary for this job.
-                              Platform fees will be deducted from your account upon completion.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
 
-                    {currentUser?.role === 'admin' && (
-                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-6">
-                        <div className="flex items-start">
-                          <div className="flex-shrink-0">
-                            <CheckCircle className="h-5 w-5 text-blue-600 mt-0.5" />
-                          </div>
-                          <div className="ml-3">
-                            <h4 className="text-sm font-medium text-purple-900">Admin Job Creation</h4>
-                            <p className="text-sm text-purple-800 mt-1">
-                              As an admin, you can assign yourself as the notary, automatically assign a contractor notary, or manually select a specific notary.
-                              You have full control over the assignment process.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {currentUser?.role === 'title_company' && (
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
-                        <div className="flex items-start">
-                          <div className="flex-shrink-0">
-                            <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
-                          </div>
-                          <div className="ml-3">
-                            <h4 className="text-sm font-medium text-green-900">Title Company Job</h4>
-                            <p className="text-sm text-green-800 mt-1">
-                              You're creating a job for Sharp Note clients. The system will assign a qualified contractor notary based on your preferences.
-                              The assigned notary will be paid from the client fees.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
                     
-                                          <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
-                        <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center">
-                          <div className="w-2 h-4 bg-blue-500 rounded-full mr-2"></div>
-                          Primary Details
-                        </h3>
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-medium text-gray-900 mb-4">Job Details</h3>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <FormField
@@ -1124,7 +1010,7 @@ function JobWizardInternal() {
                           name="titleCompany"
                           render={({ field, fieldState }) => (
                             <FormItem>
-                              <FormLabel className={`text-sm font-medium ${fieldState.error ? 'text-red-600' : 'text-gray-700'}`}>
+                              <FormLabel className="text-sm font-medium text-gray-700">
                                 Title Company *
                               </FormLabel>
                               {currentUser?.role === 'title_company' ? (
@@ -1232,8 +1118,8 @@ function JobWizardInternal() {
                           name="kbaRequired"
                           render={({ field, fieldState }) => (
                             <FormItem>
-                              <FormLabel className={`text-sm font-medium ${fieldState.error ? 'text-red-600' : 'text-gray-700'}`}>
-                                KBA Required
+                              <FormLabel className="text-sm font-medium text-gray-700">
+                                Identity Verification Required
                               </FormLabel>
                               <FormControl>
                                 <RadioGroup
@@ -1263,11 +1149,8 @@ function JobWizardInternal() {
                     </div>
 
                     {/* Property Address */}
-                    <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                        <div className="w-2 h-6 bg-green-500 rounded-full mr-3"></div>
-                        Property Address
-                      </h3>
+                    <div className="space-y-4 mt-6">
+                      <h3 className="text-lg font-medium text-gray-900 mb-4">Property Address</h3>
                       
                       <div className="space-y-4">
                         <FormField
@@ -1523,18 +1406,6 @@ function JobWizardInternal() {
                             </CardHeader>
                             
                             <CardContent className="p-6">
-                              {/* Email Lookup Info */}
-                              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                <div className="flex items-center">
-                                  <AlertCircle className="w-5 h-5 text-blue-600 mr-2" />
-                                  <div>
-                                    <h4 className="text-sm font-medium text-blue-800">Smart Participant Entry</h4>
-                                    <p className="text-xs text-blue-700 mt-1">
-                                      Enter an email address below. If the user exists in our system, their details will auto-populate. Otherwise, you can manually enter their information.
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
 
                               {/* Signer Details */}
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1548,7 +1419,6 @@ function JobWizardInternal() {
                                     placeholder="Enter participant name"
                                     className={`h-12 mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerName ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
-                                    disabled={autoPopulatedSigners[index]}
                                   />
                                   {signerErrors[index]?.signerName && (
                                     <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerName}</p>
@@ -1563,18 +1433,12 @@ function JobWizardInternal() {
                                     type="email"
                                     value={signer.signerEmail}
                                     onChange={(e) => handleEmailLookup(index, e.target.value)}
-                                    placeholder="Enter email address (will auto-populate if user exists)"
+                                    placeholder="Enter email address"
                                     className={`h-12 mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerEmail ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
                                   />
                                   {signerErrors[index]?.signerEmail && (
                                     <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerEmail}</p>
-                                  )}
-                                  {autoPopulatedSigners[index] && (
-                                    <p className="text-xs text-green-600 mt-1 flex items-center">
-                                      <CheckCircle className="w-4 h-4 mr-1" />
-                                      User found! Details auto-populated from existing account.
-                                    </p>
                                   )}
                                 </div>
                                 
@@ -1588,7 +1452,6 @@ function JobWizardInternal() {
                                     placeholder="(123) 456-7890"
                                     className={`h-12 mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerPhoneNumber ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
-                                    disabled={autoPopulatedSigners[index]}
                                   />
                                   {signerErrors[index]?.signerPhoneNumber && (
                                     <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerPhoneNumber}</p>
@@ -1628,22 +1491,7 @@ function JobWizardInternal() {
                                 </div>
                               </div>
 
-                              {/* Auto-populated User Info */}
-                              {autoPopulatedSigners[index] && signer.existingUserId && (
-                                <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-                                  <div className="flex items-center">
-                                    <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
-                                    <div>
-                                      <p className="text-sm font-medium text-green-800">
-                                        Existing User: {signer.signerName}
-                                      </p>
-                                      <p className="text-xs text-green-600">
-                                        {signer.signerEmail} • Information auto-populated from existing account
-                                      </p>
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
+
                             </CardContent>
                           </Card>
                         ))}
@@ -1659,25 +1507,10 @@ function JobWizardInternal() {
                     {/* Subscriber Notary: Simple date/time selection */}
                     {currentUser?.role === 'notary' && currentUser?.notaryType === 'subscriber' ? (
                       <div className="space-y-6">
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                          <div className="flex items-start">
-                            <div className="flex-shrink-0">
-                              <UserIcon className="h-5 w-5 text-blue-600 mt-0.5" />
-                            </div>
-                            <div className="ml-3">
-                              <h4 className="text-sm font-medium text-blue-900">You are the assigned notary</h4>
-                              <p className="text-sm text-blue-800 mt-1">
-                                As a subscriber notary, you are automatically assigned to handle this job for your personal clients.
-                              </p>
-                            </div>
-                          </div>
-                        </div>
+
 
                         <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
-                          <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center">
-                            <div className="w-2 h-4 bg-blue-500 rounded-full mr-2"></div>
-                            Your Available Times
-                          </h3>
+                          <h3 className="text-lg font-medium text-gray-900 mb-4">Your Available Times</h3>
                           
                           <NotaryAvailabilitySelector
                             notaryId={currentUser?.id || 0}
@@ -1690,10 +1523,7 @@ function JobWizardInternal() {
                     ) : (
                       /* Title Company/Admin: Full notary assignment workflow */
                       <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                          <div className="w-2 h-6 bg-blue-500 rounded-full mr-3"></div>
-                          Notary Assignment
-                        </h3>
+                        <h3 className="text-lg font-medium text-gray-900 mb-6">Notary Assignment</h3>
                         
                         <FormField
                           control={form.control}
@@ -1701,7 +1531,7 @@ function JobWizardInternal() {
                           render={({ field, fieldState }) => (
                             <FormItem>
                               <FormLabel className={`text-sm font-medium ${fieldState.error ? 'text-red-600' : 'text-gray-700'} mb-4 block`}>
-                                Assignment Method
+                                Choose Assignment Method
                               </FormLabel>
                               <FormControl>
                                 <RadioGroup
@@ -1735,12 +1565,8 @@ function JobWizardInternal() {
                                       <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-purple-200 transition-colors cursor-pointer">
                                         <RadioGroupItem value="admin_self" id="admin_self" className="mt-1" />
                                         <div className="flex-1">
-                                          <Label htmlFor="admin_self" className="text-lg font-semibold text-gray-900 cursor-pointer">Assign Myself as Notary</Label>
-                                          <p className="text-sm text-gray-600 mt-1">You will be the notary for this job</p>
-                                          <div className="mt-3 flex items-center text-xs text-blue-600">
-                                            <UserIcon className="w-4 h-4 mr-1" />
-                                            Direct admin control
-                                          </div>
+                                          <Label htmlFor="admin_self" className="text-lg font-medium text-gray-900 cursor-pointer">Assign Myself</Label>
+                                          <p className="text-sm text-gray-600 mt-1">You will be the notary</p>
                                         </div>
                                       </div>
                                     </div>
@@ -1752,12 +1578,8 @@ function JobWizardInternal() {
                                       <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-blue-200 transition-colors cursor-pointer">
                                         <RadioGroupItem value="assign" id="assign" className="mt-1" />
                                         <div className="flex-1">
-                                          <Label htmlFor="assign" className="text-lg font-semibold text-gray-900 cursor-pointer">Assign Specific Notary</Label>
-                                          <p className="text-sm text-gray-600 mt-1">Choose from available contractor notaries</p>
-                                          <div className="mt-3 flex items-center text-xs text-blue-600">
-                                            <CheckCircle className="w-4 h-4 mr-1" />
-                                            Direct selection control
-                                          </div>
+                                          <Label htmlFor="assign" className="text-lg font-medium text-gray-900 cursor-pointer">Choose Specific Notary</Label>
+                                          <p className="text-sm text-gray-600 mt-1">Select from available notaries</p>
                                         </div>
                                       </div>
                                     </div>
@@ -1769,13 +1591,9 @@ function JobWizardInternal() {
                                     <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-blue-200 transition-colors cursor-pointer">
                                       <RadioGroupItem value="auto" id="auto" className="mt-1" />
                                       <div className="flex-1">
-                                        <Label htmlFor="auto" className="text-lg font-semibold text-gray-900 cursor-pointer">Auto Assignment</Label>
-                                        <p className="text-sm text-gray-600 mt-1">System assigns best contractor notary match</p>
-                                        <div className="mt-3 flex items-center text-xs text-green-600">
-                                          <CheckCircle className="w-4 h-4 mr-1" />
-                                          Optimal matching algorithm
-                                        </div>
-                                                                              </div>
+                                        <Label htmlFor="auto" className="text-lg font-medium text-gray-900 cursor-pointer">Auto Assignment</Label>
+                                        <p className="text-sm text-gray-600 mt-1">System chooses best notary</p>
+                                      </div>
                                       </div>
                                     </div>
                                   )}
@@ -1786,31 +1604,14 @@ function JobWizardInternal() {
                                       <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-orange-200 transition-colors cursor-pointer">
                                         <RadioGroupItem value="id_code" id="id_code" className="mt-1" />
                                         <div className="flex-1">
-                                          <Label htmlFor="id_code" className="text-lg font-semibold text-gray-900 cursor-pointer">Enter Notary ID Code</Label>
-                                          <p className="text-sm text-gray-600 mt-1">Assign a specific notary using their ID code</p>
-                                          <div className="mt-3 flex items-center text-xs text-orange-600">
-                                            <UserIcon className="w-4 h-4 mr-1" />
-                                            Direct assignment by code
-                                          </div>
+                                          <Label htmlFor="id_code" className="text-lg font-medium text-gray-900 cursor-pointer">Enter Notary ID Code</Label>
+                                          <p className="text-sm text-gray-600 mt-1">Assign by ID code</p>
                                         </div>
                                       </div>
                                     </div>
                                   )}
 
-                                  {/* Title Company Notice - Security Update */}
-                                  {currentUser?.role === 'title_company' && (
-                                    <div className="col-span-full mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                      <div className="flex items-center">
-                                        <CheckCircle className="w-5 h-5 text-blue-600 mr-2" />
-                                        <div>
-                                          <h4 className="text-sm font-medium text-blue-800">Title Company Assignment Options</h4>
-                                          <p className="text-xs text-blue-700 mt-1">
-                                            For security, you can no longer browse notary lists. Use auto assignment (with preferred notary priority) or enter a specific notary's ID code for direct assignment.
-                                          </p>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
+
                                 </RadioGroup>
                               </FormControl>
                               <FormMessage className="text-red-600 text-sm mt-1" />
@@ -1823,24 +1624,9 @@ function JobWizardInternal() {
                           )}
                         />
 
-                        {/* Show preferred notary info when auto assignment is selected */}
-                        {form.watch('notaryOption') === 'auto' && preferredNotary && (
-                          <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-                            <div className="flex items-center">
-                              <CheckCircle className="w-5 h-5 text-green-600 mr-3" />
-                              <div>
-                                <p className="text-sm font-medium text-green-800">
-                                  Preferred Contractor Available: {preferredNotary.fullName}
-                                </p>
-                                <p className="text-xs text-green-600 mt-1">
-                                  This contractor notary is preferred by {watchTitleCompany}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
 
-                        {/* Manual notary selection - only contractor notaries */}
+
+                        {/* Manual notary selection */}
                         {form.watch('notaryOption') === 'assign' && (
                           <div className="mt-6">
                             <FormField
@@ -1849,7 +1635,7 @@ function JobWizardInternal() {
                               render={({ field, fieldState }) => (
                                 <FormItem>
                                   <FormLabel className={`text-sm font-medium ${fieldState.error ? 'text-red-600' : 'text-gray-700'}`}>
-                                    Select Contractor Notary
+                                    Select Notary
                                   </FormLabel>
                                   <Select 
                                     onValueChange={(value) => {
@@ -1867,10 +1653,7 @@ function JobWizardInternal() {
                                     <SelectContent>
                                       {notaries.filter(notary => notary.notaryType === 'contractor').map((notary: any) => (
                                         <SelectItem key={notary.id} value={notary.id.toString()}>
-                                          <div className="flex items-center justify-between w-full">
-                                            <span className="font-medium">{notary.fullName}</span>
-                                            <span className="text-xs text-gray-500 ml-2">{notary.email}</span>
-                                          </div>
+                                          {notary.fullName}
                                         </SelectItem>
                                       ))}
                                     </SelectContent>
@@ -1975,16 +1758,7 @@ function JobWizardInternal() {
                         {form.watch('notaryOption') === 'assign' && form.watch('selectedNotary') && (
                           <div className="mt-6">
                             <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
-                              <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                                <div className="w-2 h-6 bg-blue-500 rounded-full mr-3"></div>
-                                Available Appointment Times
-                                <Badge variant="outline" className="ml-3">
-                                  {(() => {
-                                    const selectedNotary = notaries.find(n => n.id.toString() === form.watch('selectedNotary'));
-                                    return selectedNotary ? selectedNotary.fullName : 'Selected Notary';
-                                  })()}
-                                </Badge>
-                              </h3>
+                              <h3 className="text-lg font-medium text-gray-900 mb-6">Available Times</h3>
                               <NotaryAvailabilitySelector
                                 notaryId={parseInt(form.watch('selectedNotary') || '0')}
                                 selectedDate={form.watch('selectedDate')}
@@ -1999,13 +1773,7 @@ function JobWizardInternal() {
                         {form.watch('notaryOption') === 'id_code' && notaryIdCodeLookup.result && notaryIdCodeLookup.result.id && (
                           <div className="mt-6">
                             <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
-                              <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                                <div className="w-2 h-6 bg-orange-500 rounded-full mr-3"></div>
-                                Available Appointment Times
-                                <Badge variant="outline" className="ml-3">
-                                  {notaryIdCodeLookup.result.firstName} {notaryIdCodeLookup.result.lastName}
-                                </Badge>
-                              </h3>
+                              <h3 className="text-lg font-medium text-gray-900 mb-6">Available Times</h3>
                               <NotaryAvailabilitySelector
                                 notaryId={notaryIdCodeLookup.result.id}
                                 selectedDate={form.watch('selectedDate')}
@@ -2020,15 +1788,7 @@ function JobWizardInternal() {
                         {form.watch('notaryOption') === 'admin_self' && (
                           <div className="mt-6">
                             <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
-                              <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                                <div className="w-2 h-6 bg-blue-500 rounded-full mr-3"></div>
-                                Your Available Times
-                                <Badge variant="outline" className="ml-3">
-                                  {currentUser?.firstName && currentUser?.lastName 
-                                    ? `${currentUser.firstName} ${currentUser.lastName}` 
-                                    : currentUser?.username || 'Admin'}
-                                </Badge>
-                              </h3>
+                              <h3 className="text-lg font-medium text-gray-900 mb-6">Your Available Times</h3>
                               <NotaryAvailabilitySelector
                                 notaryId={currentUser?.id || 0}
                                 selectedDate={form.watch('selectedDate')}
@@ -2044,10 +1804,7 @@ function JobWizardInternal() {
                     {/* Additional Requirements - only for title company jobs */}
                     {(currentUser?.role === 'admin' || currentUser?.role === 'title_company') && (
                       <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                          <div className="w-2 h-6 bg-orange-500 rounded-full mr-3"></div>
-                          Special Requirements
-                        </h3>
+                        <h3 className="text-lg font-medium text-gray-900 mb-6">Special Requirements</h3>
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <FormField
@@ -2063,7 +1820,7 @@ function JobWizardInternal() {
                                 </FormControl>
                                 <div>
                                   <FormLabel className="text-sm font-medium text-gray-900">NSA Required</FormLabel>
-                                  <p className="text-xs text-gray-600">Notary Signing Agent certification required</p>
+                                  <p className="text-xs text-gray-600">Notary Signing Agent required</p>
                                 </div>
                               </FormItem>
                             )}
@@ -2082,7 +1839,7 @@ function JobWizardInternal() {
                                 </FormControl>
                                 <div>
                                   <FormLabel className="text-sm font-medium text-gray-900">Spanish Speaking</FormLabel>
-                                  <p className="text-xs text-gray-600">Bilingual notary required</p>
+                                  <p className="text-xs text-gray-600">Bilingual notary needed</p>
                                 </div>
                               </FormItem>
                             )}
@@ -2330,22 +2087,17 @@ function JobWizardInternal() {
                   </div>
                 )}
 
-                {/* Enhanced Navigation */}
-                <div className="flex justify-between items-center pt-8 border-t border-gray-200">
+                {/* Simple Navigation */}
+                <div className="flex justify-between items-center pt-6 border-t border-gray-200">
                   <Button
                     type="button"
                     variant="outline"
                     onClick={handlePrevious}
                     disabled={currentStep === 1}
-                    className="px-6 py-3 border-2 border-gray-300 hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-4 py-2 disabled:opacity-50"
                   >
-                    <ArrowLeft className="h-4 w-4 mr-2" />
-                    Previous
+                    Back
                   </Button>
-                  
-                  <div className="flex items-center space-x-2 text-sm text-gray-600">
-                    <span>Step {currentStep} of {steps.length}</span>
-                  </div>
                   
                   {currentStep < steps.length ? (
                     <Button 
@@ -2355,28 +2107,17 @@ function JobWizardInternal() {
                         e.stopPropagation();
                         handleNext();
                       }}
-                      className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl transition-shadow"
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white"
                     >
-                      Next Step
-                      <ArrowRight className="h-4 w-4 ml-2" />
+                      Continue
                     </Button>
                   ) : (
                     <Button 
                       type="submit" 
                       disabled={createJobMutation.isPending || isSubmitting}
-                      className="px-8 py-3 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white shadow-lg hover:shadow-xl transition-all transform hover:scale-105 disabled:transform-none disabled:opacity-50"
+                      className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
                     >
-                      {createJobMutation.isPending || isSubmitting ? (
-                        <div className="flex items-center">
-                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
-                          Creating Job...
-                        </div>
-                      ) : (
-                        <div className="flex items-center">
-                          <CheckCircle className="h-5 w-5 mr-2" />
-                          Create Job
-                        </div>
-                      )}
+                      {createJobMutation.isPending || isSubmitting ? 'Creating...' : 'Submit Job'}
                     </Button>
                   )}
                 </div>
