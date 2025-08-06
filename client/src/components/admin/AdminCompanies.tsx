@@ -367,16 +367,16 @@ export function AdminCompanies() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-purple-600">Total Revenue</p>
-                  <p className="text-2xl font-bold text-purple-900">
+                  <p className="text-sm font-medium text-blue-600">Total Revenue</p>
+                  <p className="text-2xl font-bold text-blue-900">
                     ${stats.totalRevenue.toLocaleString()}
                   </p>
-                  <p className="text-xs text-purple-600 mt-1">
+                  <p className="text-xs text-blue-600 mt-1">
                     <TrendingUp className="h-3 w-3 inline mr-1" />
                     +12.5% this quarter
                   </p>
                 </div>
-                <DollarSign className="h-8 w-8 text-purple-600" />
+                <DollarSign className="h-8 w-8 text-blue-600" />
               </div>
             </CardContent>
           </Card>

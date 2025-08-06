@@ -116,7 +116,7 @@ export function ActivityTimelineCard({ jobId }: ActivityTimelineCardProps) {
       case 'authentication':
         return 'text-blue-600 bg-blue-100';
       case 'job_management':
-        return 'text-purple-600 bg-purple-100';
+        return 'text-blue-600 bg-blue-100';
       case 'document_management':
         return 'text-orange-600 bg-orange-100';
       case 'user_management':

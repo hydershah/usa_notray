@@ -713,7 +713,7 @@ export function VerificationManagement() {
                                     <div className="flex items-center gap-2">
                                       {getStatusBadge(user)}
                                       {user.is_verification_bypassed && (
-                                        <span className="text-sm text-purple-600">
+                                        <span className="text-sm text-blue-600">
                                           (Bypassed by {user.bypassed_by_admin} on {user.verification_bypassed_at ? new Date(user.verification_bypassed_at).toLocaleDateString() : 'Unknown'})
                                         </span>
                                       )}
@@ -732,7 +732,7 @@ export function VerificationManagement() {
                                   {!user.is_verification_bypassed && (
                                     <Card>
                                       <CardHeader>
-                                        <CardTitle className="text-sm text-purple-600 flex items-center gap-2">
+                                        <CardTitle className="text-sm text-blue-600 flex items-center gap-2">
                                           <SkipForward className="w-4 h-4" />
                                           Bypass Verification
                                         </CardTitle>
@@ -751,7 +751,7 @@ export function VerificationManagement() {
                                           <AlertDialogTrigger asChild>
                                             <Button 
                                               variant="outline" 
-                                              className="w-full border-purple-300 text-purple-600 hover:bg-purple-50"
+                                              className="w-full border-blue-300 text-blue-600 hover:bg-blue-50"
                                               disabled={!bypassReason.trim()}
                                             >
                                               <Shield className="w-4 h-4 mr-2" />
@@ -771,7 +771,7 @@ export function VerificationManagement() {
                                               <AlertDialogCancel>Cancel</AlertDialogCancel>
                                               <AlertDialogAction 
                                                 onClick={handleBypassVerification}
-                                                className="bg-purple-600 hover:bg-purple-700"
+                                                className="bg-blue-600 hover:bg-blue-700"
                                               >
                                                 Confirm Bypass
                                               </AlertDialogAction>
@@ -846,7 +846,7 @@ export function VerificationManagement() {
                       {!user.evs_transaction_id && !user.evs_verified_at && (
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="outline" size="sm" className="border-purple-300 text-purple-600 hover:bg-purple-50">
+                            <Button variant="outline" size="sm" className="border-blue-300 text-blue-600 hover:bg-blue-50">
                               <SkipForward className="w-4 h-4 mr-2" />
                               Quick Bypass
                             </Button>
@@ -869,7 +869,7 @@ export function VerificationManagement() {
                                     reason: 'Quick bypass - Administrative approval'
                                   });
                                 }}
-                                className="bg-purple-600 hover:bg-purple-700"
+                                className="bg-blue-600 hover:bg-blue-700"
                               >
                                 Confirm Bypass
                               </AlertDialogAction>
@@ -1014,7 +1014,7 @@ export function VerificationManagement() {
                           <Shield className="w-4 h-4" />
                           Verification Bypassed
                         </div>
-                        <div className="text-sm text-purple-700 space-y-1">
+                        <div className="text-sm text-blue-700 space-y-1">
                           <div><strong>By:</strong> {user.bypassed_by_admin}</div>
                           <div><strong>Date:</strong> {user.verification_bypassed_at ? new Date(user.verification_bypassed_at).toLocaleString() : 'Unknown'}</div>
                           {user.verification_bypass_reason && (

@@ -2148,8 +2148,8 @@ const DailyVideoConference = forwardRef<
               onClick={() => setShowDailyInterface(!showDailyInterface)}
               className={`px-2 py-1 rounded-md text-xs transition-colors ${
                 showDailyInterface 
-                  ? 'bg-purple-700 hover:bg-purple-800 text-white' 
-                  : 'bg-purple-600 hover:bg-purple-700 text-white'
+                  ? 'bg-blue-700 hover:bg-blue-800 text-white' 
+                  : 'bg-blue-600 hover:bg-blue-700 text-white'
               }`}
               title={showDailyInterface ? "Switch to Custom UI" : "Switch to Daily.co UI"}
             >

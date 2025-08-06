@@ -170,8 +170,8 @@ export default function ApprovalsHub() {
       description: 'Signer-initiated notarization requests awaiting review',
       path: '/admin/job-requests?status=pending',
       icon: FileText,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-100'
+      color: 'text-blue-600',
+      bgColor: 'bg-blue-100'
     },
     {
       id: 'company_approvals',

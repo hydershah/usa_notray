@@ -170,7 +170,7 @@ export function Header() {
                   className="flex items-center space-x-3 hover:bg-gray-100 px-3 py-2 rounded-xl transition-all duration-200"
                 >
                   <Avatar className="h-9 w-9 border-2 border-gray-200 shadow-sm">
-                    <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
+                    <AvatarFallback className="bg-blue-500 text-white font-semibold">
                       {user?.username?.charAt(0).toUpperCase() || 'U'}
                     </AvatarFallback>
                   </Avatar>
@@ -190,7 +190,7 @@ export function Header() {
                 <DropdownMenuLabel>
                   <div className="flex items-center gap-3">
                     <Avatar className="h-10 w-10 border-2 border-gray-200">
-                      <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
+                      <AvatarFallback className="bg-blue-500 text-white font-semibold">
                         {user?.username?.charAt(0).toUpperCase() || 'U'}
                       </AvatarFallback>
                     </Avatar>

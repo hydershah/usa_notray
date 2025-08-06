@@ -266,7 +266,7 @@ export const ReplaceAllButton: React.FC<ReplaceAllButtonProps> = ({
         <Button
           onClick={generatePreview}
           disabled={disabled || isProcessing}
-          className="bg-purple-600 hover:bg-purple-700 text-white"
+          className="bg-blue-600 hover:bg-blue-700 text-white"
           size="lg"
         >
           <Zap className="h-4 w-4 mr-2" />
@@ -283,7 +283,7 @@ export const ReplaceAllButton: React.FC<ReplaceAllButtonProps> = ({
         <Card className="border-purple-200 bg-purple-50">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
-              <Zap className="h-5 w-5 text-purple-600" />
+              <Zap className="h-5 w-5 text-blue-600" />
               Replace All Preview
               {results && (
                 <Badge variant={results.failed > 0 ? "destructive" : "default"} className="ml-auto">
@@ -352,7 +352,7 @@ export const ReplaceAllButton: React.FC<ReplaceAllButtonProps> = ({
                 <>
                   <Button
                     onClick={executeReplacement}
-                    className="bg-purple-600 hover:bg-purple-700"
+                    className="bg-blue-600 hover:bg-blue-700"
                   >
                     <CheckCircle className="h-4 w-4 mr-2" />
                     Confirm Replace All

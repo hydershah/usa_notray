@@ -170,7 +170,7 @@ function CompanyUserDashboard() {
                       <p className="text-sm font-medium text-gray-600">Open</p>
                       <p className="text-3xl font-bold text-gray-900 mt-2">{stats?.openJobs || 0}</p>
                     </div>
-                    <FileText className="h-8 w-8 text-purple-600" />
+                    <FileText className="h-8 w-8 text-blue-600" />
                   </div>
                 </CardContent>
               </Card>
@@ -651,7 +651,7 @@ function SignerDashboard() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <FileText className="h-5 w-5 text-purple-600" />
+                <FileText className="h-5 w-5 text-blue-600" />
                 <div>
                   <p className="font-medium">Review Documents</p>
                   <p className="text-sm text-gray-600">Access and review documents before signing</p>
@@ -1038,7 +1038,7 @@ function WitnessDashboard() {
                 <p className="text-sm font-medium text-gray-600">Pending Invitations</p>
                 <p className="text-3xl font-bold text-gray-900 mt-2">1</p>
               </div>
-              <Bell className="h-8 w-8 text-purple-600" />
+              <Bell className="h-8 w-8 text-blue-600" />
             </div>
           </CardContent>
         </Card>
@@ -1087,7 +1087,7 @@ function WitnessDashboard() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <FileText className="h-5 w-5 text-purple-600" />
+                <FileText className="h-5 w-5 text-blue-600" />
                 <div>
                   <p className="font-medium">Review Documents</p>
                   <p className="text-sm text-gray-600">Access documents relevant to your witnessing role</p>

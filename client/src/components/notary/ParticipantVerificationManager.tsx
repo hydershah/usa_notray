@@ -451,7 +451,7 @@ export function ParticipantVerificationManager() {
                                     action: 'bypass' 
                                   })}
                                   variant="outline"
-                                  className="text-purple-600 border-purple-300 hover:bg-purple-50"
+                                  className="text-blue-600 border-blue-300 hover:bg-blue-50"
                                 >
                                   <ShieldCheck className="w-4 h-4 mr-2" />
                                   Bypass Verification

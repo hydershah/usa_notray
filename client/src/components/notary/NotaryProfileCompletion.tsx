@@ -462,11 +462,11 @@ export function NotaryProfileCompletion() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+    <div className="min-h-screen bg-blue-50">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Enhanced Header */}
         <div className="relative mb-8">
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-3xl opacity-90"></div>
+          <div className="absolute inset-0 bg-blue-600 rounded-3xl opacity-90"></div>
           <div className="relative bg-white/10 backdrop-blur-sm rounded-3xl p-8 shadow-2xl border border-white/20">
             <div className="text-center text-white">
               <div className="w-16 h-16 bg-gradient-to-br from-white/20 to-white/10 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg ring-4 ring-white/20">
@@ -500,7 +500,7 @@ export function NotaryProfileCompletion() {
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
             {/* Basic Personal Information */}
           <Card className="border-2 border-gray-100 shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50">
+            <CardHeader className="bg-blue-50">
               <CardTitle className="flex items-center gap-3 text-xl">
                 <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center">
                   <User className="h-5 w-5 text-white" />
@@ -553,7 +553,7 @@ export function NotaryProfileCompletion() {
 
           {/* Personal Address */}
           <Card className="border-2 border-gray-100 shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50">
+            <CardHeader className="bg-green-50">
               <CardTitle className="flex items-center gap-3 text-xl">
                 <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center">
                   <MapPin className="h-5 w-5 text-white" />
@@ -626,7 +626,7 @@ export function NotaryProfileCompletion() {
 
           {/* Commission Information */}
           <Card className="border-2 border-gray-100 shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50">
+            <CardHeader className="bg-blue-50">
               <CardTitle className="flex items-center gap-3 text-xl">
                 <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center">
                   <Shield className="h-5 w-5 text-white" />
@@ -674,7 +674,7 @@ export function NotaryProfileCompletion() {
 
           {/* Commission Address */}
           <Card className="border-2 border-gray-100 shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-yellow-50 to-orange-50">
+            <CardHeader className="bg-yellow-50">
               <CardTitle className="flex items-center gap-3 text-xl">
                 <div className="w-10 h-10 bg-yellow-500 rounded-xl flex items-center justify-center">
                   <FileText className="h-5 w-5 text-white" />
@@ -761,7 +761,7 @@ export function NotaryProfileCompletion() {
 
           {/* Insurance & Bond Information */}
           <Card className="border-2 border-gray-100 shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-orange-50 to-yellow-50">
+            <CardHeader className="bg-orange-50">
               <CardTitle className="flex items-center gap-3 text-xl">
                 <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center">
                   <DollarSign className="h-5 w-5 text-white" />
@@ -851,9 +851,9 @@ export function NotaryProfileCompletion() {
 
           {/* Public Certificate */}
           <Card className="border-2 border-gray-100 shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50">
+            <CardHeader className="bg-blue-50">
               <CardTitle className="flex items-center gap-3 text-xl">
-                <div className="w-10 h-10 bg-purple-500 rounded-xl flex items-center justify-center">
+                <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center">
                   <Shield className="h-5 w-5 text-white" />
                 </div>
                 Public Certificate Information
@@ -890,7 +890,7 @@ export function NotaryProfileCompletion() {
 
           {/* Signing Agent Certification */}
           <Card className="border-2 border-gray-100 shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-teal-50 to-cyan-50">
+            <CardHeader className="bg-teal-50">
               <CardTitle className="flex items-center gap-3 text-xl">
                 <div className="w-10 h-10 bg-teal-500 rounded-xl flex items-center justify-center">
                   <Calendar className="h-5 w-5 text-white" />
@@ -931,7 +931,7 @@ export function NotaryProfileCompletion() {
 
           {/* Foreign Languages */}
           <Card className="border-2 border-gray-100 shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-indigo-50 to-blue-50">
+            <CardHeader className="bg-indigo-50">
               <CardTitle className="flex items-center gap-3 text-xl">
                 <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center">
                   <Globe className="h-5 w-5 text-white" />
@@ -973,7 +973,7 @@ export function NotaryProfileCompletion() {
 
           {/* File Uploads */}
           <Card className="border-2 border-gray-100 shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-gray-50 to-gray-100">
+            <CardHeader className="bg-gray-50">
               <CardTitle className="flex items-center gap-3 text-xl">
                 <div className="w-10 h-10 bg-gray-500 rounded-xl flex items-center justify-center">
                   <FileText className="h-5 w-5 text-white" />

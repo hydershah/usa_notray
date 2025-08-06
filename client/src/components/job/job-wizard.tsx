@@ -58,7 +58,7 @@ class JobWizardErrorBoundary extends React.Component<
     if (this.state.hasError) {
       return (
         <MainLayout>
-          <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+          <div className="min-h-screen bg-blue-50">
             <div className="flex items-center justify-center h-96">
               <div className="text-center">
                 <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
@@ -975,7 +975,7 @@ function JobWizardInternal() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+    <div className="min-h-screen bg-blue-50">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
         
         {/* Enhanced Header */}
@@ -1082,7 +1082,7 @@ function JobWizardInternal() {
                       <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-6">
                         <div className="flex items-start">
                           <div className="flex-shrink-0">
-                            <CheckCircle className="h-5 w-5 text-purple-600 mt-0.5" />
+                            <CheckCircle className="h-5 w-5 text-blue-600 mt-0.5" />
                           </div>
                           <div className="ml-3">
                             <h4 className="text-sm font-medium text-purple-900">Admin Job Creation</h4>
@@ -1675,7 +1675,7 @@ function JobWizardInternal() {
 
                         <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
                           <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center">
-                            <div className="w-2 h-4 bg-purple-500 rounded-full mr-2"></div>
+                            <div className="w-2 h-4 bg-blue-500 rounded-full mr-2"></div>
                             Your Available Times
                           </h3>
                           
@@ -1691,7 +1691,7 @@ function JobWizardInternal() {
                       /* Title Company/Admin: Full notary assignment workflow */
                       <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
                         <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                          <div className="w-2 h-6 bg-purple-500 rounded-full mr-3"></div>
+                          <div className="w-2 h-6 bg-blue-500 rounded-full mr-3"></div>
                           Notary Assignment
                         </h3>
                         
@@ -1737,7 +1737,7 @@ function JobWizardInternal() {
                                         <div className="flex-1">
                                           <Label htmlFor="admin_self" className="text-lg font-semibold text-gray-900 cursor-pointer">Assign Myself as Notary</Label>
                                           <p className="text-sm text-gray-600 mt-1">You will be the notary for this job</p>
-                                          <div className="mt-3 flex items-center text-xs text-purple-600">
+                                          <div className="mt-3 flex items-center text-xs text-blue-600">
                                             <UserIcon className="w-4 h-4 mr-1" />
                                             Direct admin control
                                           </div>
@@ -2021,7 +2021,7 @@ function JobWizardInternal() {
                           <div className="mt-6">
                             <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
                               <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                                <div className="w-2 h-6 bg-purple-500 rounded-full mr-3"></div>
+                                <div className="w-2 h-6 bg-blue-500 rounded-full mr-3"></div>
                                 Your Available Times
                                 <Badge variant="outline" className="ml-3">
                                   {currentUser?.firstName && currentUser?.lastName 

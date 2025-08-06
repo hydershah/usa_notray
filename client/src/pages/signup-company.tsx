@@ -179,13 +179,13 @@ export default function SignupCompany() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-white flex items-center justify-center p-4">
+    <div className="min-h-screen bg-blue-50 flex items-center justify-center p-4">
       <div className="w-full max-w-2xl">
         {/* Back button */}
         <Button
           variant="ghost"
           onClick={() => setLocation('/')}
-          className="mb-4 text-purple-600 hover:text-purple-700"
+          className="mb-4 text-blue-600 hover:text-blue-700"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Home
@@ -193,8 +193,8 @@ export default function SignupCompany() {
 
         <Card className="shadow-lg border-0">
           <CardHeader className="text-center pb-6">
-            <div className="mx-auto mb-4 p-3 bg-purple-100 rounded-full w-16 h-16 flex items-center justify-center">
-              <Building2 className="h-8 w-8 text-purple-600" />
+            <div className="mx-auto mb-4 p-3 bg-blue-100 rounded-full w-16 h-16 flex items-center justify-center">
+              <Building2 className="h-8 w-8 text-blue-600" />
             </div>
             <CardTitle className="text-2xl font-bold text-gray-900">Register Your Title Company</CardTitle>
             <CardDescription className="text-gray-600">
@@ -212,7 +212,7 @@ export default function SignupCompany() {
               {/* Company Information */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                  <Building2 className="mr-2 h-5 w-5 text-purple-600" />
+                  <Building2 className="mr-2 h-5 w-5 text-blue-600" />
                   Company Information
                 </h3>
                 
@@ -277,7 +277,7 @@ export default function SignupCompany() {
               {/* Company Address */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                  <MapPin className="mr-2 h-5 w-5 text-purple-600" />
+                  <MapPin className="mr-2 h-5 w-5 text-blue-600" />
                   Company Address
                 </h3>
                 
@@ -348,7 +348,7 @@ export default function SignupCompany() {
               {/* Primary User Account */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                  <User className="mr-2 h-5 w-5 text-purple-600" />
+                  <User className="mr-2 h-5 w-5 text-blue-600" />
                   Primary Manager Account
                 </h3>
                 
@@ -415,7 +415,7 @@ export default function SignupCompany() {
 
               <Button 
                 type="submit" 
-                className="w-full bg-purple-600 hover:bg-purple-700" 
+                className="w-full bg-blue-600 hover:bg-blue-700" 
                 disabled={isLoading}
               >
                 {isLoading ? 'Registering Company...' : 'Register Company'}
@@ -427,7 +427,7 @@ export default function SignupCompany() {
                 Already have an account?{' '}
                 <button
                   onClick={() => setLocation('/login')}
-                  className="text-purple-600 hover:text-purple-700 font-medium"
+                  className="text-blue-600 hover:text-blue-700 font-medium"
                 >
                   Sign in here
                 </button>

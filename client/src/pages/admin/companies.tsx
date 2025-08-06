@@ -194,7 +194,7 @@ const CompanyTable: React.FC<{
   const getTypeBadge = (type: string) => {
     switch (type) {
       case 'title_company': return <Badge variant="outline" className="text-blue-600">Title Company</Badge>;
-      case 'lending_institution': return <Badge variant="outline" className="text-purple-600">Lending Institution</Badge>;
+      case 'lending_institution': return <Badge variant="outline" className="text-blue-600">Lending Institution</Badge>;
       case 'real_estate_agency': return <Badge variant="outline" className="text-green-600">Real Estate Agency</Badge>;
       case 'law_firm': return <Badge variant="outline" className="text-orange-600">Law Firm</Badge>;
       case 'other': return <Badge variant="outline" className="text-gray-600">Other</Badge>;

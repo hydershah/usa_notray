@@ -931,7 +931,7 @@ export function SignatureManager({ userId, onSignatureSelect }: SignatureManager
                           variant="outline" 
                           className={`text-xs ${
                             signature.type === 'uploaded' ? 'border-green-200 text-green-700 bg-green-50' :
-                            signature.type === 'drawn' ? 'border-purple-200 text-purple-700 bg-purple-50' :
+                            signature.type === 'drawn' ? 'border-blue-200 text-blue-700 bg-blue-50' :
                             'border-orange-200 text-orange-700 bg-orange-50'
                           }`}
                         >

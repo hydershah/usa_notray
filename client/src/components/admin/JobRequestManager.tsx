@@ -750,7 +750,7 @@ export function JobRequestManager() {
                                 {(selectedRequest.preferredDate || selectedRequest.preferredTime || selectedRequest.location) && (
                                   <div>
                                     <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                                      <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                                       Scheduling Information
                                     </h3>
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1007,7 +1007,7 @@ export function JobRequestManager() {
                                           Assign Myself as Notary
                                         </Label>
                                         <p className="text-sm text-gray-600 mt-1">You will be the notary for this job</p>
-                                        <div className="mt-3 flex items-center text-xs text-purple-600">
+                                        <div className="mt-3 flex items-center text-xs text-blue-600">
                                           <UserIcon className="w-4 h-4 mr-1" />
                                           Direct admin control
                                         </div>

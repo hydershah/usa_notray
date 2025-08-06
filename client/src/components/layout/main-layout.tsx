@@ -90,54 +90,8 @@ export function MainLayout({ children, hideSidebar = false }: MainLayoutProps) {
           "relative flex flex-col",
           hideSidebar ? "flex-1 w-full" : "flex-1"
         )}>
-          {/* Background Pattern */}
-          <div className="absolute inset-0 opacity-50">
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-50/50 via-transparent to-purple-50/50"></div>
-            <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-100/30 rounded-full mix-blend-multiply filter blur-xl animate-pulse"></div>
-            <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-purple-100/30 rounded-full mix-blend-multiply filter blur-xl animate-pulse" style={{ animationDelay: '2s' }}></div>
-            <div className="absolute bottom-1/4 left-1/3 w-96 h-96 bg-indigo-100/30 rounded-full mix-blend-multiply filter blur-xl animate-pulse" style={{ animationDelay: '4s' }}></div>
-          </div>
-          
-          <div className="relative z-10 p-2 sm:p-4 lg:p-6 max-w-7xl mx-auto flex-1 flex flex-col w-full">
-            {/* Top Bar with Mobile Menu + Breadcrumbs - Only show when sidebar is visible */}
-            {!hideSidebar && (
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-4">
-                  {/* Mobile menu button */}
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="lg:hidden border-gray-200 bg-white/80 backdrop-blur-sm hover:bg-white hover:shadow-md transition-all duration-200"
-                    onClick={() => setSidebarOpen(!sidebarOpen)}
-                  >
-                    {sidebarOpen ? 
-                      <X className="h-5 w-5" /> : 
-                      <Menu className="h-5 w-5" />
-                    }
-                  </Button>
-                  
-                  {/* Breadcrumbs */}
-                  {breadcrumbs.length > 0 && (
-                    <nav className="flex items-center space-x-2 text-sm">
-                      <Home className="h-4 w-4 text-gray-400" />
-                      {breadcrumbs.map((breadcrumb, index) => (
-                        <div key={index} className="flex items-center">
-                          <ChevronRight className="h-4 w-4 text-gray-400 mx-2" />
-                          <span className={cn(
-                            "font-medium",
-                            index === breadcrumbs.length - 1 
-                              ? "text-gray-900" 
-                              : "text-gray-500"
-                          )}>
-                            {breadcrumb.label}
-                          </span>
-                        </div>
-                      ))}
-                    </nav>
-                  )}
-                </div>
-              </div>
-            )}
+          <div className="relative z-10 p-4 w-full h-full flex-1 flex flex-col">
+
             
             {/* Page content */}
             <div className="animate-in fade-in-50 slide-in-from-bottom-4 duration-700 flex-1">

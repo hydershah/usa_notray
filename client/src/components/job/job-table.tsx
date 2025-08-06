@@ -45,38 +45,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { getStatusColor, formatDate, formatDateTime } from '@/lib/utils';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  Eye, 
-  Download, 
-  Edit, 
-  Edit3,
-  Search,
-  Plus,
-  Filter,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
-  ChevronLeft,
-  ChevronRight,
-  FileText,
-  Calendar,
-  Building,
-  User,
-  Clock,
-  MapPin,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
-  Activity,
-  Trash2,
-  RefreshCw,
-  ExternalLink,
-  Briefcase,
-  Zap,
-  Target,
-  Settings,
-  Grid3X3
-} from 'lucide-react';
+
 import { type Job } from '@shared/schema';
 
 // Type for paginated response
@@ -427,52 +396,46 @@ export function JobTable({ onCreateJob }: JobTableProps) {
   };
 
   const getSortIcon = (field: string) => {
-    if (sortBy !== field) return <ArrowUpDown className="w-4 h-4" />;
+    if (sortBy !== field) return null;
     return sortOrder === 'asc' ? 
-      <ArrowUp className="w-4 h-4" /> : 
-      <ArrowDown className="w-4 h-4" />;
+      ' ↑' : 
+      ' ↓';
   };
 
   const getStatusBadge = (status: string | null) => {
     const config = {
       open: { 
         variant: 'secondary' as const, 
-        icon: AlertCircle, 
         color: 'text-blue-600',
         bgColor: 'bg-blue-50 border-blue-200'
       },
       pending: { 
         variant: 'secondary' as const, 
-        icon: Clock, 
         color: 'text-yellow-600',
         bgColor: 'bg-yellow-50 border-yellow-200'
       },
       completed: { 
         variant: 'default' as const, 
-        icon: CheckCircle, 
         color: 'text-green-600',
         bgColor: 'bg-green-50 border-green-200'
       },
       cancelled: { 
         variant: 'destructive' as const, 
-        icon: XCircle, 
         color: 'text-red-600',
         bgColor: 'bg-red-50 border-red-200'
       },
       expired: { 
         variant: 'secondary' as const, 
-        icon: XCircle, 
         color: 'text-gray-600',
         bgColor: 'bg-gray-50 border-gray-200'
       },
     };
 
     const statusKey = (status || 'open') as keyof typeof config;
-    const { icon: Icon, color, bgColor } = config[statusKey] || config.open;
+    const { color, bgColor } = config[statusKey] || config.open;
 
     return (
       <Badge className={`flex items-center gap-1 ${bgColor} ${color} border hover:shadow-sm transition-all duration-200`}>
-        <Icon className={`w-3 h-3`} />
         {status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Open'}
       </Badge>
     );
@@ -503,7 +466,6 @@ export function JobTable({ onCreateJob }: JobTableProps) {
     if (!job.notaryId && !job.selectedNotary) {
       return (
         <Badge className="flex items-center gap-1 bg-gray-50 border-gray-200 text-gray-600 hover:shadow-sm transition-all duration-200">
-          <AlertCircle className="w-3 h-3" />
           Unassigned
         </Badge>
       );
@@ -511,31 +473,26 @@ export function JobTable({ onCreateJob }: JobTableProps) {
 
     const config = {
       pending_assignment: {
-        icon: Clock,
         color: 'text-orange-600',
         bgColor: 'bg-orange-50 border-orange-200',
         text: 'Pending Assignment'
       },
       assigned_pending_approval: {
-        icon: Clock,
         color: 'text-yellow-600',
         bgColor: 'bg-yellow-50 border-yellow-200',
         text: 'Pending Approval'
       },
       approved: {
-        icon: CheckCircle,
         color: 'text-green-600',
         bgColor: 'bg-green-50 border-green-200',
         text: 'Approved'
       },
       rejected: {
-        icon: XCircle,
         color: 'text-red-600',
         bgColor: 'bg-red-50 border-red-200',
         text: 'Rejected'
       },
       approved_with_conditions: {
-        icon: AlertCircle,
         color: 'text-blue-600',
         bgColor: 'bg-blue-50 border-blue-200',
         text: 'Approved (Conditions)'
@@ -543,11 +500,10 @@ export function JobTable({ onCreateJob }: JobTableProps) {
     };
 
     const status = job.notaryApprovalStatus || 'pending_assignment';
-    const { icon: Icon, color, bgColor, text } = config[status as keyof typeof config] || config.pending_assignment;
+    const { color, bgColor, text } = config[status as keyof typeof config] || config.pending_assignment;
 
     return (
       <Badge className={`flex items-center gap-1 ${bgColor} ${color} border hover:shadow-sm transition-all duration-200`}>
-        <Icon className="w-3 h-3" />
         {text}
       </Badge>
     );
@@ -580,14 +536,11 @@ export function JobTable({ onCreateJob }: JobTableProps) {
 
   return (
     <TooltipProvider>
-      <div className="space-y-6">
+      <div className="space-y-2">
         {/* Enhanced Header */}
-        <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-6 rounded-t-3xl border-b border-gray-200">
+        <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-4 rounded-t-3xl border-b border-gray-200">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-                <FileText className="w-5 h-5 text-white" />
-              </div>
               <div>
                 <h2 className="text-xl font-bold text-gray-900">All Jobs</h2>
                 <p className="text-sm text-gray-600">
@@ -606,7 +559,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   onClick={() => setViewMode('table')}
                   className="h-8 px-3"
                 >
-                  <FileText className="w-4 h-4" />
+                  Table
                 </Button>
                 <Button
                   variant={viewMode === 'grid' ? 'default' : 'ghost'}
@@ -614,7 +567,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   onClick={() => setViewMode('grid')}
                   className="h-8 px-3"
                 >
-                  <Grid3X3 className="w-4 h-4" />
+                  Grid
                 </Button>
               </div>
 
@@ -637,7 +590,6 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                     disabled={!bulkAction || bulkUpdateMutation.isPending}
                     className="bg-white border-2 border-gray-200 hover:border-blue-300 hover:bg-blue-50"
                   >
-                    <Zap className="h-4 w-4 mr-2" />
                     Apply ({selectedJobs.length})
                   </Button>
                 </>
@@ -648,7 +600,6 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                 onClick={() => window.location.reload()}
                 className="bg-white border-2 border-gray-200 hover:border-blue-300 hover:bg-blue-50"
               >
-                <RefreshCw className="h-4 w-4 mr-2" />
                 Refresh
               </Button>
 
@@ -657,7 +608,6 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   onClick={onCreateJob} 
                   className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg"
                 >
-                  <Plus className="h-4 w-4 mr-2" />
                   Create Job
                 </Button>
               )}
@@ -665,194 +615,13 @@ export function JobTable({ onCreateJob }: JobTableProps) {
           </div>
         </div>
 
-        {/* Quick Filter Bar */}
-        <div className="px-6">
-          <div className="flex gap-2 flex-wrap mb-4">
-            <Button
-              variant={statusFilter === 'all' && assignmentFilter === 'all' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => {
-                setStatusFilter('all');
-                setAssignmentFilter('all');
-                setNotaryFilter('all');
-              }}
-              className="h-8 px-3"
-            >
-              All Jobs
-            </Button>
-            <Button
-              variant={statusFilter === 'completed' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => {
-                setStatusFilter('completed');
-                setAssignmentFilter('all');
-              }}
-              className="h-8 px-3"
-            >
-              Completed
-            </Button>
-            <Button
-              variant={assignmentFilter === 'unassigned' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => {
-                setAssignmentFilter('unassigned');
-                setStatusFilter('all');
-              }}
-              className="h-8 px-3"
-            >
-              Unassigned
-            </Button>
-            <Button
-              variant={assignmentFilter === 'pending_approval' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => {
-                setAssignmentFilter('pending_approval');
-                setStatusFilter('all');
-              }}
-              className="h-8 px-3"
-            >
-              Pending Approval
-            </Button>
-            <Button
-              variant={assignmentFilter === 'approved' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => {
-                setAssignmentFilter('approved');
-                setStatusFilter('all');
-              }}
-              className="h-8 px-3"
-            >
-              Approved
-            </Button>
-            <Button
-              variant={statusFilter === 'pending' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => {
-                setStatusFilter('pending');
-                setAssignmentFilter('all');
-              }}
-              className="h-8 px-3"
-            >
-              In Progress
-            </Button>
-          </div>
-        </div>
 
-        {/* Enhanced Filters */}
-        <div className="px-6 space-y-4">
-          <div className="flex flex-col lg:flex-row gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-                <Input
-                  placeholder="Search jobs by reference, company, address, or closing type..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-12 h-11 bg-white border-2 border-gray-200 focus:border-blue-500 rounded-xl shadow-sm"
-                />
-              </div>
-            </div>
-            
-            <div className="flex gap-3 flex-wrap">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[130px] h-11 bg-white border-2 border-gray-200 rounded-xl">
-                  <Filter className="h-4 w-4 mr-2 text-gray-500" />
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="open">Open</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                  <SelectItem value="expired">Expired</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Select value={assignmentFilter} onValueChange={setAssignmentFilter}>
-                <SelectTrigger className="w-[160px] h-11 bg-white border-2 border-gray-200 rounded-xl">
-                  <User className="h-4 w-4 mr-2 text-gray-500" />
-                  <SelectValue placeholder="Assignment" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Assignments</SelectItem>
-                  <SelectItem value="unassigned">Unassigned</SelectItem>
-                  <SelectItem value="assigned">Assigned</SelectItem>
-                  <SelectItem value="pending_approval">Pending Approval</SelectItem>
-                  <SelectItem value="approved">Approved</SelectItem>
-                  <SelectItem value="rejected">Rejected</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Select value={notaryFilter} onValueChange={setNotaryFilter}>
-                <SelectTrigger className="w-[150px] h-11 bg-white border-2 border-gray-200 rounded-xl">
-                  <Briefcase className="h-4 w-4 mr-2 text-gray-500" />
-                  <SelectValue placeholder="Notary" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Notaries</SelectItem>
-                  <SelectItem value="unassigned">Unassigned</SelectItem>
-                  {uniqueNotaries.map(notaryId => (
-                    <SelectItem key={notaryId as string} value={notaryId as string}>
-                      Notary {notaryId as string}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              
-              <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                <SelectTrigger className="w-[160px] h-11 bg-white border-2 border-gray-200 rounded-xl">
-                  <Building className="h-4 w-4 mr-2 text-gray-500" />
-                  <SelectValue placeholder="Company" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Companies</SelectItem>
-                  {uniqueCompanies.map(company => (
-                    <SelectItem key={company} value={company}>{company}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={dateFilter} onValueChange={setDateFilter}>
-                <SelectTrigger className="w-[130px] h-11 bg-white border-2 border-gray-200 rounded-xl">
-                  <Calendar className="h-4 w-4 mr-2 text-gray-500" />
-                  <SelectValue placeholder="Date" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Time</SelectItem>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="week">This Week</SelectItem>
-                  <SelectItem value="month">This Month</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setSearchTerm('');
-                  setStatusFilter('all');
-                  setAssignmentFilter('all');
-                  setNotaryFilter('all');
-                  setCompanyFilter('all');
-                  setDateFilter('all');
-                  setCurrentPage(1);
-                }}
-                className="h-11 px-4 bg-white border-2 border-gray-200 hover:border-blue-300 hover:bg-blue-50"
-              >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Reset Filters
-              </Button>
-            </div>
-          </div>
-        </div>
 
         {/* Content Area */}
         <div className="px-6 pb-6">
           {isLoading ? (
             <div className="text-center py-16">
               <div className="inline-flex items-center gap-3 text-gray-600">
-                <RefreshCw className="h-6 w-6 animate-spin" />
                 <span className="text-lg">Loading jobs...</span>
               </div>
             </div>
@@ -908,11 +677,9 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-sm">
-                        <Building className="h-4 w-4 text-gray-500" />
                         <span className="font-medium">{job.titleCompany}</span>
                       </div>
                       <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <User className="h-4 w-4" />
                         <span>{getAssignedNotary(job)}</span>
                       </div>
                       {job.closingType && (
@@ -939,14 +706,12 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                         variant="outline"
                         className="w-full hover:bg-blue-50 hover:text-blue-600 transition-colors"
                       >
-                        <Eye className="w-4 h-4 mr-2" />
                         Quick View
                       </Button>
                       <Button
                         onClick={() => window.open(`/jobs/${job.id}`, '_blank')}
                         className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
                       >
-                        <ExternalLink className="w-4 h-4 mr-2" />
                         Job View
                       </Button>
                     </div>
@@ -1047,11 +812,9 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                               {job.internalReference || `Job #${job.id}`}
                             </div>
                             <div className="text-sm text-gray-600 flex items-center gap-1 mt-1">
-                              <Building className="h-3 w-3" />
                               {job.titleCompany}
                             </div>
                             <div className="text-sm text-gray-500 flex items-center gap-1">
-                              <User className="h-3 w-3" />
                               {getAssignedNotary(job)}
                             </div>
                             {job.closingType && (
@@ -1065,13 +828,6 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                       <TableCell className="py-4">
                         <div className="space-y-3">
                           {getStatusBadge(job.jobStatus)}
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between text-xs text-gray-600">
-                              <span className="font-medium">Progress</span>
-                              <span className="font-semibold">{getJobProgress(job)}%</span>
-                            </div>
-                            <Progress value={getJobProgress(job)} className="h-2" />
-                          </div>
                         </div>
                       </TableCell>
                       <TableCell className="py-4">
@@ -1086,17 +842,14 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                         {job.selectedDate && job.selectedTime ? (
                           <div className="space-y-2">
                             <div className="flex items-center gap-2 text-sm font-medium">
-                              <Calendar className="h-4 w-4 text-blue-600" />
                               {formatDate(job.selectedDate)}
                             </div>
                             <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <Clock className="h-4 w-4" />
                               {job.selectedTime}
                             </div>
                           </div>
                         ) : (
                           <div className="text-sm text-gray-500 flex items-center gap-2">
-                            <AlertCircle className="h-4 w-4" />
                             Not scheduled
                           </div>
                         )}
@@ -1114,7 +867,6 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                             onClick={() => handleViewDetails(job)}
                             className="hover:bg-blue-50 hover:text-blue-600 transition-colors"
                           >
-                            <Eye className="h-4 w-4 mr-2" />
                             Quick View
                           </Button>
                           {canCreateJob && (
@@ -1124,7 +876,6 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                               onClick={() => handleEditJob(job)}
                               className="hover:bg-green-50 hover:text-green-600 transition-colors"
                             >
-                              <Edit3 className="h-4 w-4 mr-2" />
                               Edit
                             </Button>
                           )}
@@ -1134,7 +885,6 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                             onClick={() => window.open(`/jobs/${job.id}`, '_blank')}
                             className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
                           >
-                            <ExternalLink className="h-4 w-4 mr-2" />
                             Job View
                           </Button>
                         </div>
@@ -1169,7 +919,6 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   disabled={currentPage === 1}
                   className="border-2"
                 >
-                  <ChevronLeft className="h-4 w-4" />
                   Previous
                 </Button>
                 
@@ -1199,7 +948,6 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   className="border-2"
                 >
                   Next
-                  <ChevronRight className="h-4 w-4" />
                 </Button>
                 <Button
                   variant="outline"
@@ -1264,7 +1012,6 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                                      shadow-2xl border-2 border-gray-200">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <Trash2 className="h-5 w-5 text-red-600" />
               Confirm Bulk Action
             </AlertDialogTitle>
             <AlertDialogDescription className="text-base">

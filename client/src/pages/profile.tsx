@@ -448,11 +448,11 @@ export default function Profile() {
 
   return (
     <MainLayout>
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+      <div className="min-h-screen bg-blue-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Enhanced Header Section */}
           <div className="relative mb-8">
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-3xl opacity-90"></div>
+            <div className="absolute inset-0 bg-blue-600 rounded-3xl opacity-90"></div>
             <div className="relative bg-white/10 backdrop-blur-sm rounded-3xl p-8 shadow-2xl border border-white/20">
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
                 <div className="flex items-center gap-6">
@@ -515,7 +515,7 @@ export default function Profile() {
 
           {/* Enhanced Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <Card className="group hover:shadow-xl transition-all duration-300 hover:-translate-y-1 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+            <Card className="group hover:shadow-xl transition-all duration-300 hover:-translate-y-1 bg-blue-50 border-blue-200">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -543,14 +543,14 @@ export default function Profile() {
               </CardContent>
             </Card>
 
-            <Card className="group hover:shadow-xl transition-all duration-300 hover:-translate-y-1 bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+            <Card className="group hover:shadow-xl transition-all duration-300 hover:-translate-y-1 bg-blue-50 border-blue-200">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-purple-600 font-medium">Security Level</p>
-                    <p className="text-2xl font-bold text-purple-800">High</p>
+                    <p className="text-sm text-blue-600 font-medium">Security Level</p>
+                    <p className="text-2xl font-bold text-blue-800">High</p>
                   </div>
-                  <div className="w-12 h-12 bg-purple-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                  <div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
                     <Shield className="w-6 h-6 text-white" />
                   </div>
                 </div>
@@ -768,13 +768,13 @@ export default function Profile() {
                     {/* Enhanced Notary Information Section */}
                     {(currentUser?.role === 'notary' || currentUser?.role === 'admin') && (
                       <>
-                        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl p-8 border border-purple-100">
+                        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-8 border border-blue-100">
                           <div className="flex items-center gap-3 mb-6">
-                            <div className="w-10 h-10 bg-purple-500 rounded-xl flex items-center justify-center">
+                            <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center">
                               <Shield className="w-5 h-5 text-white" />
                             </div>
                             <h3 className="text-2xl font-bold text-gray-900">Basic Notary Information</h3>
-                            <Badge className="bg-purple-100 text-purple-800">Professional</Badge>
+                            <Badge className="bg-blue-100 text-blue-800">Professional</Badge>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-2">
@@ -787,7 +787,7 @@ export default function Profile() {
                                 onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
                                 disabled={!isEditing}
                                 placeholder="Notary Public"
-                                className="h-12 bg-white border-2 border-gray-200 focus:border-purple-500 rounded-xl transition-all duration-200"
+                                className="h-12 bg-white border-2 border-gray-200 focus:border-blue-500 rounded-xl transition-all duration-200"
                               />
                             </div>
                             <div className="space-y-2">
@@ -800,7 +800,7 @@ export default function Profile() {
                                 onChange={(e) => setFormData(prev => ({ ...prev, nameOnCommission: e.target.value }))}
                                 disabled={!isEditing}
                                 placeholder="Full name as it appears on commission"
-                                className="h-12 bg-white border-2 border-gray-200 focus:border-purple-500 rounded-xl transition-all duration-200"
+                                className="h-12 bg-white border-2 border-gray-200 focus:border-blue-500 rounded-xl transition-all duration-200"
                               />
                             </div>
                             <div className="space-y-2">
@@ -813,7 +813,7 @@ export default function Profile() {
                                 onChange={(e) => setFormData(prev => ({ ...prev, commissionNumber: e.target.value }))}
                                 disabled={!isEditing}
                                 placeholder="NC123456"
-                                className="h-12 bg-white border-2 border-gray-200 focus:border-purple-500 rounded-xl transition-all duration-200"
+                                className="h-12 bg-white border-2 border-gray-200 focus:border-blue-500 rounded-xl transition-all duration-200"
                               />
                             </div>
                             <div className="space-y-2">
@@ -826,7 +826,7 @@ export default function Profile() {
                                 value={formData.commissionExpiration}
                                 onChange={(e) => setFormData(prev => ({ ...prev, commissionExpiration: e.target.value }))}
                                 disabled={!isEditing}
-                                className="h-12 bg-white border-2 border-gray-200 focus:border-purple-500 rounded-xl transition-all duration-200"
+                                className="h-12 bg-white border-2 border-gray-200 focus:border-blue-500 rounded-xl transition-all duration-200"
                               />
                             </div>
                             <div className="space-y-2">
@@ -839,7 +839,7 @@ export default function Profile() {
                                 onChange={(e) => setFormData(prev => ({ ...prev, state: e.target.value }))}
                                 disabled={!isEditing}
                                 placeholder="California"
-                                className="h-12 bg-white border-2 border-gray-200 focus:border-purple-500 rounded-xl transition-all duration-200"
+                                className="h-12 bg-white border-2 border-gray-200 focus:border-blue-500 rounded-xl transition-all duration-200"
                               />
                             </div>
                             <div className="space-y-2">
@@ -852,7 +852,7 @@ export default function Profile() {
                                 onChange={(e) => setFormData(prev => ({ ...prev, county: e.target.value }))}
                                 disabled={!isEditing}
                                 placeholder="Los Angeles County"
-                                className="h-12 bg-white border-2 border-gray-200 focus:border-purple-500 rounded-xl transition-all duration-200"
+                                className="h-12 bg-white border-2 border-gray-200 focus:border-blue-500 rounded-xl transition-all duration-200"
                               />
                             </div>
                             <div className="md:col-span-2">
@@ -866,7 +866,7 @@ export default function Profile() {
                                 disabled={!isEditing}
                                 rows={3}
                                 placeholder="I acknowledge that this document was signed before me on this date."
-                                className="bg-white border-2 border-gray-200 focus:border-purple-500 rounded-xl resize-none transition-all duration-200"
+                                className="bg-white border-2 border-gray-200 focus:border-blue-500 rounded-xl resize-none transition-all duration-200"
                               />
                               <p className="text-xs text-gray-500 mt-2">
                                 This text will be used when you add a disclosure to documents
@@ -1197,7 +1197,7 @@ export default function Profile() {
                 {/* Signatures Tab */}
                 {currentUser?.role !== 'title_company' && (
                   <TabsContent value="signatures">
-                    <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl p-8 border border-purple-100">
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-8 border border-blue-100">
                       <SignatureManager userId={currentUser.id} />
                     </div>
                   </TabsContent>

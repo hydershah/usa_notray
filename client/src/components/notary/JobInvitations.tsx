@@ -272,7 +272,7 @@ export function JobInvitations({ refreshTrigger }: JobInvitationsProps) {
                           </Badge>
                         )}
                         {job.kba_required && (
-                          <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700">
+                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700">
                             KBA
                           </Badge>
                         )}
@@ -369,7 +369,7 @@ export function JobInvitations({ refreshTrigger }: JobInvitationsProps) {
                         </Badge>
                       )}
                       {selectedJob.kba_required && (
-                        <Badge variant="outline" className="bg-purple-50 text-purple-700">
+                        <Badge variant="outline" className="bg-blue-50 text-blue-700">
                           KBA Required
                         </Badge>
                       )}

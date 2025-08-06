@@ -107,7 +107,7 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
       case 'notary':
         return <Crown className="h-4 w-4 text-yellow-600" />;
       case 'admin':
-        return <Shield className="h-4 w-4 text-purple-600" />;
+        return <Shield className="h-4 w-4 text-blue-600" />;
       case 'witness':
         return <Eye className="h-4 w-4 text-gray-600" />;
       default:
@@ -323,16 +323,16 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
 
       {/* Session Readiness */}
       {canControlSession && (
-        <Card className="border-purple-200 bg-purple-50">
+        <Card className="border-blue-200 bg-blue-50">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-purple-800">
+            <CardTitle className="flex items-center gap-2 text-blue-800">
               <Shield className="h-5 w-5" />
               Session Control
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-3">
-              <div className="text-sm text-purple-700">
+              <div className="text-sm text-blue-700">
                 <strong>Session Readiness:</strong>
               </div>
               

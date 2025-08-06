@@ -700,7 +700,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
       case 'active': return 'bg-green-500';
       case 'paused': return 'bg-yellow-500';
       case 'waiting': return 'bg-blue-500';
-      case 'completing': return 'bg-purple-500';
+      case 'completing': return 'bg-blue-500';
       case 'completed': return 'bg-gray-500';
       default: return 'bg-gray-500';
     }
@@ -804,7 +804,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
             <Button 
               onClick={() => handleSessionAction('complete')} 
               size="lg"
-              className="bg-purple-600 hover:bg-purple-700 px-5 py-3 text-base font-semibold"
+              className="bg-blue-600 hover:bg-blue-700 px-5 py-3 text-base font-semibold"
               disabled={buttonDisabled}
             >
               <div className="flex items-center gap-2">

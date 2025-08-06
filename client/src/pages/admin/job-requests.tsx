@@ -81,7 +81,7 @@ const JobRequestStatsCards: React.FC<{ stats: JobRequestStats; loading: boolean 
     { label: 'Pending', value: stats.pending, icon: Clock, color: 'text-yellow-600', bg: 'bg-yellow-100' },
     { label: 'Approved', value: stats.approved, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100' },
     { label: 'Rejected', value: stats.rejected, icon: XCircle, color: 'text-red-600', bg: 'bg-red-100' },
-    { label: 'Assigned', value: stats.assigned, icon: User, color: 'text-purple-600', bg: 'bg-purple-100' },
+    { label: 'Assigned', value: stats.assigned, icon: User, color: 'text-blue-600', bg: 'bg-blue-100' },
     { label: 'Completed', value: stats.completed, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-100' }
   ];
 
@@ -302,7 +302,7 @@ const JobRequestTable: React.FC<{
                     variant="outline"
                     size="sm"
                     onClick={() => onAssignNotary(request)}
-                    className="h-8 text-purple-600 border-purple-200 hover:bg-purple-50"
+                    className="h-8 text-blue-600 border-blue-200 hover:bg-blue-50"
                   >
                     <User className="h-4 w-4 mr-1" />
                     Assign

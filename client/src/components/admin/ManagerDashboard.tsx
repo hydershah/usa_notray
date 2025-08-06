@@ -147,7 +147,7 @@ export function TitleCompanyDashboard() {
                     {statsLoading ? <Skeleton className="h-8 w-16" /> : stats?.activeNotaries || 0}
                   </div>
                 </div>
-                <UserCheck className="h-8 w-8 text-purple-600" />
+                <UserCheck className="h-8 w-8 text-blue-600" />
               </div>
             </CardContent>
           </Card>

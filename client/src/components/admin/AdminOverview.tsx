@@ -333,7 +333,7 @@ export function AdminOverview() {
           description="Registered title companies"
           trend="+15.3%"
           trendDirection="up"
-          color="purple"
+          color="blue"
         />
       </div>
 
@@ -369,7 +369,7 @@ export function AdminOverview() {
             value={stats.assignedJobRequests}
             icon={UserCheck}
             description="Assigned to notaries"
-            color="purple"
+            color="blue"
           />
           <StatCard
             title="Rejected"

@@ -59,7 +59,7 @@ const signupContent: Record<SignupType, SignupContent> = {
     buttonColor: "bg-green-600 hover:bg-green-700"
   },
   company: {
-    icon: <Building2 className="h-8 w-8 text-purple-600" />,
+    icon: <Building2 className="h-8 w-8 text-blue-600" />,
     title: "Company Registration Submitted!",
     description: "Your title company has been registered and is pending admin approval. We'll review your information and get you set up soon.",
     nextSteps: [
@@ -73,9 +73,9 @@ const signupContent: Record<SignupType, SignupContent> = {
       text: "Access Manager Account",
       path: "/login"
     },
-    bgColor: "from-purple-50 to-white",
-    iconBg: "bg-purple-100",
-    buttonColor: "bg-purple-600 hover:bg-purple-700"
+    bgColor: "from-blue-50 to-white",
+    iconBg: "bg-blue-100",
+    buttonColor: "bg-blue-600 hover:bg-blue-700"
   }
 };
 

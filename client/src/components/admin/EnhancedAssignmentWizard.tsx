@@ -315,7 +315,7 @@ export function EnhancedAssignmentWizard({
                       ? 'border-blue-500 bg-blue-50 shadow-lg scale-[1.02]' 
                       : 'border-gray-200 hover:border-blue-300 hover:shadow-md'
                   }`}>
-                    <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-indigo-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                    <div className="absolute inset-0 bg-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                     <div className="relative p-6">
                       <div className="flex items-start space-x-4">
                         <RadioGroupItem value="admin_self" id="admin_self" className="mt-1" />
@@ -351,7 +351,7 @@ export function EnhancedAssignmentWizard({
                     ? 'border-green-500 bg-green-50 shadow-lg scale-[1.02]' 
                     : 'border-gray-200 hover:border-green-300 hover:shadow-md'
                 }`}>
-                  <div className="absolute inset-0 bg-gradient-to-r from-green-500/5 to-emerald-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  <div className="absolute inset-0 bg-green-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                   <div className="relative p-6">
                     <div className="flex items-start space-x-4">
                       <RadioGroupItem value="assign" id="assign" className="mt-1" />
@@ -386,7 +386,7 @@ export function EnhancedAssignmentWizard({
                     ? 'border-purple-500 bg-purple-50 shadow-lg scale-[1.02]' 
                     : 'border-gray-200 hover:border-purple-300 hover:shadow-md'
                 }`}>
-                  <div className="absolute inset-0 bg-gradient-to-r from-purple-500/5 to-violet-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  <div className="absolute inset-0 bg-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                   <div className="relative p-6">
                     <div className="flex items-start space-x-4">
                       <RadioGroupItem value="auto" id="auto" className="mt-1" />
@@ -421,7 +421,7 @@ export function EnhancedAssignmentWizard({
                     ? 'border-orange-500 bg-orange-50 shadow-lg scale-[1.02]' 
                     : 'border-gray-200 hover:border-orange-300 hover:shadow-md'
                 }`}>
-                  <div className="absolute inset-0 bg-gradient-to-r from-orange-500/5 to-amber-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  <div className="absolute inset-0 bg-orange-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                   <div className="relative p-6">
                     <div className="flex items-start space-x-4">
                       <RadioGroupItem value="id_code" id="id_code" className="mt-1" />
@@ -568,22 +568,22 @@ export function EnhancedAssignmentWizard({
             )}
 
             {(assignmentMethod === 'auto' || assignmentMethod === 'admin_self') && (
-              <div className="bg-gradient-to-r from-purple-50 to-violet-50 p-6 rounded-xl border border-purple-200">
+              <div className="bg-blue-50 p-6 rounded-xl border border-blue-200">
                 <div className="flex items-center gap-3">
-                  <div className="p-3 bg-purple-100 rounded-full">
-                    <CheckCircle className="h-6 w-6 text-purple-600" />
+                  <div className="p-3 bg-blue-100 rounded-full">
+                    <CheckCircle className="h-6 w-6 text-blue-600" />
                   </div>
                   <div>
-                    <p className="font-semibold text-purple-900">
+                    <p className="font-semibold text-blue-900">
                       {assignmentMethod === 'auto' ? 'Auto Assignment Selected' : 'Self Assignment Selected'}
                     </p>
-                    <p className="text-sm text-purple-700 mt-1">
+                    <p className="text-sm text-blue-700 mt-1">
                       {assignmentMethod === 'auto' 
                         ? 'The system will automatically assign the best available notary based on availability, expertise, and location.'
                         : 'You will be assigned as the notary for this job with full administrative control.'
                       }
                     </p>
-                    <Badge className="mt-2 bg-purple-100 text-purple-700 border-purple-200">
+                    <Badge className="mt-2 bg-blue-100 text-blue-700 border-blue-200">
                       <Sparkles className="h-3 w-3 mr-1" />
                       {assignmentMethod === 'auto' ? 'Smart Assignment' : 'Admin Control'}
                     </Badge>
@@ -598,14 +598,14 @@ export function EnhancedAssignmentWizard({
         return (
           <div className="space-y-6">
             {/* Enhanced Header Section */}
-            <div className="bg-gradient-to-r from-purple-50 to-violet-50 border border-purple-200 rounded-xl p-6 shadow-sm">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 shadow-sm">
               <div className="flex items-center gap-3 mb-3">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <Calendar className="h-5 w-5 text-purple-600" />
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Calendar className="h-5 w-5 text-blue-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-purple-900">Schedule & Details</h3>
-                  <p className="text-sm text-purple-700">
+                  <h3 className="text-lg font-semibold text-blue-900">Schedule & Details</h3>
+                  <p className="text-sm text-blue-700">
                     Set appointment details and provide any specific instructions for the assigned notary.
                   </p>
                 </div>
@@ -615,7 +615,7 @@ export function EnhancedAssignmentWizard({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <Label className="text-sm font-medium mb-2 block flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-purple-600" />
+                  <Calendar className="h-4 w-4 text-blue-600" />
                   Preferred Date
                 </Label>
                 <Input
@@ -623,12 +623,12 @@ export function EnhancedAssignmentWizard({
                   value={preferredDate}
                   onChange={(e) => setPreferredDate(e.target.value)}
                   placeholder="Select preferred date"
-                  className="h-12 border-2 hover:border-purple-300 focus:border-purple-500 transition-colors"
+                  className="h-12 border-2 hover:border-blue-300 focus:border-blue-500 transition-colors"
                 />
               </div>
               <div className="space-y-2">
                 <Label className="text-sm font-medium mb-2 block flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-purple-600" />
+                  <Clock className="h-4 w-4 text-blue-600" />
                   Preferred Time
                 </Label>
                 <Input
@@ -636,27 +636,27 @@ export function EnhancedAssignmentWizard({
                   value={preferredTime}
                   onChange={(e) => setPreferredTime(e.target.value)}
                   placeholder="Select preferred time"
-                  className="h-12 border-2 hover:border-purple-300 focus:border-purple-500 transition-colors"
+                  className="h-12 border-2 hover:border-blue-300 focus:border-blue-500 transition-colors"
                 />
               </div>
             </div>
 
             <div className="space-y-2">
               <Label className="text-sm font-medium mb-2 block flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-purple-600" />
+                <MapPin className="h-4 w-4 text-blue-600" />
                 Location
               </Label>
               <Input
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
                 placeholder="Enter meeting location or 'Virtual' for online notarization"
-                className="h-12 border-2 hover:border-purple-300 focus:border-purple-500 transition-colors"
+                className="h-12 border-2 hover:border-blue-300 focus:border-blue-500 transition-colors"
               />
             </div>
 
             <div className="space-y-2">
               <Label className="text-sm font-medium mb-2 block flex items-center gap-2">
-                <FileText className="h-4 w-4 text-purple-600" />
+                <FileText className="h-4 w-4 text-blue-600" />
                 Assignment Notes
               </Label>
               <Textarea
@@ -664,7 +664,7 @@ export function EnhancedAssignmentWizard({
                 onChange={(e) => setAssignmentNotes(e.target.value)}
                 placeholder="Provide specific instructions, special requirements, or notes for the assigned notary..."
                 rows={4}
-                className="border-2 hover:border-purple-300 focus:border-purple-500 transition-colors resize-none"
+                className="border-2 hover:border-blue-300 focus:border-blue-500 transition-colors resize-none"
               />
               <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
                 <Mail className="h-3 w-3" />
@@ -788,7 +788,7 @@ export function EnhancedAssignmentWizard({
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-gray-700">Assignment:</span>
                       <span className="text-gray-900">System will automatically select the best available notary</span>
-                      <Badge className="bg-purple-100 text-purple-700 border-purple-200 text-xs">Smart Match</Badge>
+                      <Badge className="bg-blue-100 text-blue-700 border-blue-200 text-xs">Smart Match</Badge>
                     </div>
                   )}
 

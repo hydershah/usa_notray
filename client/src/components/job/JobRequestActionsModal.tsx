@@ -100,20 +100,20 @@ export function JobRequestActionsModal({
 
                 {/* Assign Myself as Notary */}
                 <Card className={`cursor-pointer transition-colors ${
-                  selectedAction === 'admin_self' ? 'ring-2 ring-purple-500 border-purple-200' : 'hover:border-gray-300'
+                  selectedAction === 'admin_self' ? 'ring-2 ring-blue-500 border-blue-200' : 'hover:border-gray-300'
                 }`}>
                   <CardContent className="p-4">
                     <div className="flex items-start space-x-3">
                       <RadioGroupItem value="admin_self" id="admin_self" className="mt-1" />
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
-                          <User className="h-4 w-4 text-purple-600" />
+                          <User className="h-4 w-4 text-blue-600" />
                           <Label htmlFor="admin_self" className="text-sm font-semibold text-gray-900 cursor-pointer">
                             Assign Myself as Notary
                           </Label>
                         </div>
                         <p className="text-xs text-gray-600 mb-2">You will be the notary for this job</p>
-                        <div className="flex items-center text-xs text-purple-600">
+                        <div className="flex items-center text-xs text-blue-600">
                           <User className="w-3 h-3 mr-1" />
                           Direct admin control
                         </div>

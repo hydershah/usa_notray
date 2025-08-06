@@ -505,7 +505,7 @@ export function SignerVerificationManager({
         <div className="text-xs text-gray-600 bg-amber-50 p-2 rounded border border-amber-200">
           {verificationData.is_verification_bypassed && (
             <div>
-              <span className="font-medium text-purple-700">Admin Bypass:</span> {verificationData.bypassed_by_admin_name}
+              <span className="font-medium text-blue-700">Admin Bypass:</span> {verificationData.bypassed_by_admin_name}
               {verificationData.verification_bypass_reason && (
                 <div className="mt-1">Reason: {verificationData.verification_bypass_reason}</div>
               )}

@@ -92,7 +92,7 @@ export const ParticipantPanel: React.FC<ParticipantPanelProps> = ({
       case 'notary':
         return <Crown className="h-4 w-4 text-yellow-600" />;
       case 'admin':
-        return <Shield className="h-4 w-4 text-purple-600" />;
+        return <Shield className="h-4 w-4 text-blue-600" />;
       case 'witness':
         return <Eye className="h-4 w-4 text-gray-600" />;
       default:

@@ -473,7 +473,7 @@ export function AdminApprovals() {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-3">
                         <div className="p-2 bg-purple-100 rounded-lg">
-                          <Building2 className="h-5 w-5 text-purple-600" />
+                          <Building2 className="h-5 w-5 text-blue-600" />
                         </div>
                         <div>
                           <h3 className="text-lg font-semibold text-gray-900">{company.companyName || 'No company name provided'}</h3>

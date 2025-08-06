@@ -266,7 +266,7 @@ export default function EnhancedDocumentManager({
       case 'notarized':
         return <FileCheck className="h-4 w-4 text-green-500" />;
       case 'additional':
-        return <Paperclip className="h-4 w-4 text-purple-500" />;
+        return <Paperclip className="h-4 w-4 text-blue-500" />;
       default:
         return <File className="h-4 w-4 text-gray-500" />;
     }

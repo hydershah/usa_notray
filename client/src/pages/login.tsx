@@ -308,12 +308,12 @@ export default function Login() {
         </div>
 
         {/* Title Company Registration */}
-        <Card className="group cursor-pointer hover:shadow-xl transition-all duration-300 border-2 border-gray-200 hover:border-purple-400 hover:bg-purple-50/50">
+        <Card className="group cursor-pointer hover:shadow-xl transition-all duration-300 border-2 border-gray-200 hover:border-blue-400 hover:bg-blue-50/50">
           <CardContent className="p-6">
             <div className="flex items-center space-x-4">
               <div className="flex-shrink-0">
-                <div className="h-14 w-14 bg-purple-100 group-hover:bg-purple-600 rounded-xl flex items-center justify-center transition-colors duration-300 shadow-sm">
-                  <Building className="h-7 w-7 text-purple-600 group-hover:text-white transition-colors duration-300" />
+                <div className="h-14 w-14 bg-blue-100 group-hover:bg-blue-600 rounded-xl flex items-center justify-center transition-colors duration-300 shadow-sm">
+                  <Building className="h-7 w-7 text-blue-600 group-hover:text-white transition-colors duration-300" />
                 </div>
               </div>
               <div className="flex-1">
@@ -321,7 +321,7 @@ export default function Login() {
                 <p className="text-sm text-gray-600 mb-4">Create an account for your title company and manage your team</p>
                 <Button 
                   onClick={() => setLocation('/signup/company')}
-                  className="w-full h-11 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-medium rounded-lg shadow-md transition-all duration-200 transform group-hover:scale-[1.02]"
+                  className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-md transition-all duration-200 transform group-hover:scale-[1.02]"
                 >
                   Register Title Company
                   <ArrowRight className="ml-2 h-4 w-4" />
