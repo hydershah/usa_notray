@@ -270,6 +270,16 @@ export class WebSocketService {
           this.handleTextInputPositionUpdated(user, message);
           break;
 
+        case 'live_update':
+          // Handle live updates from the new event-driven system
+          this.handleLiveUpdate(user, message);
+          break;
+
+        case 'interaction_ended':
+          // Handle interaction ended notifications
+          this.handleInteractionEnded(user, message);
+          break;
+
         case 'ping':
           // Handle WebSocket ping - respond with pong
           this.sendToUser(user, {
@@ -532,6 +542,50 @@ export class WebSocketService {
     const textInputId = message.payload?.textInputId;
     const coordinates = message.payload?.coordinates;
     console.log(`📏 Text input resized by ${user.displayName}: ${textInputId} to ${coordinates?.width}x${coordinates?.height} at (${coordinates?.x}, ${coordinates?.y}) in session ${user.sessionId}`);
+  }
+
+  /**
+   * Handle live updates from the new event-driven system
+   */
+  private handleLiveUpdate(user: ConnectedUser, message: WSMessage): void {
+    // Don't store live updates in history (too frequent)
+    // Just broadcast to other users for real-time updates
+    this.broadcastToSession(user.sessionId, {
+      ...message,
+      payload: {
+        ...message.payload,
+        updatedBy: user.userId,
+        updatedByName: user.displayName,
+        timestamp: Date.now()
+      }
+    }, user.userId);
+
+    // Log live update events for debugging
+    const tagId = message.payload?.tagId;
+    const updateType = message.payload?.updateType;
+    const coordinates = message.payload?.coordinates;
+    console.log(`🎮 Live update by ${user.displayName}: ${updateType} for tag ${tagId} in session ${user.sessionId}`);
+  }
+
+  /**
+   * Handle interaction ended notifications
+   */
+  private handleInteractionEnded(user: ConnectedUser, message: WSMessage): void {
+    // Don't store interaction end events in history
+    // Just broadcast to other users for coordination
+    this.broadcastToSession(user.sessionId, {
+      ...message,
+      payload: {
+        ...message.payload,
+        endedBy: user.userId,
+        endedByName: user.displayName,
+        timestamp: Date.now()
+      }
+    }, user.userId);
+
+    // Log interaction end events
+    const tagId = message.payload?.tagId;
+    console.log(`🏁 Interaction ended by ${user.displayName}: tag ${tagId} in session ${user.sessionId}`);
   }
   
   /**

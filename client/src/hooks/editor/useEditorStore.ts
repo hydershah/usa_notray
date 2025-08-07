@@ -275,10 +275,10 @@ export const useEditorStore = create<EditorStore>()(
       
       updateTag: (tagId, updates) =>
         set((state) => {
-          // Don't update temporary tags - they should be replaced by server tags
+          // Allow updates to temporary tags for immediate UI feedback
+          // They will be replaced when server tag arrives
           if (tagId.startsWith('temp_')) {
-            console.warn('Attempted to update temporary tag:', tagId);
-            return state;
+            console.log('🔄 Updating temporary tag coordinates for UI feedback:', tagId);
           }
           
           return {

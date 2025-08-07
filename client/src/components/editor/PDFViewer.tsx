@@ -27,6 +27,7 @@ import {
 } from '@/lib/constants/tagConstants';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Loader2 } from 'lucide-react';
+import { useTagLiveResize } from '@/hooks/editor/useTagLiveResize';
 
 // Define TagPosition type
 interface TagPosition {
@@ -104,6 +105,11 @@ interface TagRendererProps {
   onFontSizeChange?: (tagId: string, fontSize: number) => void;
   isHighlighted?: boolean;
   isMissing?: boolean;
+  // NEW: Event-driven resize handlers
+  onLiveResize?: (tagId: string, coordinates: Partial<TagCoordinates>, isDuringResize: boolean) => void;
+  onResizeStart?: (tagId: string, coordinates: TagCoordinates) => void;
+  onResizeStop?: (tagId: string, coordinates: TagCoordinates) => void;
+  onLiveFontSizeChange?: (tagId: string, fontSize: number) => void;
 }
 
 const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
@@ -120,7 +126,12 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   onFontSizeChange,
   localFontSize,
   isHighlighted = false,
-  isMissing = false
+  isMissing = false,
+  // NEW: Event-driven handlers
+  onLiveResize,
+  onResizeStart,
+  onResizeStop,
+  onLiveFontSizeChange
 }) => {
   const [imageLoadError, setImageLoadError] = React.useState(false);
   const [isDragging, setIsDragging] = React.useState(false);
@@ -194,7 +205,8 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       height: Math.round(fixedDimensions.height * scaleFactor)
     };
     
-    // Debug logging for all tags
+    // Debug logging reduced for performance - uncomment if needed for debugging
+    /* 
     console.log('🔍 DEBUG: TagRenderer displayCoords calculation:', {
       tagId: tag.id,
       tagType: tag.tagType,
@@ -203,6 +215,7 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       optimalDimensions,
       finalCoords: coords
     });
+    */
     
     return coords;
   }, [tag.coordinates.x, tag.coordinates.y, tag.coordinates.width, tag.coordinates.height, scaleFactor, optimalDimensions.width, optimalDimensions.height]);
@@ -308,141 +321,48 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     };
   }, [onUpdate]);
 
+  // NEW: Live drag handler using event-driven system
   const handleDrag = useCallback((e: any, data: any) => {
     if (!canEdit || !throttledOnUpdate.current) return;
     
-    // Optimized smooth drag - minimal processing during drag for better performance
+    // Use new live drag system - instant local updates + WebSocket (no API calls)
     const newCoordinates = {
       x: data.x / scaleFactor,
       y: data.y / scaleFactor
     };
     
+    // Use event-driven system for live drag updates
+    onLiveResize?.(tag.id, newCoordinates, true);
+    
+    // Keep throttled update for compatibility
     throttledOnUpdate.current(newCoordinates);
-  }, [canEdit, scaleFactor]);
+  }, [canEdit, scaleFactor, onLiveResize, tag.id]);
 
   const handleDragStart = useCallback(() => {
     setIsDragging(true);
-  }, []);
+    // Notify new system that drag started
+    onResizeStart?.(tag.id, tag.coordinates);
+  }, [onResizeStart, tag.id, tag.coordinates]);
 
+  // NEW: Drag stop handler using event-driven system (strategic persistence)
   const handleDragStop = useCallback((e: any, data: any) => {
     setIsDragging(false);
-    if (!canEdit || !onSave) return;
+    if (!canEdit) return;
     
     // Professional snap-to-grid on drop - DocuSign style
     const snappedX = snapToGrid(data.x / scaleFactor);
     const snappedY = snapToGrid(data.y / scaleFactor);
     
-    const newCoordinates = {
+    const finalCoordinates = {
       x: snappedX,
       y: snappedY
     };
     
-    onSave(newCoordinates);
-  }, [canEdit, onSave, scaleFactor]);
+    // Use new event-driven system - triggers strategic persistence
+    onResizeStop?.(tag.id, finalCoordinates as TagCoordinates);
+  }, [canEdit, scaleFactor, onResizeStop, tag.id]);
 
-  // Instant font size updates
-  
-  const handleResize = (e: any, direction: any, ref: any, delta: any, position: any) => {
-    if (!canEdit) return;
-    
-    // For text tags, calculate font size change based on resize distance and let container auto-fit
-    if (tag.tagType === 'T') {
-      // Use the dominant resize direction (width or height) to determine font scaling
-      const widthChange = delta.width;
-      const heightChange = delta.height;
-      const primaryChange = Math.abs(widthChange) > Math.abs(heightChange) ? widthChange : heightChange;
-      
-      // More sensitive scaling: 50px = 1px font change for better control
-      const fontSizeChange = primaryChange / (scaleFactor * 50);
-      let newFontSize = currentFontSize + fontSizeChange;
-      newFontSize = Math.max(8, Math.min(48, newFontSize));
-      setLiveFontSize(newFontSize);
-      
-      // Let the container auto-size to text - don't update coordinates during resize
-      // This allows the container to naturally fit the text content
-    } else {
-      // For non-text tags, update size normally (NO font size change)
-      const newCoordinates = validateAndSanitizeCoordinates({
-        width: ref.offsetWidth / scaleFactor,
-        height: ref.offsetHeight / scaleFactor
-      });
-      onUpdate(newCoordinates);
-    }
-  };
-
-  const handleResizeStop = (e: any, direction: any, ref: any, delta: any, position: any) => {
-    console.log('📏 Tag resize stop triggered:', {
-      tagId: tag.id,
-      tagType: tag.tagType,
-      canEdit,
-      hasOnSave: !!onSave,
-      newWidth: ref.offsetWidth,
-      newHeight: ref.offsetHeight,
-      scaleFactor
-    });
-    
-    if (!canEdit || !onSave) {
-      console.warn('❌ Cannot resize tag - missing permissions or save function:', { canEdit, hasOnSave: !!onSave });
-      return;
-    }
-    setLiveFontSize(undefined); // Reset live font size after drag
-    
-    // Get manual resize dimensions
-    const manualWidth = ref.offsetWidth / scaleFactor;
-    const manualHeight = ref.offsetHeight / scaleFactor;
-    
-    let finalWidth = manualWidth;
-    let finalHeight = manualHeight;
-    
-    // Only calculate optimal dimensions for text tags (type 'T')
-    if (tag.tagType === 'T') {
-      const content = tag.content || '';
-      const optimalWidth = calculateOptimalWidth(content, currentFontSize, TYPOGRAPHY.fontFamily);
-      const optimalHeight = calculateOptimalHeight(content, currentFontSize);
-      
-      // For text tags, use the larger of manual resize or optimal dimensions
-      finalWidth = Math.max(manualWidth, optimalWidth);
-      finalHeight = Math.max(manualHeight, optimalHeight);
-      
-      console.log('📏 Text tag resize with optimal dimensions:', {
-        tagId: tag.id,
-        content,
-        currentFontSize,
-        optimalWidth,
-        optimalHeight,
-        manualWidth,
-        manualHeight,
-        finalWidth,
-        finalHeight
-      });
-    } else {
-      // For non-text tags (Name, Signature, Initials, Date, etc.), use manual dimensions directly
-      console.log('📏 Non-text tag resize with manual dimensions:', {
-        tagId: tag.id,
-        tagType: tag.tagType,
-        manualWidth,
-        manualHeight
-      });
-    }
-    
-    const newCoordinates = {
-      width: Math.round(finalWidth),
-      height: Math.round(finalHeight)
-    };
-    
-    console.log('📏 Saving tag resize:', {
-      tagId: tag.id,
-      tagType: tag.tagType,
-      newCoordinates
-    });
-    
-    onSave(newCoordinates);
-    
-    // Save rounded font size to server and update localFontSizes
-    if (onFontSizeChange && liveFontSize !== undefined) {
-      onFontSizeChange(tag.id, Math.round(liveFontSize));
-    }
-  };
+  // OLD RESIZE HANDLERS COMPLETELY REMOVED - Using new live resize system only
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -470,8 +390,23 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
           });
         }
       }}
-      onResize={handleResize}
-      onResizeStop={handleResizeStop}
+              // NEW LIVE RESIZE SYSTEM - All resize events go through the new system
+        onResize={(e: any, direction: any, ref: any, delta: any, position: any) => {
+          if (!canEdit) return;
+          const newCoordinates = {
+            width: ref.offsetWidth / scaleFactor,
+            height: ref.offsetHeight / scaleFactor
+          };
+          onLiveResize?.(tag.id, newCoordinates, true);
+        }}
+        onResizeStop={(e: any, direction: any, ref: any, delta: any, position: any) => {
+          if (!canEdit) return;
+          const finalCoordinates = {
+            width: Math.round(ref.offsetWidth / scaleFactor),
+            height: Math.round(ref.offsetHeight / scaleFactor)
+          };
+          onResizeStop?.(tag.id, finalCoordinates as TagCoordinates);
+        }}
       enableResizing={{
         top: canEdit,
         right: canEdit,
@@ -867,11 +802,23 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     setLastUsedFontSize
   } = store;
 
-  // Debug: Log store functions to ensure they exist
-  console.log('🔍 Store functions:', {
-    setZoomLevel: typeof setZoomLevel,
-    currentZoomLevel: viewer.zoomLevel
+  // NEW: Event-driven tag resize system (replaces old API-heavy logic)
+  const tagLiveResize = useTagLiveResize({
+    sessionId: sessionId || '',
+    webSocket: webSocket as WebSocket | null,
+    onLocalTagUpdate: (tagId, coordinates) => {
+      // Update tag locally for instant UI response using new system only
+      useEditorStore.getState().updateTag(tagId, { coordinates: coordinates as TagCoordinates });
+    }
   });
+
+  // Debug: Log store functions to ensure they exist (only on mount)
+  useEffect(() => {
+    console.log('🔍 Store functions initialized:', {
+      setZoomLevel: typeof setZoomLevel,
+      currentZoomLevel: viewer.zoomLevel
+    });
+  }, []); // Empty dependency array to run only on mount
 
   // Zoom controls with debugging and larger increments
   const handleZoomIn = useCallback(() => {
@@ -1786,6 +1733,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   // Log component state changes (debounced to prevent spam)
   useEffect(() => {
     const timeout = setTimeout(() => {
+      // Reduced logging for performance - uncomment if needed for debugging
+      /*
       console.log('📊 PDFViewer state update:', {
         documentUrl: documentUrl?.substring(0, 50) + '...',
         pdfDocLoaded: !!pdfDoc,
@@ -1798,6 +1747,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         renderedPagesSize: renderedPages.size,
         currentZoomLevel: viewer.zoomLevel
       });
+      */
     }, 500);
     
     return () => clearTimeout(timeout);
@@ -1972,82 +1922,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     }
   }, [viewer.currentPage, setCurrentPage, setScrollTop]);
 
-  // Tag event handlers
-  const handleTagUpdate = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {
-    // Update local state immediately for responsive UI
-    onTagUpdate?.(tagId, coordinates);
-    
-    // 🚀 REAL-TIME SYNC: Broadcast tag update via WebSocket
-    if (webSocket && webSocket.isConnected && webSocket.isReady) {
-      console.log('📡 Broadcasting tag update via WebSocket:', {
-        tagId,
-        coordinates
-      });
-      
-      try {
-        webSocket.sendMessage({
-          type: 'tag_updated',
-          payload: {
-            tagId,
-            coordinates,
-            page: coordinates.pageNumber || 1
-          }
-        });
-      } catch (error) {
-        console.error('❌ Failed to send tag update via WebSocket:', error);
-      }
-    } else {
-      console.warn('⚠️ WebSocket not available for tag update broadcast, state:', webSocket?.readyState);
-    }
-  }, [onTagUpdate, webSocket, sessionId]);
+  // OLD TAG UPDATE HANDLERS REMOVED - Using new live resize system only
 
-  // ✅ ENHANCED: Save tag changes locally and broadcast via WebSocket
-  const broadcastTagSave = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {
-    // First, update the tag locally and save to backend
-    if (onTagUpdate) {
-      console.log('💾 Updating tag position locally:', { tagId, coordinates });
-      onTagUpdate(tagId, coordinates);
-    }
-    
-    // Also save to server - this is what was missing!
-    if (onTagResize) {
-      console.log('🚀 Saving tag coordinates to server:', { tagId, coordinates });
-      onTagResize(tagId, coordinates as TagCoordinates);
-    }
-
-    // Then broadcast via WebSocket for real-time collaboration
-    if (webSocket?.isConnected && webSocket?.isReady) {
-      // Find the tag to get its full coordinates if needed
-      const tag = tags?.find(t => t.id === tagId);
-      const fullCoordinates = {
-        x: coordinates.x ?? tag?.coordinates.x ?? 0,
-        y: coordinates.y ?? tag?.coordinates.y ?? 0,
-        width: coordinates.width ?? tag?.coordinates.width ?? 100,
-        height: coordinates.height ?? tag?.coordinates.height ?? 50,
-        pageNumber: coordinates.pageNumber ?? tag?.coordinates.pageNumber ?? 1
-      };
-
-      console.log('📡 Broadcasting tag save via WebSocket:', {
-        tagId,
-        coordinates: fullCoordinates
-      });
-      
-      try {
-        webSocket.sendMessage({
-          type: 'tag_saved',
-          payload: {
-            tagId,
-            coordinates: fullCoordinates,
-            page: fullCoordinates.pageNumber || 1
-          }
-        });
-      } catch (error) {
-        console.error('❌ Failed to broadcast tag save via WebSocket:', error);
-      }
-    } else {
-      console.warn('⚠️ WebSocket not available for tag save broadcast, state:', webSocket?.readyState);
-    }
-  }, [onTagUpdate, onTagResize, webSocket, sessionId, tags]);
+  // OLD BROADCAST TAG SAVE REMOVED - Using new live resize system only
 
   const handleTagDelete = useCallback((tagId: string) => {
     onTagDelete?.(tagId);
@@ -2093,14 +1970,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         console.log('📡 Received WebSocket message in PDFViewer:', message);
         
         switch (message.type) {
-          case 'tag_updated':
-          case 'tag_saved':
-            // Update tag position/size from other users (including whiteout tags)
-            if (message.payload?.tagId && message.payload?.coordinates && onTagUpdate) {
-              console.log('📝 Updating tag from WebSocket:', message.payload);
-              onTagUpdate(message.payload.tagId, message.payload.coordinates);
-            }
-            break;
+                  // OLD WEBSOCKET TAG UPDATE HANDLER REMOVED - Using new live system
         }
       } catch (error) {
         console.error('❌ Error processing WebSocket message in PDFViewer:', error);
@@ -2293,7 +2163,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
             selectedTag?.tagType === 'A' || selectedTag?.tagType === 'N' || selectedTag?.tagType === 'X' ||
             selectedTextInputId
           ) && (
-            console.log('🎨 Font control should show for tag:', selectedTag?.tagType, selectedTag?.id, 'textInputId:', selectedTextInputId),
+            // Removed excessive font control logging for performance
             <div 
               className="flex items-center gap-2 bg-gray-100 rounded-lg p-1"
               onClick={(e) => {
@@ -2510,8 +2380,15 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                           scaleFactor={scaleFactor}
                           isSelected={selectedTag?.id === tag.id}
                           canEdit={canEditTags}
-                          onUpdate={(coords) => handleTagUpdate(tag.id, coords)}
-                          onSave={(coords) => broadcastTagSave(tag.id, coords)}
+                          onUpdate={(coords) => {
+              // Update tag locally using new system
+              useEditorStore.getState().updateTag(tag.id, { coordinates: coords as TagCoordinates });
+            }}
+                          onSave={(coords) => {
+              // Use new live resize system for tag saves
+              console.log('🎮 Tag save via new live system:', tag.id, coords);
+              // The new system handles this through tagLiveResize automatically
+            }}
                           onDelete={() => handleTagDelete(tag.id)}
                           onSelect={() => handleTagSelect(tag)}
                           onTagClick={onTagClick}
@@ -2520,6 +2397,11 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                           localFontSize={localFontSizes.get(tag.id)}
                           isHighlighted={highlightedTagId === tag.id}
                           isMissing={incompleteTags.includes(tag.id)}
+                          // NEW: Event-driven resize handlers
+                          onLiveResize={tagLiveResize.handleTagResize}
+                          onResizeStart={tagLiveResize.handleResizeStart}
+                          onResizeStop={tagLiveResize.handleResizeStop}
+                          onLiveFontSizeChange={tagLiveResize.handleFontSizeChange}
                         />
                       </div>
                     );

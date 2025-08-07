@@ -1,5 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { useLiveUXManager } from './useLiveUXManager';
+import { usePersistenceTriggers } from './usePersistenceTriggers';
 import { useEditorStore } from './useEditorStore';
 import { getTagDimensions } from '@/lib/constants/tagConstants';
 
@@ -34,11 +36,27 @@ interface PlaceTextInputCommand {
   documentId: string;
 }
 
-export const useStreamlinedTextInputs = (sessionId: string) => {
+export const useStreamlinedTextInputs = (sessionId: string, webSocket?: WebSocket | null) => {
   const [textInputs, setTextInputs] = useState<StreamlinedTextInput[]>([]);
   const [selectedTextInputId, setSelectedTextInputId] = useState<string | null>(null);
   const pendingCreations = useRef<Set<string>>(new Set());
   const { toast } = useToast();
+  
+  // NEW: Event-driven managers for optimal performance
+  const liveUX = useLiveUXManager({
+    sessionId,
+    webSocket,
+    onLocalStateUpdate: (tagId, updates) => {
+      // Update text inputs immediately for smooth UX
+      setTextInputs(prev => prev.map(input => 
+        input.id === tagId 
+          ? { ...input, ...updates }
+          : input
+      ));
+    }
+  });
+  
+  const persistenceTriggers = usePersistenceTriggers({ sessionId });
 
   // 🚧 Ensure unique text input IDs – remove accidental duplicates (e.g., when optimistic + WebSocket updates overlap)
   useEffect(() => {
@@ -460,91 +478,51 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
     }
   }, [toast]);
 
-  // Debounced font size API calls to prevent lag
-  const debouncedFontSizeUpdates = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  // OLD LOGIC REMOVED: No more debounced API calls during drag/resize
+  // The new event-driven system handles this via LiveUXManager and PersistenceTriggers
   
-  // Debounced coordinate updates to prevent excessive API calls during drag
-  const debouncedCoordinateUpdates = useRef<Map<string, NodeJS.Timeout>>(new Map());
-  
-  // Cleanup debounced timeouts on unmount
-  useEffect(() => {
-    return () => {
-      // Clear all pending coordinate updates
-      debouncedCoordinateUpdates.current.forEach(timeout => clearTimeout(timeout));
-      debouncedCoordinateUpdates.current.clear();
-      
-      // Clear all pending font size updates
-      debouncedFontSizeUpdates.current.forEach(timeout => clearTimeout(timeout));
-      debouncedFontSizeUpdates.current.clear();
-    };
-  }, []);
-  
-  // Move text input to new coordinates
-  const moveTextInput = useCallback(async (textInputId: string, coordinates: { x: number; y: number; width?: number; height?: number }) => {
+  // NEW: Move text input using event-driven system (no API calls during drag)
+  const moveTextInput = useCallback((textInputId: string, coordinates: { x: number; y: number; width?: number; height?: number }) => {
     try {
-      // Update local state immediately for responsive UI
-      setTextInputs(prev => prev.map(input => 
-        input.id === textInputId
-          ? {
-              ...input,
-              coordinates: {
-                ...input.coordinates,
-                x: coordinates.x,
-                y: coordinates.y,
-                ...(coordinates.width !== undefined && { width: coordinates.width }),
-                ...(coordinates.height !== undefined && { height: coordinates.height })
-              }
-            }
-          : input
-      ));
-
-      // Clear existing timeout for this text input
-      const existingTimeout = debouncedCoordinateUpdates.current.get(textInputId);
-      if (existingTimeout) {
-        clearTimeout(existingTimeout);
+      // Use LiveUX for instant local update and WebSocket broadcast
+      if (coordinates.width !== undefined && coordinates.height !== undefined) {
+        // This is a resize operation
+        liveUX.handleResize(textInputId, coordinates as { x: number; y: number; width: number; height: number });
+      } else {
+        // This is a move operation
+        liveUX.handleDrag(textInputId, coordinates);
       }
-
-      // Debounce server updates to prevent excessive API calls during drag
-      const timeout = setTimeout(async () => {
-        try {
-          // Update server with new coordinates after debounce delay
-          // Use the correct endpoint that handles both position and dimensions
-          const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${textInputId}/dimensions`, {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
-            },
-            body: JSON.stringify({
-              x: coordinates.x,
-              y: coordinates.y,
-              width: coordinates.width,
-              height: coordinates.height
-            }),
-          });
-
-          if (!response.ok) {
-            throw new Error('Failed to update text input coordinates');
-          }
-
-          console.log(`✅ Text input ${textInputId} moved to coordinates:`, coordinates);
-          debouncedCoordinateUpdates.current.delete(textInputId);
-        } catch (error) {
-          console.error('❌ Failed to update text input coordinates on server:', error);
-          // Don't show toast for debounced server errors during drag
-        }
-      }, 200); // 200ms debounce delay - smooth but not overwhelming server
-
-      debouncedCoordinateUpdates.current.set(textInputId, timeout);
+      
+      console.log(`🎮 Live text input update: ${textInputId}`, coordinates);
     } catch (error) {
-      console.error('❌ Failed to move text input:', error);
+      console.error('❌ Failed to update text input position:', error);
       toast({
         title: "Error",
         description: "Failed to update text input position",
         variant: "destructive",
       });
     }
-  }, [toast]);
+  }, [liveUX, toast]);
+  
+  // NEW: Complete text input move/resize (triggers strategic persistence)
+  const completeTextInputInteraction = useCallback((textInputId: string, finalCoordinates: { x: number; y: number; width?: number; height?: number }) => {
+    try {
+      // End live interaction
+      liveUX.endInteraction(textInputId);
+      
+      // Trigger strategic persistence
+      if (finalCoordinates.width !== undefined && finalCoordinates.height !== undefined) {
+        persistenceTriggers.onInteractionEnd(textInputId, finalCoordinates as { x: number; y: number; width: number; height: number });
+      } else {
+        persistenceTriggers.updateTagState(textInputId, { coordinates: finalCoordinates });
+        persistenceTriggers.triggerAutoSave();
+      }
+      
+      console.log(`✅ Text input interaction completed: ${textInputId}`, finalCoordinates);
+    } catch (error) {
+      console.error('❌ Failed to complete text input interaction:', error);
+    }
+  }, [liveUX, persistenceTriggers]);
 
   // Update font size with debouncing
   const updateFontSize = useCallback(async (textInputId: string, fontSize: number, fontFamily?: string, textColor?: string) => {
@@ -566,42 +544,17 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       setLastUsedFontSize(fontSize);
       console.log(`🎨 Updated lastUsedFontSize to ${fontSize}px for future text tags`);
 
-      // Debounce server updates to prevent lag during drag operations
-      const existingTimeout = debouncedFontSizeUpdates.current.get(textInputId);
-      if (existingTimeout) {
-        clearTimeout(existingTimeout);
-      }
-
-      const timeout = setTimeout(async () => {
-        try {
-          // Send to server after debounce delay
-          const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${textInputId}/font-size`, {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
-            },
-            body: JSON.stringify({
-              fontSize,
-              ...(fontFamily && { fontFamily }),
-              ...(textColor && { textColor })
-            })
-          });
-
-          if (!response.ok) {
-            throw new Error('Failed to update font size');
-          }
-
-          console.log(`✅ Font size updated on server for ${textInputId}: ${fontSize}px`);
-          debouncedFontSizeUpdates.current.delete(textInputId);
-
-        } catch (serverError) {
-          console.error('❌ Failed to update font size on server:', serverError);
-          // Don't show toast for debounced server errors during drag
-        }
-      }, 300); // 300ms debounce delay - smooth but not overwhelming server
-
-      debouncedFontSizeUpdates.current.set(textInputId, timeout);
+      // NEW: Use event-driven system for font size updates
+      // Trigger strategic persistence instead of immediate API call
+      persistenceTriggers.updateTagState(textInputId, {
+        content: undefined, // Font size doesn't affect content
+        coordinates: undefined // Font size doesn't affect coordinates  
+      });
+      
+      // For font size changes, use immediate persistence since it's less frequent
+      persistenceTriggers.triggerAutoSave();
+      
+      console.log(`🎨 Font size updated with event-driven system: ${textInputId} - ${fontSize}px`);
 
     } catch (error) {
       console.error('❌ Failed to update font size locally:', error);
@@ -748,10 +701,14 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
     saveTextContent,
     updateFontSize,
     moveTextInput,
+    completeTextInputInteraction, // NEW: Complete interaction trigger
     deleteTextInput,
     loadTextInputsFromTags,
     getTextInput,
     selectTextInput,
-    isProcessing: pendingCreations.current.size > 0
+    isProcessing: pendingCreations.current.size > 0,
+    // NEW: Event-driven system access
+    liveUX,
+    persistenceTriggers
   };
 };

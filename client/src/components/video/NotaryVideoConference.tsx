@@ -176,7 +176,7 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
 
   // Network quality monitoring
   useDailyEvent('network-quality-change', useCallback((event) => {
-    if (event.participant.local) {
+    if (event?.participant?.local && event?.quality?.video) {
       setConnectionQuality(event.quality.video.score > 0.7 ? 'good' : 'poor');
     }
   }, []));

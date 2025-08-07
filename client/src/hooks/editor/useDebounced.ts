@@ -102,8 +102,15 @@ class OperationDebouncer {
 // Global debouncer instance
 const globalDebouncer = new OperationDebouncer();
 
+/*
+ * OLD DEBOUNCED TAG OPERATIONS - COMMENTED OUT
+ * These were causing performance issues due to frequent API calls
+ * Replaced with event-driven system (useTagLiveResize + useBatchAPIManager)
+ */
+
 /**
  * Hook for debounced tag operations with intelligent delay based on operation type
+ * DEPRECATED: Use useTagLiveResize hook instead for better performance
  */
 export const useDebouncedTagOperations = (sessionId: string) => {
   const debouncerRef = useRef(globalDebouncer);
@@ -113,6 +120,8 @@ export const useDebouncedTagOperations = (sessionId: string) => {
     tagId: string,
     coordinates: { x?: number; y?: number; width?: number; height?: number }
   ) => {
+    /* OLD API-HEAVY LOGIC - REPLACED WITH EVENT-DRIVEN SYSTEM
+    
     const operation = async () => {
       const response = await fetch(`/api/editor/session/${sessionId}/tag/${tagId}`, {
         method: 'PUT',
@@ -132,6 +141,11 @@ export const useDebouncedTagOperations = (sessionId: string) => {
 
     const key = `position_${sessionId}_${tagId}`;
     return debouncerRef.current.debounce(key, operation, 300); // 300ms for position updates
+    */
+    
+    // NEW: Use event-driven system instead
+    console.log('⚠️ OLD debouncedPositionUpdate called - use useTagLiveResize instead');
+    return Promise.resolve();
   }, [sessionId]);
 
   // Content updates - medium delay
@@ -139,6 +153,8 @@ export const useDebouncedTagOperations = (sessionId: string) => {
     tagId: string,
     content: any
   ) => {
+    /* OLD API-HEAVY LOGIC - REPLACED WITH EVENT-DRIVEN SYSTEM
+    
     const operation = async () => {
       const response = await fetch(`/api/editor/session/${sessionId}/tag/${tagId}/content`, {
         method: 'PUT',
@@ -158,6 +174,11 @@ export const useDebouncedTagOperations = (sessionId: string) => {
 
     const key = `content_${sessionId}_${tagId}`;
     return debouncerRef.current.debounce(key, operation, 500); // 500ms for content updates
+    */
+    
+    // NEW: Use event-driven system instead
+    console.log('⚠️ OLD debouncedContentUpdate called - use useLiveUXManager instead');
+    return Promise.resolve();
   }, [sessionId]);
 
   // Text tag position updates - high frequency, shorter delay
@@ -165,6 +186,8 @@ export const useDebouncedTagOperations = (sessionId: string) => {
     tagId: string,
     position: { x: number; y: number; width: number; height: number; pageNumber: number }
   ) => {
+    /* OLD API-HEAVY LOGIC - REPLACED WITH EVENT-DRIVEN SYSTEM
+    
     const operation = async () => {
       const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${tagId}/position`, {
         method: 'PUT',
@@ -184,6 +207,11 @@ export const useDebouncedTagOperations = (sessionId: string) => {
 
     const key = `text_position_${sessionId}_${tagId}`;
     return debouncerRef.current.debounce(key, operation, 200); // 200ms for text position
+    */
+    
+    // NEW: Use event-driven system instead
+    console.log('⚠️ OLD debouncedTextPositionUpdate called - use useStreamlinedTextInputs with new system instead');
+    return Promise.resolve();
   }, [sessionId]);
 
   // Auto-fill operations - longer delay, less frequent

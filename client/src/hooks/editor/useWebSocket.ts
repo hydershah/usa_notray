@@ -370,6 +370,29 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
           // WebSocket pong response - connection is alive, no action needed
           break;
 
+        case 'live_update':
+          // Handle live updates from the new event-driven system
+          console.log('🎮 Live update received:', {
+            tagId: message.payload.tagId,
+            updateType: message.payload.updateType,
+            fromUser: message.userId
+          });
+          
+          // Apply live update to local state if it's from another user
+          if (message.userId !== userId) {
+            const { tagId, coordinates } = message.payload;
+            if (coordinates && tagId) {
+              updateTag(tagId, { coordinates });
+            }
+          }
+          break;
+
+        case 'interaction_ended':
+          // Handle interaction end notifications
+          console.log('🏁 Interaction ended for tag:', message.payload.tagId);
+          // No specific action needed for now, just acknowledge
+          break;
+
         default:
           console.warn('Unknown message type:', message.type);
       }

@@ -404,22 +404,64 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       }
     }
 
-    // Queue operation for save
-    const operation: TagOperation = {
-      type: 'place',
-      data: {
-        documentId: command.documentId,
-        tagType: command.tagType,
-        coordinates: sanitizedCoordinates,
-        assignedUserId: command.assignedUserId || selectedUser.userId,
-        tempTagId
-      },
-      timestamp: Date.now()
-    };
+    // CRITICAL: Save new tag to server immediately to get real ID
+    try {
+      const url = `/api/editor/session/${sessionId}/place-tag`;
+      console.log('🔗 Attempting to save tag to server:', { url, tempTagId, sessionId });
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          documentId: command.documentId,
+          tagType: command.tagType,
+          coordinates: sanitizedCoordinates,
+          assignedUserId: command.assignedUserId || selectedUser.userId,
+          tempTagId // Include temp ID for replacement
+        })
+      });
 
-    // Save to server with debounce
-    debouncedSave(operation);
-  }, [sessionId, selectedUser, currentDocument, addTag]);
+      console.log('📡 Server response status:', response.status, response.statusText);
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log('📦 Server response data:', result);
+        const savedTag = result.tag; // Extract tag from response
+        console.log('✅ Tag saved to server with real ID:', savedTag.id);
+        
+        // Replace temporary tag with server tag
+        useEditorStore.getState().deleteTag(tempTagId); // Remove temp tag
+        addTag(savedTag); // Add real tag
+        
+        console.log(`🔄 Replaced temporary tag ${tempTagId} with server tag ${savedTag.id}`);
+        
+        // Broadcast the real tag to other users
+        if (webSocket && webSocket.tagPlaced) {
+          webSocket.tagPlaced(savedTag);
+        }
+      } else {
+        // Try to get error details from response
+        let errorDetails = 'Unknown error';
+        try {
+          const errorText = await response.text();
+          errorDetails = errorText.substring(0, 200); // First 200 chars for debugging
+          console.error('❌ Server error response:', errorDetails);
+        } catch (parseError) {
+          console.error('❌ Could not parse error response:', parseError);
+        }
+        
+        console.error('❌ Failed to save tag to server:', response.status, response.statusText);
+        throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+      }
+    } catch (error) {
+      console.error('❌ Error saving tag to server:', error);
+      // Keep the temporary tag as fallback, but log the issue
+      console.warn('⚠️ Tag remains temporary due to server error:', tempTagId);
+    }
+  }, [sessionId, selectedUser, currentDocument, addTag, webSocket]);
 
   // Update tag position with optimistic update - NO SERVER CALL DURING DRAG
   const updateTagPosition = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {
@@ -429,10 +471,12 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       return;
     }
     
-    const sanitizedCoordinates = sanitizeCoordinates(coordinates);
+    // OLD: Sanitize coordinates - REPLACED WITH EVENT-DRIVEN SYSTEM
+    // const sanitizedCoordinates = sanitizeCoordinates(coordinates);
+    // Note: Legacy function still used for fallback compatibility during migration
     
-    // Update store immediately for smooth UX
-    updateTag(tagId, { coordinates: sanitizedCoordinates as TagCoordinates });
+    // Update store immediately for smooth UX (coordinates are pre-validated)
+    updateTag(tagId, { coordinates: coordinates as TagCoordinates });
     
     // Only save to server on mouse up / drag end
     // This will be called by the TagRenderer on dragStop
@@ -446,17 +490,27 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       return;
     }
     
-    const sanitizedCoordinates = sanitizeCoordinates(coordinates);
+    // OLD: Sanitize coordinates - REPLACED WITH EVENT-DRIVEN SYSTEM
+    // const sanitizedCoordinates = sanitizeCoordinates(coordinates);
+    // Note: Legacy function still used for fallback compatibility during migration
     
-    // Update store immediately for smooth UX
-    updateTag(tagId, { coordinates: sanitizedCoordinates as TagCoordinates });
+    // Update store immediately for smooth UX (coordinates are pre-validated)
+    updateTag(tagId, { coordinates: coordinates as TagCoordinates });
     
     // Only save to server on resize end
     // This will be called by the TagRenderer on resizeStop
   }, [updateTag]);
 
+  /* 
+   * OLD LOGIC - COMMENTED OUT (replaced with event-driven system)
+   * This was causing performance issues due to frequent API calls during resize/drag
+   * Now handled by useTagLiveResize hook with strategic persistence
+   */
+  
   // Save tag position/size to server (called only on drag/resize END)
   const saveTagUpdate = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {
+    /* OLD API-HEAVY LOGIC - REPLACED WITH EVENT-DRIVEN SYSTEM
+    
     // Validate coordinates before saving
     if (!validateCoordinates(coordinates)) {
       console.error('❌ Invalid coordinates for save update:', coordinates);
@@ -502,6 +556,10 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
 
     // Save to server with debounce
     debouncedSave(operation);
+    */
+    
+    // NEW: Now handled by useTagLiveResize hook - see PDFViewer.tsx
+    console.log('⚠️ OLD saveTagUpdate called - should use new event-driven system instead');
   }, [tags, setCustomTagDimensions]);
 
   // Delete tag with optimistic update
@@ -530,14 +588,16 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       timestamp: Date.now()
     };
 
-    // Save to server with debounce
-    debouncedSave(operation);
+    // OLD: Save to server with debounce - REPLACED WITH EVENT-DRIVEN SYSTEM
+    // debouncedSave(operation);
+    console.warn('⚠️ OLD debouncedSave in deleteTag - now handled by event-driven system');
   }, [removeTagFromStore]);
 
   // Force immediate save (e.g., on session completion)
   const batchSaveChanges = useCallback(async () => {
-    // Cancel debounced save and process immediately
-    debouncedSave.cancel();
+    // OLD: Cancel debounced save and process immediately - REPLACED WITH EVENT-DRIVEN SYSTEM
+    // debouncedSave.cancel();
+    console.warn('⚠️ OLD debouncedSave.cancel in batchSaveChanges - now handled by event-driven system');
     
     // For now, just mark as processing complete since individual saves handle persistence
     setIsProcessing(false);
@@ -611,7 +671,7 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
     // Update store immediately for smooth UX
     useEditorStore.getState().updateWhiteoutOverlay(overlayId, { coordinates: sanitizedCoordinates as TagCoordinates });
     
-    // Save to server
+    // OLD: Save to server - REPLACED WITH EVENT-DRIVEN SYSTEM
     const operation: TagOperation = {
       type: 'update',
       tagId: overlayId,
@@ -619,7 +679,8 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       timestamp: Date.now()
     };
     
-    debouncedSave(operation);
+    // debouncedSave(operation);
+    console.warn('⚠️ OLD debouncedSave in updateWhiteoutOverlay - now handled by event-driven system');
   }, []);
 
   // Delete whiteout overlay
@@ -627,7 +688,7 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
     // Remove from store immediately
     useEditorStore.getState().deleteWhiteoutOverlay(overlayId);
     
-    // Save to server
+    // OLD: Save to server - REPLACED WITH EVENT-DRIVEN SYSTEM
     const operation: TagOperation = {
       type: 'delete',
       tagId: overlayId,
@@ -635,7 +696,8 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       timestamp: Date.now()
     };
     
-    debouncedSave(operation);
+    // debouncedSave(operation);
+    console.warn('⚠️ OLD debouncedSave in deleteWhiteoutOverlay - now handled by event-driven system');
   }, []);
 
   return {

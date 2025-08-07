@@ -95,7 +95,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     deleteTextInput,
     loadTextInputsFromTags,
     selectTextInput
-  } = useStreamlinedTextInputs(sessionId);
+  } = useStreamlinedTextInputs(sessionId, webSocket);
 
   // Flag to suppress global click handler after placing text input
   const [justPlacedTextInput, setJustPlacedTextInput] = useState(false);

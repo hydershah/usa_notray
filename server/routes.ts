@@ -8511,6 +8511,10 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   const { registerTextTagRoutes } = await import('./routes/text-tag-routes');
   registerTextTagRoutes(app);
   
+  // Register batch update routes for event-driven performance
+  const { registerBatchUpdateRoutes } = await import('./routes/batch-update-routes');
+  registerBatchUpdateRoutes(app);
+  
   // Register admin logs routes
   app.use('/api/admin', adminLogsRoutes);
   app.use('/api/notary', notaryVerificationRoutes);

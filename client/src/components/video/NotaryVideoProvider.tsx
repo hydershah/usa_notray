@@ -15,22 +15,15 @@ interface NotaryVideoProviderProps {
   children: ReactNode;
 }
 
-export const NotaryVideoProvider: React.FC<NotaryVideoProviderProps> = ({
+export const NotaryVideoProvider: React.FC<NotaryVideoProviderProps> = React.memo(({
   token,
   roomUrl,
   children
 }) => {
-  console.log('🔄 NotaryVideoProvider - Component render/recreate:', { 
-    token: token?.substring(0, 20) + '...', 
-    roomUrl,
-    timestamp: new Date().toISOString()
-  });
-  
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Memoize provider props to prevent unnecessary re-renders (before early return)
+  // Memoize provider props to prevent unnecessary re-renders 
   const providerProps = useMemo(() => {
-    console.log('🔄 NotaryVideoProvider - providerProps recalculated:', { token: token?.substring(0, 20) + '...', roomUrl });
     return token && token !== 'demo-token'
       ? { url: roomUrl, token }
       : { url: roomUrl };
@@ -45,17 +38,20 @@ export const NotaryVideoProvider: React.FC<NotaryVideoProviderProps> = ({
         description: "Missing video session credentials",
         variant: "destructive"
       });
+      setIsInitialized(false);
       return;
     }
 
-    if (token) {
-      console.log('✅ Daily React Provider initialized with secure token');
-    } else {
-      console.log('✅ Daily React Provider initialized with room URL');
+    // Only initialize if not already initialized or if credentials changed significantly
+    if (!isInitialized) {
+      if (token) {
+        console.log('✅ Daily React Provider initialized with secure token');
+      } else {
+        console.log('✅ Daily React Provider initialized with room URL');
+      }
+      setIsInitialized(true);
     }
-
-    setIsInitialized(true);
-  }, [token, roomUrl]);
+  }, [token, roomUrl, isInitialized]);
 
   if (!isInitialized) {
     return (
@@ -73,4 +69,6 @@ export const NotaryVideoProvider: React.FC<NotaryVideoProviderProps> = ({
       {children}
     </DailyProvider>
   );
-};
+});
+
+NotaryVideoProvider.displayName = 'NotaryVideoProvider';

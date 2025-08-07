@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { Rnd } from 'react-rnd';
 import { useToast } from '@/hooks/use-toast';
+import { useLiveUXManager } from '@/hooks/editor/useLiveUXManager';
+import { usePersistenceTriggers } from '@/hooks/editor/usePersistenceTriggers';
 import { 
   getTagDimensions, 
   getTagStyle, 
@@ -89,6 +91,25 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  
+  // NEW: Event-driven managers for smooth UX + strategic persistence
+  const liveUX = useLiveUXManager({
+    sessionId,
+    webSocket,
+    onLocalStateUpdate: (tagId, updates) => {
+      // Update local state immediately for smooth UX
+      if (updates.coordinates && tagId === id) {
+        // This would normally trigger parent state update
+        // For now, we'll rely on the existing coordinate prop updates
+        console.log(`🎮 Local state updated for text input: ${tagId}`);
+      }
+      if (updates.content !== undefined && tagId === id) {
+        setInputValue(updates.content);
+      }
+    }
+  });
+  
+  const persistenceTriggers = usePersistenceTriggers({ sessionId });
   
   // Memoized calculations for better performance
   const fixedDimensions = useMemo(() => getTagDimensions('T'), []);
@@ -188,9 +209,17 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isSelected, isEditing, content, onDelete]);
 
+  /* 
+   * OLD DEBOUNCED SAVE - COMMENTED OUT
+   * This was causing frequent API calls during typing
+   * Now handled by event-driven system (useLiveUXManager + usePersistenceTriggers)
+   */
+  
   // Save content with debouncing
   const debouncedSave = useCallback(
     debounce(async (value: string) => {
+    /* OLD API-HEAVY LOGIC - REPLACED WITH EVENT-DRIVEN SYSTEM
+    
     try {
       const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${id}/content`, {
         method: 'PUT',
@@ -234,6 +263,10 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
           variant: "destructive"
         });
       }
+    */
+    
+    // NEW: Now handled by event-driven system
+    console.log('⚠️ OLD debouncedSave called - now handled by liveUX system');
     }, 500),
     [id, sessionId, coordinates, assignedUserId, webSocket, onSave, toast]
   );
@@ -242,16 +275,25 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     setInputValue(newValue);
-    debouncedSave(newValue);
+    
+    // NEW: Use LiveUXManager for instant content updates (no API calls)
+    liveUX.handleContentChange(id, newValue);
+    
+    // Legacy debounced save for compatibility (but not needed with new system)
+    // debouncedSave(newValue);
   };
 
   // Handle input blur (save and exit edit mode)
   const handleInputBlur = () => {
-                setIsEditing(false);
+    setIsEditing(false);
+    
+    // NEW: Trigger strategic persistence when editing ends
     if (inputValue !== content) {
-      debouncedSave.cancel();
-      debouncedSave(inputValue);
+      persistenceTriggers.onContentChangeComplete(id, inputValue);
     }
+    
+    // Cancel any pending legacy saves
+    debouncedSave.cancel();
   };
 
   // Handle input Enter key
@@ -288,29 +330,40 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   }, []);
 
   const handleDrag = useCallback((e: any, data: any) => {
-    if (!throttledOnMove.current) return;
-    
-    // Smooth drag updates without snap-to-grid during drag for better performance
+    // NEW: Use LiveUXManager for instant updates (no API calls)
     const newCoordinates = {
       x: data.x / scaleFactor,
       y: data.y / scaleFactor
     };
     
-    throttledOnMove.current(newCoordinates);
-  }, [scaleFactor]);
+    // Live update - smooth UX with no API blocking
+    liveUX.handleDrag(id, newCoordinates);
+    
+    // Also call legacy handler for compatibility
+    if (onMove) {
+      onMove(newCoordinates);
+    }
+  }, [scaleFactor, liveUX, id, onMove]);
 
   const handleDragStop = useCallback((e: any, data: any) => {
     setIsDragging(false);
     
-    // Snap to grid for professional alignment on drop
+    // Snap to grid for professional alignment
     const snappedX = snapToGrid(data.x / scaleFactor);
     const snappedY = snapToGrid(data.y / scaleFactor);
+    const finalCoordinates = { x: snappedX, y: snappedY };
     
-    // Final update with snapped coordinates
+    // End live interaction
+    liveUX.endInteraction(id);
+    
+    // NEW: Trigger strategic persistence (no immediate API call)
+    persistenceTriggers.onInteractionEnd(id, finalCoordinates);
+    
+    // Legacy handler for compatibility
     if (onMove) {
-      onMove({ x: snappedX, y: snappedY });
+      onMove(finalCoordinates);
     }
-  }, [scaleFactor, onMove]);
+  }, [scaleFactor, liveUX, persistenceTriggers, id, onMove]);
 
   // Handle resize
   const handleResize = useCallback((e: any, direction: any, ref: any, delta: any, position: any) => {
@@ -320,17 +373,22 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
       height: ref.offsetHeight
     });
     
-    // Also call onResize if provided
+    // NEW: Use LiveUXManager for instant resize updates (no API calls)
+    const newCoordinates = {
+      x: position.x / scaleFactor,
+      y: position.y / scaleFactor,
+      width: ref.offsetWidth / scaleFactor,
+      height: ref.offsetHeight / scaleFactor
+    };
+    
+    // Live resize - smooth UX with no API blocking
+    liveUX.handleResize(id, newCoordinates);
+    
+    // Legacy handler for compatibility
     if (onResize) {
-      const newCoordinates = {
-        x: position.x / scaleFactor,
-        y: position.y / scaleFactor,
-        width: ref.offsetWidth / scaleFactor,
-        height: ref.offsetHeight / scaleFactor
-      };
       onResize(newCoordinates);
     }
-  }, [scaleFactor, onResize]);
+  }, [scaleFactor, liveUX, id, onResize]);
 
   const handleResizeStop = useCallback((e: any, direction: any, ref: any, delta: any, position: any) => {
     // Update controlled size
@@ -339,21 +397,30 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
       height: ref.offsetHeight
     });
     
-    // Final resize update with snapped coordinates
+    // Snap final coordinates
+    const snappedX = snapToGrid(position.x / scaleFactor);
+    const snappedY = snapToGrid(position.y / scaleFactor);
+    const snappedWidth = snapToGrid(ref.offsetWidth / scaleFactor);
+    const snappedHeight = snapToGrid(ref.offsetHeight / scaleFactor);
+    
+    const finalCoordinates = {
+      x: snappedX,
+      y: snappedY,
+      width: Math.max(snappedWidth, 40), // Minimum width
+      height: Math.max(snappedHeight, 20) // Minimum height
+    };
+    
+    // End live interaction
+    liveUX.endInteraction(id);
+    
+    // NEW: Trigger strategic persistence (no immediate API call)
+    persistenceTriggers.onInteractionEnd(id, finalCoordinates);
+    
+    // Legacy handler for compatibility
     if (onResize) {
-      const snappedX = snapToGrid(position.x / scaleFactor);
-      const snappedY = snapToGrid(position.y / scaleFactor);
-      const snappedWidth = snapToGrid(ref.offsetWidth / scaleFactor);
-      const snappedHeight = snapToGrid(ref.offsetHeight / scaleFactor);
-      
-      onResize({
-        x: snappedX,
-        y: snappedY,
-        width: Math.max(snappedWidth, 40), // Minimum width
-        height: Math.max(snappedHeight, 20) // Minimum height
-      });
+      onResize(finalCoordinates);
     }
-  }, [scaleFactor, onResize]);
+  }, [scaleFactor, liveUX, persistenceTriggers, id, onResize]);
 
   // Handle container click
   const handleContainerClick = (e: React.MouseEvent) => {
