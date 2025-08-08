@@ -29,6 +29,7 @@ import {
   Hash,
   Plus
 } from 'lucide-react';
+import { NotaryDocumentsModal } from './NotaryDocumentsModal';
 
 interface NotaryData {
   id: number;
@@ -114,6 +115,16 @@ export function AdminNotaries() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [allNotaries, setAllNotaries] = useState<NotaryData[]>([]);
+  
+  const [documentsModalOpen, setDocumentsModalOpen] = useState(false);
+  const [docsNotaryId, setDocsNotaryId] = useState<number | null>(null);
+  const [docsNotaryName, setDocsNotaryName] = useState<string>('');
+  const handleOpenDocuments = (id: number, name: string) => {
+    setDocsNotaryId(id);
+    setDocsNotaryName(name);
+    setDocumentsModalOpen(true);
+  };
+  const handleCloseDocuments = () => setDocumentsModalOpen(false);
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -703,6 +714,15 @@ export function AdminNotaries() {
                         </div>
                       ))}
                     </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      onClick={() => handleOpenDocuments(selectedNotary.id, selectedNotary.fullName)}
+                    >
+                      <FileText className="h-4 w-4 mr-2" />
+                      View Notary Documents
+                    </Button>
                   </div>
 
                   {/* ID Verification */}
@@ -830,6 +850,15 @@ export function AdminNotaries() {
         isLoading={createUserMutation.isPending}
         defaultRole="notary"
       />
+
+      {docsNotaryId && (
+        <NotaryDocumentsModal
+          isOpen={documentsModalOpen}
+          onClose={handleCloseDocuments}
+          notaryId={docsNotaryId}
+          notaryName={docsNotaryName}
+        />
+      )}
     </div>
   );
 } 
