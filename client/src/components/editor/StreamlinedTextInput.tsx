@@ -238,14 +238,16 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
         // Broadcast via WebSocket
         if (webSocket && webSocket.readyState === WebSocket.OPEN) {
           webSocket.send(JSON.stringify({
-            type: 'text_input_saved',
+            // Use existing server-supported event for text input content changes
+            type: 'text_input_changed',
             payload: {
               textInputId: id,
               content: value,
               coordinates,
-              sessionId
+              // keep coordinates in payload; sessionId will be at the top level
             },
             userId: assignedUserId.toString(),
+            sessionId,
             timestamp: Date.now()
           }));
         }
@@ -385,6 +387,15 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     return metrics.width;
   }, []);
 
+  // Recalculate local width when font size or content changes to keep border snug
+  useEffect(() => {
+    const paddingPx = 8;
+    const baseMinWidthPx = fixedDimensions.width * scaleFactor;
+    const textWidth = measureTextWidth(inputValue, fontSize, fontFamily) + paddingPx;
+    const desiredPx = Math.max(baseMinWidthPx, Math.ceil(textWidth));
+    setControlledSize(prev => ({ ...prev, width: desiredPx }));
+  }, [fontSize, fontFamily, inputValue, scaleFactor, fixedDimensions.width, measureTextWidth]);
+
   // Auto-resize width (grow and retract) while editing; keep height as-is
   useEffect(() => {
     if (!isEditing || isResizing) return;
@@ -460,7 +471,8 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
         zIndex: isSelected ? 1000 : 100,
         padding: '0', // SIMPLE: No padding on container
         boxSizing: 'border-box',
-        cursor: isEditing ? 'text' : 'grab'
+        cursor: isEditing ? 'text' : 'grab',
+        lineHeight: 1
       }}
     >
       <div
@@ -490,7 +502,8 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
           fontWeight: TYPOGRAPHY.fontWeight.medium,
           color: textColor,
           cursor: isEditing ? 'text' : (isSelected ? 'pointer' : 'grab'),
-          pointerEvents: 'auto'
+          pointerEvents: 'auto',
+          lineHeight: 1
         }}
       >
         {isEditing ? (
@@ -513,9 +526,9 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
               fontWeight: TYPOGRAPHY.fontWeight.medium,
               color: textColor,
               padding: '0',
-              paddingLeft: '4px', // Same 4px left padding as PDF
+              paddingLeft: '4px',
               textAlign: 'left',
-              lineHeight: '1',
+              lineHeight: 1,
               whiteSpace: 'nowrap'
             }}
           />
@@ -525,19 +538,17 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
               width: '100%',
               height: '100%',
               display: 'flex',
-              alignItems: 'center', // Same center alignment as working tags
+              alignItems: 'center',
               justifyContent: 'flex-start',
-              paddingLeft: '4px', // Same 4px left padding as PDF processor
-              overflow: 'visible',
+              paddingLeft: '4px',
               textOverflow: 'clip',
               whiteSpace: 'nowrap',
               color: hasContent ? textColor : PROFESSIONAL_COLORS.textPlaceholder,
               fontStyle: hasContent ? 'normal' : 'italic',
               fontFamily: fontFamily,
               fontSize: `${fontSize}px`,
-              wordWrap: 'normal',
-              overflowWrap: 'normal',
-              lineHeight: '1'
+              overflow: 'hidden',
+              lineHeight: 1
             }}
           >
             {hasContent ? inputValue : TAG_TYPE_CONFIG.T.placeholder}

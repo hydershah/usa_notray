@@ -2007,8 +2007,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
           type: 'tag_updated',
           payload: {
             tagId,
-            coordinates,
-            page: coordinates.pageNumber || 1
+            // Use a consistent shape expected by receivers
+            updates: { coordinates },
+            page: (coordinates as any).pageNumber || 1
           }
         });
       } catch (error) {
@@ -2042,7 +2043,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         y: coordinates.y ?? tag?.coordinates.y ?? 0,
         width: coordinates.width ?? tag?.coordinates.width ?? 100,
         height: coordinates.height ?? tag?.coordinates.height ?? 50,
-        pageNumber: coordinates.pageNumber ?? tag?.coordinates.pageNumber ?? 1
+        pageNumber: (coordinates as any).pageNumber ?? tag?.coordinates.pageNumber ?? 1
       };
 
       console.log('📡 Broadcasting tag save via WebSocket:', {
@@ -2055,7 +2056,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
           type: 'tag_saved',
           payload: {
             tagId,
-            coordinates: fullCoordinates,
+            // Use the same 'updates' envelope for consistency
+            updates: { coordinates: fullCoordinates },
             page: fullCoordinates.pageNumber || 1
           }
         });
@@ -2112,13 +2114,19 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         
         switch (message.type) {
           case 'tag_updated':
-          case 'tag_saved':
+          case 'tag_saved': {
             // Update tag position/size from other users (including whiteout tags)
-            if (message.payload?.tagId && message.payload?.coordinates && onTagUpdate) {
-              console.log('📝 Updating tag from WebSocket:', message.payload);
-              onTagUpdate(message.payload.tagId, message.payload.coordinates);
+            const tagId = message.payload?.tagId;
+            // Accept both shapes: payload.updates.coordinates or payload.coordinates
+            const coords = message.payload?.updates?.coordinates
+              ?? message.payload?.coordinates
+              ?? message.payload?.updates;
+            if (tagId && coords && onTagUpdate) {
+              console.log('📝 Updating tag from WebSocket:', { tagId, coords });
+              onTagUpdate(tagId, coords);
             }
             break;
+          }
         }
       } catch (error) {
         console.error('❌ Error processing WebSocket message in PDFViewer:', error);
@@ -2591,7 +2599,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                            // 🚀 REAL-TIME SYNC: Broadcast text tag resize via WebSocket
                            if (webSocket && webSocket.isConnected && webSocket.isReady) {
                              const updateMessage = {
-                               type: 'text_input_changed',
+                               type: 'text_input_position_updated',
                                payload: {
                                  textInputId: textInput.id,
                                  coordinates: {
@@ -2606,10 +2614,10 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                                }
                              };
                              console.log('📡 Broadcasting text input change:', updateMessage);
-                             webSocket.send(JSON.stringify(updateMessage));
+                             webSocket.sendMessage(updateMessage as any);
                            }
                          }}
-                         webSocket={webSocket?.socket}
+                         webSocket={webSocket?.webSocketInstance}
                        />
                      );
                    })}

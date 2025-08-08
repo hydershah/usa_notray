@@ -82,7 +82,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     deleteTag,
     batchSaveChanges,
     placeWhiteoutOverlay
-  } = useTagOperations(sessionId);
+  } = useTagOperations(sessionId, webSocket);
 
   // Streamlined text inputs for immediate editing
   const {
