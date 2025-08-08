@@ -38,7 +38,8 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
     setCurrentPage,
     placeTag,
     currentDocument,
-    getTagDimensions
+    getTagDimensions,
+    activeTextInputId
   } = useEditorStore();
 
   // Handle tag placement via hotkey
@@ -50,7 +51,7 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
     const centerY = viewer.zoomLevel * 300; // Approximate center Y
 
     // Get dimensions using store function (includes custom dimensions if set)
-    const dimensions = getTagDimensions(tagType);
+    const dims = getTagDimensions(tagType) || { width: 120, height: 25 };
 
     try {
       await placeTag({
@@ -59,8 +60,8 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
         coordinates: {
           x: centerX / viewer.zoomLevel,
           y: centerY / viewer.zoomLevel,
-          width: dimensions.width,
-          height: dimensions.height,
+          width: dims.width,
+          height: dims.height,
           pageNumber: viewer.currentPage
         },
         assignedUserId: selectedUser.userId
@@ -74,8 +75,12 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
     if (!actualEnabled) return;
 
-    // Ignore keystrokes in input fields
+    // Ignore keystrokes in input fields or when a text input is selected
     const target = event.target as HTMLElement;
+    const { activeTextInputId } = useEditorStore.getState();
+    if (activeTextInputId) {
+      return;
+    }
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.contentEditable === 'true') {
       return;
     }
@@ -134,6 +139,15 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
       
       if (tagType) {
         event.preventDefault();
+
+        // Always clear any currently selected tag to avoid multi-selection UI
+        selectTag(null);
+        
+        // Toggle behavior for all tag keys: pressing the same key again deselects the tool
+        if (selectedTagType === tagType) {
+          setSelectedTagType(null);
+          return;
+        }
         
         // Check if user has permission for this tag type
         const hasPermission = checkTagPermission(tagType, selectedUser.userType);
@@ -143,13 +157,7 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
             onTagTypeSelect(tagType);
           } else {
             // Fallback to direct store manipulation
-            if (selectedTagType === tagType) {
-              // If already selected, place the tag
-              handleTagPlacement(tagType);
-            } else {
-              // Select the tag type
-              setSelectedTagType(tagType);
-            }
+            setSelectedTagType(tagType);
           }
         }
         return;

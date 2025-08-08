@@ -81,7 +81,7 @@ const JobRequestStatsCards: React.FC<{ stats: JobRequestStats; loading: boolean 
     { label: 'Pending', value: stats.pending, icon: Clock, color: 'text-yellow-600', bg: 'bg-yellow-100' },
     { label: 'Approved', value: stats.approved, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100' },
     { label: 'Rejected', value: stats.rejected, icon: XCircle, color: 'text-red-600', bg: 'bg-red-100' },
-    { label: 'Assigned', value: stats.assigned, icon: User, color: 'text-purple-600', bg: 'bg-purple-100' },
+         { label: 'Assigned', value: stats.assigned, icon: User, color: 'text-blue-600', bg: 'bg-blue-100' },
     { label: 'Completed', value: stats.completed, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-100' }
   ];
 
@@ -184,7 +184,7 @@ const JobRequestTable: React.FC<{
       case 'pending': return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">Pending</Badge>;
       case 'approved': return <Badge variant="secondary" className="bg-green-100 text-green-800">Approved</Badge>;
       case 'rejected': return <Badge variant="secondary" className="bg-red-100 text-red-800">Rejected</Badge>;
-      case 'assigned': return <Badge variant="secondary" className="bg-purple-100 text-purple-800">Assigned</Badge>;
+             case 'assigned': return <Badge variant="secondary" className="bg-blue-100 text-blue-800">Assigned</Badge>;
       case 'completed': return <Badge variant="secondary" className="bg-emerald-100 text-emerald-800">Completed</Badge>;
       case 'cancelled': return <Badge variant="secondary" className="bg-gray-100 text-gray-800">Cancelled</Badge>;
       default: return <Badge variant="secondary">{status}</Badge>;
@@ -302,7 +302,7 @@ const JobRequestTable: React.FC<{
                     variant="outline"
                     size="sm"
                     onClick={() => onAssignNotary(request)}
-                    className="h-8 text-purple-600 border-purple-200 hover:bg-purple-50"
+                                         className="h-8 text-blue-600 border-blue-200 hover:bg-blue-50"
                   >
                     <User className="h-4 w-4 mr-1" />
                     Assign

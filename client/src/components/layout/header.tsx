@@ -99,7 +99,7 @@ export function Header() {
           <div className="flex items-center flex-1">
             <div className="relative">
               <img 
-                src="/logo.jpeg" 
+                src="/sharpnote_-_blue_background.jpg" 
                 alt="Digital Notarization Logo" 
                 className="h-10 w-auto object-contain"
               />

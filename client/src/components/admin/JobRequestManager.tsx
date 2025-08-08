@@ -989,28 +989,23 @@ export function JobRequestManager() {
 
                             {/* Assignment Method Selection */}
                             <div>
-                              <Label className="text-sm font-medium text-gray-700 mb-4 block">
+                              <Label className="text-sm font-medium text-gray-700 mb-3 block">
                                 Assignment Method
                               </Label>
                               <RadioGroup
                                 value={assignmentMethod}
                                 onValueChange={setAssignmentMethod}
-                                className="grid grid-cols-1 md:grid-cols-2 gap-4"
+                                className="grid grid-cols-2 gap-3"
                               >
                                 {/* Admin Self-Assignment Option */}
                                 {currentUser?.role === 'admin' && (
                                   <div className="relative">
-                                    <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-purple-200 transition-colors cursor-pointer">
-                                      <RadioGroupItem value="admin_self" id="admin_self" className="mt-1" />
-                                      <div className="flex-1">
-                                        <Label htmlFor="admin_self" className="text-lg font-semibold text-gray-900 cursor-pointer">
+                                    <div className="flex items-center space-x-3 p-3 border rounded-lg hover:border-purple-300 hover:bg-purple-50 transition-colors cursor-pointer">
+                                      <RadioGroupItem value="admin_self" id="admin_self" />
+                                      <div className="flex-1 min-w-0">
+                                        <Label htmlFor="admin_self" className="text-sm font-medium text-gray-900 cursor-pointer block">
                                           Assign Myself as Notary
                                         </Label>
-                                        <p className="text-sm text-gray-600 mt-1">You will be the notary for this job</p>
-                                        <div className="mt-3 flex items-center text-xs text-purple-600">
-                                          <UserIcon className="w-4 h-4 mr-1" />
-                                          Direct admin control
-                                        </div>
                                       </div>
                                     </div>
                                   </div>
@@ -1018,51 +1013,36 @@ export function JobRequestManager() {
 
                                 {/* Manual Notary Assignment */}
                                 <div className="relative">
-                                  <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-blue-200 transition-colors cursor-pointer">
-                                    <RadioGroupItem value="assign" id="assign" className="mt-1" />
-                                    <div className="flex-1">
-                                      <Label htmlFor="assign" className="text-lg font-semibold text-gray-900 cursor-pointer">
+                                  <div className="flex items-center space-x-3 p-3 border rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer">
+                                    <RadioGroupItem value="assign" id="assign" />
+                                    <div className="flex-1 min-w-0">
+                                      <Label htmlFor="assign" className="text-sm font-medium text-gray-900 cursor-pointer block">
                                         Assign Specific Notary
                                       </Label>
-                                      <p className="text-sm text-gray-600 mt-1">Choose from available contractor notaries</p>
-                                      <div className="mt-3 flex items-center text-xs text-blue-600">
-                                        <CheckCircle className="w-4 h-4 mr-1" />
-                                        Direct selection control
-                                      </div>
                                     </div>
                                   </div>
                                 </div>
 
                                 {/* Auto Assignment */}
                                 <div className="relative">
-                                  <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-green-200 transition-colors cursor-pointer">
-                                    <RadioGroupItem value="auto" id="auto" className="mt-1" />
-                                    <div className="flex-1">
-                                      <Label htmlFor="auto" className="text-lg font-semibold text-gray-900 cursor-pointer">
+                                  <div className="flex items-center space-x-3 p-3 border rounded-lg hover:border-green-300 hover:bg-green-50 transition-colors cursor-pointer">
+                                    <RadioGroupItem value="auto" id="auto" />
+                                    <div className="flex-1 min-w-0">
+                                      <Label htmlFor="auto" className="text-sm font-medium text-gray-900 cursor-pointer block">
                                         Auto Assignment
                                       </Label>
-                                      <p className="text-sm text-gray-600 mt-1">System assigns best contractor notary match</p>
-                                      <div className="mt-3 flex items-center text-xs text-green-600">
-                                        <CheckCircle className="w-4 h-4 mr-1" />
-                                        Optimal matching algorithm
-                                      </div>
                                     </div>
                                   </div>
                                 </div>
 
                                 {/* Notary ID Code Assignment */}
                                 <div className="relative">
-                                  <div className="flex items-start space-x-4 p-6 border-2 rounded-xl hover:border-orange-200 transition-colors cursor-pointer">
-                                    <RadioGroupItem value="id_code" id="id_code" className="mt-1" />
-                                    <div className="flex-1">
-                                      <Label htmlFor="id_code" className="text-lg font-semibold text-gray-900 cursor-pointer">
+                                  <div className="flex items-center space-x-3 p-3 border rounded-lg hover:border-orange-300 hover:bg-orange-50 transition-colors cursor-pointer">
+                                    <RadioGroupItem value="id_code" id="id_code" />
+                                    <div className="flex-1 min-w-0">
+                                      <Label htmlFor="id_code" className="text-sm font-medium text-gray-900 cursor-pointer block">
                                         Enter Notary ID Code
                                       </Label>
-                                      <p className="text-sm text-gray-600 mt-1">Assign a specific notary using their ID code</p>
-                                      <div className="mt-3 flex items-center text-xs text-orange-600">
-                                        <Hash className="w-4 h-4 mr-1" />
-                                        Direct assignment by code
-                                      </div>
                                     </div>
                                   </div>
                                 </div>

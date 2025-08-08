@@ -41,7 +41,7 @@ export function JobRequestActionsModal({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <DialogHeader className="flex-shrink-0 pb-4 border-b">
+        <div className="flex-shrink-0 pb-4 border-b">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-green-100 rounded-lg">
@@ -51,9 +51,9 @@ export function JobRequestActionsModal({
                 <DialogTitle className="text-xl font-semibold text-gray-900">
                   {title}
                 </DialogTitle>
-                <DialogDescription className="text-gray-600 mt-1">
+                <p className="text-gray-600 mt-1">
                   Approve, reject, or assign this job request.
-                </DialogDescription>
+                </p>
               </div>
             </div>
             <Button
@@ -65,7 +65,7 @@ export function JobRequestActionsModal({
               <X className="h-4 w-4" />
             </Button>
           </div>
-        </DialogHeader>
+        </div>
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto py-4 space-y-4">
@@ -88,11 +88,7 @@ export function JobRequestActionsModal({
                             Enter Notary ID Code
                           </Label>
                         </div>
-                        <p className="text-xs text-gray-600 mb-2">Assign a specific notary using their ID code</p>
-                        <div className="flex items-center text-xs text-blue-600">
-                          <User className="w-3 h-3 mr-1" />
-                          Direct assignment by code
-                        </div>
+                        
                       </div>
                     </div>
                   </CardContent>
@@ -112,11 +108,7 @@ export function JobRequestActionsModal({
                             Assign Myself as Notary
                           </Label>
                         </div>
-                        <p className="text-xs text-gray-600 mb-2">You will be the notary for this job</p>
-                        <div className="flex items-center text-xs text-purple-600">
-                          <User className="w-3 h-3 mr-1" />
-                          Direct admin control
-                        </div>
+                        
                       </div>
                     </div>
                   </CardContent>

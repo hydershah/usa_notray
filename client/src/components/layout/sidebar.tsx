@@ -441,45 +441,6 @@ export function Sidebar() {
   return (
     <nav className="w-80 bg-white/95 backdrop-blur-sm h-screen sticky top-0 border-r border-gray-200/50 overflow-y-auto shadow-lg">
       <div className="h-full flex flex-col p-6 space-y-8">
-        {/* Enhanced User Info Card */}
-        <div className="bg-gradient-to-br from-gray-50 to-white border border-gray-200 rounded-xl p-4 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center shadow-md">
-              <span className="text-white font-semibold text-lg">
-                {user?.username?.charAt(0).toUpperCase() || 'U'}
-              </span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-gray-900 truncate">{user?.username}</p>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs text-gray-500 capitalize">{user?.role?.replace('_', ' ')}</span>
-                {user?.isAdmin && (
-                  <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-xs font-medium">
-                    Admin
-                  </span>
-                )}
-                {user?.isNotary && (
-                  <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
-                    Notary
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-xl p-3 text-center">
-            <div className="text-2xl font-bold text-blue-700">0</div>
-            <div className="text-xs text-blue-600">Active Jobs</div>
-          </div>
-          <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-xl p-3 text-center">
-            <div className="text-2xl font-bold text-green-700">0</div>
-            <div className="text-xs text-green-600">Completed</div>
-          </div>
-        </div>
-
         {/* Navigation Sections */}
         <div className="flex-1 space-y-6">
           {Object.entries(groupedItems).map(([section, items]) => {

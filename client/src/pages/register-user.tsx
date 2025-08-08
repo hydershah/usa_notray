@@ -164,7 +164,7 @@ export default function RegisterUser() {
           <div className="text-center max-w-lg">
             <div className="mb-8">
               <img 
-                src="/logo.jpeg" 
+                src="/sharpnote_-_blue_background.jpg" 
                 alt="Sharp Note Logo" 
                 className="h-32 w-auto mx-auto mb-6 object-contain"
               />
@@ -200,7 +200,7 @@ export default function RegisterUser() {
             <CardHeader className="text-center pb-6">
               <div className="lg:hidden mb-4">
                 <img 
-                  src="/logo.jpeg" 
+                  src="/sharpnote_-_blue_background.jpg" 
                   alt="Sharp Note Logo" 
                   className="h-16 w-auto mx-auto mb-2 object-contain"
                 />

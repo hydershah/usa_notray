@@ -29,6 +29,7 @@ interface NotaryProfile {
   email: string;
   documents?: {
     hasCommissionFile?: boolean;
+    hasNotaryCommissionFile?: boolean;
     hasEOInsuranceFile?: boolean;
     hasPublicCertificateFile?: boolean;
     hasBondFile?: boolean;
@@ -139,6 +140,7 @@ export function NotaryDocumentsModal({
         email: '',
         documents: {
           hasCommissionFile: !!data.hasNotaryCommissionFile,
+          hasNotaryCommissionFile: !!data.hasNotaryCommissionFile,
           hasEOInsuranceFile: !!data.hasEOInsuranceFile,
           hasPublicCertificateFile: !!data.hasPublicCertificateFile,
           hasBondFile: !!data.hasBondFile,
@@ -251,16 +253,20 @@ export function NotaryDocumentsModal({
 
   const getDocumentStatus = (documentKey: string): boolean => {
     if (!profile) return false;
-    
-    // Check both the documents object and direct properties for compatibility
-    const documentsObj = profile.documents;
-    const directProp = profile[documentKey as keyof NotaryProfile] as boolean;
-    
-    if (documentsObj) {
-      return documentsObj[documentKey as keyof typeof documentsObj] || false;
-    }
-    
-    return directProp || false;
+    // Map file field keys to their corresponding boolean flags
+    const keyMap: Record<string, keyof NotaryProfile | keyof NonNullable<NotaryProfile['documents']>> = {
+      notaryCommissionFile: 'hasNotaryCommissionFile',
+      eoInsuranceFile: 'hasEOInsuranceFile',
+      publicCertificateFile: 'hasPublicCertificateFile',
+      bondFile: 'hasBondFile',
+      signingAgentFile: 'hasSigningAgentFile'
+    };
+    const hasKey = keyMap[documentKey];
+    const documentsObj = profile.documents || {};
+    // Check both root and nested documents object
+    const nestedVal = (documentsObj as any)[hasKey];
+    const rootVal = (profile as any)[hasKey];
+    return Boolean(nestedVal ?? rootVal);
   };
 
   if (loading) {

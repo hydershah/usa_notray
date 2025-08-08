@@ -399,7 +399,7 @@ export default function TitleCompanies() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <CardTitle className="flex items-center gap-3 text-2xl">
-                  <div className="p-2 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg">
+                  <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg">
                     <Building className="h-6 w-6 text-white" />
                   </div>
                   Title Company Management
@@ -437,7 +437,7 @@ export default function TitleCompanies() {
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Refresh
                 </Button>
-                <Button onClick={handleAddCompany} className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700">
+                <Button onClick={handleAddCompany} className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
                   <Plus className="h-4 w-4 mr-2" />
                   Add Company
                 </Button>
@@ -589,7 +589,7 @@ export default function TitleCompanies() {
                         <TableCell>
                           <div className="flex items-center gap-3">
                             <Avatar className="h-10 w-10">
-                              <AvatarFallback className="bg-gradient-to-br from-purple-500 to-blue-600 text-white">
+                              <AvatarFallback className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
                                 <Building className="h-5 w-5" />
                               </AvatarFallback>
                             </Avatar>

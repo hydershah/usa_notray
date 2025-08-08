@@ -214,7 +214,7 @@ export default function NotaryApprovalDashboard() {
       assigned_pending_approval: "bg-blue-100 text-blue-800",
       approved: "bg-green-100 text-green-800",
       rejected: "bg-red-100 text-red-800",
-      approved_with_conditions: "bg-purple-100 text-purple-800"
+             approved_with_conditions: "bg-blue-100 text-blue-800"
     };
 
     const colorClass = colors[status as keyof typeof colors] || "bg-gray-100 text-gray-800";

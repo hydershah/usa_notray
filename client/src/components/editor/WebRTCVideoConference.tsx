@@ -606,7 +606,7 @@ export const WebRTCVideoConference: React.FC<WebRTCVideoConferenceProps> = ({
             <Badge 
               variant="secondary" 
               className={`text-xs shrink-0 ${
-                participant.role === 'notary' ? 'bg-purple-600 text-white' :
+                                 participant.role === 'notary' ? 'bg-blue-600 text-white' :
                 participant.role === 'signer' ? 'bg-blue-600 text-white' : 
                 'bg-green-600 text-white'
               }`}

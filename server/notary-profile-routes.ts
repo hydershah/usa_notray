@@ -1,5 +1,5 @@
 import { Express } from 'express';
-import { verifyToken, hasNotaryPrivileges } from './auth';
+import { verifyToken, hasAdminPrivileges, hasNotaryPrivileges } from './auth.js';
 import { cacheUserData } from './middleware/cache-middleware';
 import { redisCache } from './services/redis-cache';
 import multer from 'multer';
@@ -48,7 +48,7 @@ export function registerNotaryProfileRoutes(app: Express) {
    */
   app.post('/api/notary/profile/migrate-documents', verifyToken, async (req: any, res) => {
     try {
-      if (!hasNotaryPrivileges(req.user)) {
+      if (!hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Notary privileges required' });
       }
 
@@ -223,7 +223,7 @@ export function registerNotaryProfileRoutes(app: Express) {
       const notaryId = parseInt(req.params.notaryId);
       
       // Check if user can access this notary's documents
-      if (req.user.id !== notaryId && req.user.role !== 'admin') {
+      if (req.user.id !== notaryId && !hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -276,13 +276,13 @@ export function registerNotaryProfileRoutes(app: Express) {
       // Verify token
       let decoded;
       try {
-        decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+        decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
       } catch (error) {
         return res.status(401).json({ message: 'Invalid token' });
       }
       
       // Check if user can access this notary's documents
-      if (decoded.id !== notaryId && decoded.role !== 'admin') {
+      if ((decoded as any).id !== notaryId && !hasAdminPrivileges(decoded as any)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -416,13 +416,13 @@ export function registerNotaryProfileRoutes(app: Express) {
       // Verify token
       let decoded;
       try {
-        decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+        decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
       } catch (error) {
         return res.status(401).json({ message: 'Invalid token' });
       }
       
       // Check if user can access this notary's documents
-      if (decoded.id !== notaryId && decoded.role !== 'admin') {
+      if ((decoded as any).id !== notaryId && !hasAdminPrivileges(decoded as any)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 

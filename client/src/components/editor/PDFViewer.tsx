@@ -182,16 +182,15 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   }, [tag.content, tag.tagType, currentFontSize, fixedDimensions.width, fixedDimensions.height]);
   
   const displayCoords = useMemo(() => {
-    // Use actual saved coordinates for width/height instead of optimal dimensions
-    const savedWidth = tag.coordinates.width || optimalDimensions.width;
-    const savedHeight = tag.coordinates.height || optimalDimensions.height;
-    
+    // Use saved coordinates for width/height with fallback to fixed dimensions
+    const savedWidth = (tag.coordinates.width ?? fixedDimensions.width);
+    const savedHeight = (tag.coordinates.height ?? fixedDimensions.height);
+
     const coords = {
       x: isDragging && dragCoords ? dragCoords.x : Math.round(tag.coordinates.x * scaleFactor),
       y: isDragging && dragCoords ? dragCoords.y : Math.round(tag.coordinates.y * scaleFactor),
-      // Use consistent dimensions from constants for all tag types
-      width: Math.round(fixedDimensions.width * scaleFactor),
-      height: Math.round(fixedDimensions.height * scaleFactor)
+      width: Math.round(savedWidth * scaleFactor),
+      height: Math.round(savedHeight * scaleFactor)
     };
     
     // Debug logging for all tags
@@ -450,6 +449,25 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       onDelete();
     }
   };
+
+  // Determine if this tag should render an image (signature/initials/seal)
+  const imageSource: string | null = useMemo(() => {
+    try {
+      let parsed: any = null;
+      if (tag.contentData) {
+        parsed = typeof tag.contentData === 'string' ? JSON.parse(tag.contentData) : tag.contentData;
+      }
+      const value = parsed?.value ?? tag.content;
+      const isImageLike = (v: unknown) => typeof v === 'string' && (
+        v.startsWith('data:image/') || v.startsWith('http') || v.includes('vultrobjects.com')
+      );
+      // Render image if content type explicitly says image, or value looks like an image URL/data URI
+      if (parsed?.contentType === 'image' || isImageLike(value)) {
+        return (value as string) || null;
+      }
+    } catch {}
+    return null;
+  }, [tag.tagType, tag.content, tag.contentData]);
 
   return (
     <Rnd
@@ -2257,35 +2275,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
             Fit to View
           </button>
 
-          {/* Debug zoom controls - only in development */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="flex items-center gap-1 bg-red-50 border border-red-200 rounded-lg p-1">
-              <span className="text-xs text-red-600 font-medium">Debug:</span>
-              <button 
-                onClick={() => {
-                  console.log('🔍 Debug: Testing direct setZoomLevel call');
-                  setZoomLevel(2.0);
-                }} 
-                className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200"
-                type="button"
-              >
-                Test 2x
-              </button>
-              <button 
-                onClick={() => {
-                  console.log('🔍 Debug: Testing zoom functions');
-                  console.log('Current zoom:', viewer.zoomLevel);
-                  console.log('handleZoomIn type:', typeof handleZoomIn);
-                  console.log('setZoomLevel type:', typeof setZoomLevel);
-                }} 
-                className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200"
-                type="button"
-              >
-                Log
-              </button>
-            </div>
-          )}
-          
+
                     {/* Font Size Control - Only show when a text tag is selected */}
           {(selectedTag || selectedTextInputId) && (
             // Show for any tag that allows text input
@@ -2486,9 +2476,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                     className={`
                       block transition-all duration-200
                       ${mode === 'tagging' && canEditTags
-                        ? selectedTagType === null 
-                          ? 'cursor-default' // Pointer mode
-                          : 'cursor-crosshair hover:ring-2 hover:ring-blue-300 hover:ring-opacity-50' // Tag placement mode
+                        ? selectedTagType
+                          ? 'cursor-crosshair hover:ring-2 hover:ring-blue-300 hover:ring-opacity-50' // Tag placement mode
+                          : 'cursor-default' // Pointer mode
                         : mode === 'signing'
                         ? 'cursor-default'
                         : 'cursor-default'
@@ -2500,12 +2490,12 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                     }}
                   />
                   
-                  {/* Tags overlay - Filter out whiteout tags and text tags (text tags are handled separately via textInputs) */}
-                  {pageTags.filter(tag => tag.tagType !== 'W' && tag.tagType !== 'T').map(tag => {
-                    // Regular tag (text tags are handled separately via textInputs)
-                    return (
-                      <div key={`${tag.id}-${scaleFactor}`} className="absolute top-0 left-0 w-full h-full pointer-events-none">
-                        <MemoizedTagRenderer
+                          {/* Tags overlay - Filter out whiteout tags and text tags (text tags are handled separately via textInputs) */}
+        {pageTags.filter(tag => tag.tagType !== 'W' && tag.tagType !== 'T').map(tag => {
+          // Regular tag (text tags are handled separately via textInputs)
+          return (
+            <div key={`${tag.id}-${scaleFactor}`} className={`absolute top-0 left-0 w-full h-full ${selectedTagType ? 'pointer-events-none' : 'pointer-events-auto'}`}>
+              <MemoizedTagRenderer
                           tag={tag}
                           scaleFactor={scaleFactor}
                           isSelected={selectedTag?.id === tag.id}
@@ -2529,114 +2519,100 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                   {whiteoutOverlays
                     .filter(overlay => overlay.coordinates.pageNumber === pageNumber)
                     .map(overlay => (
-                      <WhiteoutOverlay
-                        key={`whiteout-${overlay.id}-${scaleFactor}`}
-                        overlay={overlay}
-                        scaleFactor={scaleFactor}
-                        canEdit={canEditTags}
-                        onUpdate={(coordinates) => {
-                          console.log('⬜ Whiteout overlay updated:', overlay.id, coordinates);
-                          // Update overlay coordinates directly without validation conflicts
-                          const updatedCoordinates = {
-                            ...overlay.coordinates,
-                            ...coordinates
-                          };
-                          useEditorStore.getState().updateWhiteoutOverlay(overlay.id, { coordinates: updatedCoordinates });
-                        }}
-                        onDelete={() => {
-                          console.log('⬜ Whiteout overlay deleted:', overlay.id);
-                          // Remove the overlay from the store
-                          useEditorStore.getState().deleteWhiteoutOverlay(overlay.id);
-                        }}
-                      />
+                      <div key={`whiteout-wrap-${overlay.id}-${scaleFactor}`} className={`${selectedTagType ? 'pointer-events-none' : 'pointer-events-auto'}`}>
+                        <WhiteoutOverlay
+                          key={`whiteout-${overlay.id}-${scaleFactor}`}
+                          overlay={overlay}
+                          scaleFactor={scaleFactor}
+                          canEdit={canEditTags}
+                          onUpdate={(coordinates) => {
+                            console.log('⬜ Whiteout overlay updated:', overlay.id, coordinates);
+                            // Update overlay coordinates directly without validation conflicts
+                            const updatedCoordinates = {
+                              ...overlay.coordinates,
+                              ...coordinates
+                            };
+                            useEditorStore.getState().updateWhiteoutOverlay(overlay.id, { coordinates: updatedCoordinates });
+                          }}
+                          onDelete={() => {
+                            console.log('⬜ Whiteout overlay deleted:', overlay.id);
+                            // Remove the overlay from the store
+                            useEditorStore.getState().deleteWhiteoutOverlay(overlay.id);
+                          }}
+                        />
+                      </div>
                     ))}
 
-                  {/* Text inputs overlay (separate from regular tags) - FIXED KEY GENERATION */}
+                  {/* Text inputs overlay (separate from regular tags) - STABLE KEY */}
                   {textInputs?.filter(textInput => textInput.coordinates.pageNumber === pageNumber).map((textInput) => {
-                    // ✅ CRITICAL FIX: Use ID as primary key to prevent duplication, fallback to coordinates only if ID is unstable
-                    const primaryKey = textInput.id && textInput.id !== 'temp' ? 
-                      `text-${textInput.id}-${scaleFactor}` : 
-                      `text-temp-${textInput.coordinates.x}-${textInput.coordinates.y}-${textInput.coordinates.pageNumber}-${scaleFactor}`;
-                    
-                    return (
-                      <StreamlinedTextInput
-                        key={primaryKey}
-                        id={textInput.id}
-                        coordinates={textInput.coordinates}
-                        sessionId={sessionId || ''}
-                        content={textInput.content}
-                        fontSize={textInput.fontSize}
-                        fontFamily={textInput.fontFamily}
-                        textColor={textInput.textColor}
-                        assignedUserId={textInput.assignedUserId}
-                        userColor={textInput.userColor}
-                        isNew={textInput.isNew}
-                        isSelected={selectedTextInputId === textInput.id}
-                        scaleFactor={scaleFactor}
-                        onSave={(content) => {
-                          onSaveTextContent?.(textInput.id, content);
-                        }}
-                        onDelete={() => {
-                          onDeleteTextInput?.(textInput.id);
-                        }}
-                        onSelect={() => {
-                          console.log('🎯 Text tag selected for resizing:', textInput.id);
-                          onTextInputSelect?.(textInput.id);
-                        }}
-                        onMove={(newCoordinates) => {
-                          console.log('📍 Text input moved:', newCoordinates);
-                          onMoveTextInput?.(textInput.id, newCoordinates);
-                        }}
-                        onResize={(newCoordinates) => {
-                          // ✅ ENHANCED: Handle text tag resize with proper WebSocket sync
-                          console.log('📏 Text tag resized - broadcasting update:', {
-                            textInputId: textInput.id,
-                            oldCoords: textInput.coordinates,
-                            newCoords: newCoordinates
-                          });
+                    // Use ID-based key to remain stable across drag/resize; temp IDs remain consistent until server id is applied
+                    const primaryKey = textInput.id ? `text-${textInput.id}` : `text-temp-${pageNumber}`;
+                     
+                     return (
+                       <StreamlinedTextInput
+                         key={primaryKey}
+                         id={textInput.id}
+                         coordinates={textInput.coordinates}
+                         sessionId={sessionId || ''}
+                         content={textInput.content}
+                         fontSize={textInput.fontSize}
+                         fontFamily={textInput.fontFamily}
+                         textColor={textInput.textColor}
+                         assignedUserId={textInput.assignedUserId}
+                         userColor={textInput.userColor}
+                         isNew={textInput.isNew}
+                         isSelected={selectedTextInputId === textInput.id}
+                         scaleFactor={scaleFactor}
+                         onSave={(content) => {
+                           onSaveTextContent?.(textInput.id, content);
+                         }}
+                         onDelete={() => {
+                           onDeleteTextInput?.(textInput.id);
+                         }}
+                         onSelect={() => {
+                           console.log('🎯 Text tag selected for resizing:', textInput.id);
+                           onTextInputSelect?.(textInput.id);
+                         }}
+                         onMove={(newCoordinates) => {
+                           console.log('📍 Text input moved:', newCoordinates);
+                           onMoveTextInput?.(textInput.id, newCoordinates);
+                         }}
+                         onResize={(newCoordinates) => {
+                           // ✅ ENHANCED: Handle text tag resize with proper WebSocket sync
+                           console.log('📏 Text tag resized - broadcasting update:', {
+                             textInputId: textInput.id,
+                             oldCoords: textInput.coordinates,
+                             newCoords: newCoordinates
+                           });
 
-                          // Update coordinates using the text input specific function
-                          onMoveTextInput?.(textInput.id, newCoordinates);
+                           // Update coordinates using the text input specific function
+                           onMoveTextInput?.(textInput.id, newCoordinates);
 
-                          // 🚀 REAL-TIME SYNC: Broadcast text tag resize via WebSocket
-                          if (webSocket && webSocket.isConnected && webSocket.isReady) {
-                            const updateMessage = {
-                              type: 'text_input_changed',
-                              payload: {
-                                textInputId: textInput.id,
-                                coordinates: {
-                                  x: newCoordinates.x,
-                                  y: newCoordinates.y,
-                                  width: newCoordinates.width,
-                                  height: newCoordinates.height,
-                                  pageNumber: textInput.coordinates.pageNumber
-                                },
-                                sessionId: sessionId || ''
-                              },
-                              userId: textInput.assignedUserId.toString(),
-                              sessionId: sessionId || '',
-                              timestamp: Date.now()
-                            };
-
-                            try {
-                              webSocket.webSocketInstance?.send(JSON.stringify(updateMessage));
-                              console.log('✅ Text tag resize broadcasted via WebSocket');
-                            } catch (error) {
-                              console.error('❌ Failed to broadcast text tag resize:', error);
-                            }
-                          } else {
-                            console.warn('⚠️ WebSocket not available for text tag resize broadcast');
-                          }
-                        }}
-                        onFontSizeChange={(fontSize) => {
-                          if (onFontSizeChange) {
-                            onFontSizeChange(textInput.id, fontSize);
-                          }
-                        }}
-                        webSocket={webSocket?.webSocketInstance}
-                      />
-                    );
-                  })}
+                           // 🚀 REAL-TIME SYNC: Broadcast text tag resize via WebSocket
+                           if (webSocket && webSocket.isConnected && webSocket.isReady) {
+                             const updateMessage = {
+                               type: 'text_input_changed',
+                               payload: {
+                                 textInputId: textInput.id,
+                                 coordinates: {
+                                   x: newCoordinates.x,
+                                   y: newCoordinates.y,
+                                   width: newCoordinates.width,
+                                   height: newCoordinates.height,
+                                   pageNumber: textInput.coordinates.pageNumber
+                                 },
+                                 updatedBy: useEditorStore.getState().currentUser?.id,
+                                 updatedByName: useEditorStore.getState().currentUser?.displayName
+                               }
+                             };
+                             console.log('📡 Broadcasting text input change:', updateMessage);
+                             webSocket.send(JSON.stringify(updateMessage));
+                           }
+                         }}
+                         webSocket={webSocket?.socket}
+                       />
+                     );
+                   })}
                 </div>
               </div>
             );

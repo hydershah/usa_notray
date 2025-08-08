@@ -821,6 +821,8 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
 
   // Handle tag click in signing mode - FIXED VERSION
   const handleTagClick = useCallback(async (tag: DocumentTag, position: { x: number; y: number; width: number; height: number }) => {
+    // Clear active tool when interacting with an existing tag to prevent dual selection
+    useEditorStore.getState().setSelectedTagType(null);
     
     // ✅ CRITICAL FIX: Clear text input selection when clicking any tag
     // This prevents the multi-selection issue where text tags stay selected
@@ -1362,8 +1364,14 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
 
   // Handle tag type selection via hotkeys
   const handleTagTypeSelect = useCallback((tagType: TagType) => {
+    // Clear any selected tag to prevent multi-selection visuals
+    useEditorStore.getState().selectTag(null);
+    // If switching to a non-text tool, ensure no text input remains selected
+    if (tagType !== 'T') {
+      try { selectTextInput(null); } catch {}
+    }
     useEditorStore.getState().setSelectedTagType(tagType);
-  }, []);
+  }, [selectTextInput]);
 
   // Handle document switching
   const handleDocumentSwitch = useCallback((document: SessionDocument) => {

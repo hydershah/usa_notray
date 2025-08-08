@@ -308,142 +308,78 @@ export function ProfessionalAssignmentWizard({
 
             <RadioGroup value={assignmentMethod} onValueChange={(value: any) => setAssignmentMethod(value)}>
               {/* Assign Myself as Notary */}
-              {isAdminAvailableAsNotary && (
-                <div className="relative group">
-                  <div className={`relative overflow-hidden rounded-xl border-2 transition-all duration-300 cursor-pointer ${
-                    assignmentMethod === 'admin_self' 
-                      ? 'border-blue-500 bg-blue-50 shadow-lg scale-[1.02]' 
-                      : 'border-gray-200 hover:border-blue-300 hover:shadow-md'
-                  }`}>
-                    <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-indigo-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                    <div className="relative p-6">
-                      <div className="flex items-start space-x-4">
-                        <RadioGroupItem value="admin_self" id="admin_self" className="mt-1" />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Shield className="h-5 w-5 text-blue-600" />
-                            <Label htmlFor="admin_self" className="text-lg font-semibold text-gray-900 cursor-pointer">
-                              Assign Myself as Notary
-                            </Label>
-                            {assignmentMethod === 'admin_self' && (
-                              <Badge className="bg-blue-100 text-blue-700 border-blue-200">
-                                <Sparkles className="h-3 w-3 mr-1" />
-                                Selected
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-600 mb-3">You will be the notary for this job</p>
-                          <div className="flex items-center text-sm text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
-                            <User className="w-4 h-4 mr-2" />
-                            Direct admin control with full oversight
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+                              {isAdminAvailableAsNotary && (
+                 <div className={`p-3 border rounded-lg transition-colors cursor-pointer ${
+                   assignmentMethod === 'admin_self' 
+                     ? 'border-blue-500 bg-blue-50' 
+                     : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+                 }`}>
+                   <div className="flex items-center space-x-3">
+                     <RadioGroupItem value="admin_self" id="admin_self" />
+                     <div className="flex-1 min-w-0">
+                       <div className="flex items-center gap-2 mb-1">
+                         <Shield className="h-4 w-4 text-blue-600" />
+                         <Label htmlFor="admin_self" className="text-sm font-medium text-gray-900 cursor-pointer">
+                           Assign Myself as Notary
+                         </Label>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               )}
 
               {/* Assign Specific Notary */}
-              <div className="relative group">
-                <div className={`relative overflow-hidden rounded-xl border-2 transition-all duration-300 cursor-pointer ${
-                  assignmentMethod === 'assign' 
-                    ? 'border-green-500 bg-green-50 shadow-lg scale-[1.02]' 
-                    : 'border-gray-200 hover:border-green-300 hover:shadow-md'
-                }`}>
-                  <div className="absolute inset-0 bg-gradient-to-r from-green-500/5 to-emerald-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                  <div className="relative p-6">
-                    <div className="flex items-start space-x-4">
-                      <RadioGroupItem value="assign" id="assign" className="mt-1" />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Target className="h-5 w-5 text-green-600" />
-                          <Label htmlFor="assign" className="text-lg font-semibold text-gray-900 cursor-pointer">
-                            Assign Specific Notary
-                          </Label>
-                          {assignmentMethod === 'assign' && (
-                            <Badge className="bg-green-100 text-green-700 border-green-200">
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              Selected
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-600 mb-3">Choose from available contractor notaries</p>
-                        <div className="flex items-center text-sm text-green-600 bg-green-50 px-3 py-2 rounded-lg">
-                          <CheckCircle className="w-4 h-4 mr-2" />
-                          Direct selection control with precision
-                        </div>
-                      </div>
+                            <div className={`p-3 border rounded-lg transition-colors cursor-pointer ${
+                assignmentMethod === 'assign' 
+                  ? 'border-green-500 bg-green-50' 
+                  : 'border-gray-200 hover:border-green-300 hover:bg-green-50'
+              }`}>
+                <div className="flex items-center space-x-3">
+                  <RadioGroupItem value="assign" id="assign" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Target className="h-4 w-4 text-green-600" />
+                      <Label htmlFor="assign" className="text-sm font-medium text-gray-900 cursor-pointer">
+                        Assign Specific Notary
+                      </Label>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Auto Assignment */}
-              <div className="relative group">
-                <div className={`relative overflow-hidden rounded-xl border-2 transition-all duration-300 cursor-pointer ${
-                  assignmentMethod === 'auto' 
-                    ? 'border-purple-500 bg-purple-50 shadow-lg scale-[1.02]' 
-                    : 'border-gray-200 hover:border-purple-300 hover:shadow-md'
-                }`}>
-                  <div className="absolute inset-0 bg-gradient-to-r from-purple-500/5 to-violet-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                  <div className="relative p-6">
-                    <div className="flex items-start space-x-4">
-                      <RadioGroupItem value="auto" id="auto" className="mt-1" />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Zap className="h-5 w-5 text-purple-600" />
-                          <Label htmlFor="auto" className="text-lg font-semibold text-gray-900 cursor-pointer">
-                            Auto Assignment
-                          </Label>
-                          {assignmentMethod === 'auto' && (
-                            <Badge className="bg-purple-100 text-purple-700 border-purple-200">
-                              <TrendingUp className="h-3 w-3 mr-1" />
-                              Selected
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-600 mb-3">System assigns best contractor notary match</p>
-                        <div className="flex items-center text-sm text-purple-600 bg-purple-50 px-3 py-2 rounded-lg">
-                          <TrendingUp className="w-4 h-4 mr-2" />
-                          Optimal matching algorithm for efficiency
-                        </div>
-                      </div>
+                            <div className={`p-3 border rounded-lg transition-colors cursor-pointer ${
+                assignmentMethod === 'auto' 
+                  ? 'border-purple-500 bg-purple-50' 
+                  : 'border-gray-200 hover:border-purple-300 hover:bg-purple-50'
+              }`}>
+                <div className="flex items-center space-x-3">
+                  <RadioGroupItem value="auto" id="auto" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Zap className="h-4 w-4 text-purple-600" />
+                      <Label htmlFor="auto" className="text-sm font-medium text-gray-900 cursor-pointer">
+                        Auto Assignment
+                      </Label>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Notary ID Code Assignment */}
-              <div className="relative group">
-                <div className={`relative overflow-hidden rounded-xl border-2 transition-all duration-300 cursor-pointer ${
-                  assignmentMethod === 'id_code' 
-                    ? 'border-orange-500 bg-orange-50 shadow-lg scale-[1.02]' 
-                    : 'border-gray-200 hover:border-orange-300 hover:shadow-md'
-                }`}>
-                  <div className="absolute inset-0 bg-gradient-to-r from-orange-500/5 to-amber-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                  <div className="relative p-6">
-                    <div className="flex items-start space-x-4">
-                      <RadioGroupItem value="id_code" id="id_code" className="mt-1" />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Hash className="h-5 w-5 text-orange-600" />
-                          <Label htmlFor="id_code" className="text-lg font-semibold text-gray-900 cursor-pointer">
-                            Enter Notary ID Code
-                          </Label>
-                          {assignmentMethod === 'id_code' && (
-                            <Badge className="bg-orange-100 text-orange-700 border-orange-200">
-                              <Award className="h-3 w-3 mr-1" />
-                              Selected
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-600 mb-3">Assign a specific notary using their ID code</p>
-                        <div className="flex items-center text-sm text-orange-600 bg-orange-50 px-3 py-2 rounded-lg">
-                          <Hash className="w-4 h-4 mr-2" />
-                          Direct assignment by code for quick access
-                        </div>
-                      </div>
+                            <div className={`p-3 border rounded-lg transition-colors cursor-pointer ${
+                assignmentMethod === 'id_code' 
+                  ? 'border-orange-500 bg-orange-50' 
+                  : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50'
+              }`}>
+                <div className="flex items-center space-x-3">
+                  <RadioGroupItem value="id_code" id="id_code" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Hash className="h-4 w-4 text-orange-600" />
+                      <Label htmlFor="id_code" className="text-sm font-medium text-gray-900 cursor-pointer">
+                        Enter Notary ID Code
+                      </Label>
                     </div>
                   </div>
                 </div>

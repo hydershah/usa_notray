@@ -11411,9 +11411,11 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
             structuredContentData = {
               type: 'text',
               value: finalContent,
+              // If content looks like an image, mark it so viewer/PDF can render it correctly
+              contentType: isImageContent ? 'image' : 'text',
               timestamp: new Date().toISOString()
             };
-            finalContentType = 'text';
+            finalContentType = isImageContent ? 'image' : 'text';
             break;
         }
       }

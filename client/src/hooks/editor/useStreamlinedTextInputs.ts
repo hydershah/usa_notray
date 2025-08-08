@@ -38,6 +38,8 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
   const [textInputs, setTextInputs] = useState<StreamlinedTextInput[]>([]);
   const [selectedTextInputId, setSelectedTextInputId] = useState<string | null>(null);
   const pendingCreations = useRef<Set<string>>(new Set());
+  // Track last local coordinate updates to suppress echo from websocket
+  const lastLocalCoordinateUpdateAt = useRef<Map<string, number>>(new Map());
   const { toast } = useToast();
 
   // 🚧 Ensure unique text input IDs – remove accidental duplicates (e.g., when optimistic + WebSocket updates overlap)
@@ -158,12 +160,38 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
               }
 
               // Attempt to find a matching optimistic temp input by coordinates (same page & close x/y)
-              const tempMatchIndex = prev.findIndex(input => {
+              // Increase tolerance to account for rounding/snap adjustments and async races
+              const COORD_TOLERANCE = 8; // px in PDF units
+              let tempMatchIndex = prev.findIndex(input => {
                 const samePage = input.coordinates.pageNumber === newTextInput.coordinates.pageNumber;
-                const closePosition = Math.abs(input.coordinates.x - newTextInput.coordinates.x) < 0.5 &&
-                                      Math.abs(input.coordinates.y - newTextInput.coordinates.y) < 0.5;
+                const closePosition = Math.abs(input.coordinates.x - newTextInput.coordinates.x) < COORD_TOLERANCE &&
+                                      Math.abs(input.coordinates.y - newTextInput.coordinates.y) < COORD_TOLERANCE;
                 return samePage && closePosition && input.id.startsWith('text_temp_');
               });
+
+              // Fallback: if no close match, replace the most recent temp on the same page if reasonably near
+              if (tempMatchIndex === -1) {
+                const RECENT_MS = 3000; // created within last 3s
+                const NEAR_TOLERANCE = 24; // looser distance for fallback
+                let nearestIdx = -1;
+                let nearestDist = Number.POSITIVE_INFINITY;
+                const now = Date.now();
+                prev.forEach((input, idx) => {
+                  if (!input.id.startsWith('text_temp_')) return;
+                  if (input.coordinates.pageNumber !== newTextInput.coordinates.pageNumber) return;
+                  if (now - new Date(input.createdAt).getTime() > RECENT_MS) return;
+                  const dx = (input.coordinates.x - newTextInput.coordinates.x);
+                  const dy = (input.coordinates.y - newTextInput.coordinates.y);
+                  const d = Math.hypot(dx, dy);
+                  if (d < nearestDist) {
+                    nearestDist = d;
+                    nearestIdx = idx;
+                  }
+                });
+                if (nearestIdx !== -1 && nearestDist <= NEAR_TOLERANCE) {
+                  tempMatchIndex = nearestIdx;
+                }
+              }
 
               if (tempMatchIndex !== -1) {
                 // Replace the temp entry with the real one while preserving any local edits
@@ -255,23 +283,37 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
             currentlySelected: selectedTextInputId === data.textInputId
           });
           
+          // Suppress echo of our own recent updates (within 700ms)
+          const lastAt = lastLocalCoordinateUpdateAt.current.get(data.textInputId) || 0;
+          if (Date.now() - lastAt < 700) {
+            console.log('⏭️ Skipping echo coordinate update shortly after local change:', data.textInputId);
+            break;
+          }
+
           setTextInputs(prev => prev.map(input => {
-            if (input.id === data.textInputId) {
-              console.log('✅ Updated text input coordinates from WebSocket:', {
-                id: data.textInputId,
-                oldCoords: input.coordinates,
-                newCoords: data.coordinates,
-                fromUser: data.updatedByName
-              });
-              return { 
-                ...input, 
-                coordinates: {
-                  ...input.coordinates,
-                  ...data.coordinates
-                }
-              };
+            if (input.id !== data.textInputId) return input;
+            const newC = data.coordinates;
+            const oldC = input.coordinates;
+            const same = Math.abs((oldC.x ?? 0) - (newC.x ?? oldC.x)) < 0.25 &&
+                        Math.abs((oldC.y ?? 0) - (newC.y ?? oldC.y)) < 0.25 &&
+                        Math.abs((oldC.width ?? 0) - (newC.width ?? oldC.width)) < 0.25 &&
+                        Math.abs((oldC.height ?? 0) - (newC.height ?? oldC.height)) < 0.25;
+            if (same) {
+              return input; // avoid redundant state churn
             }
-            return input;
+            console.log('✅ Applied remote coordinate update:', {
+              id: data.textInputId,
+              oldCoords: oldC,
+              newCoords: newC,
+              fromUser: data.updatedByName
+            });
+            return {
+              ...input,
+              coordinates: {
+                ...oldC,
+                ...newC
+              }
+            };
           }));
           break;
           
@@ -528,6 +570,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           }
 
           console.log(`✅ Text input ${textInputId} moved to coordinates:`, coordinates);
+          lastLocalCoordinateUpdateAt.current.set(textInputId, Date.now());
           debouncedCoordinateUpdates.current.delete(textInputId);
         } catch (error) {
           console.error('❌ Failed to update text input coordinates on server:', error);
@@ -739,6 +782,14 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
   // Select text input
   const selectTextInput = useCallback((textInputId: string | null) => {
     setSelectedTextInputId(textInputId);
+    try {
+      // Reflect selection globally so keyboard shortcuts can be suppressed
+      ((useEditorStore.getState() as any).setActiveTextInputId)?.(textInputId);
+      // When selecting a text input, clear any active tool to prevent dual selection
+      if (textInputId) {
+        useEditorStore.getState().setSelectedTagType(null);
+      }
+    } catch {}
   }, []);
 
   return {

@@ -256,7 +256,7 @@ export const VideoIntegration: React.FC<VideoIntegrationProps> = ({
           <div className="space-y-2">
             <h4 className="text-sm font-medium">Participants:</h4>
             <div className="flex flex-wrap gap-2 justify-center">
-              <Badge variant="secondary" className="bg-purple-100 text-purple-800">
+                             <Badge variant="secondary" className="bg-blue-100 text-blue-800">
                 {effectiveCurrentUser.name} (You - {effectiveCurrentUser.role})
               </Badge>
               {effectiveParticipants.map(participant => (

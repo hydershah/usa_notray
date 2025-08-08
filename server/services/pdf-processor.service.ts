@@ -7,6 +7,10 @@ import { eq } from 'drizzle-orm';
 import { TAG_TYPES } from '../../shared/schema';
 import { DigitalSignatureService } from './digital-signature-service';
 
+// In our viewer, stored coordinates are in the same space as PDF points (pdf.js viewport scale 1),
+// so use a 1:1 conversion to avoid drift.
+const PX_TO_PT = 1;
+
 export interface ProcessedDocument {
   buffer: Buffer;
   fileName: string;
@@ -121,10 +125,14 @@ export class PDFProcessorService {
     pageHeight: number
   ): Promise<void> {
     try {
-      // Convert coordinates (PDF origin is bottom-left, tags are stored as lower-left corner)
-      // Since tags are stored as lower-left corner, we need to convert to PDF's bottom-left
-      const pdfY = pageHeight - tag.y;
-      
+      // Convert editor-stored coords (top-left origin) to PDF points (bottom-left origin)
+      const xPt = tag.x * PX_TO_PT;
+      const widthPt = tag.width * PX_TO_PT;
+      const heightPt = tag.height * PX_TO_PT;
+      const yTopPt = tag.y * PX_TO_PT;
+      // PDF uses bottom-left origin; editor stores top-left. Adjust by subtracting both y and height.
+      const pdfY = pageHeight - yTopPt - heightPt;
+
       const tagInfo = TAG_TYPES[tag.tagType as keyof typeof TAG_TYPES];
       
       // Parse contentData if available
@@ -144,7 +152,7 @@ export class PDFProcessorService {
       // Determine styling based on tag type
       const isNotaryTag = ['N', 'X', 'O', 'E'].includes(tag.tagType);
       const currentFont = isNotaryTag ? boldFont : font;
-      const fontSize = this.getFontSize(tag.tagType, tag.width, tag.height, contentData);
+      const fontSize = this.getFontSize(tag.tagType, widthPt, heightPt, contentData);
       const textColor = this.getTagColor(tag.tagType, contentData);
       
       // Handle special tag types
@@ -154,15 +162,15 @@ export class PDFProcessorService {
           const sealImageContent = await this.extractImageContent(contentData, content);
           if (sealImageContent) {
             // Draw actual seal image
-            await this.drawSignatureImage(page, tag.x, pdfY, tag.width, tag.height, sealImageContent);
+            await this.drawSignatureImage(page, xPt, pdfY, widthPt, heightPt, sealImageContent);
           } else {
             // Draw placeholder seal
-            await this.drawNotarySeal(page, tag.x, pdfY, tag.width, tag.height, content);
+            await this.drawNotarySeal(page, xPt, pdfY, widthPt, heightPt, content);
           }
           break;
           
         case 'W': // Whiteout
-          this.drawWhiteout(page, tag.x, pdfY, tag.width, tag.height);
+          this.drawWhiteout(page, xPt, pdfY, widthPt, heightPt);
           break;
           
         case 'S': // Signature
@@ -171,21 +179,21 @@ export class PDFProcessorService {
           const imageContent = await this.extractImageContent(contentData, content);
           if (imageContent) {
             // Draw actual signature image
-            await this.drawSignatureImage(page, tag.x, pdfY, tag.width, tag.height, imageContent);
+            await this.drawSignatureImage(page, xPt, pdfY, widthPt, heightPt, imageContent);
           } else {
             // Draw text signature/initials
-            this.drawTextField(page, tag.x, pdfY, tag.width, tag.height, content, currentFont, fontSize, textColor);
+            this.drawTextField(page, xPt, pdfY, widthPt, heightPt, content, currentFont, fontSize, textColor);
           }
           break;
           
         default: // Text fields
-          // SPECIFIC ADJUSTMENT: Text tags need a slight upward offset
-          const adjustedY = tag.tagType === 'T' ? pdfY + (fontSize * 0.1) : pdfY;
-          this.drawTextField(page, tag.x, adjustedY, tag.width, tag.height, content, currentFont, fontSize, textColor);
+          // Slight upward offset for text tags to match editor visual
+      const adjustedY = tag.tagType === 'T' ? pdfY + (fontSize * 0.1) : pdfY;
+          this.drawTextField(page, xPt, adjustedY, widthPt, heightPt, content, currentFont, fontSize, textColor);
           break;
       }
       
-      console.log(`✅ Applied tag ${tag.tagType} at (${tag.x}, ${tag.y}) with content: ${tag.isCompleted ? 'COMPLETED' : 'placeholder'}`);
+      console.log(`✅ Applied tag ${tag.tagType} at (${xPt}, ${pdfY}) with content: ${tag.isCompleted ? 'COMPLETED' : 'placeholder'}`);
       
     } catch (error) {
       console.error(`❌ Failed to apply tag ${tag.tagType}:`, error);
@@ -586,15 +594,14 @@ export class PDFProcessorService {
    * Get appropriate font size for tag
    */
   private getFontSize(tagType: string, width: number, height: number, contentData?: any): number {
-    // If user has set a custom fontSize in contentData, use that
+    // If user has set a custom fontSize in contentData, treat it as points directly
     if (contentData?.fontSize && typeof contentData.fontSize === 'number') {
-      // Ensure font size is within reasonable bounds
       const customFontSize = Math.max(6, Math.min(contentData.fontSize, 72));
-      console.log(`🎨 Using custom font size ${customFontSize} for tag type ${tagType}`);
+      console.log(`🎨 Using custom font size ${customFontSize}pt for tag type ${tagType}`);
       return customFontSize;
     }
     
-    // Otherwise, calculate based on tag dimensions (existing logic)
+    // Otherwise, calculate based on tag dimensions (width/height are in pt)
     const baseSize = Math.min(width / 8, height * 0.6);
     
     let calculatedFontSize: number;
@@ -611,7 +618,7 @@ export class PDFProcessorService {
         break;
     }
     
-    console.log(`📏 Calculated font size ${calculatedFontSize} for tag type ${tagType} (dimensions: ${width}x${height})`);
+    console.log(`📏 Calculated font size ${calculatedFontSize}pt for tag type ${tagType} (dimensions: ${width}x${height} pt)`);
     return calculatedFontSize;
   }
 

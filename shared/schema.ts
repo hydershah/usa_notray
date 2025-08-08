@@ -1838,7 +1838,7 @@ export const USER_COLORS = [
   '#1e40af', // Professional Blue (notary)
   '#7c2d12', // Professional Brown (admin)
   '#059669', // Professional Green (signer1)
-  '#7c3aed', // Professional Purple (signer2)
+      '#2563eb', // Professional Blue (signer2)
   '#dc2626', // Professional Red (signer3)
   '#ea580c', // Professional Orange (signer4)
   '#0891b2', // Professional Cyan (signer5)

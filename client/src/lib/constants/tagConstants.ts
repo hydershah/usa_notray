@@ -238,9 +238,9 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Enter text',
     color: '#f8fafc', // Slightly lighter background
     borderColor: '#475569', // Darker border for better contrast
-    defaultWidth: 120,  // Reduced size
-    defaultHeight: 25,  // Reduced size
-    minWidth: 100,
+    defaultWidth: 100,  // Smaller default width
+    defaultHeight: 22,  // Smaller default height
+    minWidth: 80,
     minHeight: 20,
     allowResize: true,
     allowTextInput: true

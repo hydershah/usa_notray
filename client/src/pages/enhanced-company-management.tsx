@@ -226,7 +226,7 @@ export default function EnhancedCompanyManagement() {
   const getPaymentMethodBadge = (method: string) => {
     const colors = {
       invoiced: "bg-blue-100 text-blue-800",
-      qualia: "bg-purple-100 text-purple-800",
+             qualia: "bg-blue-100 text-blue-800",
       pre_pay: "bg-green-100 text-green-800"
     };
 

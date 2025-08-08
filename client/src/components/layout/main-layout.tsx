@@ -60,7 +60,7 @@ export function MainLayout({ children, hideSidebar = false }: MainLayoutProps) {
   const breadcrumbs = getBreadcrumbs();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/50">
       {!hideSidebar && <Header />}
       {!hideSidebar && <NotificationBar />}
       <div className={cn(
@@ -92,10 +92,10 @@ export function MainLayout({ children, hideSidebar = false }: MainLayoutProps) {
         )}>
           {/* Background Pattern */}
           <div className="absolute inset-0 opacity-50">
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-50/50 via-transparent to-purple-50/50"></div>
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-50/50 via-transparent to-blue-50/50"></div>
             <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-100/30 rounded-full mix-blend-multiply filter blur-xl animate-pulse"></div>
-            <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-purple-100/30 rounded-full mix-blend-multiply filter blur-xl animate-pulse" style={{ animationDelay: '2s' }}></div>
-            <div className="absolute bottom-1/4 left-1/3 w-96 h-96 bg-indigo-100/30 rounded-full mix-blend-multiply filter blur-xl animate-pulse" style={{ animationDelay: '4s' }}></div>
+            <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-blue-200/30 rounded-full mix-blend-multiply filter blur-xl animate-pulse" style={{ animationDelay: '2s' }}></div>
+            <div className="absolute bottom-1/4 left-1/3 w-96 h-96 bg-blue-300/30 rounded-full mix-blend-multiply filter blur-xl animate-pulse" style={{ animationDelay: '4s' }}></div>
           </div>
           
           <div className="relative z-10 p-2 sm:p-4 lg:p-6 max-w-7xl mx-auto flex-1 flex flex-col w-full">

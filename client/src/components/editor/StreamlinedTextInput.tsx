@@ -86,6 +86,9 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   const [inputValue, setInputValue] = useState(content);
   const [isEditing, setIsEditing] = useState(isNew);
   const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  // Keep a local live position in pixels for ultra-smooth dragging
+  const [livePosition, setLivePosition] = useState<{ x: number; y: number } | null>(null);
   
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -122,12 +125,19 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   const displayCoords = {
     x: coordinates.x * scaleFactor,
     y: coordinates.y * scaleFactor,
-    // For text inputs, use consistent dimensions from constants
-    width: fixedDimensions.width,
-    height: fixedDimensions.height
+    // Use saved dimensions with fallback, and scale to current zoom
+    width: (coordinates.width || fixedDimensions.width) * scaleFactor,
+    height: (coordinates.height || fixedDimensions.height) * scaleFactor
   };
 
-  // Simple resize and edit controls
+  // Keep local live position in sync when not dragging
+  useEffect(() => {
+    if (!isDragging) {
+      setLivePosition({ x: displayCoords.x, y: displayCoords.y });
+    }
+  }, [displayCoords.x, displayCoords.y, isDragging]);
+
+  // Allow width-only manual resizing
   const enableResizing = {
     top: false,
     right: true,
@@ -140,6 +150,12 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   };
   
   const canEdit = true; // Always allow editing for text inputs
+
+  // Min/Max constraints for resize
+  const minWidthPx = (fixedDimensions.minWidth || 80) * scaleFactor;
+  const maxWidthPx = 800 * scaleFactor; // generous maximum
+  const minHeightPx = (fixedDimensions.minHeight || 20) * scaleFactor;
+  const maxHeightPx = 120 * scaleFactor; // keep single-line ergonomics
   
   // Memoized professional styling
   const professionalStyle = useMemo(() => getTagStyle('T', isSelected, hasContent, userColor), [hasContent, isSelected, userColor]);
@@ -191,45 +207,52 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   // Save content with debouncing
   const debouncedSave = useCallback(
     debounce(async (value: string) => {
-    try {
-      const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${id}/content`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-            content: value,
-            fontSize: 14,
-            fontFamily: TYPOGRAPHY.fontFamily,
-            textColor: PROFESSIONAL_COLORS.text
-        })
-      });
+      // Optimistically update local store immediately so typing persists
+      onSave(value);
 
-      if (!response.ok) {
+      // If this is a temporary ID, skip server save until real ID is assigned
+      const isTempId = id.startsWith('text_temp_') || id.startsWith('temp');
+      if (isTempId) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${id}/content`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+              content: value,
+              fontSize: 14,
+              fontFamily: TYPOGRAPHY.fontFamily,
+              textColor: PROFESSIONAL_COLORS.text
+          })
+        });
+
+        if (!response.ok) {
           throw new Error(`Failed to save: ${response.status}`);
         }
 
         // Broadcast via WebSocket
-      if (webSocket && webSocket.readyState === WebSocket.OPEN) {
-        webSocket.send(JSON.stringify({
-          type: 'text_input_saved',
-          payload: {
-            textInputId: id,
+        if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+          webSocket.send(JSON.stringify({
+            type: 'text_input_saved',
+            payload: {
+              textInputId: id,
               content: value,
-            coordinates,
+              coordinates,
               sessionId
-          },
-          userId: assignedUserId.toString(),
-          timestamp: Date.now()
-        }));
-      }
-      
-        onSave(value);
-    } catch (error) {
+            },
+            userId: assignedUserId.toString(),
+            timestamp: Date.now()
+          }));
+        }
+      } catch (error) {
         console.error('Save failed:', error);
-      toast({
-        title: "Save Error",
+        toast({
+          title: "Save Error",
           description: "Failed to save text content",
           variant: "destructive"
         });
@@ -266,38 +289,17 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     }
   };
 
-  // Throttle drag updates for smooth performance
-  const throttledOnMove = useRef<((coords: any) => void) | null>(null);
-  
-  useEffect(() => {
-    let lastUpdate = 0;
-    throttledOnMove.current = (coords: any) => {
-      const now = Date.now();
-      if (now - lastUpdate > 33) { // ~30fps throttling for smooth drag (reduced from 120fps)
-        if (onMove) {
-          onMove(coords);
-        }
-        lastUpdate = now;
-      }
-    };
-  }, [onMove]);
-
+  // We avoid store updates during drag for ultra-smooth movement; persist on drag stop only
+ 
   // Handle drag events with smooth updates
   const handleDragStart = useCallback(() => {
     setIsDragging(true);
   }, []);
 
   const handleDrag = useCallback((e: any, data: any) => {
-    if (!throttledOnMove.current) return;
-    
-    // Smooth drag updates without snap-to-grid during drag for better performance
-    const newCoordinates = {
-      x: data.x / scaleFactor,
-      y: data.y / scaleFactor
-    };
-    
-    throttledOnMove.current(newCoordinates);
-  }, [scaleFactor]);
+    // Update only local pixel position; skip store updates until drag stops
+    setLivePosition({ x: data.x, y: data.y });
+  }, []);
 
   const handleDragStop = useCallback((e: any, data: any) => {
     setIsDragging(false);
@@ -313,24 +315,17 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   }, [scaleFactor, onMove]);
 
   // Handle resize
+  const handleResizeStart = useCallback(() => {
+    setIsResizing(true);
+  }, []);
+
   const handleResize = useCallback((e: any, direction: any, ref: any, delta: any, position: any) => {
-    // Update controlled size immediately for responsive UI
+    // Update local visual size only; do not persist mid-resize to avoid jitter
     setControlledSize({
       width: ref.offsetWidth,
       height: ref.offsetHeight
     });
-    
-    // Also call onResize if provided
-    if (onResize) {
-      const newCoordinates = {
-        x: position.x / scaleFactor,
-        y: position.y / scaleFactor,
-        width: ref.offsetWidth / scaleFactor,
-        height: ref.offsetHeight / scaleFactor
-      };
-      onResize(newCoordinates);
-    }
-  }, [scaleFactor, onResize]);
+  }, []);
 
   const handleResizeStop = useCallback((e: any, direction: any, ref: any, delta: any, position: any) => {
     // Update controlled size
@@ -353,6 +348,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
         height: Math.max(snappedHeight, 20) // Minimum height
       });
     }
+    setIsResizing(false);
   }, [scaleFactor, onResize]);
 
   // Handle container click
@@ -378,19 +374,74 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     }
   };
 
+  // Measure text width to auto-grow container horizontally (single line)
+  const measureTextWidth = useCallback((text: string, fontPx: number, family: string) => {
+    if (typeof document === 'undefined') return 0;
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return 0;
+    context.font = `${fontPx}px ${family}`;
+    const metrics = context.measureText(text || '');
+    return metrics.width;
+  }, []);
+
+  // Auto-resize width (grow and retract) while editing; keep height as-is
+  useEffect(() => {
+    if (!isEditing || isResizing) return;
+    const paddingPx = 8; // left padding 4px + small buffer
+    const baseMinWidthPx = fixedDimensions.width * scaleFactor; // constant min width
+    const measuredPx = measureTextWidth(inputValue, fontSize, fontFamily) + paddingPx;
+    const desiredWidthPx = Math.max(baseMinWidthPx, Math.ceil(measuredPx));
+    const desiredWidthUnscaled = desiredWidthPx / scaleFactor;
+
+    // Trigger when width meaningfully changed (allows shrink and expand)
+    const currentWidthUnscaled = coordinates.width || fixedDimensions.width;
+    if (onResize && Math.abs(currentWidthUnscaled - desiredWidthUnscaled) > 0.5) {
+      onResize({
+        x: coordinates.x,
+        y: coordinates.y,
+        width: desiredWidthUnscaled,
+        height: coordinates.height || fixedDimensions.height
+      });
+    }
+  }, [isEditing, isResizing, inputValue, fontSize, fontFamily, scaleFactor, coordinates.x, coordinates.y, coordinates.width, coordinates.height, fixedDimensions.width, fixedDimensions.height, onResize, measureTextWidth]);
+
+  // Ensure height fits font size when font changes (single-line field)
+  useEffect(() => {
+    if (isResizing) return;
+    const minHeight = Math.max(fixedDimensions.height, Math.ceil(fontSize + 6));
+    const currentHeight = coordinates.height || fixedDimensions.height;
+    if (onResize && minHeight - currentHeight > 0.5) {
+      onResize({
+        x: coordinates.x,
+        y: coordinates.y,
+        width: coordinates.width || fixedDimensions.width,
+        height: minHeight
+      });
+    }
+  }, [fontSize, isResizing, coordinates.x, coordinates.y, coordinates.width, coordinates.height, fixedDimensions.width, fixedDimensions.height, onResize]);
+
   return (
     <Rnd
-      size={{ width: displayCoords.width, height: displayCoords.height }}
-      position={{ x: displayCoords.x, y: displayCoords.y }}
+      size={{ width: isResizing ? controlledSize.width : displayCoords.width, height: isResizing ? controlledSize.height : displayCoords.height }}
+      position={isDragging && livePosition ? livePosition : { x: displayCoords.x, y: displayCoords.y }}
       onDrag={handleDrag}
+      onDragStart={handleDragStart}
       onDragStop={handleDragStop}
+      onResizeStart={handleResizeStart}
       onResize={handleResize}
       onResizeStop={handleResizeStop}
       enableResizing={enableResizing}
       disableDragging={!canEdit}
       bounds="parent"
       cancel=".no-drag"
-      className={`
+      minWidth={minWidthPx}
+      maxWidth={maxWidthPx}
+      minHeight={minHeightPx}
+      maxHeight={maxHeightPx}
+      dragGrid={[1, 1]}
+      className={
+        `
         professional-text-tag
         ${isSelected ? 'selected' : ''}
         ${isDragging ? 'dragging' : ''}
@@ -403,11 +454,13 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
             ? 'none' 
             : `1px solid ${PROFESSIONAL_COLORS.border}`,
         borderRadius: LAYOUT.borderRadius.base,
-        backgroundColor: hasContent ? 'transparent' : PROFESSIONAL_COLORS.background,
+        // Very light gray background when empty for better visibility
+        backgroundColor: hasContent ? 'transparent' : '#f3f4f6',
         pointerEvents: 'auto',
         zIndex: isSelected ? 1000 : 100,
         padding: '0', // SIMPLE: No padding on container
-        boxSizing: 'border-box'
+        boxSizing: 'border-box',
+        cursor: isEditing ? 'text' : 'grab'
       }}
     >
       <div
@@ -462,7 +515,8 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
               padding: '0',
               paddingLeft: '4px', // Same 4px left padding as PDF
               textAlign: 'left',
-              lineHeight: '1'
+              lineHeight: '1',
+              whiteSpace: 'nowrap'
             }}
           />
         ) : (
@@ -476,13 +530,13 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
               paddingLeft: '4px', // Same 4px left padding as PDF processor
               overflow: 'visible',
               textOverflow: 'clip',
-              whiteSpace: 'normal',
+              whiteSpace: 'nowrap',
               color: hasContent ? textColor : PROFESSIONAL_COLORS.textPlaceholder,
               fontStyle: hasContent ? 'normal' : 'italic',
               fontFamily: fontFamily,
               fontSize: `${fontSize}px`,
-              wordWrap: 'break-word',
-              overflowWrap: 'break-word',
+              wordWrap: 'normal',
+              overflowWrap: 'normal',
               lineHeight: '1'
             }}
           >

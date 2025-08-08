@@ -62,7 +62,7 @@ export const SessionStatus: React.FC<SessionStatusProps> = ({
       case 'paused':
         return { text: 'Paused', color: 'bg-yellow-100 text-yellow-800', icon: <AlertTriangle className="h-3 w-3" /> };
       case 'completing':
-        return { text: 'Completing', color: 'bg-purple-100 text-purple-800', icon: <TrendingUp className="h-3 w-3" /> };
+        return { text: 'Completing', color: 'bg-blue-100 text-blue-800', icon: <TrendingUp className="h-3 w-3" /> };
       case 'completed':
         return { text: 'Completed', color: 'bg-gray-100 text-gray-800', icon: <CheckCircle className="h-3 w-3" /> };
       default:
