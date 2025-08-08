@@ -471,25 +471,24 @@ export const useEditorStore = create<EditorStore>()(
       },
       
       getTagDimensions: (tagType) => {
-        // First check for custom dimensions
+        // Handle undefined tagType early
+        if (!tagType || typeof tagType !== 'string') {
+          return { width: 120, height: 25, minWidth: 60, minHeight: 25 };
+        }
+
+        // Check for custom dimensions first
         const customDimensions = get().customTagDimensions[tagType];
-        console.log(`🔧 getTagDimensions called - tagType: ${tagType}, custom dimensions:`, customDimensions);
-        
         if (customDimensions) {
-          console.log(`✅ Using custom dimensions for ${tagType}:`, customDimensions);
-          return customDimensions;
+          return {
+            width: customDimensions.width,
+            height: customDimensions.height,
+            minWidth: 60, // Use default min values
+            minHeight: 25
+          };
         }
         
         // Fall back to default dimensions from tagConstants
-        try {
-          const defaultDimensions = getDefaultTagDimensions(tagType);
-          console.log(`✅ Using default dimensions for ${tagType}:`, defaultDimensions);
-          return defaultDimensions;
-        } catch (error) {
-          console.error(`❌ Could not get dimensions for tag type: ${tagType}`, error);
-          // Return a safe fallback
-          return { width: 120, height: 25 };
-        }
+        return getDefaultTagDimensions(tagType);
       },
       
       clearCustomTagDimensions: () => {

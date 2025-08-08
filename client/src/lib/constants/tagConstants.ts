@@ -261,8 +261,19 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
 };
 
 // Utility functions
-export const getTagDimensions = (tagType: TagType) => {
-  const config = TAG_TYPE_CONFIG[tagType];
+export const getTagDimensions = (tagType?: TagType | string) => {
+  // Handle undefined or invalid tagType gracefully
+  if (!tagType || typeof tagType !== 'string') {
+    console.warn(`Invalid tag type: ${tagType}, using default dimensions`);
+    return {
+      width: 120,
+      height: 25,
+      minWidth: 60,
+      minHeight: 25
+    };
+  }
+
+  const config = TAG_TYPE_CONFIG[tagType as TagType];
   if (!config) {
     console.warn(`Unknown tag type: ${tagType}, using default dimensions`);
     return {
@@ -272,6 +283,7 @@ export const getTagDimensions = (tagType: TagType) => {
       minHeight: 25
     };
   }
+  
   return {
     width: config.defaultWidth,
     height: config.defaultHeight,

@@ -147,6 +147,34 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     }
   }
   
+  // Detect image content for S/I/E tags to render image instead of raw URL text
+  const contentDataObj = useMemo(() => {
+    try {
+      if (!tag.contentData) return undefined as any;
+      return typeof tag.contentData === 'string' ? JSON.parse(tag.contentData) : (tag.contentData as any);
+    } catch {
+      return undefined as any;
+    }
+  }, [tag.contentData]);
+  
+  const isImageTag = tag.tagType === 'S' || tag.tagType === 'I' || tag.tagType === 'E';
+  
+  const looksLikeImage = (val?: string) =>
+    !!val && (
+      val.startsWith('data:image/') ||
+      val.startsWith('http') ||
+      val.includes('vultrobjects.com') ||
+      /\.(png|jpg|jpeg|webp|gif|svg)(\?|$)/i.test(val)
+    );
+  
+  const imageSrc = useMemo(() => {
+    const cd: any = contentDataObj;
+    const candidate = cd?.stampImageUrl || cd?.imageUrl || cd?.value || tag.content;
+    return typeof candidate === 'string' ? candidate : undefined;
+  }, [contentDataObj, tag.content]);
+  
+  const shouldRenderImage = isImageTag && !imageLoadError && ((contentDataObj as any)?.contentType === 'image' || looksLikeImage(imageSrc));
+  
   const currentFontSize =
     liveFontSize !== undefined
       ? liveFontSize
@@ -182,16 +210,15 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   }, [tag.content, tag.tagType, currentFontSize, fixedDimensions.width, fixedDimensions.height]);
   
   const displayCoords = useMemo(() => {
-    // Use actual saved coordinates for width/height instead of optimal dimensions
-    const savedWidth = tag.coordinates.width || optimalDimensions.width;
-    const savedHeight = tag.coordinates.height || optimalDimensions.height;
+    // Use actual saved coordinates for width/height or fall back to optimal/fixed
+    const savedWidth = tag.coordinates.width ?? fixedDimensions.width;
+    const savedHeight = tag.coordinates.height ?? fixedDimensions.height;
     
     const coords = {
       x: isDragging && dragCoords ? dragCoords.x : Math.round(tag.coordinates.x * scaleFactor),
       y: isDragging && dragCoords ? dragCoords.y : Math.round(tag.coordinates.y * scaleFactor),
-      // Use consistent dimensions from constants for all tag types
-      width: Math.round(fixedDimensions.width * scaleFactor),
-      height: Math.round(fixedDimensions.height * scaleFactor)
+      width: Math.round(savedWidth * scaleFactor),
+      height: Math.round(savedHeight * scaleFactor)
     };
     
     // Debug logging for all tags
@@ -205,7 +232,7 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     });
     
     return coords;
-  }, [tag.coordinates.x, tag.coordinates.y, tag.coordinates.width, tag.coordinates.height, scaleFactor, optimalDimensions.width, optimalDimensions.height]);
+  }, [tag.coordinates.x, tag.coordinates.y, tag.coordinates.width, tag.coordinates.height, scaleFactor, fixedDimensions.width, fixedDimensions.height]);
 
   const hasContent = useMemo(() => !!(tag.content || tag.contentData || tag.isCompleted), [tag.content, tag.contentData, tag.isCompleted]);
 
@@ -345,103 +372,40 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   const handleResize = (e: any, direction: any, ref: any, delta: any, position: any) => {
     if (!canEdit) return;
     
-    // For text tags, calculate font size change based on resize distance and let container auto-fit
-    if (tag.tagType === 'T') {
-      // Use the dominant resize direction (width or height) to determine font scaling
-      const widthChange = delta.width;
-      const heightChange = delta.height;
-      const primaryChange = Math.abs(widthChange) > Math.abs(heightChange) ? widthChange : heightChange;
-      
-      // More sensitive scaling: 50px = 1px font change for better control
-      const fontSizeChange = primaryChange / (scaleFactor * 50);
-      let newFontSize = currentFontSize + fontSizeChange;
-      newFontSize = Math.max(8, Math.min(48, newFontSize));
-      setLiveFontSize(newFontSize);
-      
-      // Let the container auto-size to text - don't update coordinates during resize
-      // This allows the container to naturally fit the text content
-    } else {
-      // For non-text tags, update size normally (NO font size change)
-      const newCoordinates = validateAndSanitizeCoordinates({
-        width: ref.offsetWidth / scaleFactor,
-        height: ref.offsetHeight / scaleFactor
-      });
+    // Simple resize handling - just update dimensions
+    const newCoordinates = {
+      width: ref.offsetWidth / scaleFactor,
+      height: ref.offsetHeight / scaleFactor
+    };
+    
+    // Validate coordinates
+    if (isFinite(newCoordinates.width) && isFinite(newCoordinates.height) && 
+        newCoordinates.width > 0 && newCoordinates.height > 0) {
       onUpdate(newCoordinates);
     }
   };
 
   const handleResizeStop = (e: any, direction: any, ref: any, delta: any, position: any) => {
-    console.log('📏 Tag resize stop triggered:', {
-      tagId: tag.id,
-      tagType: tag.tagType,
-      canEdit,
-      hasOnSave: !!onSave,
-      newWidth: ref.offsetWidth,
-      newHeight: ref.offsetHeight,
-      scaleFactor
-    });
-    
     if (!canEdit || !onSave) {
-      console.warn('❌ Cannot resize tag - missing permissions or save function:', { canEdit, hasOnSave: !!onSave });
       return;
     }
-    setLiveFontSize(undefined); // Reset live font size after drag
     
-    // Get manual resize dimensions
-    const manualWidth = ref.offsetWidth / scaleFactor;
-    const manualHeight = ref.offsetHeight / scaleFactor;
+    // Simple resize stop handling - get final dimensions
+    const finalWidth = ref.offsetWidth / scaleFactor;
+    const finalHeight = ref.offsetHeight / scaleFactor;
     
-    let finalWidth = manualWidth;
-    let finalHeight = manualHeight;
-    
-    // Only calculate optimal dimensions for text tags (type 'T')
-    if (tag.tagType === 'T') {
-      const content = tag.content || '';
-      const optimalWidth = calculateOptimalWidth(content, currentFontSize, TYPOGRAPHY.fontFamily);
-      const optimalHeight = calculateOptimalHeight(content, currentFontSize);
+    // Validate and save coordinates
+    if (isFinite(finalWidth) && isFinite(finalHeight) && finalWidth > 0 && finalHeight > 0) {
+      const newCoordinates = {
+        width: Math.round(finalWidth),
+        height: Math.round(finalHeight)
+      };
       
-      // For text tags, use the larger of manual resize or optimal dimensions
-      finalWidth = Math.max(manualWidth, optimalWidth);
-      finalHeight = Math.max(manualHeight, optimalHeight);
-      
-      console.log('📏 Text tag resize with optimal dimensions:', {
-        tagId: tag.id,
-        content,
-        currentFontSize,
-        optimalWidth,
-        optimalHeight,
-        manualWidth,
-        manualHeight,
-        finalWidth,
-        finalHeight
-      });
-    } else {
-      // For non-text tags (Name, Signature, Initials, Date, etc.), use manual dimensions directly
-      console.log('📏 Non-text tag resize with manual dimensions:', {
-        tagId: tag.id,
-        tagType: tag.tagType,
-        manualWidth,
-        manualHeight
-      });
+      onSave(newCoordinates);
     }
     
-    const newCoordinates = {
-      width: Math.round(finalWidth),
-      height: Math.round(finalHeight)
-    };
-    
-    console.log('📏 Saving tag resize:', {
-      tagId: tag.id,
-      tagType: tag.tagType,
-      newCoordinates
-    });
-    
-    onSave(newCoordinates);
-    
-    // Save rounded font size to server and update localFontSizes
-    if (onFontSizeChange && liveFontSize !== undefined) {
-      onFontSizeChange(tag.id, Math.round(liveFontSize));
-    }
+    // Reset any live font size changes
+    setLiveFontSize(undefined);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -583,24 +547,38 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       >
         {/* DocuSign style tag content */}
         {hasContent ? (
-          <span 
-            data-text-content
-            style={{ 
-              fontFamily: TYPOGRAPHY.fontFamily,
-              fontSize: `${currentFontSize}px`,
-              fontWeight: TYPOGRAPHY.fontWeight.medium,
-              color: '#1e293b', // Dark text for maximum visibility
-              lineHeight: '1.2',
-              display: 'block',
-              width: '100%',
-              wordWrap: 'break-word',
-              overflowWrap: 'break-word',
-              whiteSpace: 'normal', // Allow text to wrap to multiple lines
-              overflow: 'visible' // Show all content, don't hide overflow
-            }}
-          >
-            {tag.content || tag.displayLabel || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Content'}
-          </span>
+          shouldRenderImage ? (
+            <img
+              src={imageSrc}
+              alt={tag.tagType === 'E' ? 'Notary Seal' : 'Signature'}
+              style={{
+                maxWidth: '100%',
+                maxHeight: '100%',
+                objectFit: 'contain',
+                display: 'block'
+              }}
+              onError={() => setImageLoadError(true)}
+            />
+          ) : (
+            <span 
+              data-text-content
+              style={{ 
+                fontFamily: TYPOGRAPHY.fontFamily,
+                fontSize: `${currentFontSize}px`,
+                fontWeight: TYPOGRAPHY.fontWeight.medium,
+                color: '#1e293b', // Dark text for maximum visibility
+                lineHeight: '1.2',
+                display: 'block',
+                width: '100%',
+                wordWrap: 'break-word',
+                overflowWrap: 'break-word',
+                whiteSpace: 'normal', // Allow text to wrap to multiple lines
+                overflow: 'visible' // Show all content, don't hide overflow
+              }}
+            >
+              {tag.content || tag.displayLabel || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Content'}
+            </span>
+          )
         ) : (
           <span style={{ 
             fontFamily: TYPOGRAPHY.fontFamily,
@@ -2257,36 +2235,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
             Fit to View
           </button>
 
-          {/* Debug zoom controls - only in development */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="flex items-center gap-1 bg-red-50 border border-red-200 rounded-lg p-1">
-              <span className="text-xs text-red-600 font-medium">Debug:</span>
-              <button 
-                onClick={() => {
-                  console.log('🔍 Debug: Testing direct setZoomLevel call');
-                  setZoomLevel(2.0);
-                }} 
-                className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200"
-                type="button"
-              >
-                Test 2x
-              </button>
-              <button 
-                onClick={() => {
-                  console.log('🔍 Debug: Testing zoom functions');
-                  console.log('Current zoom:', viewer.zoomLevel);
-                  console.log('handleZoomIn type:', typeof handleZoomIn);
-                  console.log('setZoomLevel type:', typeof setZoomLevel);
-                }} 
-                className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200"
-                type="button"
-              >
-                Log
-              </button>
-            </div>
-          )}
-          
-                    {/* Font Size Control - Only show when a text tag is selected */}
+
+          {/* Font Size Control - Only show when a text tag is selected */}
           {(selectedTag || selectedTextInputId) && (
             // Show for any tag that allows text input
             selectedTag?.tagType === 'T' || selectedTag?.tagType === 'O' || selectedTag?.tagType === 'D' || 

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { authenticatedFetch } from '@/lib/auth';
+import { formatDate } from '@/lib/utils';
 import type { DocumentTag } from '@/types/editor';
 
 interface ReplaceAllButtonProps {
@@ -126,7 +127,7 @@ export const ReplaceAllButton: React.FC<ReplaceAllButtonProps> = ({
           contentType = 'text';
           break;
         case 'X': // Commission Expiration
-          newContent = assignedUser?.commissionExpiration || 'Expiration Required';
+          newContent = assignedUser?.commissionExpiration ? formatDate(assignedUser.commissionExpiration) : 'Expiration Required';
           contentType = 'date';
           break;
         case 'O': // Disclosure

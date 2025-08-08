@@ -185,12 +185,17 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           
         case 'tag_updated':
           if (data.updates.coordinates) {
-            // ✅ FIX: Don't override local changes with WebSocket updates from the same user
-            // This prevents text tag resize reversion when user resizes and WebSocket broadcasts old data
-            const isOwnUpdate = data.updatedBy === useEditorStore.getState().currentUser?.id?.toString();
+            // Only react to text tag updates in this hook
+            if (data.tagType !== 'T') {
+              break;
+            }
+            
+            // ✅ Don't override local changes with WebSocket updates from the same user
+            const currentUserId = useEditorStore.getState().currentUser?.id?.toString();
+            const isOwnUpdate = data.updatedBy && data.updatedBy.toString() === currentUserId;
             
             if (!isOwnUpdate) {
-              // Only apply coordinate updates from other users to prevent overriding local changes
+              // Apply coordinate updates from other users only
               setTextInputs(prev => prev.map(input => 
                 input.id === data.id 
                   ? { ...input, coordinates: { ...input.coordinates, ...data.updates.coordinates } }

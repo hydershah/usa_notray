@@ -47,6 +47,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 
 import { type Job } from '@shared/schema';
+import { FileText, Plus, Eye } from 'lucide-react';
 
 // Type for paginated response
 interface JobsResponse {

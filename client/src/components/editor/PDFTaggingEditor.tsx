@@ -290,6 +290,25 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     };
   }, [sessionId, selectedTextInputId, selectTextInput]);
 
+  // ✅ Enforce single selection across tags and text inputs
+  useEffect(() => {
+    if (selectedTextInputId && selectedTag) {
+      // If a text input is selected, clear non-text tag selection
+      if (selectedTag.tagType !== 'T') {
+        useEditorStore.getState().selectTag(null as any);
+        console.log('🧹 Cleared tag selection because text input is selected:', selectedTextInputId);
+      }
+    }
+  }, [selectedTextInputId, selectedTag]);
+
+  // When a tag gets selected via PDFViewer, ensure we clear text input selection if it's not a text tag
+  useEffect(() => {
+    if (selectedTag && selectedTag.tagType !== 'T' && selectedTextInputId) {
+      selectTextInput(null);
+      console.log('🧹 Cleared text input selection because non-text tag selected:', selectedTag.id);
+    }
+  }, [selectedTag, selectedTextInputId, selectTextInput]);
+
   // Store WebSocket instance in editor store for global access - stabilized to prevent infinite loops
   const stableWebSocket = useMemo(() => {
     // Return webSocket instance with connection state info

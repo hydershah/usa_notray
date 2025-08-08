@@ -80,18 +80,13 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
   const sanitizeCoordinates = (coordinates: Partial<TagCoordinates>, tagType?: string): Partial<TagCoordinates> => {
     const sanitized: Partial<TagCoordinates> = {};
     
-    // Debug tag type
-    console.log('🔍 sanitizeCoordinates - tagType:', tagType, 'type:', typeof tagType);
-    
-    // Get dimensions from store (includes custom dimensions if set by user)
-    const storeDimensions = getTagDimensions(tagType as any);
-    console.log('🔍 sanitizeCoordinates - storeDimensions:', storeDimensions);
-    
-    const defaultDimensions = storeDimensions || {
-      width: 120, // Use updated standardized width as fallback
-      height: 25  // Use updated standardized height as fallback
+    // Get default dimensions as fallback
+    const defaultDimensions = {
+      width: 120,
+      height: 25
     };
     
+    // Simple coordinate sanitization
     if (coordinates.x !== undefined) {
       sanitized.x = isFinite(coordinates.x) ? Math.round(coordinates.x) : 0;
     }
@@ -99,10 +94,14 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       sanitized.y = isFinite(coordinates.y) ? Math.round(coordinates.y) : 0;
     }
     if (coordinates.width !== undefined) {
-      sanitized.width = isFinite(coordinates.width) && coordinates.width > 0 ? Math.round(coordinates.width) : defaultDimensions.width;
+      sanitized.width = isFinite(coordinates.width) && coordinates.width > 0 
+        ? Math.round(coordinates.width) 
+        : defaultDimensions.width;
     }
     if (coordinates.height !== undefined) {
-      sanitized.height = isFinite(coordinates.height) && coordinates.height > 0 ? Math.round(coordinates.height) : defaultDimensions.height;
+      sanitized.height = isFinite(coordinates.height) && coordinates.height > 0 
+        ? Math.round(coordinates.height) 
+        : defaultDimensions.height;
     }
     if (coordinates.pageNumber !== undefined) {
       sanitized.pageNumber = isFinite(coordinates.pageNumber) ? Math.round(coordinates.pageNumber) : 1;

@@ -171,7 +171,9 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
 
     setContent({
       type: config?.type || 'text',
-      value: config?.type === 'date' ? new Date() : initialValue,
+      value: config?.type === 'date' ? 
+        (initialValue ? new Date(initialValue) : new Date()) : 
+        initialValue,
       isRequired: config?.required || false
     });
   }, [tag.tagType, userProfile, config]);

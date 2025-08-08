@@ -512,6 +512,8 @@ export const SignatureSelectionModal: React.FC<SignatureSelectionModalProps> = (
     }
   };
 
+  // Selection flows call onSelect directly where needed
+
   return (
     <>
       {/* Global styles to ensure modal appears above everything */}

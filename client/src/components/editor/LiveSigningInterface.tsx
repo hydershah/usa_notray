@@ -775,20 +775,6 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
             </div>
             
             <Button 
-              onClick={handleBulkFillTags}
-              size="lg"
-              variant="outline"
-              className="bg-orange-50 border-orange-300 text-orange-700 hover:bg-orange-100 px-5 py-3 text-base font-medium"
-              disabled={buttonDisabled}
-              title="Auto-fill all your assigned tags with profile data"
-            >
-              <div className="flex items-center gap-2">
-                {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Zap className="h-5 w-5" />}
-                <span>Auto-Fill</span>
-              </div>
-            </Button>
-            
-            <Button 
               onClick={() => handleSessionAction('pause')} 
               size="lg"
               variant="outline"
@@ -906,32 +892,6 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
 
         <div className="flex items-center gap-2">
           {renderSessionControls()}
-          
-          <Button
-            variant="outline"
-            size="default"
-            onClick={() => setShowVideo(!showVideo)}
-            className="px-3 py-2"
-            title="Toggle video panel"
-          >
-            <div className="flex items-center gap-2">
-              <Video className="h-4 w-4" />
-              <span className="text-sm font-medium">Video</span>
-            </div>
-          </Button>
-          
-          <Button
-            variant="outline"
-            size="default"
-            onClick={() => setShowParticipants(!showParticipants)}
-            className="px-3 py-2"
-            title="Toggle participants panel"
-          >
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              <span className="text-sm font-medium">Participants</span>
-            </div>
-          </Button>
         </div>
       </div>
 

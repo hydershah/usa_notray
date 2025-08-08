@@ -9,7 +9,9 @@ import {
   PROFESSIONAL_COLORS,
   TYPOGRAPHY,
   LAYOUT,
-  TAG_TYPE_CONFIG 
+  TAG_TYPE_CONFIG,
+  calculateOptimalWidth,
+  calculateOptimalHeight 
 } from '@/lib/constants/tagConstants';
 
 // Simple debounce utility
@@ -90,41 +92,16 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   
-  // Memoized calculations for better performance
-  const fixedDimensions = useMemo(() => getTagDimensions('T'), []);
-  const hasContent = useMemo(() => inputValue.trim().length > 0, [inputValue]);
-  
-  // Debug logging for scale factor
-  useEffect(() => {
-    console.log('🔍 DEBUG: StreamlinedTextInput scale factor analysis:', {
-      fixedDimensions,
-      scaleFactor,
-      scaledWidth: fixedDimensions.width * scaleFactor,
-      scaledHeight: fixedDimensions.height * scaleFactor
-    });
-  }, [fixedDimensions, scaleFactor]);
-  
-  // State for controlled dimensions - use fixed dimensions for text tags (no scaling)
-  const [controlledSize, setControlledSize] = useState({
-    width: fixedDimensions.width,  // Don't scale for text tags
-    height: fixedDimensions.height  // Don't scale for text tags
-  });
-  
-  // Update controlled size when scale factor changes (but don't scale for text tags)
-  useEffect(() => {
-    setControlledSize({
-      width: fixedDimensions.width,  // Don't scale for text tags
-      height: fixedDimensions.height  // Don't scale for text tags
-    });
-  }, [scaleFactor, fixedDimensions.width, fixedDimensions.height]);
+  // Use consistent dimensions for text inputs
+  const defaultDimensions = { width: 120, height: 25 };
+  const hasContent = inputValue.trim().length > 0;
   
   // Create display coordinates scaled for current zoom level
   const displayCoords = {
     x: coordinates.x * scaleFactor,
     y: coordinates.y * scaleFactor,
-    // For text inputs, use consistent dimensions from constants
-    width: fixedDimensions.width,
-    height: fixedDimensions.height
+    width: (coordinates.width ?? defaultDimensions.width) * scaleFactor,
+    height: (coordinates.height ?? defaultDimensions.height) * scaleFactor
   };
 
   // Simple resize and edit controls
@@ -238,11 +215,47 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     [id, sessionId, coordinates, assignedUserId, webSocket, onSave, toast]
   );
 
+  // Debounced auto-resize based on content
+  const debouncedAutoResize = useRef(
+    debounce((value: string) => {
+      if (!onResize) return;
+
+      // Measure text width precisely using canvas (match input font + weight)
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const minWidth = 40;
+      const leftPaddingPx = 4;  // matches visual left padding
+      const rightPaddingPx = 4; // small right padding to avoid clipping
+      const borderComp = isSelected ? 2 : 0; // tiny compensation for selected border
+
+      let measured = 0;
+      if (ctx) {
+        const weight = TYPOGRAPHY.fontWeight.medium || '500';
+        ctx.font = `${weight} ${fontSize}px ${fontFamily}`;
+        measured = Math.ceil(ctx.measureText(value || '').width);
+      }
+
+      // Slightly conservative rounding to avoid visible gap (in CSS px)
+      const targetWidthCssPx = Math.max(minWidth, measured + leftPaddingPx + rightPaddingPx + borderComp - 1);
+
+      // Convert CSS px (at current zoom) to document coordinates
+      const targetWidthDoc = Math.max(minWidth, Math.round(targetWidthCssPx / Math.max(0.0001, scaleFactor)));
+
+      onResize({
+        x: coordinates.x,
+        y: coordinates.y,
+        width: targetWidthDoc,
+        height: coordinates.height
+      });
+    }, 100)
+  ).current;
+
   // Handle input changes
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     setInputValue(newValue);
     debouncedSave(newValue);
+    debouncedAutoResize(newValue);
   };
 
   // Handle input blur (save and exit edit mode)
@@ -252,6 +265,8 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
       debouncedSave.cancel();
       debouncedSave(inputValue);
     }
+    // Ensure final resize applied on blur
+    debouncedAutoResize(inputValue);
   };
 
   // Handle input Enter key
@@ -314,13 +329,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
 
   // Handle resize
   const handleResize = useCallback((e: any, direction: any, ref: any, delta: any, position: any) => {
-    // Update controlled size immediately for responsive UI
-    setControlledSize({
-      width: ref.offsetWidth,
-      height: ref.offsetHeight
-    });
-    
-    // Also call onResize if provided
+    // Call onResize if provided
     if (onResize) {
       const newCoordinates = {
         x: position.x / scaleFactor,
@@ -333,11 +342,6 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   }, [scaleFactor, onResize]);
 
   const handleResizeStop = useCallback((e: any, direction: any, ref: any, delta: any, position: any) => {
-    // Update controlled size
-    setControlledSize({
-      width: ref.offsetWidth,
-      height: ref.offsetHeight
-    });
     
     // Final resize update with snapped coordinates
     if (onResize) {
@@ -462,7 +466,8 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
               padding: '0',
               paddingLeft: '4px', // Same 4px left padding as PDF
               textAlign: 'left',
-              lineHeight: '1'
+              lineHeight: '1',
+              paddingRight: '4px' // Add padding for right edge
             }}
           />
         ) : (
@@ -474,6 +479,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
               alignItems: 'center', // Same center alignment as working tags
               justifyContent: 'flex-start',
               paddingLeft: '4px', // Same 4px left padding as PDF processor
+              paddingRight: '4px',
               overflow: 'visible',
               textOverflow: 'clip',
               whiteSpace: 'normal',
