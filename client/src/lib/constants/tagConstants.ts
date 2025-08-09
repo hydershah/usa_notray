@@ -11,7 +11,7 @@ export const PROFESSIONAL_COLORS = {
   border: '#e2e8f0',
   borderHover: '#cbd5e1',
   borderActive: '#3b82f6',
-  borderCompleted: '#10b981',
+  borderCompleted: '#3b82f6',
   
   // Text colors
   text: '#1e293b',
@@ -20,27 +20,27 @@ export const PROFESSIONAL_COLORS = {
   textMuted: '#cbd5e1',
   
   // Status colors
-  completed: '#f0fdf4',
-  success: '#10b981',
+  completed: '#f0f9ff',
+  success: '#3b82f6',
   warning: '#f59e0b',
   error: '#ef4444',
   
   // Interactive colors
   primary: '#3b82f6',
   primaryHover: '#2563eb',
-  accent: '#8b5cf6',
+  accent: '#1d4ed8',
   
   // Semantic colors for different tag types - DocuSign inspired
   signature: '#3b82f6',
-  initials: '#8b5cf6',
-  date: '#10b981',
+  initials: '#1d4ed8',
+  date: '#2563eb',
   textTag: '#64748b',
   checkbox: '#f59e0b',
   witness: '#ef4444',
   
   // DocuSign specific colors
   docuSignBlue: '#0070d2',
-  docuSignGreen: '#04844b',
+  docuSignGreen: '#1e40af',
   docuSignGray: '#f8f9fa',
   docuSignBorder: '#dde1e6'
 };

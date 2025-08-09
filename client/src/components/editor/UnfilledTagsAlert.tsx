@@ -77,7 +77,7 @@ export const UnfilledTagsAlert: React.FC<UnfilledTagsAlertProps> = ({
                 <h4 className="font-medium text-gray-900">
                   {userName} ({userTags.length} unfilled tag{userTags.length !== 1 ? 's' : ''})
                 </h4>
-                {userName.includes(currentUserId) && hasCurrentUserTags && onBulkFill && (
+                {hasCurrentUserTags && onBulkFill && (
                   <Button
                     onClick={onBulkFill}
                     size="sm"

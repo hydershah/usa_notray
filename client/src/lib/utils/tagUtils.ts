@@ -36,7 +36,7 @@ export const getTagColor = (tagType: string): string => {
   const colors: Record<string, string> = {
     'A': '#4ECDC4', // Name - teal
     'S': '#45B7D1', // Signature - blue
-    'I': '#96CEB4', // Initials - green
+    'I': '#3b82f6', // Initials - blue
     'N': '#FECA57', // Commission # - yellow
     'X': '#FF6B6B', // Expiration - red
     'O': '#DDA0DD', // Disclosure - plum

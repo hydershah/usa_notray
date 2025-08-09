@@ -663,7 +663,7 @@ class EmailTemplateService {
             }
             .success-box { 
                 background: #f0fdf4; 
-                border-left: 4px solid #10b981; 
+                border-left: 4px solid #3b82f6; 
                 padding: 15px; 
                 margin: 20px 0; 
                 border-radius: 4px;

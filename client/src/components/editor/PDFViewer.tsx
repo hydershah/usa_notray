@@ -222,38 +222,40 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     
     // Use user's color with transparency for consistent theming
     const userColor = tag.colorCode || config?.color || '#4ECDC4';
+    const isWhiteout = tag.tagType === 'W';
     
-    let backgroundColor = hasContent 
-      ? 'transparent' // Make filled tags transparent
-      : hexToRgba(userColor, 0.6); // 60% opacity for better visibility
-    let borderColor = hasContent 
-      ? 'transparent' // Make border transparent for filled tags
-      : isSelected
-          ? PROFESSIONAL_COLORS.borderActive 
-          : hexToRgba(userColor, 0.9); // 90% opacity for border
+    // Keep whiteout visible even when completed (do not make transparent)
+    const backgroundColor = (hasContent && !isWhiteout)
+      ? 'transparent'
+      : (isWhiteout ? '#ffffff' : hexToRgba(userColor, 0.6));
+    
+    const defaultBorderColor = isWhiteout ? '#d1d5db' : hexToRgba(userColor, 0.9);
+    const borderColor = isSelected ? PROFESSIONAL_COLORS.borderActive : defaultBorderColor;
+    
     let boxShadow = isSelected 
       ? `0 0 0 2px ${PROFESSIONAL_COLORS.borderActive}, ${LAYOUT.shadow.base}` 
-      : hasContent 
-        ? 'none' // No shadow for filled tags
+      : hasContent && !isWhiteout 
+        ? 'none' 
         : 'none';
 
     // Apply missing tag styling
-    if (isMissing && !hasContent) {
-      backgroundColor = '#fef3c7'; // Light orange background
-      borderColor = '#f59e0b'; // Orange border
-      boxShadow = '0 0 0 2px #f59e0b, 0 0 8px rgba(245, 158, 11, 0.3)'; // Orange glow
+    if (isMissing && !hasContent && !isWhiteout) {
+      // Whiteout should remain white; do not override
+      boxShadow = '0 0 0 2px #f59e0b, 0 0 8px rgba(245, 158, 11, 0.3)';
     }
     
     // Apply highlighted styling (takes precedence over missing)
     if (isHighlighted) {
-      boxShadow = '0 0 0 3px #3b82f6, 0 0 12px rgba(59, 130, 246, 0.5)'; // Blue glow
+      boxShadow = '0 0 0 3px #3b82f6, 0 0 12px rgba(59, 130, 246, 0.5)';
     }
     
     return {
       backgroundColor,
-      border: hasContent 
-        ? 'none' // No border for filled tags
-        : `${isMissing && !hasContent ? '2px' : '1.5px'} solid ${borderColor}`,
+      border: isWhiteout
+        ? `1.5px solid ${borderColor}`
+        : (hasContent 
+            ? 'none' 
+            : `${isMissing && !hasContent ? '2px' : '1.5px'} solid ${borderColor}`),
       borderRadius: LAYOUT.borderRadius.base,
       color: hasContent 
         ? PROFESSIONAL_COLORS.text 
@@ -264,13 +266,13 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       fontFamily: TYPOGRAPHY.fontFamily,
       fontSize: TYPOGRAPHY.fontSize.tag,
       fontWeight: TYPOGRAPHY.fontWeight.medium,
-      transition: 'none', // Remove transitions during drag for better performance
+      transition: 'none',
       boxShadow,
       // DocuSign style enhancements
       position: 'relative' as const,
-      overflow: 'visible' as const, // Allow content to expand beyond container
-      minHeight: 'fit-content' as const, // Ensure container fits content
-      animation: isMissing && !hasContent ? 'pulse 2s infinite' : 'none'
+      overflow: 'visible' as const,
+      minHeight: 'fit-content' as const,
+      animation: isMissing && !hasContent && !isWhiteout ? 'pulse 2s infinite' : 'none'
     };
   }, [hasContent, isSelected, canEdit, tag.tagType, isMissing, isHighlighted]);
 
@@ -700,138 +702,6 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   // Memoize TagRenderer for better performance during drag operations
   const MemoizedTagRenderer = memo(TagRenderer);
 
-  // Whiteout Overlay Component - Interactive white rectangle that covers text
-  const WhiteoutOverlay: React.FC<{
-    overlay: {
-      id: string;
-      coordinates: TagCoordinates;
-      sessionId: string;
-      createdAt: Date;
-    };
-    scaleFactor: number;
-    onUpdate?: (coordinates: Partial<TagCoordinates>) => void;
-    onDelete?: () => void;
-    canEdit?: boolean;
-  }> = ({ overlay, scaleFactor, onUpdate, onDelete, canEdit = false }) => {
-    const [isDragging, setIsDragging] = useState(false);
-    const [dragCoords, setDragCoords] = useState<{x: number; y: number} | null>(null);
-    
-    const displayCoords = {
-      x: isDragging && dragCoords ? dragCoords.x : overlay.coordinates.x * scaleFactor,
-      y: isDragging && dragCoords ? dragCoords.y : overlay.coordinates.y * scaleFactor,
-      width: overlay.coordinates.width * scaleFactor,
-      height: overlay.coordinates.height * scaleFactor
-    };
-
-    return (
-      <Rnd
-        size={{ width: displayCoords.width, height: displayCoords.height }}
-        position={{ x: displayCoords.x, y: displayCoords.y }}
-        onDrag={(e, d) => {
-          if (onUpdate && canEdit) {
-            onUpdate({
-              x: d.x / scaleFactor,
-              y: d.y / scaleFactor
-            });
-          }
-        }}
-        onResize={(e, direction, ref, delta, position) => {
-          if (onUpdate && canEdit) {
-            onUpdate({
-              x: position.x / scaleFactor,
-              y: position.y / scaleFactor,
-              width: ref.style.width ? parseInt(ref.style.width) / scaleFactor : overlay.coordinates.width,
-              height: ref.style.height ? parseInt(ref.style.height) / scaleFactor : overlay.coordinates.height
-            });
-          }
-        }}
-        onResizeStop={(e, direction, ref, delta, position) => {
-          if (onUpdate && canEdit) {
-            onUpdate({
-              x: position.x / scaleFactor,
-              y: position.y / scaleFactor,
-              width: ref.style.width ? parseInt(ref.style.width) / scaleFactor : overlay.coordinates.width,
-              height: ref.style.height ? parseInt(ref.style.height) / scaleFactor : overlay.coordinates.height
-            });
-          }
-        }}
-        enableResizing={canEdit ? {
-          top: true,
-          right: true,
-          bottom: true,
-          left: true,
-          topRight: true,
-          bottomRight: true,
-          bottomLeft: true,
-          topLeft: true
-        } : false}
-        disableDragging={!canEdit}
-        bounds="parent"
-        style={{
-          backgroundColor: '#FFFFFF',
-          border: canEdit ? '2px solid #3B82F6' : '1px solid #E5E7EB',
-          borderRadius: '2px',
-          zIndex: 1000,
-          cursor: canEdit ? 'move' : 'default',
-          boxShadow: canEdit ? '0 2px 4px rgba(59, 130, 246, 0.2)' : 'none',
-          opacity: 1,
-          pointerEvents: 'auto',
-          position: 'absolute'
-        }}
-        title="Whiteout overlay"
-      >
-        {/* Optional delete button for editable whiteouts */}
-        {canEdit && onDelete && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            style={{
-              position: 'absolute',
-              top: '-8px',
-              right: '-8px',
-              width: '16px',
-              height: '16px',
-              backgroundColor: '#ef4444',
-              color: 'white',
-              border: 'none',
-              borderRadius: '50%',
-              cursor: 'pointer',
-              fontSize: '10px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 11
-            }}
-            title="Delete whiteout"
-          >
-            ×
-          </button>
-        )}
-        
-        {/* Editable indicator for whiteout overlays */}
-        {canEdit && (
-          <div
-            style={{
-              position: 'absolute',
-              top: '2px',
-              left: '2px',
-              width: '8px',
-              height: '8px',
-              backgroundColor: '#3B82F6',
-              borderRadius: '50%',
-              zIndex: 11
-            }}
-            title="Editable whiteout"
-          />
-        )}
-      </Rnd>
-    );
-  };
-
-
-
 export const PDFViewer: React.FC<PDFViewerProps> = ({
   documentUrl,
   sessionId,
@@ -1019,14 +889,53 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
   // Scroll to tag functionality
   const scrollToTag = useCallback((tagId: string, pageNumber: number) => {
+    console.log('📍 PDFViewer scrollToTag called:', { tagId, pageNumber, tagsCount: tags.length });
     const tag = tags.find(t => t.id === tagId);
-    if (!tag || !containerRef.current) return;
+    if (!tag || !containerRef.current) {
+      console.warn('📍 scrollToTag failed:', { tagFound: !!tag, containerExists: !!containerRef.current });
+      return;
+    }
+    
+    console.log('📍 Found tag for scrolling:', { 
+      id: tag.id, 
+      coordinates: tag.coordinates, 
+      pageNumber: tag.coordinates.pageNumber 
+    });
 
-    // First scroll to the page
+    // Calculate exact position of the tag within the page
     const pageContainer = pageContainerRefs.current[pageNumber - 1];
     if (pageContainer) {
       const scrollContainer = containerRef.current;
-      const scrollTop = pageContainer.offsetTop - 100; // 100px offset from top
+      
+      // Get the current scale factor for this page
+      const currentZoom = viewer.zoomLevel || 1;
+      const scaleFactor = scaleFactors.get(pageNumber) || 1;
+      const totalScale = scaleFactor * currentZoom;
+      
+      console.log('📍 Scroll calculation:', {
+        currentZoom,
+        scaleFactor,
+        totalScale,
+        tagX: tag.coordinates.x,
+        tagY: tag.coordinates.y,
+        pageTop: pageContainer.offsetTop
+      });
+      
+      // Calculate tag position within the page
+      const tagX = tag.coordinates.x * totalScale;
+      const tagY = tag.coordinates.y * totalScale;
+      
+      // Calculate absolute scroll position: page top + tag Y position - viewport offset
+      const pageTop = pageContainer.offsetTop;
+      const tagAbsoluteY = pageTop + tagY;
+      const viewportOffset = 150; // Keep tag 150px from top of viewport
+      const scrollTop = Math.max(0, tagAbsoluteY - viewportOffset);
+      
+      console.log('📍 Scrolling to:', {
+        tagAbsoluteY,
+        scrollTop,
+        currentScrollTop: scrollContainer.scrollTop
+      });
       
       scrollContainer.scrollTo({
         top: scrollTop,
@@ -1039,15 +948,21 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
           onScrollToTag(tagId, pageNumber);
         }
       }, 500); // Wait for scroll to complete
+    } else {
+      console.warn('📍 Page container not found for page:', pageNumber);
     }
-  }, [tags, onScrollToTag]);
+  }, [tags, onScrollToTag, viewer.zoomLevel, scaleFactors]);
 
   // Expose scroll to tag function for external use
   React.useEffect(() => {
+    console.log('📍 PDFViewer highlightedTagId effect triggered:', highlightedTagId);
     if (highlightedTagId) {
       const tag = tags.find(t => t.id === highlightedTagId);
       if (tag) {
+        console.log('📍 Calling scrollToTag from effect:', tag.id, tag.coordinates.pageNumber);
         scrollToTag(highlightedTagId, tag.coordinates.pageNumber);
+      } else {
+        console.warn('📍 No tag found for highlightedTagId:', highlightedTagId);
       }
     }
   }, [highlightedTagId, scrollToTag, tags]);
@@ -1759,6 +1674,100 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     renderInitialPages();
   }, [pdfDoc]);
 
+  // Ensure deep-page jump works: render target page before scrolling
+  useEffect(() => {
+    const run = async () => {
+      console.log('📍 Deep-page jump effect triggered:', { highlightedTagId, pdfDoc: !!pdfDoc });
+      if (!highlightedTagId || !pdfDoc) return;
+      const tag = tags.find(t => t.id === highlightedTagId);
+      if (!tag) {
+        console.warn('📍 Deep-page jump: tag not found:', highlightedTagId);
+        return;
+      }
+      
+      console.log('📍 Deep-page jump processing tag:', { 
+        id: tag.id, 
+        pageNumber: tag.coordinates.pageNumber,
+        coordinates: tag.coordinates 
+      });
+      
+      const pageNumber = tag.coordinates.pageNumber;
+      // If target page not rendered yet, render it now
+      if (!renderedPages.has(pageNumber)) {
+        console.log('📍 Pre-rendering page:', pageNumber);
+        try {
+          // Pre-size placeholders for all pages up to target so layout/offsetTop is correct
+          const containerWidth = (containerRef.current?.clientWidth || 800) - 120;
+          for (let i = 1; i <= pageNumber; i++) {
+            const pageContainer = pageContainerRefs.current[i - 1];
+            if (pageContainer && (!pageContainer.style.height || pageContainer.style.height === '0px')) {
+              try {
+                const page = await pdfDoc.getPage(i);
+                const viewport = page.getViewport({ scale: 1 });
+                const baseScale = Math.min(containerWidth / viewport.width, 1.0);
+                const scaledViewport = page.getViewport({ scale: baseScale * useEditorStore.getState().viewer.zoomLevel });
+                pageContainer.style.width = `${scaledViewport.width}px`;
+                pageContainer.style.height = `${scaledViewport.height}px`;
+              } catch (e) {
+                // Ignore placeholder sizing errors for specific pages
+              }
+            }
+          }
+          // Finally render the target page so it has an accurate height and bitmap
+          await renderPage(pageNumber, false);
+          console.log('📍 Page pre-rendered successfully:', pageNumber);
+        } catch (e) {
+          console.warn('Failed to pre-render target page', pageNumber, e);
+        }
+      }
+      
+      console.log('📍 About to scroll to tag coordinates');
+      // Wait a tick for refs to update
+      await new Promise(resolve => setTimeout(resolve, 10));
+      const pageContainer = pageContainerRefs.current[pageNumber - 1];
+      const scrollContainer = containerRef.current;
+      if (pageContainer && scrollContainer) {
+        setCurrentPage(pageNumber);
+        
+        // Calculate exact position of the tag within the page
+        const currentZoom = useEditorStore.getState().viewer.zoomLevel || 1;
+        const scaleFactor = scaleFactors.get(pageNumber) || 1;
+        const totalScale = scaleFactor * currentZoom;
+        
+        // Calculate tag position within the page
+        const tagY = tag.coordinates.y * totalScale;
+        
+        // Calculate absolute scroll position: page top + tag Y position - viewport offset
+        const pageTop = pageContainer.offsetTop;
+        const tagAbsoluteY = pageTop + tagY;
+        const viewportOffset = 150; // Keep tag 150px from top of viewport
+        const scrollTop = Math.max(0, tagAbsoluteY - viewportOffset);
+        
+        console.log('📍 Deep-page jump scroll calculation:', {
+          pageNumber,
+          currentZoom,
+          scaleFactor,
+          totalScale,
+          tagY: tag.coordinates.y,
+          scaledTagY: tagY,
+          pageTop,
+          tagAbsoluteY,
+          scrollTop,
+          currentScrollTop: scrollContainer.scrollTop
+        });
+        
+        scrollContainer.scrollTo({ top: scrollTop, behavior: 'smooth' });
+        onScrollToTag?.(tag.id, pageNumber);
+      } else {
+        console.warn('📍 Deep-page jump: missing containers', { 
+          pageContainer: !!pageContainer, 
+          scrollContainer: !!scrollContainer 
+        });
+      }
+    };
+    run();
+  }, [highlightedTagId, pdfDoc, renderedPages, tags, onScrollToTag, renderPage, setCurrentPage]);
+
   // Re-render pages on zoom change with debouncing
   useEffect(() => {
     if (!pdfDoc) return;
@@ -1909,10 +1918,10 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     let finalTagX: number;
     let finalTagY: number;
     
-    // Position tags with lower-left corner at cursor position
-    // Store coordinates as the lower-left corner for consistent PDF generation
+    // Position tag with bottom-left corner at mouse click for better UX
+    // This means we need to offset the Y coordinate by the tag height
     finalTagX = Math.max(0, Math.round(pdfX));
-    finalTagY = Math.max(0, Math.round(pdfY)); // Store as lower-left corner
+    finalTagY = Math.max(0, Math.round(pdfY - dimensions.height));
     
     // Debug: Log the exact coordinates being sent
     console.log('🎯 TAG PLACEMENT DEBUG:', {
@@ -1921,7 +1930,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       pdfPosition: { x: pdfX, y: pdfY },
       finalPosition: { x: finalTagX, y: finalTagY },
       tagDimensions: dimensions,
-      selectedTagType
+      selectedTagType,
+      offsetApplied: { x: 0, y: -dimensions.height },
+      note: 'Tag positioned with bottom-left corner at mouse click'
     });
     
     // Add visual indicator at click position for debugging
@@ -1946,7 +1957,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     
     const coordinates: TagCoordinates = {
       x: finalTagX,
-      y: finalTagY, // This is now the lower-left corner
+      y: finalTagY, // Positioned so bottom-left corner is at mouse click
       width: dimensions.width,
       height: dimensions.height,
       pageNumber
@@ -1958,35 +1969,38 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   // Handle scroll tracking
   const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
     const container = event.currentTarget;
-    const scrollTop = container.scrollTop;
-    const containerHeight = container.clientHeight;
-    
-    setScrollTop(scrollTop);
+    setScrollTop(container.scrollTop);
 
-    // Find which page center is closest to viewport center (most reliable method)
-    const viewportCenter = scrollTop + containerHeight / 2;
-    let currentPage = 1;
+    // Use bounding rects to compute nearest page to the container's visible center
+    const containerRect = container.getBoundingClientRect();
+    const viewportCenter = (containerRect.top + containerRect.bottom) / 2;
+
+    let nearestPage = viewer.currentPage || 1;
     let minDistance = Infinity;
     const pageContainers = pageContainerRefs.current;
-    
+
     for (let i = 0; i < pageContainers.length; i++) {
       const pageContainer = pageContainers[i];
       if (!pageContainer) continue;
-      
-      const pageTop = pageContainer.offsetTop;
-      const pageCenter = pageTop + pageContainer.offsetHeight / 2;
+
+      const rect = pageContainer.getBoundingClientRect();
+
+      // Skip if not intersecting the scroll container viewport
+      const isVisible = rect.bottom > containerRect.top && rect.top < containerRect.bottom;
+      if (!isVisible) continue;
+
+      const pageCenter = (rect.top + rect.bottom) / 2;
       const distance = Math.abs(pageCenter - viewportCenter);
-      
-      // Find the page whose center is closest to viewport center
+
       if (distance < minDistance) {
         minDistance = distance;
-        currentPage = i + 1;
+        nearestPage = i + 1;
       }
     }
-    
-    if (currentPage !== viewer.currentPage) {
-      setCurrentPage(currentPage);
-      console.log(`📍 Page updated to: ${currentPage} (distance from center: ${minDistance.toFixed(1)}px)`);
+
+    if (nearestPage !== viewer.currentPage) {
+      setCurrentPage(nearestPage);
+      console.log(`📍 Page updated to: ${nearestPage} (Δ=${minDistance.toFixed(1)}px)`);
     }
   }, [viewer.currentPage, setCurrentPage, setScrollTop]);
 
@@ -2498,12 +2512,11 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                     }}
                   />
                   
-                          {/* Tags overlay - Filter out whiteout tags and text tags (text tags are handled separately via textInputs) */}
-        {pageTags.filter(tag => tag.tagType !== 'W' && tag.tagType !== 'T').map(tag => {
-          // Regular tag (text tags are handled separately via textInputs)
-          return (
-            <div key={`${tag.id}-${scaleFactor}`} className={`absolute top-0 left-0 w-full h-full ${selectedTagType ? 'pointer-events-none' : 'pointer-events-auto'}`}>
-              <MemoizedTagRenderer
+                          {/* Tags overlay - Text tags are handled separately via textInputs */}
+                  {pageTags.filter(tag => tag.tagType !== 'T').map(tag => {
+                    return (
+                      <div key={`${tag.id}-${scaleFactor}`} className={`absolute top-0 left-0 w-full h-full ${selectedTagType ? 'pointer-events-none' : 'pointer-events-auto'}`}>
+                        <MemoizedTagRenderer
                           tag={tag}
                           scaleFactor={scaleFactor}
                           isSelected={selectedTag?.id === tag.id}
@@ -2523,33 +2536,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                     );
                   })}
                   
-                  {/* Whiteout overlays - Interactive white rectangles that cover text */}
-                  {whiteoutOverlays
-                    .filter(overlay => overlay.coordinates.pageNumber === pageNumber)
-                    .map(overlay => (
-                      <div key={`whiteout-wrap-${overlay.id}-${scaleFactor}`} className={`${selectedTagType ? 'pointer-events-none' : 'pointer-events-auto'}`}>
-                        <WhiteoutOverlay
-                          key={`whiteout-${overlay.id}-${scaleFactor}`}
-                          overlay={overlay}
-                          scaleFactor={scaleFactor}
-                          canEdit={canEditTags}
-                          onUpdate={(coordinates) => {
-                            console.log('⬜ Whiteout overlay updated:', overlay.id, coordinates);
-                            // Update overlay coordinates directly without validation conflicts
-                            const updatedCoordinates = {
-                              ...overlay.coordinates,
-                              ...coordinates
-                            };
-                            useEditorStore.getState().updateWhiteoutOverlay(overlay.id, { coordinates: updatedCoordinates });
-                          }}
-                          onDelete={() => {
-                            console.log('⬜ Whiteout overlay deleted:', overlay.id);
-                            // Remove the overlay from the store
-                            useEditorStore.getState().deleteWhiteoutOverlay(overlay.id);
-                          }}
-                        />
-                      </div>
-                    ))}
+                  {/* Whiteout overlays disabled: handled via 'W' tags for consistency */}
 
                   {/* Text inputs overlay (separate from regular tags) - STABLE KEY */}
                   {textInputs?.filter(textInput => textInput.coordinates.pageNumber === pageNumber).map((textInput) => {

@@ -1676,7 +1676,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
              notaryId: assignedNotary.id,
              selectedNotary: assignedNotary.id.toString(),
              jobStatus: 'open',
-             notaryApprovalStatus: 'approved' // Auto-approve since it's their own job or admin
+             notaryApprovalStatus: (hasAdminAccess || req.user.role === 'notary') ? 'approved' : 'assigned_pending_approval'
            }),
            db.insert(notaryAssignmentLog).values({
              jobId: job.id,
@@ -1754,7 +1754,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               notaryId: assignedNotary.id,
               selectedNotary: assignedNotary.id.toString(),
               jobStatus: 'open', // Keep as open until notary approves
-              notaryApprovalStatus: 'assigned_pending_approval'
+              notaryApprovalStatus: (hasAdminAccess || req.user.role === 'notary') ? 'approved' : 'assigned_pending_approval'
             });
 
             // Log the preferred assignment
@@ -1816,7 +1816,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               isRandomAssignment: true,
               requiresNSA: jobData.requiresNSA === 'true' || false,
               requiresSpanishSpeaking: jobData.requiresSpanishSpeaking === 'true' || false,
-              notaryApprovalStatus: assignmentResult.requiresApproval ? 'assigned_pending_approval' : 'approved'
+              notaryApprovalStatus: (hasAdminAccess || req.user.role === 'notary') ? 'approved' : (assignmentResult.requiresApproval ? 'assigned_pending_approval' : 'approved')
             });
             
             assignedNotary = assignmentResult.notaryId;
@@ -1847,7 +1847,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           notaryId: selectedNotaryId,
           selectedNotary: selectedNotaryId.toString(), // This was missing!
           jobStatus: 'open', // Keep as open until notary approves
-          notaryApprovalStatus: 'assigned_pending_approval'
+          notaryApprovalStatus: (hasAdminAccess || req.user.role === 'notary') ? 'approved' : 'assigned_pending_approval'
         });
 
         // Log the manual assignment
@@ -1891,7 +1891,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Just need to update the approval status and log the assignment
         await storage.updateJob(job.id, {
           jobStatus: 'open', // Keep as open until notary approves
-          notaryApprovalStatus: 'assigned_pending_approval'
+          notaryApprovalStatus: (hasAdminAccess || req.user.role === 'notary') ? 'approved' : 'assigned_pending_approval'
         });
 
         // Log the ID code assignment (using 'manual' since ID code is a manual assignment method)
@@ -3694,7 +3694,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
              notaryId: assignedNotary.id,
              selectedNotary: assignedNotary.id.toString(),
              jobStatus: 'open',
-             notaryApprovalStatus: 'approved' // Auto-approve since it's their own job or admin
+             notaryApprovalStatus: (hasAdminAccess || req.user.role === 'notary') ? 'approved' : 'assigned_pending_approval'
            }),
            db.insert(notaryAssignmentLog).values({
              jobId: job.id,
@@ -3834,7 +3834,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               isRandomAssignment: true,
               requiresNSA: jobData.requiresNSA === 'true' || false,
               requiresSpanishSpeaking: jobData.requiresSpanishSpeaking === 'true' || false,
-              notaryApprovalStatus: assignmentResult.requiresApproval ? 'assigned_pending_approval' : 'approved'
+              notaryApprovalStatus: (hasAdminAccess || req.user.role === 'notary') ? 'approved' : (assignmentResult.requiresApproval ? 'assigned_pending_approval' : 'approved')
             });
             
             assignedNotary = assignmentResult.notaryId;
@@ -3865,7 +3865,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           notaryId: selectedNotaryId,
           selectedNotary: selectedNotaryId.toString(), // This was missing!
           jobStatus: 'open', // Keep as open until notary approves
-          notaryApprovalStatus: 'assigned_pending_approval'
+          notaryApprovalStatus: (hasAdminAccess || req.user.role === 'notary') ? 'approved' : 'assigned_pending_approval'
         });
 
         // Log the manual assignment
@@ -3909,7 +3909,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Just need to update the approval status and log the assignment
         await storage.updateJob(job.id, {
           jobStatus: 'open', // Keep as open until notary approves
-          notaryApprovalStatus: 'assigned_pending_approval'
+          notaryApprovalStatus: (hasAdminAccess || req.user.role === 'notary') ? 'approved' : 'assigned_pending_approval'
         });
 
         // Log the ID code assignment (using 'manual' since ID code is a manual assignment method)

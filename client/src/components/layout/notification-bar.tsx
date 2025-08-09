@@ -41,21 +41,43 @@ export function NotificationBar({ className }: NotificationBarProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchNotifications();
+    let cancelled = false;
+
+    const scheduleInitialFetch = () => {
+      const run = () => {
+        if (!cancelled) fetchNotifications();
+      };
+      if ('requestIdleCallback' in window) {
+        (window as any).requestIdleCallback(run, { timeout: 2000 });
+      } else {
+        setTimeout(run, 0);
+      }
+    };
+
+    scheduleInitialFetch();
     // Refresh every 30 seconds
-    const interval = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(interval);
+    const interval = setInterval(() => {
+      if (!cancelled) fetchNotifications();
+    }, 30000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [user?.id, user?.role]); // Only depend on stable user properties
 
   const fetchNotifications = async () => {
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     
     try {
       setLoading(true);
       const tasks: PendingTask[] = [];
 
       // Notary-specific notifications - ONLY pending job invitations that need approval
-      if (user.role === 'notary' || user.isNotary) {
+      if (user.role === 'notary' || (user as any).isNotary) {
         try {
           const jobInvitationsResponse = await fetch('/api/notary/job-invitations', {
             headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
@@ -96,7 +118,7 @@ export function NotificationBar({ className }: NotificationBarProps) {
       }
 
       // Admin-specific notifications - Categorized by approval type
-      if (user.role === 'admin' || user.isAdmin) {
+      if (user.role === 'admin' || (user as any).isAdmin) {
         try {
           // User Profile Approvals
           const usersResponse = await fetch('/api/users', {
@@ -213,7 +235,7 @@ export function NotificationBar({ className }: NotificationBarProps) {
       
       // Only log if there are actual tasks to reduce console noise
       if (filteredTasks.length > 0) {
-        console.log('NotificationBar: Fetched tasks for user', user.role, ':', filteredTasks.map(t => ({ id: t.id, count: t.count })));
+        console.log('NotificationBar: Fetched tasks for user', (user as any).role, ':', filteredTasks.map(t => ({ id: t.id, count: t.count })));
       }
       
       setPendingTasks(filteredTasks);

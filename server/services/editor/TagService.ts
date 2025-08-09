@@ -752,7 +752,7 @@ export class TagService {
       notary: '#FF6B6B',     // Coral Red
       admin: '#FF6B6B',      // Coral Red (same as notary)
       signer: '#4ECDC4',     // Turquoise (default for signers)
-      witness: '#96CEB4',    // Sage Green
+      witness: '#3b82f6',    // Blue
     };
     
     const baseColor = USER_COLORS[user.role as keyof typeof USER_COLORS] || USER_COLORS.signer;

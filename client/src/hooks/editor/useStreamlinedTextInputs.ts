@@ -133,6 +133,12 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       switch (eventType) {
         case 'tag_placed':
           if (data.tagType === 'T') {
+            // Ignore our own placement broadcasts to prevent duplicates
+            const currentUserId = useEditorStore.getState().currentUser?.id?.toString();
+            if (data.updatedBy && currentUserId && data.updatedBy.toString() === currentUserId) {
+              console.log('⏭️ Skipping self tag_placed echo for text tag:', data.id);
+              return;
+            }
             // Convert tag to text input format
             const newTextInput: StreamlinedTextInput = {
               id: data.id.toString(),
@@ -215,7 +221,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           if (data.updates.coordinates) {
             // ✅ FIX: Don't override local changes with WebSocket updates from the same user
             // This prevents text tag resize reversion when user resizes and WebSocket broadcasts old data
-            const isOwnUpdate = data.updatedBy === useEditorStore.getState().currentUser?.id?.toString();
+            const isOwnUpdate = (data.updatedBy ?? data.updatedById) === useEditorStore.getState().currentUser?.id?.toString();
             
             if (!isOwnUpdate) {
               // Only apply coordinate updates from other users to prevent overriding local changes
@@ -539,6 +545,11 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
             }
           : input
       ));
+
+      // If this is a temporary ID, don't call the server yet (prevents 400s)
+      if (textInputId.startsWith('text_temp_') || textInputId.startsWith('temp')) {
+        return;
+      }
 
       // Clear existing timeout for this text input
       const existingTimeout = debouncedCoordinateUpdates.current.get(textInputId);

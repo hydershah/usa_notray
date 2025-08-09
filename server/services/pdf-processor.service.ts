@@ -130,7 +130,7 @@ export class PDFProcessorService {
       const widthPt = tag.width * PX_TO_PT;
       const heightPt = tag.height * PX_TO_PT;
       const yTopPt = tag.y * PX_TO_PT;
-      // PDF uses bottom-left origin; editor stores top-left. Adjust by subtracting both y and height.
+      // PDF uses bottom-left origin; our stored coordinates are TOP-LEFT. Convert accordingly.
       const pdfY = pageHeight - yTopPt - heightPt;
 
       const tagInfo = TAG_TYPES[tag.tagType as keyof typeof TAG_TYPES];
@@ -187,9 +187,8 @@ export class PDFProcessorService {
           break;
           
         default: // Text fields
-          // Slight upward offset for text tags to match editor visual
-      const adjustedY = tag.tagType === 'T' ? pdfY + (fontSize * 0.1) : pdfY;
-          this.drawTextField(page, xPt, adjustedY, widthPt, heightPt, content, currentFont, fontSize, textColor);
+          // Draw text at computed pdfY without extra offsets so it matches the editor
+          this.drawTextField(page, xPt, pdfY, widthPt, heightPt, content, currentFont, fontSize, textColor);
           break;
       }
       

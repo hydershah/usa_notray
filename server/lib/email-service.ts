@@ -362,7 +362,7 @@ class EmailService {
             }
             .success-box { 
                 background: #f0fdf4; 
-                border-left: 4px solid #10b981; 
+                border-left: 4px solid #3b82f6; 
                 padding: 15px; 
                 margin: 20px 0; 
                 border-radius: 4px;
@@ -496,9 +496,9 @@ class EmailService {
           </a>
         </div>
         
-        <div style="background-color: #ecfdf5; border: 1px solid #10b981; border-radius: 8px; padding: 16px; margin: 16px 0;">
-          <h3 style="color: #047857; margin: 0 0 8px 0; font-size: 14px;">📄 What You'll Need for Verification:</h3>
-          <ul style="color: #047857; margin: 0; padding-left: 20px; font-size: 14px;">
+        <div style="background-color: #f0f9ff; border: 1px solid #3b82f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <h3 style="color: #1e40af; margin: 0 0 8px 0; font-size: 14px;">📄 What You'll Need for Verification:</h3>
+          <ul style="color: #1e40af; margin: 0; padding-left: 20px; font-size: 14px;">
             <li>Government-issued photo ID (Driver's License, State ID, or Passport)</li>
             <li>Camera or smartphone to take a clear selfie</li>
             <li>Good lighting for photo quality</li>
@@ -567,9 +567,9 @@ class EmailService {
       primaryLink = `${this.getClientUrl()}/verification`;
     } else {
       actionRequired = `
-        <div style="background-color: #ecfdf5; border: 1px solid #10b981; border-radius: 8px; padding: 16px; margin: 16px 0;">
-          <p style="margin: 0; color: #047857; font-weight: 600;">✅ Ready to Sign</p>
-          <p style="margin: 8px 0 0 0; color: #047857; font-size: 14px;">
+        <div style="background-color: #f0f9ff; border: 1px solid #3b82f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <p style="margin: 0; color: #1e40af; font-weight: 600;">✅ Ready to Sign</p>
+          <p style="margin: 8px 0 0 0; color: #1e40af; font-size: 14px;">
             Your account is ready. You can view the job details and wait for the notary to start the session.
           </p>
         </div>`;

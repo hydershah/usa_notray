@@ -198,7 +198,7 @@ class PostmarkEmailService {
             }
             .success-box { 
                 background: #f0fdf4; 
-                border-left: 4px solid #10b981; 
+                border-left: 4px solid #3b82f6; 
                 padding: 15px; 
                 margin: 20px 0; 
                 border-radius: 4px;
@@ -388,7 +388,7 @@ class PostmarkEmailService {
     this.clearCache();
     
     const content = `
-        <h2 style="color: #10b981; margin-bottom: 20px;">✅ Postmark Configuration Test</h2>
+        <h2 style="color: #3b82f6; margin-bottom: 20px;">✅ Postmark Configuration Test</h2>
         
         <p>Congratulations! Your Postmark configuration is working perfectly.</p>
         

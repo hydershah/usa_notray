@@ -387,22 +387,44 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     return metrics.width;
   }, []);
 
-  // Recalculate local width when font size or content changes to keep border snug
+  // Recalculate local width and persist to coordinates when content or font changes
+  // - Works while editing and also when a user changes the font via toolbar
+  // - Shrinks when text is shorter; grows when longer
   useEffect(() => {
-    const paddingPx = 8;
-    const baseMinWidthPx = fixedDimensions.width * scaleFactor;
-    const textWidth = measureTextWidth(inputValue, fontSize, fontFamily) + paddingPx;
-    const desiredPx = Math.max(baseMinWidthPx, Math.ceil(textWidth));
-    setControlledSize(prev => ({ ...prev, width: desiredPx }));
-  }, [fontSize, fontFamily, inputValue, scaleFactor, fixedDimensions.width, measureTextWidth]);
+    if (isResizing) return; // don't fight manual resize
+
+    // Allow smaller than default tag width but keep a sensible minimum for usability
+    const MIN_TEXT_TAG_WIDTH_UNSCALED = 60; // px in PDF units
+
+    const paddingPx = 8; // left padding + small buffer
+    const measuredPx = measureTextWidth(inputValue, fontSize, fontFamily) + paddingPx;
+    const desiredWidthPx = Math.max(Math.ceil(measuredPx), MIN_TEXT_TAG_WIDTH_UNSCALED * scaleFactor);
+
+    // Update local live size so the border tracks immediately
+    setControlledSize(prev => ({ ...prev, width: desiredWidthPx }));
+
+    // Persist to coordinates (unscaled) so Rnd size updates – debounce handled upstream
+    const desiredWidthUnscaled = desiredWidthPx / scaleFactor;
+    const currentWidthUnscaled = coordinates.width || fixedDimensions.width;
+
+    if (onResize && Math.abs(currentWidthUnscaled - desiredWidthUnscaled) > 0.5) {
+      onResize({
+        x: coordinates.x,
+        y: coordinates.y,
+        width: desiredWidthUnscaled,
+        height: coordinates.height || Math.max(fixedDimensions.height, Math.ceil(fontSize + 6))
+      });
+    }
+  }, [inputValue, fontSize, fontFamily, scaleFactor, isResizing, coordinates.x, coordinates.y, coordinates.width, coordinates.height, fixedDimensions.width, fixedDimensions.height, onResize, measureTextWidth]);
 
   // Auto-resize width (grow and retract) while editing; keep height as-is
+  // (Kept for fast response while typing; guard above prevents redundant updates)
   useEffect(() => {
     if (!isEditing || isResizing) return;
+    const MIN_TEXT_TAG_WIDTH_UNSCALED = 60;
     const paddingPx = 8; // left padding 4px + small buffer
-    const baseMinWidthPx = fixedDimensions.width * scaleFactor; // constant min width
     const measuredPx = measureTextWidth(inputValue, fontSize, fontFamily) + paddingPx;
-    const desiredWidthPx = Math.max(baseMinWidthPx, Math.ceil(measuredPx));
+    const desiredWidthPx = Math.max(Math.ceil(measuredPx), MIN_TEXT_TAG_WIDTH_UNSCALED * scaleFactor);
     const desiredWidthUnscaled = desiredWidthPx / scaleFactor;
 
     // Trigger when width meaningfully changed (allows shrink and expand)

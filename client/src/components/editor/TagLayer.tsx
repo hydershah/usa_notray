@@ -68,11 +68,10 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   const fixedDimensions = getTagDimensions(tag.tagType);
   const displayCoords = {
     x: Math.round(tag.coordinates.x * scaleFactor),
-    // For lower-left positioning, we need to subtract the height from the Y coordinate
-    y: Math.round((tag.coordinates.y - fixedDimensions.height) * scaleFactor),
-    // Use consistent dimensions from constants for all tag types
-    width: Math.round(fixedDimensions.width * scaleFactor),
-    height: Math.round(fixedDimensions.height * scaleFactor)
+    // Use TOP-LEFT origin consistently across viewer and PDF
+    y: Math.round(tag.coordinates.y * scaleFactor),
+    width: Math.round((tag.coordinates.width ?? fixedDimensions.width) * scaleFactor),
+    height: Math.round((tag.coordinates.height ?? fixedDimensions.height) * scaleFactor)
   };
   
   // Debug: Log the rendering coordinates

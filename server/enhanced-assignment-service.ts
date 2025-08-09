@@ -104,7 +104,7 @@ export class EnhancedAssignmentService {
           .set({
             notaryId: assignmentResult.notaryId,
             selectedNotary: assignmentResult.notaryId.toString(),
-            notaryApprovalStatus: assignmentResult.requiresApproval ? 'assigned_pending_approval' : 'approved'
+            notaryApprovalStatus: (userRole === 'admin' || userRole === 'notary') ? 'approved' : (assignmentResult.requiresApproval ? 'assigned_pending_approval' : 'approved')
           })
           .where(eq(jobs.id, jobId));
       }

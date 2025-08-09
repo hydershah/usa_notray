@@ -109,6 +109,9 @@ export class CertificateVerificationService {
       let certificateExpiry: Date | undefined;
       let certificateIssued: Date | undefined;
 
+      // Determine if this user has admin privileges for override behavior
+      const hasAdminPrivilege = Array.isArray(user?.privileges) && user.privileges.includes('admin');
+
       // For notaries, first check if they have uploaded .pfx certificate
       if (user.role === 'notary' && user.publicCertificateFile) {
         try {
@@ -169,13 +172,17 @@ export class CertificateVerificationService {
 
       // Additional validation for notaries
       if (user.role === 'notary') {
-        if (user.approvalStatus !== 'approved') {
-          issues.push('Notary not approved');
-          canProceed = false;
-        }
-        if (!user.profileSubmitted) {
-          issues.push('Notary profile incomplete');
-          canProceed = false;
+        // Admin users acting as notaries should not be blocked by approval/profile checks
+        const isAdminOverride = hasAdminPrivilege === true;
+        if (!isAdminOverride) {
+          if (user.approvalStatus !== 'approved') {
+            issues.push('Notary not approved');
+            canProceed = false;
+          }
+          if (!user.profileSubmitted) {
+            issues.push('Notary profile incomplete');
+            canProceed = false;
+          }
         }
       }
 
@@ -229,14 +236,9 @@ export class CertificateVerificationService {
         return participants;
       }
       
-      // 1. Add Job Creator
-      if (job.userId) {
-        const [creator] = await db.select().from(users).where(eq(users.id, job.userId)).limit(1);
-        if (creator && !participantIds.has(creator.id)) {
-          participants.push(creator);
-          participantIds.add(creator.id);
-        }
-      }
+      // 1. Do not add Job Creator by default.
+      //    The creator will be included below if they are the assigned notary
+      //    or if they appear in the signers list.
 
       // 2. Add Notary if assigned
       if (job.selectedNotary) {

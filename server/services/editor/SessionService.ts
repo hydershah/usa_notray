@@ -420,7 +420,7 @@ export class SessionService {
     const colors = [
       '#4ECDC4', // Turquoise
       '#45B7D1', // Sky Blue
-      '#96CEB4', // Sage Green
+      '#3b82f6', // Blue
       '#FFEAA7', // Soft Yellow
       '#DDA0DD', // Plum
       '#98D8C8', // Mint

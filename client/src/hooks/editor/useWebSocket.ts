@@ -170,21 +170,24 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
           break;
 
         case 'tag_placed':
-          console.log('📝 Tag placed by another user');
+          console.log('📝 Tag placed');
           addTag(message.payload.tag);
           
           // 🔧 SYNC TEXT INPUTS: If it's a text tag, also update text inputs state
           if (message.payload.tag.tagType === 'T') {
             console.log('📝 Syncing new text tag to text inputs:', message.payload.tag.id);
-            // Trigger text input reload or direct state update
+            // Trigger text input reload or direct state update, include origin user id
             if (typeof window !== 'undefined' && (window as any).textInputSyncCallback) {
-              (window as any).textInputSyncCallback('tag_placed', message.payload.tag);
+              (window as any).textInputSyncCallback('tag_placed', {
+                ...message.payload.tag,
+                updatedBy: message.userId
+              });
             }
           }
           break;
 
         case 'tag_updated':
-          console.log('✏️ Tag updated by another user');
+          console.log('✏️ Tag updated');
           updateTag(message.payload.tagId, message.payload.updates);
           
           // 🔧 SYNC TEXT INPUTS: If it's a text tag, also update text inputs state
@@ -193,14 +196,15 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
             if (typeof window !== 'undefined' && (window as any).textInputSyncCallback) {
               (window as any).textInputSyncCallback('tag_updated', {
                 id: message.payload.tagId,
-                updates: message.payload.updates
+                updates: message.payload.updates,
+                updatedBy: message.payload.updatedBy ?? message.userId
               });
             }
           }
           break;
 
         case 'tag_saved':
-          console.log('💾 Tag saved by another user (coordinates updated)');
+          console.log('💾 Tag saved (coordinates updated)');
           // Handle tag_saved similar to tag_updated, but specifically for coordinate changes
           if (message.payload.tagId && message.payload.coordinates) {
             updateTag(message.payload.tagId, { coordinates: message.payload.coordinates });
@@ -209,7 +213,8 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
             if (typeof window !== 'undefined' && (window as any).textInputSyncCallback) {
               (window as any).textInputSyncCallback('tag_updated', {
                 id: message.payload.tagId,
-                updates: { coordinates: message.payload.coordinates }
+                updates: { coordinates: message.payload.coordinates },
+                updatedBy: message.payload.updatedBy ?? message.userId
               });
             }
           }

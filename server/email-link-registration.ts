@@ -163,9 +163,9 @@ export function registerEmailLinkAuth(app: Express): void {
         return res.status(200).send(`
           <html>
             <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-              <h2 style="color: #10b981;">✅ Account Already Exists</h2>
+              <h2 style="color: #3b82f6;">✅ Account Already Exists</h2>
               <p>An account with this email already exists. You can log in now.</p>
-              <a href="/login" style="background: #10b981; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Go to Login</a>
+              <a href="/login" style="background: #3b82f6; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Go to Login</a>
             </body>
           </html>
         `);

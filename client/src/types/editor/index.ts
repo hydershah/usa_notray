@@ -124,8 +124,8 @@ export interface NotaryLogEntry {
 export const USER_COLORS = {
   notary: '#1e40af',     // Professional Blue
   admin: '#7c2d12',      // Professional Brown
-  signer1: '#059669',    // Professional Green
-  signer2: '#7c3aed',    // Professional Purple
+  signer1: '#3b82f6',    // Professional Blue
+  signer2: '#1d4ed8',    // Professional Dark Blue
   signer3: '#dc2626',    // Professional Red
   signer4: '#ea580c',    // Professional Orange
   signer5: '#0891b2',    // Professional Cyan

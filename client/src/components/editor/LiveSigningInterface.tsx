@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/auth';
 import { NotaryVideoSession } from '@/components/video';
-import { PDFTaggingEditor } from './PDFTaggingEditor';
+import { PDFTaggingEditor, PDFTaggingEditorHandle } from './PDFTaggingEditor';
 import { DocumentSelector } from './DocumentSelector';
 import { ParticipantPanel } from './ParticipantPanel';
 import { UnfilledTagsAlert } from './UnfilledTagsAlert';
@@ -445,6 +445,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   const lastRequestTimeRef = useRef<number>(0);
   const requestDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const [sessionStarting, setSessionStarting] = useState(false);
+  const editorRef = useRef<PDFTaggingEditorHandle | null>(null);
 
   // Session control functions with proper debouncing and request deduplication
   const handleSessionAction = async (action: 'start' | 'pause' | 'resume' | 'complete') => {
@@ -965,8 +966,11 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
               handleBulkFillTags();
             }}
             onTagClick={(tagId) => {
-              // TODO: Scroll to and highlight the tag
-              console.log('Navigate to tag:', tagId);
+              try {
+                editorRef.current?.jumpToTag(tagId);
+              } catch (e) {
+                console.log('Navigate to tag failed', e);
+              }
             }}
             onClose={() => setUnfilledTagsError(null)}
           />
@@ -1007,6 +1011,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         {/* Document Editor */}
         <div className="flex-1 overflow-hidden min-w-0">
           <PDFTaggingEditor
+            ref={editorRef}
             sessionId={sessionId}
             mode="signing"
             documents={documents}

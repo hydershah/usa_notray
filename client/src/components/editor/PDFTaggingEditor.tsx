@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useRef, useMemo, useImperativeHandle } from 'react';
 import { PDFViewer } from './PDFViewer';
 import { TaggingToolbar } from './TaggingToolbar';
 
@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useTagOperations } from '../../hooks/editor/useTagOperations';
 import { useStreamlinedTextInputs } from '../../hooks/editor/useStreamlinedTextInputs';
 import { getTagDimensions } from '@/lib/constants/tagConstants';
+import { IncompleteTagHUD } from './IncompleteTagHUD';
 import type { 
   EditorSession, 
   SessionDocument, 
@@ -38,7 +39,11 @@ interface PDFTaggingEditorProps {
   webSocket?: WebSocketConnection;
 }
 
-export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
+export interface PDFTaggingEditorHandle {
+  jumpToTag: (tagId: string) => Promise<void> | void;
+}
+
+export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTaggingEditorProps>(({
   sessionId,
   mode,
   documents,
@@ -51,7 +56,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
   onSyncUsers,
   isSyncLoading = false,
   webSocket
-}) => {
+}, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +64,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
   // Track current page canvas for StreamlinedTextLayer
   const [currentPageCanvas, setCurrentPageCanvas] = useState<HTMLCanvasElement | null>(null);
   const pdfViewerRef = useRef<any>(null); // Add ref to access PDFViewer internals
+  const [highlightedTagId, setHighlightedTagId] = useState<string | null>(null);
   
   // Interactive tag modal state
   const [selectedTagForInput, setSelectedTagForInput] = useState<DocumentTag | null>(null);
@@ -133,11 +139,74 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     getDocumentTags,
     loadTagsForDocument,
     getTagDimensions,
-    selectTag
+    selectTag,
+    setCurrentPage
   } = useEditorStore();
 
+  // Handle document switching (placed before jumpToTag to avoid use-before-declare)
+  const handleDocumentChange = useCallback(async (document: SessionDocument) => {
+    try {
+      console.log(`🔄 Switching to document: ${document.fileName}`);
+      // Switch to the document (this clears selected tags and resets viewer state)
+      switchToDocument(document);
+      // Load tags for the new document
+      await loadTagsForDocument(document.id);
+      // Load whiteout overlays for the new document
+      await useEditorStore.getState().loadWhiteoutOverlays(document.id);
+      // Load streamlined text inputs for this document
+      loadTextInputsFromTags(getDocumentTags(document.id));
+      console.log(`✅ Successfully switched to document: ${document.fileName}`);
+    } catch (error) {
+      console.error('❌ Failed to switch document:', error);
+      toast({
+        title: "Error",
+        description: "Failed to switch document. Please try again.",
+        variant: "destructive",
+      });
+    }
+  }, [switchToDocument, loadTagsForDocument, getDocumentTags, loadTextInputsFromTags, toast]);
 
+  // Compute incomplete tags for current document to visually pulse them
+  const incompleteTagsForCurrentDoc = useMemo(() => {
+    if (!currentDocument) return [] as string[];
+    return tags
+      .filter(t => t.documentId === currentDocument.id && !t.isCompleted)
+      .map(t => t.id);
+  }, [tags, currentDocument]);
 
+  // Expose imperative handle for jumping to a tag from parent
+  useImperativeHandle(ref, () => ({
+    jumpToTag: async (tagId: string) => {
+      try {
+        const targetTag = useEditorStore.getState().tags.find(t => t.id.toString() === tagId.toString());
+        if (!targetTag) {
+          console.warn('jumpToTag: tag not found', tagId);
+          return;
+        }
+
+        // Switch document if needed
+        if (!currentDocument || currentDocument.id !== targetTag.documentId) {
+          const targetDoc = documents.find(d => d.id === targetTag.documentId);
+          if (targetDoc) {
+            await (async () => {
+              await handleDocumentChange(targetDoc);
+            })();
+          }
+        }
+
+        // Set page and highlight
+        setCurrentPage(targetTag.coordinates.pageNumber);
+        setHighlightedTagId(targetTag.id);
+        // Clear highlight after a short delay
+        window.setTimeout(() => setHighlightedTagId(null), 2000);
+      } catch (e) {
+        console.error('jumpToTag failed', e);
+      }
+    }
+  }), [documents, currentDocument, handleDocumentChange, setCurrentPage]);
+
+  
+  
   // Handle page load from PDFViewer to get canvas element
   const handlePageLoad = useCallback((pageNumber: number, canvas: HTMLCanvasElement, scaleFactor: number) => {
     console.log(`📄 Canvas updated for page ${pageNumber}:`, canvas);
@@ -150,35 +219,6 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
     
     // Also store all page canvases for potential fallback (optional enhancement)
   }, [viewer.currentPage]);
-
-  // Handle document switching
-  const handleDocumentChange = useCallback(async (document: SessionDocument) => {
-    try {
-      console.log(`🔄 Switching to document: ${document.fileName}`);
-      
-      // Switch to the document (this clears selected tags and resets viewer state)
-      switchToDocument(document);
-      
-      // Load tags for the new document
-      await loadTagsForDocument(document.id);
-      
-      // Load whiteout overlays for the new document
-      await useEditorStore.getState().loadWhiteoutOverlays(document.id);
-      
-      // Load streamlined text inputs for this document
-      loadTextInputsFromTags(getDocumentTags(document.id));
-      
-      console.log(`✅ Successfully switched to document: ${document.fileName}`);
-      
-    } catch (error) {
-      console.error('❌ Failed to switch document:', error);
-      toast({
-        title: "Error",
-        description: "Failed to switch document. Please try again.",
-        variant: "destructive",
-      });
-    }
-  }, [switchToDocument, loadTagsForDocument, getDocumentTags, loadTextInputsFromTags, toast]);
 
   // Update canvas when current page changes - with fallback canvas retrieval
   useEffect(() => {
@@ -1551,6 +1591,27 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
             currentUser={currentUser}
             isSyncLoading={isSyncLoading}
             webSocket={webSocket}
+            highlightedTagId={highlightedTagId || undefined}
+            incompleteTags={incompleteTagsForCurrentDoc}
+            onScrollToTag={() => {
+              // Clear highlight shortly after scrolling completes to avoid lingering styles
+              window.setTimeout(() => setHighlightedTagId(null), 1500);
+            }}
+          />
+
+          {/* Floating Unfilled-Tag Navigator */}
+          <IncompleteTagHUD
+            tags={tags.filter(t => t.documentId === currentDocument.id)}
+            participants={participants}
+            currentUserId={currentUserId}
+            onJumpToTag={(tagId) => {
+              // delegate to exposed handler
+              const target = useEditorStore.getState().tags.find(t => t.id.toString() === tagId.toString());
+              if (!target) return;
+              setHighlightedTagId(tagId);
+              setCurrentPage(target.coordinates.pageNumber);
+            }}
+            className="pointer-events-auto"
           />
         </div>
 
@@ -1565,7 +1626,7 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
                 participants={participants}
                 sessionId={sessionId}
                 mode={mode}
-                onDocumentSwitch={handleDocumentSwitch}
+                onDocumentSwitch={handleDocumentChange}
                 onSessionComplete={handleSessionComplete}
                 liveSessionState={liveSessionState}
                 onSetActiveUser={onSetActiveUser}
@@ -1637,4 +1698,4 @@ export const PDFTaggingEditor: React.FC<PDFTaggingEditorProps> = ({
       />
     </div>
   );
-};
+});

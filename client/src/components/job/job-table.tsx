@@ -78,6 +78,7 @@ import {
   Grid3X3
 } from 'lucide-react';
 import { type Job } from '@shared/schema';
+import { useLocation } from 'wouter';
 
 // Type for paginated response
 interface JobsResponse {
@@ -103,6 +104,7 @@ interface JobTableProps {
 }
 
 export function JobTable({ onCreateJob }: JobTableProps) {
+  const [, setLocation] = useLocation();
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -896,6 +898,15 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                           >
                             <Eye className="h-4 w-4 mr-2" />
                             View
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setLocation(`/jobs/${job.id}`)}
+                            className="hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                          >
+                            <ExternalLink className="h-4 w-4 mr-2" />
+                            Details
                           </Button>
                           {canCreateJob && (
                             <Button
