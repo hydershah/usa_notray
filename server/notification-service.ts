@@ -105,6 +105,12 @@ export class NotificationService {
         throw new Error('Job not found');
       }
 
+      // Idempotency guard: skip if already sent
+      if (job.signerNotificationsSent) {
+        console.log(`ℹ️ Signer invitations already sent for job ${jobId}, skipping.`);
+        return;
+      }
+
       console.log(`🔍 DEBUG: Job ${jobId} found - title company: ${job.titleCompany}`);
 
       // Get all signers for this job
@@ -191,8 +197,8 @@ export class NotificationService {
         }
       }
 
-      // Only mark job as having notifications sent if ALL emails succeeded
-      if (successCount === jobSigners.length) {
+      // Mark job as having notifications sent if any succeeded
+      if (successCount > 0) {
         await db
           .update(jobs)
           .set({
@@ -200,10 +206,9 @@ export class NotificationService {
             signerNotificationsSentAt: new Date()
           })
           .where(eq(jobs.id, jobId));
-        
-        console.log(`✅ All ${successCount} signer invitations sent successfully for job ${jobId}`);
+        console.log(`✅ ${successCount} signer invitation(s) sent for job ${jobId}`);
       } else {
-        console.log(`⚠️ Partial success for job ${jobId}: ${successCount} sent, ${failureCount} failed`);
+        console.log(`⚠️ All signer invitations failed for job ${jobId}`);
       }
       
     } catch (error) {

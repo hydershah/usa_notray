@@ -188,6 +188,9 @@ export const users = pgTable("users", {
   
   // Profile completion tracking
   profileSubmitted: boolean("profile_submitted").default(false), // Track if user has gone through profile completion process
+  
+  // Account setup completion tracking
+  accountSetupComplete: boolean("account_setup_complete").default(false)
 });
 
 // Companies table - Enhanced for comprehensive company management  

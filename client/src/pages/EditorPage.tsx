@@ -274,6 +274,13 @@ const EditorPage: React.FC<EditorPageProps> = () => {
       // Small delay to ensure any pending operations complete
       await new Promise(resolve => setTimeout(resolve, 1000));
       
+      // Redirect signers and witnesses to dashboard after completion
+      if (user?.role === 'signer' || user?.role === 'witness') {
+        console.log('🏠 Signer/Witness completed session, redirecting to dashboard');
+        setLocation('/dashboard');
+        return;
+      }
+      
       console.log('🚀 Navigating to job details page...');
       
       // Navigate to job details with success indicator

@@ -9,7 +9,8 @@ import {
   PROFESSIONAL_COLORS,
   TYPOGRAPHY,
   LAYOUT,
-  TAG_TYPE_CONFIG 
+  TAG_TYPE_CONFIG,
+  calculateOptimalWidth
 } from '@/lib/constants/tagConstants';
 import { useEditorStore } from '@/hooks/editor/useEditorStore';
 
@@ -142,14 +143,37 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     });
   }, [scaleFactor, fixedDimensions.width, fixedDimensions.height]);
   
-  // Create display coordinates scaled for current zoom level
-  const displayCoords = {
-    x: coordinates.x * scaleFactor,
-    y: coordinates.y * scaleFactor,
-    // Use saved dimensions with fallback, and scale to current zoom – keep visual size stable across zoom
-    width: (coordinates.width || fixedDimensions.width) * (scaleFactor / (useEditorStore.getState().viewer.zoomLevel || 1)),
-    height: (coordinates.height || fixedDimensions.height) * (scaleFactor / (useEditorStore.getState().viewer.zoomLevel || 1))
-  };
+  // Auto width based on content while editing; otherwise honor saved/manual size
+  const autoUnscaledWidth = useMemo(() => {
+    // Calculate in display pixels then convert to unscaled PDF units
+    const displayWidthPx = calculateOptimalWidth(inputValue, fontSize, fontFamily);
+    const unscaled = displayWidthPx / Math.max(0.0001, scaleFactor);
+    return Math.max(fixedDimensions.width, unscaled);
+  }, [inputValue, fontSize, fontFamily, fixedDimensions.width, scaleFactor]);
+
+  // Auto height at least matches current font size line-height while editing
+  const autoUnscaledHeight = useMemo(() => {
+    const lineHeightPx = Math.ceil(fontSize * 1.2);
+    const unscaled = lineHeightPx / Math.max(0.0001, scaleFactor);
+    return Math.max(fixedDimensions.height, unscaled);
+  }, [fontSize, fixedDimensions.height, scaleFactor]);
+ 
+  // Compute display coordinates (match PDFViewer sizing logic)
+  const displayCoords = useMemo(() => {
+    const savedWidth = coordinates.width || fixedDimensions.width;
+    const savedHeight = coordinates.height || fixedDimensions.height;
+
+    // When editing, auto-fit to content (grow and shrink). When not editing, use saved/manual size.
+    const finalUnscaledWidth = isEditing ? autoUnscaledWidth : savedWidth;
+    const finalUnscaledHeight = Math.max(savedHeight, isEditing ? autoUnscaledHeight : savedHeight, fixedDimensions.height);
+
+    return {
+      x: Math.round(coordinates.x * scaleFactor),
+      y: Math.round(coordinates.y * scaleFactor),
+      width: Math.round(finalUnscaledWidth * scaleFactor),
+      height: Math.round(finalUnscaledHeight * scaleFactor)
+    };
+  }, [coordinates.x, coordinates.y, coordinates.width, coordinates.height, fixedDimensions.height, fixedDimensions.width, scaleFactor, isEditing, autoUnscaledWidth, autoUnscaledHeight]);
 
   // Keep local live position in sync when not dragging
   useEffect(() => {
@@ -180,13 +204,13 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   const canEdit = true; // Always allow editing for text inputs
 
   // Min/Max constraints for resize (visual – independent of zoom)
-  const minWidthPx = (fixedDimensions.minWidth || 80);
+  const minWidthPx = 1;
   const maxWidthPx = 800; // generous maximum
-  const minHeightPx = (fixedDimensions.minHeight || 25);
+  const minHeightPx = 1;
   const maxHeightPx = 120; // keep single-line ergonomics
   
   // Memoized professional styling
-  const professionalStyle = useMemo(() => getTagStyle('T', isSelected, hasContent, userColor), [hasContent, isSelected, userColor]);
+  const professionalStyle = useMemo(() => getTagStyle('T', isSelected, hasContent, userColor), [hasContent, isSelected, userColor]); // keeping reference for potential future use
 
   // Auto-focus when editing starts
   useEffect(() => {
@@ -218,282 +242,95 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
             setIsEditing(false);
           }
           break;
-        case 'Delete':
-        case 'Backspace':
-          if (!isEditing) {
-            e.preventDefault();
-            onDelete();
-          }
-          break;
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isSelected, isEditing, content, onDelete]);
+  }, [isSelected, isEditing, content]);
 
-  // Save content with debouncing
-  const debouncedSave = useCallback(
-    debounce(async (value: string) => {
-      // Optimistically update local store immediately so typing persists
-      onSave(value);
-
-      // If this is a temporary ID, skip server save until real ID is assigned
-      const isTempId = id.startsWith('text_temp_') || id.startsWith('temp');
-      if (isTempId) {
-        return;
-      }
-
-      try {
-        const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${id}/content`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          },
-          body: JSON.stringify({
-              content: value,
-              fontSize: 14,
-              fontFamily: TYPOGRAPHY.fontFamily,
-              textColor: PROFESSIONAL_COLORS.text
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to save: ${response.status}`);
-        }
-
-        // Broadcast via WebSocket
-        if (webSocket && webSocket.readyState === WebSocket.OPEN) {
-          webSocket.send(JSON.stringify({
-            // Use existing server-supported event for text input content changes
-            type: 'text_input_changed',
-            payload: {
-              textInputId: id,
-              content: value,
-              coordinates,
-              // keep coordinates in payload; sessionId will be at the top level
-            },
-            userId: assignedUserId.toString(),
-            sessionId,
-            timestamp: Date.now()
-          }));
-        }
-      } catch (error) {
-        console.error('Save failed:', error);
-        toast({
-          title: "Save Error",
-          description: "Failed to save text content",
-          variant: "destructive"
-        });
-      }
-    }, 400),
-    [id, sessionId, coordinates, assignedUserId, webSocket, onSave, toast]
-  );
-
-  // Handle input changes
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value;
-    setInputValue(newValue);
-    debouncedSave(newValue);
-  };
-
-  // Handle input blur (save and exit edit mode)
-  const handleInputBlur = () => {
-                setIsEditing(false);
-    if (inputValue !== content) {
-      debouncedSave.cancel();
-      debouncedSave(inputValue);
-    }
-  };
-
-  // Handle input Enter key
-  const handleInputKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleInputBlur();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      setInputValue(content);
-      setIsEditing(false);
-    }
-  };
-
-  // We avoid store updates during drag for ultra-smooth movement; persist on drag stop only
- 
-  // Handle drag events with smooth updates (requestAnimationFrame throttled)
-  const handleDragStart = useCallback(() => {
+  const handleDragStart = (_: any, data: any) => {
     setIsDragging(true);
-  }, []);
-
-  const handleDrag = useCallback((e: any, data: any) => {
-    // Update only local pixel position; skip store updates until drag stops
     latestDragPosRef.current = { x: data.x, y: data.y };
     scheduleDragUpdate();
-  }, [scheduleDragUpdate]);
-
-  const handleDragStop = useCallback((e: any, data: any) => {
+  };
+  const handleDrag = (_: any, data: any) => {
+    latestDragPosRef.current = { x: data.x, y: data.y };
+    scheduleDragUpdate();
+  };
+  const handleDragStop = (_: any, data: any) => {
     setIsDragging(false);
-    cancelPendingRaf();
-    // Flush final position
     setLivePosition({ x: data.x, y: data.y });
-    
-    // Snap to grid for professional alignment on drop
-    const snappedX = snapToGrid(data.x / scaleFactor);
-    const snappedY = snapToGrid(data.y / scaleFactor);
-    
-    // Final update with snapped coordinates
-    if (onMove) {
-      onMove({ x: snappedX, y: snappedY });
-    }
-  }, [scaleFactor, onMove, cancelPendingRaf]);
+    onMove?.({ x: data.x / scaleFactor, y: data.y / scaleFactor });
+  };
 
-  // Handle resize
-  const handleResizeStart = useCallback(() => {
+  const handleResizeStart = () => setIsResizing(true);
+  const handleResize = (_: any, __: any, ref: any) => {
     setIsResizing(true);
-  }, []);
-
-  const handleResize = useCallback((e: any, direction: any, ref: any, delta: any, position: any) => {
-    // Update local visual size only; do not persist mid-resize to avoid jitter
-    setControlledSize({
-      width: ref.offsetWidth,
-      height: ref.offsetHeight
+    onResize?.({
+      x: coordinates.x,
+      y: coordinates.y,
+      width: ref.offsetWidth / scaleFactor,
+      height: ref.offsetHeight / scaleFactor
     });
-  }, []);
-
-  const handleResizeStop = useCallback((e: any, direction: any, ref: any, delta: any, position: any) => {
-    // Update controlled size
-    setControlledSize({
-      width: ref.offsetWidth,
-      height: ref.offsetHeight
-    });
-    
-    // Final resize update with snapped coordinates
-    if (onResize) {
-      const zoomLevel = useEditorStore.getState().viewer.zoomLevel || 1;
-      const sizeScale = scaleFactor / zoomLevel;
-      const snappedX = snapToGrid(position.x / scaleFactor);
-      const snappedY = snapToGrid(position.y / scaleFactor);
-      const snappedWidth = snapToGrid(ref.offsetWidth / sizeScale);
-      const snappedHeight = snapToGrid(ref.offsetHeight / sizeScale);
-      
-      onResize({
-        x: snappedX,
-        y: snappedY,
-        width: Math.max(snappedWidth, 40), // Minimum width
-        height: Math.max(snappedHeight, 25) // Minimum height
-      });
-    }
+  };
+  const handleResizeStop = (_: any, __: any, ref: any) => {
     setIsResizing(false);
-  }, [scaleFactor, onResize]);
-
-  // Handle container click
-  const handleContainerClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    
-    if (onSelect) {
-      onSelect();
-    }
-    
-    // Focus the container so keyboard events work
-    (e.currentTarget as HTMLElement).focus();
-    
-    // Single-click just selects the tag, double-click or Enter starts editing
-    // This allows users to select the tag and then press Delete to remove it
+    onResize?.({
+      x: coordinates.x,
+      y: coordinates.y,
+      width: Math.max(1, Math.round(ref.offsetWidth / scaleFactor)),
+      height: Math.max(1, Math.round(ref.offsetHeight / scaleFactor))
+    });
   };
 
-  // Handle double-click to start editing
-  const handleDoubleClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!isEditing) {
-      setIsEditing(true);
-    }
+  const handleContainerClick = () => {
+    if (!isEditing) onSelect?.();
   };
 
-  // Measure text width to auto-grow container horizontally (single line)
-  const measureTextWidth = useCallback((text: string, fontPx: number, family: string) => {
-    if (typeof document === 'undefined') return 0;
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    if (!context) return 0;
-    context.font = `${fontPx}px ${family}`;
-    const metrics = context.measureText(text || '');
-    return metrics.width;
-  }, []);
+  // Allow double-click to start editing immediately and focus the input
+  const handleContainerDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    onSelect?.();
+    setIsEditing(true);
+    // Ensure focus after state update
+    setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 0);
+  };
 
-  // Recalculate local width and persist to coordinates when content or font changes
-  // - Works while editing and also when a user changes the font via toolbar
-  // - Shrinks when text is shorter; grows when longer
-  useEffect(() => {
-    if (isResizing) return; // don't fight manual resize
-
-    // Allow smaller than default tag width but keep a sensible minimum for usability
-    const MIN_TEXT_TAG_WIDTH_UNSCALED = 60; // px in PDF units
-
-    const paddingPx = 8; // left padding + small buffer
-    const measuredPx = measureTextWidth(inputValue, fontSize, fontFamily) + paddingPx;
-    const desiredWidthPx = Math.max(Math.ceil(measuredPx), MIN_TEXT_TAG_WIDTH_UNSCALED * scaleFactor);
-
-    // Update local live size so the border tracks immediately
-    setControlledSize(prev => ({ ...prev, width: desiredWidthPx }));
-
-    // Persist to coordinates (unscaled) so Rnd size updates – debounce handled upstream
-    const desiredWidthUnscaled = desiredWidthPx / scaleFactor;
-    const currentWidthUnscaled = coordinates.width || fixedDimensions.width;
-
-    if (onResize && Math.abs(currentWidthUnscaled - desiredWidthUnscaled) > 0.5) {
-      onResize({
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => setInputValue(e.target.value);
+  const handleInputBlur = () => {
+    setIsEditing(false);
+    // Persist auto-sized dimensions based on current content
+    onResize?.({
+      x: coordinates.x,
+      y: coordinates.y,
+      width: Math.max(1, Math.round(autoUnscaledWidth)),
+      height: Math.max(1, Math.round(autoUnscaledHeight))
+    });
+    onSave(inputValue);
+  };
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      setIsEditing(false);
+      // Persist auto-sized dimensions on commit
+      onResize?.({
         x: coordinates.x,
         y: coordinates.y,
-        width: desiredWidthUnscaled,
-        // Do not auto-inflate height based on font size; enforce only the configured minimum
-        height: Math.max(coordinates.height || fixedDimensions.height, fixedDimensions.height)
+        width: Math.max(1, Math.round(autoUnscaledWidth)),
+        height: Math.max(1, Math.round(autoUnscaledHeight))
       });
+      onSave(inputValue);
     }
-  }, [inputValue, fontSize, fontFamily, scaleFactor, isResizing, coordinates.x, coordinates.y, coordinates.width, coordinates.height, fixedDimensions.width, fixedDimensions.height, onResize, measureTextWidth]);
-
-  // Auto-resize width (grow and retract) while editing; keep height as-is
-  // (Kept for fast response while typing; guard above prevents redundant updates)
-  useEffect(() => {
-    if (!isEditing || isResizing) return;
-    const MIN_TEXT_TAG_WIDTH_UNSCALED = 60;
-    const paddingPx = 8; // left padding 4px + small buffer
-    const measuredPx = measureTextWidth(inputValue, fontSize, fontFamily) + paddingPx;
-    const desiredWidthPx = Math.max(Math.ceil(measuredPx), MIN_TEXT_TAG_WIDTH_UNSCALED * scaleFactor);
-    const desiredWidthUnscaled = desiredWidthPx / scaleFactor;
-
-    // Trigger when width meaningfully changed (allows shrink and expand)
-    const currentWidthUnscaled = coordinates.width || fixedDimensions.width;
-    if (onResize && Math.abs(currentWidthUnscaled - desiredWidthUnscaled) > 0.5) {
-      onResize({
-        x: coordinates.x,
-        y: coordinates.y,
-        width: desiredWidthUnscaled,
-        // Keep existing height; ensure it does not fall below the configured minimum
-        height: Math.max(coordinates.height || fixedDimensions.height, fixedDimensions.height)
-      });
-    }
-  }, [isEditing, isResizing, inputValue, fontSize, fontFamily, scaleFactor, coordinates.x, coordinates.y, coordinates.width, coordinates.height, fixedDimensions.width, fixedDimensions.height, onResize, measureTextWidth]);
-
-  // Ensure height respects only the configured minimum when font changes (no auto-growth)
-  useEffect(() => {
-    if (isResizing) return;
-    const enforcedMin = fixedDimensions.height; // already 25 for text
-    const currentHeight = coordinates.height || fixedDimensions.height;
-    if (onResize && currentHeight < enforcedMin - 0.5) {
-      onResize({
-        x: coordinates.x,
-        y: coordinates.y,
-        width: coordinates.width || fixedDimensions.width,
-        height: enforcedMin
-      });
-    }
-  }, [fontSize, isResizing, coordinates.x, coordinates.y, coordinates.width, coordinates.height, fixedDimensions.width, fixedDimensions.height, onResize]);
+  };
 
   return (
     <Rnd
       size={{ width: isResizing ? controlledSize.width : displayCoords.width, height: isResizing ? controlledSize.height : displayCoords.height }}
-      position={isDragging && livePosition ? livePosition : { x: displayCoords.x, y: displayCoords.y }}
+      position={isDragging && livePosition ? (livePosition as { x: number; y: number }) : { x: displayCoords.x, y: displayCoords.y }}
       onDrag={handleDrag}
       onDragStart={handleDragStart}
       onDragStop={handleDragStop}
@@ -505,9 +342,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
       bounds="parent"
       cancel=".no-drag"
       minWidth={minWidthPx}
-      maxWidth={maxWidthPx}
       minHeight={minHeightPx}
-      maxHeight={maxHeightPx}
       dragGrid={[1, 1]}
       className={
         `
@@ -523,11 +358,10 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
             ? 'none' 
             : `1px solid ${PROFESSIONAL_COLORS.border}`,
         borderRadius: LAYOUT.borderRadius.base,
-        // Very light gray background when empty for better visibility
         backgroundColor: hasContent ? 'transparent' : '#f3f4f6',
         pointerEvents: 'auto',
         zIndex: isSelected ? 1000 : 100,
-        padding: '0', // SIMPLE: No padding on container
+        padding: '0',
         boxSizing: 'border-box',
         cursor: isEditing ? 'text' : 'grab',
         lineHeight: 1,
@@ -537,31 +371,17 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     >
       <div
         onClick={handleContainerClick}
-        onDoubleClick={handleDoubleClick}
-        onKeyDown={(e) => {
-          if ((e.key === 'Delete' || e.key === 'Backspace') && !isEditing) {
-            e.preventDefault();
-            onDelete();
-          } else if (e.key === 'Enter' && !isEditing) {
-            e.preventDefault();
-            setIsEditing(true);
-          }
-        }}
-        tabIndex={0}
-        className={isEditing ? '' : 'drag-handle'}
+        onDoubleClick={handleContainerDoubleClick}
+        data-text-input-id={id}
+        className="streamlined-text-input"
         style={{
           width: '100%',
           height: '100%',
           display: 'flex',
           alignItems: 'center',
-          border: 'none',
+          justifyContent: 'flex-start',
           background: 'transparent',
-          outline: 'none',
-          fontFamily: fontFamily,
-          fontSize: `${fontSize}px`,
-          fontWeight: TYPOGRAPHY.fontWeight.medium,
-          color: textColor,
-          cursor: isEditing ? 'text' : (isSelected ? 'pointer' : 'grab'),
+          userSelect: isEditing ? 'text' : 'none',
           pointerEvents: 'auto',
           lineHeight: 1
         }}
@@ -585,8 +405,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
               fontSize: `${fontSize}px`,
               fontWeight: TYPOGRAPHY.fontWeight.medium,
               color: textColor,
-              padding: '0',
-              paddingLeft: '4px',
+              padding: 0,
               textAlign: 'left',
               lineHeight: 1,
               whiteSpace: 'nowrap'
@@ -600,7 +419,6 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-start',
-              paddingLeft: '4px',
               textOverflow: 'clip',
               whiteSpace: 'nowrap',
               color: hasContent ? textColor : PROFESSIONAL_COLORS.textPlaceholder,
@@ -608,7 +426,8 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
               fontFamily: fontFamily,
               fontSize: `${fontSize}px`,
               overflow: 'hidden',
-              lineHeight: 1
+              lineHeight: 1,
+              padding: 0
             }}
           >
             {hasContent ? inputValue : TAG_TYPE_CONFIG.T.placeholder}

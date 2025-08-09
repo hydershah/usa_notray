@@ -127,6 +127,22 @@ export function JobTable({ onCreateJob }: JobTableProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Helpers to read fields from either camelCase (drizzle selects) or snake_case (raw SQL)
+  const getValue = <T,>(obj: any, keys: string[], fallback?: T): T | undefined => {
+    for (const key of keys) {
+      const value = obj?.[key];
+      if (value !== undefined && value !== null && String(value).length > 0) return value as T;
+    }
+    return fallback;
+  };
+
+  const getTitleCompany = (job: Job): string => getValue<string>(job as any, ['titleCompany', 'title_company'], '') || '';
+  const getSelectedDate = (job: Job): string => getValue<string>(job as any, ['selectedDate', 'selected_date', 'scheduledDate', 'scheduled_date'], '') || '';
+  const getSelectedTime = (job: Job): string => getValue<string>(job as any, ['selectedTime', 'selected_time', 'scheduledTime', 'scheduled_time'], '') || '';
+  const getCreatedAt = (job: Job): Date | string | number => getValue<any>(job as any, ['createdAt', 'created_at'], 0) ?? 0;
+  const getPropertyAddressOne = (job: Job): string => getValue<string>(job as any, ['propertyAddressOne', 'property_address_one'], '') || '';
+  const getJobStatus = (job: Job): string => (getValue<string>(job as any, ['jobStatus', 'job_status', 'status'], 'open') || 'open');
+
   // Get current user data to check permissions
   const { data: currentUser } = useQuery<CurrentUser>({
     queryKey: ['/api/auth/me'],
@@ -153,12 +169,12 @@ export function JobTable({ onCreateJob }: JobTableProps) {
     let filtered = jobs.filter((job) => {
       const matchesSearch = searchTerm === '' || 
         job.internalReference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.titleCompany?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.propertyAddressOne?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        getTitleCompany(job).toLowerCase().includes(searchTerm.toLowerCase()) ||
+        getPropertyAddressOne(job).toLowerCase().includes(searchTerm.toLowerCase()) ||
         job.closingType?.toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesStatus = statusFilter === 'all' || job.jobStatus === statusFilter;
-      const matchesCompany = companyFilter === 'all' || job.titleCompany === companyFilter;
+      const matchesStatus = statusFilter === 'all' || getJobStatus(job) === statusFilter;
+      const matchesCompany = companyFilter === 'all' || getTitleCompany(job) === companyFilter;
       
       // Assignment status filter
       let matchesAssignment = true;
@@ -225,16 +241,16 @@ export function JobTable({ onCreateJob }: JobTableProps) {
           bValue = b.internalReference?.toLowerCase() || `job-${b.id}`;
           break;
         case 'status':
-          aValue = a.jobStatus?.toLowerCase() || '';
-          bValue = b.jobStatus?.toLowerCase() || '';
+          aValue = getJobStatus(a).toLowerCase();
+          bValue = getJobStatus(b).toLowerCase();
           break;
         case 'date':
-          aValue = new Date(a.selectedDate || a.createdAt || 0).getTime();
-          bValue = new Date(b.selectedDate || b.createdAt || 0).getTime();
+          aValue = new Date(getSelectedDate(a) || getCreatedAt(a) || 0).getTime();
+          bValue = new Date(getSelectedDate(b) || getCreatedAt(b) || 0).getTime();
           break;
         case 'company':
-          aValue = a.titleCompany?.toLowerCase() || '';
-          bValue = b.titleCompany?.toLowerCase() || '';
+          aValue = getTitleCompany(a).toLowerCase();
+          bValue = getTitleCompany(b).toLowerCase();
           break;
         case 'notary':
           aValue = getAssignedNotary(a).toLowerCase();
@@ -278,7 +294,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
 
   // Get unique companies for filter
   const uniqueCompanies = useMemo(() => {
-    const companies = new Set(jobs.map(job => job.titleCompany).filter(Boolean));
+    const companies = new Set(jobs.map(job => getTitleCompany(job)).filter(Boolean));
     return Array.from(companies);
   }, [jobs]);
 
@@ -449,7 +465,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
 
   // New utility function to format date as "Aug 14 / 6:00"
   const formatSigningDateTime = (date: string, time: string) => {
-    if (!date || !time) return 'Not scheduled';
+    if (!date || !time) return '—';
     
     const dateObj = new Date(date);
     const month = dateObj.toLocaleDateString('en-US', { month: 'short' });
@@ -542,17 +558,19 @@ export function JobTable({ onCreateJob }: JobTableProps) {
     if (job.propertyAddressOne) progress += 25;
     if (job.selectedDate && job.selectedTime) progress += 25;
     if (job.uploadedFile) progress += 25;
-    if (job.jobStatus === 'completed') progress += 25;
+    if (getJobStatus(job) === 'completed') progress += 25;
     return progress;
   };
 
   const getAssignedNotary = (job: Job): string => {
     // Check if we have assignedNotary data with the name
-    if (job.notaryId) {
+    if ((job as any).notaryId || (job as any).notary_id) {
+      const notaryId = (job as any).notaryId ?? (job as any).notary_id;
       return `Notary #${job.notaryId}`;
     }
-    if (job.selectedNotary) {
-      return job.selectedNotary;
+    const selected = (job as any).selectedNotary ?? (job as any).selected_notary;
+    if (selected) {
+      return selected as string;
     }
     
     return 'Unassigned';
@@ -693,7 +711,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {paginatedJobs.map((job) => (
                 <Card key={job.id} className={`group hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-2 ${
-                  job.jobStatus === 'cancelled' 
+                  getJobStatus(job) === 'cancelled' 
                     ? 'bg-red-100 border-red-300 hover:border-red-400' 
                     : 'border-gray-100 hover:border-blue-200'
                 }`}>
@@ -737,7 +755,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                     </div>
 
                     <div className="space-y-2">
-                      {getStatusBadge(job.jobStatus)}
+                      {getStatusBadge(getJobStatus(job))}
                       <div className="space-y-1">
                         <div className="flex items-center justify-between text-xs text-gray-600">
                           <span>Progress</span>
@@ -858,7 +876,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                     <TableRow 
                       key={job.id} 
                       className={`hover:bg-blue-50/50 transition-colors border-b border-gray-100 ${
-                        job.jobStatus === 'cancelled' 
+                        getJobStatus(job) === 'cancelled' 
                           ? 'bg-red-100 hover:bg-red-150' 
                           : index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'
                       }`}
@@ -876,13 +894,13 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                       </TableCell>
                       <TableCell className="py-4">
                         <div className="text-sm text-gray-600">
-                          {formatSigningDateTime(job.selectedDate || '', job.selectedTime || '')}
+                          {formatSigningDateTime(getSelectedDate(job) || '', getSelectedTime(job) || '')}
                         </div>
                       </TableCell>
                       {!isTitleCompany && (
                         <TableCell className="py-4">
                           <div className="text-sm text-gray-600">
-                            {job.titleCompany || 'N/A'}
+                            {getTitleCompany(job) || '—'}
                           </div>
                         </TableCell>
                       )}
@@ -899,7 +917,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                         </div>
                       </TableCell>
                       <TableCell className="py-4">
-                        {getStatusBadge(job.jobStatus)}
+                        {getStatusBadge(getJobStatus(job))}
                       </TableCell>
                       <TableCell className="py-4">
                         <div className="flex gap-2">

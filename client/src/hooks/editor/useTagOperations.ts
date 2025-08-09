@@ -98,8 +98,10 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
     };
 
     // Derive minimums if available; fall back to 25 for height and 40 for width
-    const minWidth = (storeDimensions as any)?.minWidth ?? 40;
-    const minHeight = (storeDimensions as any)?.minHeight ?? 25;
+    // Special case: whiteout overlays ('W') should allow 1px height/width
+    const isWhiteout = tagType === 'W';
+    const minWidth = isWhiteout ? 1 : (storeDimensions as any)?.minWidth ?? 40;
+    const minHeight = isWhiteout ? 1 : (storeDimensions as any)?.minHeight ?? 25;
     
     if (coordinates.x !== undefined) {
       sanitized.x = isFinite(coordinates.x) ? Math.round(coordinates.x) : 0;
@@ -631,7 +633,7 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       return;
     }
     
-    const sanitizedCoordinates = sanitizeCoordinates(coordinates);
+    const sanitizedCoordinates = sanitizeCoordinates(coordinates, 'W');
     
     // Update store immediately for smooth UX
     useEditorStore.getState().updateWhiteoutOverlay(overlayId, { coordinates: sanitizedCoordinates as TagCoordinates });

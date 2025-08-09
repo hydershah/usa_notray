@@ -213,7 +213,7 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ['socket.io-client', 'pdfjs-dist'],
+    include: ['socket.io-client', 'pdfjs-dist', '@radix-ui/react-dialog'],
     exclude: [
       'pdfjs-dist/build/pdf.worker.min.mjs', 
       'pdfjs-dist/build/pdf.worker.mjs',

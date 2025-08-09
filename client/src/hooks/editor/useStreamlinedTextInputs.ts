@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useEditorStore } from './useEditorStore';
-import { getTagDimensions } from '@/lib/constants/tagConstants';
+import { calculateOptimalWidth, getTagDimensions } from '@/lib/constants/tagConstants';
 
 interface StreamlinedTextInput {
   id: string;
@@ -46,22 +46,69 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
   useEffect(() => {
     if (textInputs.length < 2) return;
 
+    // First pass: de-duplicate by exact id
     const seen = new Set<string>();
-    const deduped: StreamlinedTextInput[] = [];
+    const dedupedById: StreamlinedTextInput[] = [];
 
-    let hasDuplicates = false;
+    let hadIdDuplicates = false;
     for (const input of textInputs) {
       if (seen.has(input.id)) {
-        hasDuplicates = true;
+        hadIdDuplicates = true;
         continue; // Skip duplicate
       }
       seen.add(input.id);
-      deduped.push(input);
+      dedupedById.push(input);
     }
 
-    if (hasDuplicates) {
-      console.warn('🧹 Removing duplicate text inputs with identical IDs:', textInputs.map(i => i.id));
-      setTextInputs(deduped);
+    // Second pass: merge temp/real pairs at the same spot (race between optimistic + WebSocket)
+    // We only collapse pairs when one id is temporary and the other is a real id,
+    // both on the same page, and their positions/sizes are effectively identical.
+    // This avoids hurting legitimate nearby fields.
+    const toRemoveTempIds = new Set<string>();
+    const POSITION_TOLERANCE = 2; // very small tolerance in PDF units to avoid false positives
+    const SIZE_TOLERANCE = 2;
+
+    for (let i = 0; i < dedupedById.length; i++) {
+      for (let j = i + 1; j < dedupedById.length; j++) {
+        const a = dedupedById[i];
+        const b = dedupedById[j];
+
+        // Only consider pairs where exactly one is a temp id
+        const aIsTemp = a.id.startsWith('text_temp_');
+        const bIsTemp = b.id.startsWith('text_temp_');
+        if (aIsTemp === bIsTemp) continue;
+
+        // Same page and essentially the same position/size
+        const samePage = a.coordinates.pageNumber === b.coordinates.pageNumber;
+        if (!samePage) continue;
+
+        const dx = Math.abs(a.coordinates.x - b.coordinates.x);
+        const dy = Math.abs(a.coordinates.y - b.coordinates.y);
+        const dw = Math.abs((a.coordinates.width || 0) - (b.coordinates.width || 0));
+        const dh = Math.abs((a.coordinates.height || 0) - (b.coordinates.height || 0));
+
+        const nearSamePos = dx <= POSITION_TOLERANCE && dy <= POSITION_TOLERANCE;
+        const nearSameSize = dw <= SIZE_TOLERANCE && dh <= SIZE_TOLERANCE;
+        if (nearSamePos && nearSameSize) {
+          // Prefer keeping the real id. Remove the temp entry.
+          const tempIdToRemove = aIsTemp ? a.id : b.id;
+          toRemoveTempIds.add(tempIdToRemove);
+        }
+      }
+    }
+
+    const hadTempRealPairs = toRemoveTempIds.size > 0;
+
+    if (hadIdDuplicates || hadTempRealPairs) {
+      if (hadIdDuplicates) {
+        console.warn('🧹 Removing duplicate text inputs with identical IDs:', textInputs.map(i => i.id));
+      }
+      if (hadTempRealPairs) {
+        console.warn('🧹 Collapsing temp/real text input pairs at the same spot:', Array.from(toRemoveTempIds));
+      }
+      setTextInputs(
+        dedupedById.filter(input => !toRemoveTempIds.has(input.id))
+      );
     }
   }, [textInputs]);
 
@@ -438,6 +485,8 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       });
       
       // Replace optimistic text input with server response while preserving user input
+      const tempLocal = textInputs.find(t => t.id === tempId);
+      const locallyTypedContent = tempLocal?.content || '';
       setTextInputs(prev => prev.map(input => {
         if (input.id === tempId) {
           console.log('🔄 Updating text input ID transition:', {
@@ -467,6 +516,28 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       removeTempInputFromStorage(tempId);
 
       console.log(`✅ Text input placed successfully:`, tag.id);
+
+      // If user had already typed content before real ID arrived, persist it now
+      if (locallyTypedContent.trim().length > 0) {
+        try {
+          await fetch(`/api/editor/session/${sessionId}/text-tag/${tag.id}/content`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+              content: locallyTypedContent,
+              fontSize: optimisticTextInput.fontSize,
+              fontFamily: 'Arial',
+              textColor: '#000000'
+            })
+          });
+          console.log('📝 Persisted pre-typed content after ID assignment');
+        } catch (persistError) {
+          console.warn('Failed to persist pre-typed content after ID assignment:', persistError);
+        }
+      }
       return tag.id;
 
     } catch (error) {
@@ -488,48 +559,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
     }
   }, [sessionId, toast, saveTempInputToStorage, removeTempInputFromStorage, textInputs]);
 
-  // Save text content
-  const saveTextContent = useCallback(async (textInputId: string, content: string) => {
-    try {
-      // Update local state immediately
-      setTextInputs(prev => prev.map(input => 
-        input.id === textInputId 
-          ? { ...input, content, isNew: content.trim() === '' }
-          : input
-      ));
-
-      console.log(`✅ Text content saved locally for ${textInputId}: "${content}"`);
-
-    } catch (error) {
-      console.error('❌ Failed to save text content:', error);
-      toast({
-        variant: "destructive", 
-        title: "Save Failed",
-        description: "Failed to save text content. Please try again."
-      });
-    }
-  }, [toast]);
-
-  // Debounced font size API calls to prevent lag
-  const debouncedFontSizeUpdates = useRef<Map<string, NodeJS.Timeout>>(new Map());
-  
-  // Debounced coordinate updates to prevent excessive API calls during drag
-  const debouncedCoordinateUpdates = useRef<Map<string, NodeJS.Timeout>>(new Map());
-  
-  // Cleanup debounced timeouts on unmount
-  useEffect(() => {
-    return () => {
-      // Clear all pending coordinate updates
-      debouncedCoordinateUpdates.current.forEach(timeout => clearTimeout(timeout));
-      debouncedCoordinateUpdates.current.clear();
-      
-      // Clear all pending font size updates
-      debouncedFontSizeUpdates.current.forEach(timeout => clearTimeout(timeout));
-      debouncedFontSizeUpdates.current.clear();
-    };
-  }, []);
-  
-  // Move text input to new coordinates
+  // Move text input to new coordinates (moved above saveTextContent to avoid TDZ)
   const moveTextInput = useCallback(async (textInputId: string, coordinates: { x: number; y: number; width?: number; height?: number }) => {
     try {
       // Update local state immediately for responsive UI
@@ -618,6 +648,119 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
     }
   }, [toast, sessionId, textInputs]);
 
+  // Save text content
+  const saveTextContent = useCallback(async (textInputId: string, content: string) => {
+    try {
+      // Update local state immediately
+      setTextInputs(prev => prev.map(input => 
+        input.id === textInputId 
+          ? { ...input, content, isNew: content.trim() === '' }
+          : input
+      ));
+
+      console.log(`✅ Text content saved locally for ${textInputId}: "${content}"`);
+
+      // Auto-size width based on content and current font
+      const current = textInputs.find(i => i.id === textInputId);
+      if (current) {
+        const widthPx = calculateOptimalWidth(content, current.fontSize || 16, current.fontFamily || 'Arial');
+        const fallbackDims = getTagDimensions('T' as any);
+        const scaleFactor = useEditorStore.getState().viewer.zoomLevel || 1;
+        const unscaledWidth = Math.max(1, Math.round(widthPx / Math.max(0.0001, scaleFactor)));
+        const lineHeightPx = Math.ceil((current.fontSize || 16) * 1.2);
+        const unscaledHeight = Math.max(1, Math.round(lineHeightPx / Math.max(0.0001, scaleFactor)));
+        const newWidth = Math.max(current.coordinates.width || fallbackDims.width, unscaledWidth);
+        const newHeight = Math.max(current.coordinates.height || fallbackDims.height, unscaledHeight, fallbackDims.height);
+        // Persist new size (debounced inside moveTextInput)
+        moveTextInput(textInputId, {
+          x: current.coordinates.x,
+          y: current.coordinates.y,
+          width: newWidth,
+          height: newHeight
+        });
+      }
+
+      // Do not attempt server save for temporary IDs
+      if (textInputId.startsWith('text_temp_') || textInputId.startsWith('temp')) {
+        console.log('⏭️ Skipping server save for temporary text input ID:', textInputId);
+        return;
+      }
+
+      // Persist content to server so it survives refresh and marks tag as completed
+      try {
+        const toPersist = textInputs.find(i => i.id === textInputId);
+        const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${textInputId}/content`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            content,
+            fontSize: toPersist?.fontSize || 16,
+            fontFamily: toPersist?.fontFamily || 'Arial',
+            textColor: toPersist?.textColor || '#000000'
+          })
+        });
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.message || 'Failed to save text content');
+        }
+
+        const result = await response.json();
+        console.log('✅ Server text content saved:', result);
+
+        // Reflect completion state from server
+        if (result?.tag?.id) {
+          setTextInputs(prev => prev.map(input => 
+            input.id === result.tag.id
+              ? { 
+                  ...input, 
+                  content: result.tag.content ?? content, 
+                  isNew: !(result.tag.isCompleted) 
+                }
+              : input
+          ));
+        }
+      } catch (serverError) {
+        console.error('❌ Failed to persist text content to server:', serverError);
+        toast({
+          variant: 'destructive',
+          title: 'Save Failed',
+          description: 'Could not save text to server. Your text is kept locally until retry.'
+        });
+      }
+
+    } catch (error) {
+      console.error('❌ Failed to save text content:', error);
+      toast({
+        variant: "destructive", 
+        title: "Save Failed",
+        description: "Failed to save text content. Please try again."
+      });
+    }
+  }, [toast, sessionId, textInputs, moveTextInput]);
+
+  // Debounced font size API calls to prevent lag
+  const debouncedFontSizeUpdates = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  
+  // Debounced coordinate updates to prevent excessive API calls during drag
+  const debouncedCoordinateUpdates = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  
+  // Cleanup debounced timeouts on unmount
+  useEffect(() => {
+    return () => {
+      // Clear all pending coordinate updates
+      debouncedCoordinateUpdates.current.forEach(timeout => clearTimeout(timeout));
+      debouncedCoordinateUpdates.current.clear();
+      
+      // Clear all pending font size updates
+      debouncedFontSizeUpdates.current.forEach(timeout => clearTimeout(timeout));
+      debouncedFontSizeUpdates.current.clear();
+    };
+  }, []);
+  
   // Update font size with debouncing
   const updateFontSize = useCallback(async (textInputId: string, fontSize: number, fontFamily?: string, textColor?: string) => {
     try {

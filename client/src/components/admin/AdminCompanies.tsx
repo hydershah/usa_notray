@@ -103,6 +103,15 @@ export function AdminCompanies() {
   const itemsPerPage = 10;
 
   useEffect(() => {
+    // Initialize from URL query if provided (e.g., ?status=pending)
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const status = params.get('status');
+      if (status) {
+        setStatusFilter(status);
+      }
+    } catch {}
+
     fetchCompaniesData();
     fetchStats();
   }, []);
@@ -122,7 +131,31 @@ export function AdminCompanies() {
       }
       
       const companies = await response.json();
-      setAllCompanies(Array.isArray(companies) ? companies : []);
+      const mapped = (Array.isArray(companies) ? companies : []).map((c: any) => ({
+        id: c.id,
+        companyName: c.companyName ?? c.name ?? '',
+        contactEmail: c.contactEmail ?? c.email ?? c.primaryUserEmail ?? '',
+        contactName: c.contactName ?? c.primaryUserName ?? '',
+        phoneNumber: c.phoneNumber ?? c.primaryUserPhone ?? '',
+        address1: c.address1,
+        address2: c.address2,
+        city: c.city,
+        state: c.state,
+        zipCode: c.zipCode,
+        licenseNumber: c.licenseNumber,
+        status: c.status ?? 'active',
+        paymentMethod: c.paymentMethod,
+        createdAt: c.createdAt ?? new Date().toISOString(),
+        lastActivity: c.updatedAt,
+        assignedNotaries: c.assignedNotaries,
+        completedJobs: c.completedJobs,
+        totalSpent: c.totalSpent,
+        averageJobValue: c.averageJobValue,
+        preferredNotaryId: c.preferredNotaryId,
+        subscriptionPlan: c.subscriptionPlan,
+        nextBillingDate: c.nextBillingDate,
+      }));
+      setAllCompanies(mapped);
     } catch (error) {
       console.error('Error fetching companies data:', error);
     } finally {
@@ -148,12 +181,13 @@ export function AdminCompanies() {
 
   const filteredAndSortedCompanies = useMemo(() => {
     let filtered = allCompanies.filter(company => {
-      const matchesSearch = 
-        company.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        company.contactEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (company.contactName && company.contactName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (company.city && company.city.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (company.state && company.state.toLowerCase().includes(searchTerm.toLowerCase()));
+      const term = searchTerm.toLowerCase();
+      const matchesSearch =
+        (company.companyName?.toLowerCase().includes(term) ?? false) ||
+        (company.contactEmail?.toLowerCase().includes(term) ?? false) ||
+        (company.contactName?.toLowerCase().includes(term) ?? false) ||
+        (company.city?.toLowerCase().includes(term) ?? false) ||
+        (company.state?.toLowerCase().includes(term) ?? false);
       
       const matchesStatus = statusFilter === 'all' || company.status === statusFilter;
       const matchesPayment = paymentFilter === 'all' || company.paymentMethod === paymentFilter;

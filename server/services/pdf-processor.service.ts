@@ -214,18 +214,39 @@ export class PDFProcessorService {
     fontSize: number,
     color: any
   ): void {
-    // No background rectangle - transparent background for clean appearance
-    
-    // SIMPLE CENTER: Position text in the center of the container like the editor
-    const textY = y + (height / 2) - (fontSize / 4); // Center the text vertically
-    
-    // Draw text with black color for consistency
-    page.drawText(text, {
-      x: x + 4, // Same 4px left padding as editor
-      y: textY,
+    // Use the same 4pt left padding as the editor
+    const PADDING_LEFT = 4;
+
+    // Compute precise vertical centering using font metrics
+    const textHeight = font.heightAtSize(fontSize);
+    const centeredY = y + Math.max(0, (height - textHeight) / 2);
+
+    // Single-line render with clipping to stay within the tag width like the editor default
+    // Compute available width after padding
+    const availableWidth = Math.max(0, width - PADDING_LEFT);
+
+    let toDraw = text || '';
+
+    // Trim text to fit the available width (no wrapping in PDF renderer)
+    // Use binary search on character count for efficiency
+    const fits = (s: string) => font.widthOfTextAtSize(s, fontSize) <= availableWidth;
+    if (!fits(toDraw)) {
+      let lo = 0;
+      let hi = toDraw.length;
+      while (lo < hi) {
+        const mid = Math.floor((lo + hi + 1) / 2);
+        const candidate = toDraw.slice(0, mid) + '…';
+        if (fits(candidate)) lo = mid; else hi = mid - 1;
+      }
+      toDraw = toDraw.slice(0, lo) + (lo < text.length ? '…' : '');
+    }
+
+    page.drawText(toDraw, {
+      x: x + PADDING_LEFT,
+      y: centeredY,
       size: fontSize,
-      font: font,
-      color: rgb(0, 0, 0), // Force black text color
+      font,
+      color: color ?? rgb(0, 0, 0)
     });
   }
 

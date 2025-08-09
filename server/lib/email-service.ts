@@ -397,23 +397,26 @@ class EmailService {
     const { db } = await import('../db');
     const { users } = await import('../../shared/schema');
     const { eq } = await import('drizzle-orm');
-    
+
+    // Normalize email for lookup and sending
+    const normalizedEmail = data.signerEmail.trim().toLowerCase();
+
     // Check if user already exists
     const [existingUser] = await db
       .select()
       .from(users)
-      .where(eq(users.email, data.signerEmail))
+      .where(eq(users.email, normalizedEmail))
       .limit(1);
-    
+
     const isNewUser = !existingUser;
-    console.log(`📧 Sending ${isNewUser ? 'NEW USER' : 'EXISTING USER'} invitation to ${data.signerEmail}`);
-    
+    console.log(`📧 Sending ${isNewUser ? 'NEW USER' : 'EXISTING USER'} invitation to ${normalizedEmail}`);
+
     if (isNewUser) {
       // NEW USER: Send account setup email
-      await this.sendNewUserSignerInvitation(data);
+      await this.sendNewUserSignerInvitation({ ...data, signerEmail: normalizedEmail });
     } else {
-      // EXISTING USER: Send job notification email  
-      await this.sendExistingUserJobNotification(data, existingUser);
+      // EXISTING USER: Send job notification email
+      await this.sendExistingUserJobNotification({ ...data, signerEmail: normalizedEmail }, existingUser);
     }
   }
 

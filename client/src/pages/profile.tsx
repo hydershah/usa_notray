@@ -455,7 +455,7 @@ export default function Profile() {
             <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 rounded-3xl opacity-90"></div>
             <div className="relative bg-white/10 backdrop-blur-sm rounded-3xl p-8 shadow-2xl border border-white/20">
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-                <div className="flex items-center gap-6">
+                <div className="flex items-center gap-6 hidden">
                   <div className="relative">
                     <div className="w-24 h-24 bg-gradient-to-br from-white/20 to-white/10 rounded-2xl flex items-center justify-center text-white text-2xl font-bold shadow-lg ring-4 ring-white/20">
                       {getInitials(currentUser.username)}
@@ -482,7 +482,7 @@ export default function Profile() {
                   <Button 
                     variant="ghost"
                     size="lg"
-                    className="text-white hover:bg-white/10 border-2 border-white/20 hover:border-white/30 transition-all duration-200"
+                    className="hidden"
                   >
                     <Camera className="w-5 h-5 mr-2" />
                     Change Photo
@@ -513,8 +513,8 @@ export default function Profile() {
             </div>
           </div>
 
-          {/* Enhanced Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {/* Simplified UI: hide stats cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 hidden">
             <Card className="group hover:shadow-xl transition-all duration-300 hover:-translate-y-1 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">

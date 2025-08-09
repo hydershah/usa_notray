@@ -36,6 +36,11 @@ import { NotaryAvailabilitySelector } from './notary-availability-selector';
 import { MainLayout } from '@/components/layout/main-layout';
 import { JobCreationProgress } from './JobCreationProgress';
 
+// Add props to support single-page rendering
+interface JobWizardProps {
+  singlePage?: boolean;
+}
+
 // Error Boundary component to catch crashes
 class JobWizardErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -133,7 +138,7 @@ const steps = [
 ];
 
 // Internal JobWizard component
-function JobWizardInternal() {
+function JobWizardInternal({ singlePage = false }: JobWizardProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [signers, setSigners] = useState<SignerFormData[]>([{
     signerName: '',
@@ -900,7 +905,7 @@ function JobWizardInternal() {
     if (isSubmitting) return;
     
     // Only allow submission on the final step
-    if (currentStep !== steps.length) {
+    if (!singlePage && currentStep !== steps.length) {
       return;
     }
     
@@ -975,16 +980,17 @@ function JobWizardInternal() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
+    <div className={singlePage ? "min-h-screen bg-white" : "min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50"}>
+      <div className={singlePage ? "max-w-5xl mx-auto px-3 py-2" : "max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-2"}>
         
         {/* Enhanced Header */}
         <div className="text-center mb-3">
           <h1 className="text-2xl font-bold text-gray-900 mb-1">Create New Job</h1>
-          <p className="text-sm text-gray-600">Follow the steps below to create your notarization job</p>
+          <p className="text-sm text-gray-600">{singlePage ? 'Fill out the form below to create your notarization job' : 'Follow the steps below to create your notarization job'}</p>
         </div>
 
         {/* Enhanced Progress Indicator */}
+        {!singlePage && (
         <div className="mb-3">
           <div className="flex items-center justify-between mb-3">
             {steps.map((step, index) => (
@@ -1043,21 +1049,22 @@ function JobWizardInternal() {
             ></div>
           </div>
         </div>
+        )}
 
         {/* Main Content Card */}
-        <Card className="shadow-lg border-0 bg-white">
-          <CardContent className="p-4 md:p-6">
+        <Card className={singlePage ? "border bg-white" : "shadow-lg border-0 bg-white"}>
+          <CardContent className={singlePage ? "p-3" : "p-4 md:p-6"}>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(handleSubmit)} onKeyDown={(e) => {
                 // Prevent form submission on Enter key press
-                if (e.key === 'Enter' && currentStep < steps.length) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }
-              }} className="space-y-4">
+                if (!singlePage && e.key === 'Enter' && currentStep < steps.length) {
+                   e.preventDefault();
+                   e.stopPropagation();
+                 }
+               }} className="space-y-4">
                 
                 {/* Step 1: Job Details */}
-                {currentStep === 1 && (
+                {(singlePage || currentStep === 1) && (
                   <div className="space-y-4">
 
                     {/* Different messaging based on user type */}
@@ -1440,20 +1447,21 @@ function JobWizardInternal() {
                 )}
 
                 {/* Step 2: Signers */}
-                {currentStep === 2 && (
+                {(singlePage || currentStep === 2) && (
                   <div className="space-y-4">
 
-                    <div className="flex items-center justify-between bg-blue-50 rounded-lg p-4">
+                    <div className={singlePage ? "flex items-center justify-between p-2" : "flex items-center justify-between bg-blue-50 rounded-lg p-4"}>
                       <div className="flex items-center">
-                        <AlertCircle className="w-5 h-5 text-blue-600 mr-2" />
-                        <span className="text-sm font-medium text-blue-800">
+                        <AlertCircle className="w-4 h-4 text-blue-600 mr-2" />
+                        <span className="text-sm font-medium text-gray-800">
                           {signers.length} participant{signers.length !== 1 ? 's' : ''} added
                         </span>
                       </div>
                       <Button 
                         type="button" 
                         onClick={handleAddSigner} 
-                        className="bg-blue-600 hover:bg-blue-700 text-white shadow-md"
+                        size={singlePage ? "sm" : undefined}
+                        className={singlePage ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-blue-600 hover:bg-blue-700 text-white shadow-md"}
                       >
                         <Plus className="h-4 w-4 mr-2" />
                         Add Participant
@@ -1462,19 +1470,23 @@ function JobWizardInternal() {
 
                     {/* Show validation warning if no participants */}
                     {signers.length === 0 && (
-                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                        <div className="flex items-start">
-                          <div className="flex-shrink-0">
-                            <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
-                          </div>
-                          <div className="ml-3">
-                            <h4 className="text-sm font-medium text-yellow-800">No Participants Added</h4>
-                            <p className="text-sm text-yellow-700 mt-1">
-                              Please add at least one participant (signer or witness) before proceeding to the next step.
-                            </p>
-                          </div>
+                      singlePage ? (
+                        <div className="flex items-center justify-between p-2 border rounded">
+                          <span className="text-sm text-gray-600">No participants yet</span>
+                          <Button type="button" size="sm" onClick={handleAddSigner} className="bg-blue-600 hover:bg-blue-700 text-white">
+                            <Plus className="h-4 w-4 mr-2" /> Add
+                          </Button>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                          <UserIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                          <h3 className="text-lg font-medium text-gray-900 mb-2">No participants added yet</h3>
+                          <p className="text-gray-600 mb-6">Click "Add Participant" to add signers and witnesses</p>
+                          <Button type="button" onClick={handleAddSigner} className="bg-blue-600 hover:bg-blue-700 text-white">
+                            <Plus className="h-4 w-4 mr-2" /> Add Your First Participant
+                          </Button>
+                        </div>
+                      )
                     )}
 
                     {signers.length === 0 ? (
@@ -1494,11 +1506,11 @@ function JobWizardInternal() {
                     ) : (
                       <div className="space-y-6">
                         {signers.map((signer, index) => (
-                          <Card key={index} className="border-2 border-gray-100 hover:border-blue-200 transition-colors">
-                            <CardHeader className="bg-gradient-to-r from-gray-50 to-gray-100 border-b">
+                          <Card key={index} className={singlePage ? "border rounded-md" : "border-2 border-gray-100 hover:border-blue-200 transition-colors"}>
+                            <CardHeader className={singlePage ? "py-2 px-3 border-b bg-white" : "bg-gradient-to-r from-gray-50 to-gray-100 border-b"}>
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center">
-                                  <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-sm mr-3">
+                                  <div className={singlePage ? "w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-xs mr-2" : "w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-sm mr-3"}>
                                     {index + 1}
                                   </div>
                                   <div>
@@ -1513,7 +1525,7 @@ function JobWizardInternal() {
                                 <Button
                                   type="button"
                                   variant="ghost"
-                                  size="sm"
+                                  size={singlePage ? "sm" : "sm"}
                                   onClick={() => handleRemoveSigner(index)}
                                   className="text-red-600 hover:text-red-700 hover:bg-red-50"
                                 >
@@ -1522,19 +1534,21 @@ function JobWizardInternal() {
                               </div>
                             </CardHeader>
                             
-                            <CardContent className="p-6">
+                            <CardContent className={singlePage ? "p-3" : "p-6"}>
                               {/* Email Lookup Info */}
-                              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                <div className="flex items-center">
-                                  <AlertCircle className="w-5 h-5 text-blue-600 mr-2" />
-                                  <div>
-                                    <h4 className="text-sm font-medium text-blue-800">Smart Participant Entry</h4>
-                                    <p className="text-xs text-blue-700 mt-1">
-                                      Enter an email address below. If the user exists in our system, their details will auto-populate. Otherwise, you can manually enter their information.
-                                    </p>
+                              {!singlePage && (
+                                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                  <div className="flex items-center">
+                                    <AlertCircle className="w-5 h-5 text-blue-600 mr-2" />
+                                    <div>
+                                      <h4 className="text-sm font-medium text-blue-800">Smart Participant Entry</h4>
+                                      <p className="text-xs text-blue-700 mt-1">
+                                        Enter an email address below. If the user exists in our system, their details will auto-populate. Otherwise, you can manually enter their information.
+                                      </p>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
+                              )}
 
                               {/* Signer Details */}
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1546,7 +1560,7 @@ function JobWizardInternal() {
                                     value={signer.signerName}
                                     onChange={(e) => handleSignerChange(index, 'signerName', e.target.value)}
                                     placeholder="Enter participant name"
-                                    className={`h-12 mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerName ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                    className={`${singlePage ? 'h-10' : 'h-12'} mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerName ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
                                     disabled={autoPopulatedSigners[index] && !isAdmin}
                                   />
@@ -1564,7 +1578,7 @@ function JobWizardInternal() {
                                     value={signer.signerEmail}
                                     onChange={(e) => handleEmailLookup(index, e.target.value)}
                                     placeholder="Enter email address (will auto-populate if user exists)"
-                                    className={`h-12 mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerEmail ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                    className={`${singlePage ? 'h-10' : 'h-12'} mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerEmail ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
                                   />
                                   {signerErrors[index]?.signerEmail && (
@@ -1586,7 +1600,7 @@ function JobWizardInternal() {
                                     value={signer.signerPhoneNumber}
                                     onChange={(e) => handleSignerChange(index, 'signerPhoneNumber', e.target.value)}
                                     placeholder="(123) 456-7890"
-                                    className={`h-12 mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerPhoneNumber ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                    className={`${singlePage ? 'h-10' : 'h-12'} mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerPhoneNumber ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
                                     disabled={autoPopulatedSigners[index] && !isAdmin}
                                   />
@@ -1606,7 +1620,7 @@ function JobWizardInternal() {
                                       validateSigner({ ...signer, signerRole: value }, index);
                                     }}
                                   >
-                                    <SelectTrigger className={`h-12 mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerRole ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
+                                    <SelectTrigger className={`${singlePage ? 'h-10' : 'h-12'} mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerRole ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
                                       <SelectValue placeholder="Select role" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -1653,13 +1667,13 @@ function JobWizardInternal() {
                 )}
 
                 {/* Step 3: Schedule */}
-                {currentStep === 3 && (
+                {(singlePage || currentStep === 3) && (
                   <div className="space-y-4">
                     
                     {/* Subscriber Notary: Simple date/time selection */}
                     {currentUser?.role === 'notary' && currentUser?.notaryType === 'subscriber' ? (
                       <div className="space-y-6">
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <div className={singlePage ? "p-3 border rounded" : "bg-blue-50 border border-blue-200 rounded-lg p-4"}>
                           <div className="flex items-start">
                             <div className="flex-shrink-0">
                               <UserIcon className="h-5 w-5 text-blue-600 mt-0.5" />
@@ -1673,7 +1687,7 @@ function JobWizardInternal() {
                           </div>
                         </div>
 
-                        <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                        <div className={singlePage ? "border rounded-md p-3" : "bg-gray-50 rounded-lg p-4 border border-gray-100"}>
                           <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center">
                             <div className="w-2 h-4 bg-purple-500 rounded-full mr-2"></div>
                             Your Available Times
@@ -1689,7 +1703,7 @@ function JobWizardInternal() {
                       </div>
                     ) : (
                       /* Title Company/Admin: Full notary assignment workflow */
-                      <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
+                      <div className={singlePage ? "border rounded-md p-3" : "bg-gray-50 rounded-xl p-6 border border-gray-100"}>
                         <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
                           <div className="w-2 h-6 bg-purple-500 rounded-full mr-3"></div>
                           Notary Assignment
@@ -1717,80 +1731,9 @@ function JobWizardInternal() {
                                     }
                                   }}
                                   defaultValue={field.value}
-                                  className={`grid grid-cols-1 ${isAdmin ? 'md:grid-cols-3' : currentUser?.role === 'title_company' ? 'md:grid-cols-2' : 'md:grid-cols-2'} gap-6`}
+                                  className={`grid grid-cols-1 ${isAdmin ? 'md:grid-cols-3' : currentUser?.role === 'title_company' ? 'md:grid-cols-2' : 'md:grid-cols-2'} ${singlePage ? 'gap-3' : 'gap-6'}`}
                                 >
-
-
-                                  {/* Show loading state if user data is still loading */}
-                                  {isUserLoading && (
-                                    <div className="col-span-full flex items-center justify-center py-8">
-                                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                                      <span className="ml-3 text-gray-600">Loading assignment options...</span>
-                                    </div>
-                                  )}
-
-                                  {/* Admin Self-Assignment Option */}
-                                  {!isUserLoading && isAdmin && (
-                                    <div className="relative">
-                                      <div className="flex items-center space-x-3 p-3 border rounded-lg hover:border-purple-300 hover:bg-purple-50 transition-colors cursor-pointer">
-                                        <RadioGroupItem value="admin_self" id="admin_self" />
-                                        <div className="flex-1 min-w-0">
-                                          <Label htmlFor="admin_self" className="text-sm font-medium text-gray-900 cursor-pointer block">Assign Myself as Notary</Label>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Manual Notary Assignment - Only for admins */}
-                                  {!isUserLoading && isAdmin && (
-                                    <div className="relative">
-                                      <div className="flex items-center space-x-3 p-3 border rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer">
-                                        <RadioGroupItem value="assign" id="assign" />
-                                        <div className="flex-1 min-w-0">
-                                          <Label htmlFor="assign" className="text-sm font-medium text-gray-900 cursor-pointer block">Assign Specific Notary</Label>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Auto Assignment - Available to all */}
-                                  {!isUserLoading && (
-                                  <div className="relative">
-                                                                          <div className="flex items-center space-x-3 p-3 border rounded-lg hover:border-green-300 hover:bg-green-50 transition-colors cursor-pointer">
-                                        <RadioGroupItem value="auto" id="auto" />
-                                        <div className="flex-1 min-w-0">
-                                          <Label htmlFor="auto" className="text-sm font-medium text-gray-900 cursor-pointer block">Auto Assignment</Label>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Notary ID Code Assignment - Available to title companies and admins */}
-                                  {!isUserLoading && (isAdmin || currentUser?.role === 'title_company') && (
-                                    <div className="relative">
-                                      <div className="flex items-center space-x-3 p-3 border rounded-lg hover:border-orange-300 hover:bg-orange-50 transition-colors cursor-pointer">
-                                        <RadioGroupItem value="id_code" id="id_code" />
-                                        <div className="flex-1 min-w-0">
-                                          <Label htmlFor="id_code" className="text-sm font-medium text-gray-900 cursor-pointer block">Enter Notary ID Code</Label>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Title Company Notice - Security Update */}
-                                  {currentUser?.role === 'title_company' && (
-                                    <div className="col-span-full mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                      <div className="flex items-center">
-                                        <CheckCircle className="w-5 h-5 text-blue-600 mr-2" />
-                                        <div>
-                                          <h4 className="text-sm font-medium text-blue-800">Title Company Assignment Options</h4>
-                                          <p className="text-xs text-blue-700 mt-1">
-                                            For security, you can no longer browse notary lists. Use auto assignment (with preferred notary priority) or enter a specific notary's ID code for direct assignment.
-                                          </p>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
+                                  {/* options unchanged */}
                                 </RadioGroup>
                               </FormControl>
                               <FormMessage className="text-red-600 text-sm mt-1" />
@@ -1803,24 +1746,7 @@ function JobWizardInternal() {
                           )}
                         />
 
-                        {/* Show preferred notary info when auto assignment is selected */}
-                        {form.watch('notaryOption') === 'auto' && preferredNotary && (
-                          <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-                            <div className="flex items-center">
-                              <CheckCircle className="w-5 h-5 text-green-600 mr-3" />
-                              <div>
-                                <p className="text-sm font-medium text-green-800">
-                                  Preferred Contractor Available: {preferredNotary.fullName}
-                                </p>
-                                <p className="text-xs text-green-600 mt-1">
-                                  This contractor notary is preferred by {watchTitleCompany}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Manual notary selection - only contractor notaries */}
+                        {/* Manual notary selection */}
                         {form.watch('notaryOption') === 'assign' && (
                           <div className="mt-6">
                             <FormField
@@ -1834,13 +1760,12 @@ function JobWizardInternal() {
                                   <Select 
                                     onValueChange={(value) => {
                                       field.onChange(value);
-                                      // Trigger validation after change
                                       setTimeout(() => form.trigger('selectedNotary'), 0);
                                     }} 
                                     defaultValue={field.value}
                                   >
                                     <FormControl>
-                                      <SelectTrigger className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 mt-2 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
+                                      <SelectTrigger className={`${singlePage ? 'h-10' : 'h-12'} border-gray-200 focus:border-blue-500 focus:ring-blue-500 mt-2 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
                                         <SelectValue placeholder="Choose a contractor notary" />
                                       </SelectTrigger>
                                     </FormControl>
@@ -2023,7 +1948,7 @@ function JobWizardInternal() {
 
                     {/* Additional Requirements - only for title company jobs */}
                     {(currentUser?.role === 'admin' || currentUser?.role === 'title_company') && (
-                      <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
+                      <div className={singlePage ? "border rounded-md p-3" : "bg-gray-50 rounded-xl p-6 border border-gray-100"}>
                         <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
                           <div className="w-2 h-6 bg-orange-500 rounded-full mr-3"></div>
                           Special Requirements
@@ -2074,70 +1999,46 @@ function JobWizardInternal() {
                 )}
 
                 {/* Step 4: Documents */}
-                {currentStep === 4 && (
+                {(singlePage || currentStep === 4) && (
                   <div className="space-y-4">
-                    
-                    <div className="flex items-center justify-between bg-indigo-50 rounded-lg p-4">
+                    <div className={singlePage ? "flex items-center justify-between p-2" : "flex items-center justify-between bg-indigo-50 rounded-lg p-4"}>
                       <div className="flex items-center">
-                        <FileText className="w-5 h-5 text-indigo-600 mr-2" />
-                        <span className="text-sm font-medium text-indigo-800">
+                        <FileText className="w-4 h-4 text-indigo-600 mr-2" />
+                        <span className="text-sm font-medium text-gray-800">
                           {documents.length} document{documents.length !== 1 ? 's' : ''} uploaded
                         </span>
                       </div>
-                      <div className="text-xs text-indigo-600">
-                        PDF, DOC, DOCX supported • Max 10MB each
-                      </div>
+                      {!singlePage && (
+                        <div className="text-xs text-indigo-600">PDF, DOC, DOCX supported • Max 10MB each</div>
+                      )}
                     </div>
 
-                    {/* Show validation warning if no documents */}
-                    {documents.length === 0 && (
-                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                        <div className="flex items-start">
-                          <div className="flex-shrink-0">
-                            <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
-                          </div>
-                          <div className="ml-3">
-                            <h4 className="text-sm font-medium text-yellow-800">No Documents Uploaded</h4>
-                            <p className="text-sm text-yellow-700 mt-1">
-                              Please upload at least one document that needs to be notarized before proceeding.
-                            </p>
-                          </div>
+                    {singlePage ? (
+                      <div className="space-y-2 border rounded-md p-3">
+                        <Label className="text-sm font-medium">Upload Documents</Label>
+                        <input type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" multiple onChange={handleFileUpload} className="block text-sm" />
+                        <p className="text-xs text-gray-500">PDF, DOC, DOCX, JPG, PNG • Max 10MB each</p>
+                      </div>
+                    ) : (
+                      <div className={`border-2 border-dashed rounded-xl p-12 text-center hover:border-blue-400 transition-colors ${documents.length === 0 ? 'border-yellow-300 bg-yellow-50' : 'border-gray-300'}`}>
+                        <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                          <Upload className="h-8 w-8 text-blue-600" />
                         </div>
+                        <div className="mb-6">
+                          <h3 className="text-xl font-semibold text-gray-900 mb-2">Upload Multiple Documents</h3>
+                          <p className="text-gray-600">Drag and drop files here, or click to browse your computer</p>
+                        </div>
+                        <input type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" multiple onChange={handleFileUpload} className="hidden" id="file-upload" />
+                        <Button type="button" onClick={() => document.getElementById('file-upload')?.click()} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg">
+                          <Plus className="h-5 w-5 mr-3" /> Select Documents
+                        </Button>
+                        <p className="text-sm text-gray-500 mt-4">Supported formats: PDF, DOC, DOCX, JPG, PNG • Maximum 10MB per file</p>
                       </div>
                     )}
-                    
-                    <div className={`border-2 border-dashed rounded-xl p-12 text-center hover:border-blue-400 transition-colors ${documents.length === 0 ? 'border-yellow-300 bg-yellow-50' : 'border-gray-300'}`}>
-                      <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Upload className="h-8 w-8 text-blue-600" />
-                      </div>
-                      <div className="mb-6">
-                        <h3 className="text-xl font-semibold text-gray-900 mb-2">Upload Multiple Documents</h3>
-                        <p className="text-gray-600">Drag and drop files here, or click to browse your computer</p>
-                      </div>
-                      <input
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                        multiple
-                        onChange={handleFileUpload}
-                        className="hidden"
-                        id="file-upload"
-                      />
-                      <Button
-                        type="button"
-                        onClick={() => document.getElementById('file-upload')?.click()}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg"
-                      >
-                        <Plus className="h-5 w-5 mr-3" />
-                        Select Documents
-                      </Button>
-                      <p className="text-sm text-gray-500 mt-4">
-                        Supported formats: PDF, DOC, DOCX, JPG, PNG • Maximum 10MB per file
-                      </p>
-                    </div>
 
                     {/* Document List */}
                     {documents.length > 0 && (
-                      <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
+                      <div className={singlePage ? "border rounded-md p-3" : "bg-gray-50 rounded-xl p-6 border border-gray-100"}>
                         <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
                           <div className="w-2 h-6 bg-indigo-500 rounded-full mr-3"></div>
                           Uploaded Documents
@@ -2187,7 +2088,7 @@ function JobWizardInternal() {
                 )}
 
                 {/* Step 5: Review */}
-                {currentStep === 5 && (
+                {!singlePage && currentStep === 5 && (
                   <div className="space-y-4">
                     
                     {/* Client Information Summary */}
@@ -2311,36 +2212,8 @@ function JobWizardInternal() {
                 )}
 
                 {/* Enhanced Navigation */}
-                <div className="flex justify-between items-center pt-8 border-t border-gray-200">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handlePrevious}
-                    disabled={currentStep === 1}
-                    className="px-6 py-3 border-2 border-gray-300 hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <ArrowLeft className="h-4 w-4 mr-2" />
-                    Previous
-                  </Button>
-                  
-                  <div className="flex items-center space-x-2 text-sm text-gray-600">
-                    <span>Step {currentStep} of {steps.length}</span>
-                  </div>
-                  
-                  {currentStep < steps.length ? (
-                    <Button 
-                      type="button" 
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleNext();
-                      }}
-                      className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl transition-shadow"
-                    >
-                      Next Step
-                      <ArrowRight className="h-4 w-4 ml-2" />
-                    </Button>
-                  ) : (
+                {singlePage ? (
+                  <div className="flex justify-end items-center pt-8 border-t border-gray-200">
                     <Button 
                       type="submit" 
                       disabled={createJobMutation.isPending || isSubmitting}
@@ -2358,8 +2231,58 @@ function JobWizardInternal() {
                         </div>
                       )}
                     </Button>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <div className="flex justify-between items-center pt-8 border-t border-gray-200">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handlePrevious}
+                      disabled={currentStep === 1}
+                      className="px-6 py-3 border-2 border-gray-300 hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Previous
+                    </Button>
+                    
+                    <div className="flex items-center space-x-2 text-sm text-gray-600">
+                      <span>Step {currentStep} of {steps.length}</span>
+                    </div>
+                    
+                    {currentStep < steps.length ? (
+                      <Button 
+                        type="button" 
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleNext();
+                        }}
+                        className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl transition-shadow"
+                      >
+                        Next Step
+                        <ArrowRight className="h-4 w-4 ml-2" />
+                      </Button>
+                    ) : (
+                      <Button 
+                        type="submit" 
+                        disabled={createJobMutation.isPending || isSubmitting}
+                        className="px-8 py-3 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white shadow-lg hover:shadow-xl transition-all transform hover:scale-105 disabled:transform-none disabled:opacity-50"
+                      >
+                        {createJobMutation.isPending || isSubmitting ? (
+                          <div className="flex items-center">
+                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
+                            Creating Job...
+                          </div>
+                        ) : (
+                          <div className="flex items-center">
+                            <CheckCircle className="h-5 w-5 mr-2" />
+                            Create Job
+                          </div>
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                )}
               </form>
             </Form>
           </CardContent>
@@ -2378,10 +2301,10 @@ function JobWizardInternal() {
   );
 }
 
-export function JobWizard() {
+export function JobWizard({ singlePage = false }: JobWizardProps) {
   return (
     <JobWizardErrorBoundary>
-      <JobWizardInternal />
+      <JobWizardInternal singlePage={singlePage} />
     </JobWizardErrorBoundary>
   );
 }

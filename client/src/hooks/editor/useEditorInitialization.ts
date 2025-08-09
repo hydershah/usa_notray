@@ -81,7 +81,7 @@ export const useEditorInitialization = ({
 
     setMode({
       mode: mode,
-      canPlaceTags: mode === 'tagging',
+      canPlaceTags: mode === 'tagging' || mode === 'notary' || mode === 'signing',
       canModifyContent: mode === 'notary',
       showPlaceholders: true
     });

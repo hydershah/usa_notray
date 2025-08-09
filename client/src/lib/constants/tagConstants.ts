@@ -136,8 +136,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     borderColor: PROFESSIONAL_COLORS.borderActive,
     defaultWidth: 120,  // Reduced size
     defaultHeight: 25,  // Reduced size
-    minWidth: 80,
-    minHeight: 25,
+    minWidth: 1,
+    minHeight: 1,
     allowResize: true,
     allowTextInput: true
   },
@@ -149,8 +149,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     borderColor: PROFESSIONAL_COLORS.borderActive,
     defaultWidth: 160,  // Reduced from 180 - slightly bigger for signatures
     defaultHeight: 40,  // Reduced from 50 - slightly bigger for signatures
-    minWidth: 100,
-    minHeight: 35,
+    minWidth: 1,
+    minHeight: 1,
     allowResize: true,
     allowTextInput: false
   },
@@ -162,8 +162,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     borderColor: PROFESSIONAL_COLORS.borderActive,
     defaultWidth: 120,  // Reduced size
     defaultHeight: 25,  // Reduced size
-    minWidth: 60,
-    minHeight: 25,
+    minWidth: 1,
+    minHeight: 1,
     allowResize: true,
     allowTextInput: false
   },
@@ -175,8 +175,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     borderColor: PROFESSIONAL_COLORS.borderActive,
     defaultWidth: 120,  // Reduced size
     defaultHeight: 25,  // Reduced size
-    minWidth: 100,
-    minHeight: 25,
+    minWidth: 1,
+    minHeight: 1,
     allowResize: true,
     allowTextInput: true
   },
@@ -188,8 +188,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     borderColor: '#d97706', // Darker orange border for better contrast
     defaultWidth: 120,  // Reduced size
     defaultHeight: 25,  // Reduced size
-    minWidth: 100,
-    minHeight: 25,
+    minWidth: 1,
+    minHeight: 1,
     allowResize: true,
     allowTextInput: true
   },
@@ -201,8 +201,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     borderColor: '#d97706', // Dark orange border for maximum contrast
     defaultWidth: 120,  // Reduced size
     defaultHeight: 25,  // Reduced size
-    minWidth: 120,
-    minHeight: 25,
+    minWidth: 1,
+    minHeight: 1,
     allowResize: true,
     allowTextInput: true
   },
@@ -214,8 +214,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     borderColor: PROFESSIONAL_COLORS.borderActive,
     defaultWidth: 80,   // Reduced from 100 - slightly bigger for seals
     defaultHeight: 80,  // Reduced from 100 - slightly bigger for seals (square shape)
-    minWidth: 60,
-    minHeight: 60,
+    minWidth: 1,
+    minHeight: 1,
     allowResize: true,
     allowTextInput: false
   },
@@ -227,8 +227,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     borderColor: '#e5e7eb', // Light gray border
     defaultWidth: 120,  // Reduced size
     defaultHeight: 25,  // Reduced size
-    minWidth: 50,
-    minHeight: 25,
+    minWidth: 1,
+    minHeight: 1,
     allowResize: true,
     allowTextInput: false
   },
@@ -240,8 +240,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     borderColor: '#475569', // Darker border for better contrast
     defaultWidth: 120,  // Standardized size
     defaultHeight: 25,  // Standardized size
-    minWidth: 80,
-    minHeight: 25,
+    minWidth: 1,
+    minHeight: 1,
     allowResize: true,
     allowTextInput: true
   },
@@ -253,8 +253,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     borderColor: '#d97706', // Darker orange border for better contrast
     defaultWidth: 120,  // Reduced size
     defaultHeight: 25,  // Reduced size
-    minWidth: 100,
-    minHeight: 25,
+    minWidth: 1,
+    minHeight: 1,
     allowResize: true,
     allowTextInput: true
   }
@@ -270,8 +270,8 @@ export const getTagDimensions = (tagType: TagType) => {
     return {
       width: 120,
       height: 25,
-      minWidth: 60,
-      minHeight: 25
+      minWidth: 1,
+      minHeight: 1
     };
   }
   return {
@@ -303,12 +303,12 @@ export const getTagStyle = (tagType: TagType, isSelected = false, isCompleted = 
       borderWidth: isCompleted ? '0px' : '1.5px',
       borderStyle: 'solid',
       borderRadius: LAYOUT.borderRadius.base,
-      padding: LAYOUT.spacing.sm,
+      padding: '0px',
       fontFamily: TYPOGRAPHY.fontFamily,
       fontSize: TYPOGRAPHY.fontSize.tag,
       fontWeight: TYPOGRAPHY.fontWeight.normal, // Lighter weight for better readability
       boxShadow: isCompleted ? 'none' : (isSelected ? LAYOUT.shadow.base : 'none'),
-      textShadow: '0 1px 2px rgba(255, 255, 255, 0.8)' // Add text shadow for better readability
+      textShadow: '0 1px 2px rgba(255, 255, 255, 0.8)'
     };
   }
   
@@ -322,12 +322,12 @@ export const getTagStyle = (tagType: TagType, isSelected = false, isCompleted = 
     borderWidth: isCompleted ? '0px' : '1.5px',
     borderStyle: 'solid',
     borderRadius: LAYOUT.borderRadius.base,
-    padding: LAYOUT.spacing.sm,
+    padding: '0px',
     fontFamily: TYPOGRAPHY.fontFamily,
     fontSize: TYPOGRAPHY.fontSize.tag,
     fontWeight: TYPOGRAPHY.fontWeight.normal, // Lighter weight for better readability
     boxShadow: isCompleted ? 'none' : (isSelected ? LAYOUT.shadow.base : 'none'),
-    textShadow: '0 1px 2px rgba(255, 255, 255, 0.8)' // Add text shadow for better readability
+    textShadow: '0 1px 2px rgba(255, 255, 255, 0.8)'
   };
 };
 
@@ -349,14 +349,14 @@ export const isWithinBounds = (
 // Calculate optimal width based on text content and font size
 export const calculateOptimalWidth = (text: string, fontSize: number = 12, fontFamily: string = 'Arial'): number => {
   if (!text || text.trim().length === 0) {
-    return 100; // Default minimum width
+    return 1; // Absolute minimum when empty so box can be placed tightly
   }
   
   // Create a temporary canvas to measure text width
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
   if (!context) {
-    return 100; // Fallback if canvas is not available
+    return 1; // Fallback if canvas is not available
   }
   
   // Set font properties
@@ -366,44 +366,34 @@ export const calculateOptimalWidth = (text: string, fontSize: number = 12, fontF
   const textMetrics = context.measureText(text);
   const textWidth = textMetrics.width;
   
-  // Add generous padding for better visual appearance
-  const padding = 40; // 20px on each side - more generous padding
-  const minWidth = 80; // Minimum width for any tag
+  // Minimal padding so the blue box hugs the content
+  const padding = 2; // total (1px each side)
   
   // Ensure we always have enough space for the text
-  const requiredWidth = Math.max(textWidth + padding, minWidth);
-  
-  // For very long text, add extra space to prevent cramped appearance
-  if (text.length > 50) {
-    return Math.max(requiredWidth, 200); // Minimum 200px for long text
-  }
+  const requiredWidth = Math.max(textWidth + padding, 1);
   
   return requiredWidth;
 };
 
 // Calculate optimal height based on text content and font size
 export const calculateOptimalHeight = (text: string, fontSize: number = 12): number => {
+  // One-line height estimation with minimal padding
+  const lineHeight = fontSize * 1.2; // 1.2 line height
+  const padding = 2; // total (1px top + 1px bottom)
+  const singleLineHeight = Math.ceil(lineHeight) + padding;
+
   if (!text || text.trim().length === 0) {
-    return 25; // Default minimum height aligned with 25px requirement
+    return Math.max(singleLineHeight, 1);
   }
   
-  // For single line text, use font size + padding
-  const lineHeight = fontSize * 1.2; // 1.2 line height
-  const padding = 8; // 4px top and bottom padding
-  
-  // Estimate number of lines based on text length and typical character width
-  const avgCharWidth = fontSize * 0.6; // Approximate character width
+  // Rough multi-line estimate (kept conservative)
+  const avgCharWidth = fontSize * 0.6;
   const estimatedWidth = text.length * avgCharWidth;
-  const maxWidth = 200; // Assume max width before wrapping
-  
-  // Calculate number of lines needed
+  const maxWidth = 200; // Assume wrap threshold
   const estimatedLines = Math.ceil(estimatedWidth / maxWidth);
   const actualLines = Math.max(1, estimatedLines);
-  
-  // Calculate height based on number of lines
-  const totalHeight = (lineHeight * actualLines) + padding;
-  
-  return Math.max(totalHeight, 25); // Minimum height of 25px
+  const totalHeight = Math.ceil(lineHeight * actualLines) + padding;
+  return Math.max(totalHeight, 1);
 };
 
 // Animation constants

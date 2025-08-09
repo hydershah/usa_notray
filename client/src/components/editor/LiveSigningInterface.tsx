@@ -27,6 +27,7 @@ import type {
   DocumentTag,
   EditorSession 
 } from '@/types/editor';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface LiveSigningInterfaceProps {
   sessionId: string;
@@ -79,6 +80,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   onTagsChanged
 }) => {
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   
   // State management
   const [liveSession, setLiveSession] = useState<LiveSessionState>({
@@ -575,30 +577,30 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     if (isLoading || !isNotary) return;
     setIsLoading(true);
     
-          try {
-        // Send sync command via WebSocket with current page and document info
-        if (webSocket.sendMessage) {
-          webSocket.sendMessage({
-            type: 'sync_users',
-            payload: {
-              pageNumber: viewer.currentPage || 1,
-              documentId: currentDocument?.id,
-            },
-          });
-        }
-        
-        // Also make API call to record the sync event
-        const targetSessionId = liveSessionId || sessionId;
-        await authenticatedFetch(`/api/session/${targetSessionId}/sync-users`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
+    try {
+      // Send sync command via WebSocket with current page and document info
+      if (webSocket.sendMessage) {
+        webSocket.sendMessage({
+          type: 'sync_users',
+          payload: {
             pageNumber: viewer.currentPage || 1,
-            documentId: currentDocument?.id
-          })
+            documentId: currentDocument?.id,
+          },
         });
+      }
+      
+      // Also make API call to record the sync event
+      const targetSessionId = liveSessionId || sessionId;
+      await authenticatedFetch(`/api/session/${targetSessionId}/sync-users`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          pageNumber: viewer.currentPage || 1,
+          documentId: currentDocument?.id
+        })
+      });
 
       toast({
         title: "Success",
@@ -628,7 +630,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
       case 'active': return 'bg-green-500';
       case 'paused': return 'bg-yellow-500';
       case 'waiting': return 'bg-blue-500';
-             case 'completing': return 'bg-blue-500';
+      case 'completing': return 'bg-blue-500';
       case 'completed': return 'bg-gray-500';
       default: return 'bg-gray-500';
     }
@@ -758,89 +760,91 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     });
   }, [toast]);
 
+  const renderVideoPanel = showVideo;
+
   return (
     <div className="h-screen bg-gray-50 flex flex-col">
-      {/* Simplified Header */}
-      <div className="bg-white border-b px-4 py-2 flex items-center justify-between">
-        <div className="flex items-center gap-4 flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <div className={`h-2 w-2 rounded-full ${getStatusColor(liveSession.state)} ${liveSession.state === 'active' ? 'animate-pulse' : ''}`}></div>
-            <span className="font-medium">Live Signing</span>
-          </div>
-          
-          <Badge variant="secondary" className="text-xs">
-            {liveSession.state}
-          </Badge>
-
-          {/* WebSocket Connection Status */}
-          <Badge 
-            variant={webSocket.connectionState.isConnected ? 'default' : 'destructive'}
-            className="text-xs"
-          >
-            {webSocket.connectionState.isConnected 
-              ? '🟢 Synced' 
-              : webSocket.connectionState.isConnecting
-              ? '🟡 Connecting...'
-              : '🔴 No Sync'
-            }
-          </Badge>
-          
-          {isSigner && (
-            <Badge variant={liveSession.activeUserId === parseInt(currentUserId) ? "default" : "outline"} className="text-xs">
-              {liveSession.activeUserId === parseInt(currentUserId) ? 'Active' : 'Waiting'}
-            </Badge>
-          )}
-          
-          {liveSession.state === 'active' && (
-            <div className="flex items-center gap-1 text-sm text-gray-600">
-              <Clock className="h-3 w-3" />
-              {formatDuration(sessionDuration)}
-            </div>
-          )}
-
-          {/* Document Progress - Inline */}
-          <div className="flex items-center gap-3 ml-6">
-            <div className="flex-1 max-w-sm">
-              <DocumentSelector
-                documents={documents}
-                currentDocument={currentDocument}
-                onDocumentChange={(doc) => {
-                  // Handle document change through editor store
-                  useEditorStore.getState().setCurrentDocument(doc);
-                }}
-                tags={useEditorStore.getState().tags}
-              />
+      {/* Simplified Header (hidden on mobile for signers) */}
+      {!(isSigner && isMobile) && (
+        <div className="bg-white border-b px-2 md:px-4 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-4 flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <div className={`h-2 w-2 rounded-full ${getStatusColor(liveSession.state)} ${liveSession.state === 'active' ? 'animate-pulse' : ''}`}></div>
+              <span className="font-medium">Live Signing</span>
             </div>
             
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <span>
-                {useEditorStore.getState().tags.length} tags • {useEditorStore.getState().tags.filter(t => t.isCompleted).length} completed
-              </span>
+            <Badge variant="secondary" className="text-xs">
+              {liveSession.state}
+            </Badge>
+            
+            {/* WebSocket Connection Status */}
+            <Badge 
+              variant={webSocket.connectionState.isConnected ? 'default' : 'destructive'}
+              className="text-xs"
+            >
+              {webSocket.connectionState.isConnected 
+                ? '🟢 Synced' 
+                : webSocket.connectionState.isConnecting
+                ? '🟡 Connecting...'
+                : '🔴 No Sync'
+              }
+            </Badge>
+            
+            {isSigner && (
+              <Badge variant={liveSession.activeUserId === parseInt(currentUserId) ? "default" : "outline"} className="text-xs">
+                {liveSession.activeUserId === parseInt(currentUserId) ? 'Active' : 'Waiting'}
+              </Badge>
+            )}
+            
+            {liveSession.state === 'active' && (
+              <div className="flex items-center gap-1 text-sm text-gray-600">
+                <Clock className="h-3 w-3" />
+                {formatDuration(sessionDuration)}
+              </div>
+            )}
+            
+            {/* Document Progress - hide on small screens */}
+            <div className="hidden md:flex items-center gap-3 ml-2 md:ml-6">
+              <div className="flex-1 max-w-sm">
+                <DocumentSelector
+                  documents={documents}
+                  currentDocument={currentDocument}
+                  onDocumentChange={(doc) => {
+                    // Handle document change through editor store
+                    useEditorStore.getState().setCurrentDocument(doc);
+                  }}
+                  tags={useEditorStore.getState().tags}
+                />
+              </div>
+              
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <span>
+                  {useEditorStore.getState().tags.length} tags • {useEditorStore.getState().tags.filter(t => t.isCompleted).length} completed
+                </span>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {renderSessionControls()}
           
-          {/* Video and Participants buttons removed */}
+          <div className="flex items-center gap-2">
+            {renderSessionControls()}
+            
+            {/* Video and Participants buttons removed */}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Simplified Instructions for Signers */}
-      {isSigner && liveSession.state === 'waiting' && (
+      {/* Instruction banners (hidden on mobile for signers) */}
+      {!(isSigner && isMobile) && liveSession.state === 'waiting' && (
         <div className="bg-blue-50 border-b px-4 py-2 text-sm text-blue-800">
           Waiting for notary to start the session...
         </div>
       )}
-      
-      {isSigner && liveSession.state === 'active' && liveSession.activeUserId !== parseInt(currentUserId) && (
+      {!(isSigner && isMobile) && liveSession.state === 'active' && liveSession.activeUserId !== parseInt(currentUserId) && (
         <div className="bg-yellow-50 border-b px-4 py-2 text-sm text-yellow-800">
           Please wait for the notary to activate you
         </div>
       )}
-      
-      {isSigner && liveSession.state === 'active' && liveSession.activeUserId === parseInt(currentUserId) && (
+      {!(isSigner && isMobile) && liveSession.state === 'active' && liveSession.activeUserId === parseInt(currentUserId) && (
         <div className="bg-green-50 border-b px-4 py-2 text-sm text-green-800">
           You're active! Click on your tags to fill them out
         </div>
@@ -865,15 +869,12 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
       )}
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Enhanced Video Panel - Reduced width */}
-        {showVideo && (
-          <div className="w-64 bg-gradient-to-b from-gray-50 to-gray-100 border-r border-gray-200 flex-shrink-0 shadow-sm">
-            <div className="h-full flex flex-col">
-
-              
-              {/* Video Content */}
-              <div className="flex-1">
+      {isSigner && isMobile ? (
+        // Mobile layout for signers: video on top, document below
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {renderVideoPanel && (
+            <div className="w-full bg-gradient-to-b from-gray-50 to-gray-100 border-b border-gray-200 shadow-sm shrink-0 sticky top-0 z-20">
+              <div className="h-56 md:h-56">
                 {videoSessionData && (
                   <NotaryVideoSession
                     key={`video-session-${jobData?.id}`}
@@ -892,30 +893,71 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
                 )}
               </div>
             </div>
+          )}
+          <div className="flex-1 overflow-hidden min-w-0">
+            <PDFTaggingEditor
+              ref={editorRef}
+              sessionId={sessionId}
+              mode="signing"
+              documents={documents}
+              participants={participants}
+              currentUserId={currentUserId}
+              onSessionComplete={onSessionComplete}
+              onTagsChanged={onTagsChanged}
+              liveSessionState={liveSession}
+              onSetActiveUser={(userId: number) => handleSetActiveUser(userId.toString())}
+              onSyncUsers={handleSyncUsers}
+              isSyncLoading={isLoading}
+              webSocket={webSocket}
+            />
           </div>
-        )}
-
-        {/* Document Editor */}
-        <div className="flex-1 overflow-hidden min-w-0">
-          <PDFTaggingEditor
-            ref={editorRef}
-            sessionId={sessionId}
-            mode="signing"
-            documents={documents}
-            participants={participants}
-            currentUserId={currentUserId}
-            onSessionComplete={onSessionComplete}
-            onTagsChanged={onTagsChanged}
-            liveSessionState={liveSession}
-            onSetActiveUser={(userId: number) => handleSetActiveUser(userId.toString())}
-            onSyncUsers={handleSyncUsers}
-            isSyncLoading={isLoading}
-            webSocket={webSocket}
-          />
         </div>
-
-
-      </div>
+      ) : (
+        // Default layout: side video panel and document area
+        <div className="flex-1 flex overflow-hidden">
+          {renderVideoPanel && (
+            <div className="w-64 bg-gradient-to-b from-gray-50 to-gray-100 border-r border-gray-200 flex-shrink-0 shadow-sm">
+              <div className="h-full flex flex-col">
+                <div className="flex-1">
+                  {videoSessionData && (
+                    <NotaryVideoSession
+                      key={`video-session-${jobData?.id}`}
+                      jobId={jobData?.id?.toString() || '0'}
+                      currentUser={memoizedCurrentUser}
+                      participants={memoizedParticipants}
+                      autoJoin={true}
+                      className="h-full"
+                      sessionData={videoSessionData}
+                      error={videoSessionError}
+                      isLoading={isLoading}
+                      onSessionComplete={handleVideoSessionComplete}
+                      onSessionError={handleVideoSessionError}
+                      signingSessionState={liveSession.state}
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="flex-1 overflow-hidden min-w-0">
+            <PDFTaggingEditor
+              ref={editorRef}
+              sessionId={sessionId}
+              mode="signing"
+              documents={documents}
+              participants={participants}
+              currentUserId={currentUserId}
+              onSessionComplete={onSessionComplete}
+              onTagsChanged={onTagsChanged}
+              liveSessionState={liveSession}
+              onSetActiveUser={(userId: number) => handleSetActiveUser(userId.toString())}
+              onSyncUsers={handleSyncUsers}
+              isSyncLoading={isLoading}
+              webSocket={webSocket}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }; 

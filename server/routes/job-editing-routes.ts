@@ -384,34 +384,50 @@ export function registerJobEditingRoutes(app: Express) {
         return res.status(403).json({ message: 'You do not have permission to send invitations' });
       }
 
-      // Get signer details
-      const [signer] = await db
-        .select()
+      // Get signer and job details
+      const [result] = await db
+        .select({ signer: signers, job: jobs })
         .from(signers)
+        .leftJoin(jobs, eq(signers.jobId, jobs.id))
         .where(and(eq(signers.id, signerId), eq(signers.jobId, jobId)))
         .limit(1);
 
-      if (!signer) {
+      if (!result) {
         return res.status(404).json({ message: 'Signer not found for this job' });
       }
 
-      // Generate invitation token
-      const crypto = await import('crypto');
-      const invitationToken = crypto.randomBytes(32).toString('hex');
+      const signer = result.signer;
+      const job = result.job;
+
+      // Normalize email
+      const signerEmail = signer.signerEmail.trim().toLowerCase();
+
+      // Generate invitation token if missing
+      const invitationToken = signer.invitationToken || (await import('crypto')).randomUUID();
 
       // Update signer with invitation details
       await db
         .update(signers)
         .set({
           invitationToken,
-          invitationSentAt: new Date()
+          invitationSentAt: new Date(),
+          signerEmail // persist normalized email
         })
         .where(eq(signers.id, signerId));
 
-      // TODO: Send actual email invitation
-      // For now, we'll just log the invitation details
-      console.log(`Invitation sent to ${signer.signerEmail} for job ${jobId}`);
-      console.log(`Invitation token: ${invitationToken}`);
+      // Send email using central email service (handles existing vs new user)
+      const { emailService } = await import('../lib/email-service');
+      await emailService.sendSignerInvitation({
+        signerName: signer.signerName,
+        signerEmail,
+        signerRole: signer.signerRole,
+        invitationToken,
+        titleCompany: job?.titleCompany || 'Unknown Company',
+        closingType: job?.closingType || 'Document Signing',
+        propertyAddress: job?.propertyAddressOne ? `${job.propertyAddressOne}, ${job.propertyCity}, ${job.propertyState} ${job.propertyZipCode}` : undefined,
+        scheduledDate: job?.selectedDate || undefined,
+        scheduledTime: job?.selectedTime || undefined
+      });
 
       res.json({
         message: 'Invitation sent successfully',

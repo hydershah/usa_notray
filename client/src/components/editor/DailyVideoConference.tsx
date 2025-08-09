@@ -1776,14 +1776,7 @@ const DailyVideoConference = forwardRef<
           }`}
           style={{ aspectRatio: '16/9' }}
         >
-          {isEmpty ? (
-            <div className="w-full h-full flex items-center justify-center text-gray-500">
-              <div className="text-center">
-                <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                <div className="text-xs">Waiting for participant</div>
-              </div>
-            </div>
-          ) : (
+          {isEmpty ? null : (
             <div className="w-full h-full relative">
               {state.error ? (
                 <div className="w-full h-full flex items-center justify-center bg-red-900/50">

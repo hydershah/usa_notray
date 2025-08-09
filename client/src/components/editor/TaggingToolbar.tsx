@@ -39,6 +39,7 @@ const TagTypeButton: React.FC<TagTypeButtonProps> = ({
   
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={isDisabled}
       className={`
@@ -54,7 +55,7 @@ const TagTypeButton: React.FC<TagTypeButtonProps> = ({
       `}
       title={`${tagInfo.description} (${shortcut}) - ${user.displayName}`}
     >
-      <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center gap-2 min-w-0 pointer-events-none">
         <span className="shrink-0 text-base">{tagInfo.icon}</span>
         <span className="text-sm font-medium truncate">{tagInfo.label}</span>
       </div>
@@ -215,7 +216,7 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
   const isSigner = currentUser?.userType === 'signer';
   const isNotary = currentUser?.userType === 'notary';
   const isAdmin = currentUser?.role === 'admin';
-  const canPlaceTags = mode.mode === 'tagging' || (propMode === 'signing' && (isNotary || isAdmin));
+  const canPlaceTags = mode.canPlaceTags;
 
   // Filter tags for current document only
   const currentDocumentTags = tags.filter(tag => tag.documentId === currentDocument?.id);
@@ -240,6 +241,7 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
   const handleTagSelect = useCallback((tagType: TagType, user: SessionParticipant) => {
     console.log('Tag selected:', tagType, 'for user:', user.displayName);
     setSelectedTagType(tagType);
+    // Always set the selected user to the user whose section was clicked
     setSelectedUser(user);
   }, [setSelectedTagType, setSelectedUser]);
 
@@ -320,7 +322,7 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
   // Show simplified interface for signers in signing mode
   if (isSigner && propMode === 'signing') {
   return (
-      <div className={`space-y-4 ${className}`}>
+      <div className={`space-y-4 tagging-toolbar ${className}`}>
         <button
           onClick={() => setSelectedTagType(null)}
           className={`
@@ -344,7 +346,7 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
 
   // Main interface - show all users with their tags
   return (
-    <div className={`h-full min-h-0 flex flex-col gap-4 ${className}`} style={{ minWidth: 0 }}>
+    <div className={`h-full min-h-0 flex flex-col gap-4 tagging-toolbar ${className}`} style={{ minWidth: 0 }}>
       {/* Header */}
       <div className="space-y-2 pr-3">
         <h2 className="text-lg font-semibold text-gray-900">

@@ -531,6 +531,82 @@ router.get('/api/jobs/:jobId/recordings', verifyToken, async (req: any, res) => 
   }
 });
 
+// NEW: Provide a single recording details object for Job Details page card
+router.get('/api/jobs/:jobId/recording-details', verifyToken, async (req: any, res) => {
+  try {
+    const jobId = parseInt(req.params.jobId);
+    const { storage } = await import('../storage');
+    const job = await storage.getJob(jobId);
+
+    if (!job) {
+      return res.status(404).json({ hasRecording: false, message: 'Job not found' });
+    }
+
+    // 1) Prefer Vultr-backed fields if present (immediate playback)
+    if (job.recordingFileUrl) {
+      return res.json({
+        hasRecording: true,
+        recording: {
+          fileKey: job.recordingFileKey || null,
+          fileUrl: job.recordingFileUrl,
+          fileName: job.recordingFileName || null,
+          duration: job.recordingDuration || 0,
+          startedAt: job.recordingStartedAt || null,
+          uploadedAt: job.recordingUploadedAt || null,
+          participantCount: job.recordingParticipantCount || null,
+          sessionId: job.recordingSessionId || null,
+          liveSessionId: job.recordingLiveSessionId || null,
+          metadata: job.recordingMetadata || null,
+        }
+      });
+    }
+
+    // 2) Daily.co cloud recording lookup via saved recording metadata
+    let metadata: any = null;
+    try {
+      metadata = typeof job.recordingMetadata === 'string' ? JSON.parse(job.recordingMetadata) : job.recordingMetadata;
+    } catch {
+      metadata = null;
+    }
+
+    const dailyRecordingId: string | undefined = metadata?.recordingId;
+    const technology: string | undefined = metadata?.technology;
+
+    if (technology === 'daily' && dailyRecordingId) {
+      try {
+        const { dailyService } = await import('../lib/daily-service');
+        const recording = await dailyService.getRecording(dailyRecordingId);
+
+        if (recording && recording.downloadUrl) {
+          return res.json({
+            hasRecording: true,
+            recording: {
+              fileKey: null,
+              fileUrl: recording.downloadUrl,
+              fileName: `${recording.roomName || 'daily-recording'}-${dailyRecordingId}.mp4`,
+              duration: 0, // Daily API may not expose duration here; UI will show "Unknown"
+              startedAt: recording.createdDate || null,
+              uploadedAt: recording.createdDate || null,
+              participantCount: metadata?.participants?.length || null,
+              sessionId: job.recordingSessionId || null,
+              liveSessionId: job.recordingLiveSessionId || null,
+              metadata,
+            }
+          });
+        }
+      } catch (dailyErr) {
+        console.warn('Failed to fetch Daily.co recording details:', dailyErr);
+      }
+    }
+
+    // 3) No recording available
+    return res.json({ hasRecording: false });
+  } catch (error) {
+    console.error('Get recording-details error:', error);
+    res.status(500).json({ hasRecording: false, message: 'Failed to get recording details' });
+  }
+});
+
 // Daily diagnostic endpoint
 router.get('/api/daily/diagnostics', verifyToken, async (req: any, res) => {
   try {

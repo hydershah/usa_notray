@@ -4,7 +4,7 @@ import { JobWizard } from '@/components/job/job-wizard';
 export default function CreateJob() {
   return (
     <MainLayout>
-      <JobWizard />
+      <JobWizard singlePage />
     </MainLayout>
   );
 }

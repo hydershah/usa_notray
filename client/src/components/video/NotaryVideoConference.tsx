@@ -38,6 +38,8 @@ interface NotaryVideoConferenceProps {
   className?: string;
   signingSessionState?: 'waiting' | 'active' | 'paused' | 'completing' | 'completed';
   autoJoin?: boolean;
+  // NEW: Job identifier for server-side recording persistence
+  jobId: string;
 }
 
 export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
@@ -51,7 +53,8 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
   onError,
   className,
   signingSessionState = 'waiting',
-  autoJoin = false
+  autoJoin = false,
+  jobId
 }) => {
   const daily = useDaily();
   const localParticipant = useLocalParticipant();
@@ -62,8 +65,8 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
   
   const { 
     isRecording, 
-    startRecording, 
-    stopRecording
+    // startRecording,  // replaced by server-side recording start
+    // stopRecording     // replaced by server-side recording stop
   } = useRecording();
   
   const { 
@@ -271,17 +274,90 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
 
   const handleStartRecording = useCallback(async () => {
     try {
-      await startRecording();
-      console.log('🎬 Recording started successfully');
+      // Resolve room name from Daily call
+      let roomName: string | null = null;
+      try {
+        const roomOrPromise: any = daily?.room?.();
+        if (roomOrPromise && typeof roomOrPromise.then === 'function') {
+          const roomData = await roomOrPromise;
+          roomName = roomData?.name || null;
+        } else if (roomOrPromise && typeof roomOrPromise === 'object') {
+          roomName = roomOrPromise?.name || null;
+        }
+      } catch (_) {}
+
+      if (!roomName) {
+        // Try to derive from configuration/session if available
+        try {
+          const config: any = (daily as any)?.config?.();
+          const urlFromConfig: string | undefined = config?.url || config?.room?.url;
+          if (urlFromConfig) {
+            const parts = urlFromConfig.split('/');
+            roomName = parts[parts.length - 1] || null;
+          }
+        } catch (_) {}
+      }
+
+      if (!roomName) {
+        toast({
+          title: 'Recording Error',
+          description: 'Unable to detect room name for recording.',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      const response = await fetch(`/api/jobs/${jobId}/video-session/recording/start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ roomName, meetingId: roomName })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || 'Failed to start recording');
+      }
+
+      toast({ title: 'Recording Started', description: 'Cloud recording has begun' });
     } catch (error) {
-      console.error('❌ Failed to start recording:', error);
+      console.error('❌ Failed to start recording via API:', error);
       toast({
-        title: "Recording Failed",
-        description: "Failed to start recording. Please try again.",
-        variant: "destructive"
+        title: 'Recording Failed',
+        description: error instanceof Error ? error.message : 'Failed to start recording',
+        variant: 'destructive'
       });
     }
-  }, [startRecording]);
+  }, [daily, jobId]);
+
+  const handleStopRecording = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/video-session/recording/stop`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ recordingId: 'current' })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || 'Failed to stop recording');
+      }
+
+      toast({ title: 'Recording Stopped', description: 'Cloud recording has stopped' });
+    } catch (error) {
+      console.error('❌ Failed to stop recording via API:', error);
+      toast({
+        title: 'Recording Stop Failed',
+        description: error instanceof Error ? error.message : 'Failed to stop recording',
+        variant: 'destructive'
+      });
+    }
+  }, [jobId]);
 
   const handleLeaveSession = useCallback(async () => {
     if (daily) {
@@ -289,7 +365,7 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
     }
   }, [daily]);
 
-  // Auto-start recording when signing session becomes active
+  // Auto-start/stop cloud recording based on signing session state
   useEffect(() => {
     console.log('🎬 Recording effect - State check:', {
       signingSessionState,
@@ -299,13 +375,13 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
     });
     
     if (signingSessionState === 'active' && !isRecording && canRecord && hasJoined) {
-      console.log('🎬 Auto-starting recording because signing session is active');
+      console.log('🎬 Auto-starting cloud recording (server API)');
       handleStartRecording();
     } else if ((signingSessionState === 'completing' || signingSessionState === 'completed') && isRecording) {
-      console.log('🛑 Auto-stopping recording because signing session is completing/completed');
-      stopRecording();
+      console.log('🛑 Auto-stopping cloud recording (server API)');
+      handleStopRecording();
     }
-  }, [signingSessionState, isRecording, canRecord, hasJoined, handleStartRecording, stopRecording]);
+  }, [signingSessionState, isRecording, canRecord, hasJoined, handleStartRecording, handleStopRecording]);
 
   const totalParticipants = participantIds.length + (localParticipant ? 1 : 0);
 
@@ -324,8 +400,8 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
   return (
     <div className={cn("h-full flex flex-col bg-gray-900", className)}>
       {/* Participant Grid */}
-      <div className="flex-1 p-4 min-h-0">
-        <div className="grid grid-cols-1 gap-4 h-full overflow-y-auto">
+      <div className="flex-1 p-1 md:p-4 min-h-0">
+        <div className="grid grid-cols-1 gap-2 md:gap-4 h-full overflow-y-auto">
           {/* Local Participant */}
           {localParticipant && (
             <ParticipantTile
@@ -364,36 +440,38 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
       {/* Audio Component - handles all audio automatically */}
       <DailyAudio />
 
-      {/* Control Panel */}
-      <VideoControlPanel
-        // Recording controls
-        isRecording={isRecording}
-        recordingState={isRecording ? 'recording' : 'idle'}
-        canRecord={canRecord}
-        onStartRecording={handleStartRecording}
-        onStopRecording={stopRecording}
-        
-        // Screen sharing controls
-        isScreenSharing={isSharingScreen}
-        canScreenShare={canScreenShare}
-        onStartScreenShare={startScreenShare}
-        onStopScreenShare={stopScreenShare}
-        
-        // Local media controls
-        hasLocalVideo={hasLocalVideo}
-        hasLocalAudio={hasLocalAudio}
-        onToggleVideo={handleToggleVideo}
-        onToggleAudio={handleToggleAudio}
-        
-        // Session info
-        participantCount={totalParticipants}
-        maxParticipants={8}
-        onLeaveSession={handleLeaveSession}
-        
-        // Connection status
-        isConnected={!!localParticipant}
-        connectionQuality={connectionQuality}
-      />
+      {/* Control Panel - hidden on small screens */}
+      <div className="hidden sm:block">
+        <VideoControlPanel
+          // Recording controls
+          isRecording={isRecording}
+          recordingState={isRecording ? 'recording' : 'idle'}
+          canRecord={canRecord}
+          onStartRecording={handleStartRecording}
+          onStopRecording={handleStopRecording}
+          
+          // Screen sharing controls
+          isScreenSharing={isSharingScreen}
+          canScreenShare={canScreenShare}
+          onStartScreenShare={startScreenShare}
+          onStopScreenShare={stopScreenShare}
+          
+          // Local media controls
+          hasLocalVideo={hasLocalVideo}
+          hasLocalAudio={hasLocalAudio}
+          onToggleVideo={handleToggleVideo}
+          onToggleAudio={handleToggleAudio}
+          
+          // Session info
+          participantCount={totalParticipants}
+          maxParticipants={8}
+          onLeaveSession={handleLeaveSession}
+          
+          // Connection status
+          isConnected={!!localParticipant}
+          connectionQuality={connectionQuality}
+        />
+      </div>
     </div>
   );
 };

@@ -2126,7 +2126,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // 🚀 BACKGROUND: Queue signer invitations for auto-approved jobs (non-blocking!)
       const updatedJob = await storage.getJob(job.id);
-      if (updatedJob && updatedJob.notaryApprovalStatus === 'approved' && req.body.signers) {
+      if (updatedJob && updatedJob.notaryApprovalStatus === 'approved' && !updatedJob.signerNotificationsSent && req.body.signers) {
         // Import background job queue
         const { backgroundJobQueue } = await import('./services/background-job-queue');
         
@@ -8371,15 +8371,32 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         return res.status(404).json({ message: 'Invalid invitation token' });
       }
 
+      // Normalize email
+      const normalizedEmail = signer.signerEmail.trim().toLowerCase();
+
       // Find user by email
-      const [user] = await db
+      let [user] = await db
         .select()
         .from(users)
-        .where(eq(users.email, signer.signerEmail))
+        .where(eq(users.email, normalizedEmail))
         .limit(1);
 
+      // If no user exists (legacy records), create a minimal signer user
       if (!user) {
-        return res.status(404).json({ message: 'User account not found' });
+        const bcrypt = await import('bcrypt');
+        const tempPassword = (await import('crypto')).randomUUID();
+        const hashed = await bcrypt.hash(tempPassword, 12);
+        const [created] = await db.insert(users).values({
+          username: normalizedEmail,
+          email: normalizedEmail,
+          password: hashed,
+          role: 'signer',
+          isActive: true,
+          accountSetupComplete: false,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }).returning();
+        user = created;
       }
 
       // Check if user already has an active password reset token
@@ -10640,13 +10657,13 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         return res.status(404).json({ message: 'Session not found' });
       }
       
-      // In signing sessions (notary mode), only notaries and admins can place new tags
-      if (session.sessionType === 'notary' || session.sessionType === 'tagging') {
+      // In signing/tagging sessions, only notaries and admins can place new tags (signing) or any authenticated user in tagging
+      if (session.sessionType === 'notary' || session.sessionType === 'tagging' || session.sessionType === 'signing') {
         const userRole = req.user.role;
         const isNotary = userRole === 'notary';
         const isAdmin = userRole === 'admin';
         
-        if (!isNotary && !isAdmin) {
+        if (session.sessionType !== 'tagging' && !isNotary && !isAdmin) {
           console.log(`❌ Authorization failed: ${userRole} (${req.user.id}) cannot place tags in signing session`);
           return res.status(403).json({ 
             message: 'Only notaries and admins can place new tags during signing sessions',
@@ -11083,7 +11100,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       
       const { TagService } = await import('./services/editor/TagService');
       const { ProfileAutoFillService } = await import('./services/ProfileAutoFillService');
-      const { users } = await import('../shared/schema');
+      const { users, documentTags, editorSessions } = await import('../shared/schema');
       
       // Validate that user is a notary
       const [notary] = await db
@@ -11098,10 +11115,45 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       
       // Get tag details first
       const tags = await TagService.getSessionTags(sessionId);
-      const tag = tags.find(t => t.id === tagId);
+      let tag = tags.find(t => t.id === tagId);
       
+      // Fallback: Direct DB lookup to avoid false 404 when cache/state is out of sync
       if (!tag) {
-        return res.status(404).json({ message: 'Tag not found' });
+        const [sessionRow] = await db
+          .select()
+          .from(editorSessions)
+          .where(eq(editorSessions.sessionId, sessionId))
+          .limit(1);
+        
+        if (!sessionRow) {
+          return res.status(404).json({ message: 'Session not found' });
+        }
+        
+        const numericTagId = parseInt(tagId);
+        if (isNaN(numericTagId) || numericTagId <= 0) {
+          return res.status(400).json({ message: 'Invalid tag ID' });
+        }
+        
+        const [rawTag] = await db
+          .select()
+          .from(documentTags)
+          .where(eq(documentTags.id, numericTagId))
+          .limit(1);
+        
+        if (!rawTag) {
+          return res.status(404).json({ message: 'Tag not found' });
+        }
+        
+        if (rawTag.sessionId !== sessionRow.id) {
+          return res.status(403).json({ message: 'Tag does not belong to this session' });
+        }
+        
+        // Minimal shape for downstream usage
+        tag = {
+          id: tagId,
+          tagType: rawTag.tagType,
+          coordinates: { pageNumber: rawTag.pageNumber }
+        } as any;
       }
       
       if (tag.tagType !== 'E') {
@@ -11112,7 +11164,8 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       const autoFillResult = await ProfileAutoFillService.getTagAutoFillData(
         'E', 
         req.user.id, 
-        sessionId
+        sessionId,
+        { allowInTagging: true }
       );
       
       if (!autoFillResult.success) {

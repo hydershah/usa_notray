@@ -350,6 +350,15 @@ export default function AdminCompanies() {
   const [typeFilter, setTypeFilter] = useState("all");
 
   useEffect(() => {
+    // Initialize filter from URL query (e.g., ?status=pending)
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const status = params.get('status');
+      if (status) {
+        setStatusFilter(status);
+      }
+    } catch {}
+
     if (user?.role === 'admin' || user?.isAdmin) {
       fetchCompanies();
     }
@@ -449,11 +458,12 @@ export default function AdminCompanies() {
 
   // Filter companies based on search and filters
   const filteredCompanies = companies.filter(company => {
+    const term = searchTerm.toLowerCase();
     const matchesSearch = searchTerm === "" || 
-      company.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      company.primaryUserName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      company.primaryUserEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (company.city && company.city.toLowerCase().includes(searchTerm.toLowerCase()));
+      (company.companyName?.toLowerCase().includes(term) ?? false) ||
+      (company.primaryUserName?.toLowerCase().includes(term) ?? false) ||
+      (company.primaryUserEmail?.toLowerCase().includes(term) ?? false) ||
+      (company.city?.toLowerCase().includes(term) ?? false);
     
     const matchesStatus = statusFilter === "all" || company.status === statusFilter;
     const matchesType = typeFilter === "all" || company.companyType === typeFilter;

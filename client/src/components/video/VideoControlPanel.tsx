@@ -72,20 +72,20 @@ export const VideoControlPanel: React.FC<VideoControlPanelProps> = ({
   connectionQuality = 'unknown'
 }) => {
   return (
-    <div className="bg-gray-800 border-t border-gray-700 p-2 min-h-[70px]">
+    <div className="bg-gray-800 border-t border-gray-700 p-2 min-h-[56px]">
       <div className="flex flex-col space-y-2 w-full">
         {/* Top Row: Session Info & Status */}
         <div className="flex items-center justify-between text-white text-xs">
           <div className="flex items-center space-x-2">
             <Users className="w-4 h-4" />
-            <span>{participantCount}/{maxParticipants}</span>
+            <span className="hidden sm:inline">{participantCount}/{maxParticipants}</span>
           </div>
           
           {/* Recording Status */}
           {isRecording && (
             <div className="flex items-center space-x-1 text-red-400">
               <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-              <span className="font-medium text-xs">REC</span>
+              <span className="font-medium text-xs hidden sm:inline">REC</span>
             </div>
           )}
           
@@ -101,9 +101,7 @@ export const VideoControlPanel: React.FC<VideoControlPanelProps> = ({
                   : "bg-gray-400"
                 : "bg-red-400"
             )} />
-            <span className="text-xs">
-              {isConnected ? 'Connected' : 'Disconnected'}
-            </span>
+            <span className="text-xs hidden sm:inline">{isConnected ? 'Connected' : 'Disconnected'}</span>
           </div>
         </div>
 
@@ -177,7 +175,7 @@ export const VideoControlPanel: React.FC<VideoControlPanelProps> = ({
                 {!isRecording ? (
                   <Button
                     onClick={onStartRecording}
-                    className="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1"
+                    className="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 hidden sm:inline"
                     size="sm"
                   >
                     <Circle className="w-3 h-3 mr-1 fill-current" />
@@ -186,7 +184,7 @@ export const VideoControlPanel: React.FC<VideoControlPanelProps> = ({
                 ) : (
                   <Button
                     onClick={onStopRecording}
-                    className="bg-gray-600 hover:bg-gray-700 text-white text-xs px-2 py-1"
+                    className="bg-gray-600 hover:bg-gray-700 text-white text-xs px-2 py-1 hidden sm:inline"
                     size="sm"
                   >
                     <Square className="w-3 h-3 mr-1 fill-current" />

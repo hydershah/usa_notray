@@ -256,11 +256,7 @@ class DailyService {
         {
           url: `${this.config.apiUrl}/rooms/${roomName}/recordings/start`,
           body: {
-            properties: {
-              layout: {
-                preset: 'default'
-              }
-            }
+            // No properties field needed for basic recording
           }
         }
       ];
@@ -284,33 +280,25 @@ class DailyService {
           
           if (response.ok) {
             const data = await response.json();
-            console.log(`✅ Recording started successfully with endpoint ${i + 1}:`, data);
-            return { recordingId: data.id || data.recording_id || `recording-${Date.now()}` };
+            console.log('✅ Recording started successfully:', data);
+            return { recordingId: data.id || `daily-recording-${Date.now()}` };
           } else {
-            const errorText = await response.text();
-            console.log(`❌ Endpoint ${i + 1} failed (${response.status}): ${errorText}`);
-            
-            // If this is the last endpoint, throw the error
-            if (i === endpoints.length - 1) {
-              console.error('❌ All recording endpoints failed');
-            }
+            const errorData = await response.json().catch(() => ({}));
+            console.log(`❌ Endpoint ${i + 1} failed (${response.status}):`, errorData);
+            continue; // Try next endpoint
           }
-        } catch (endpointError) {
-          console.log(`❌ Endpoint ${i + 1} error:`, endpointError);
-          
-          // If this is the last endpoint, throw the error
-          if (i === endpoints.length - 1) {
-            console.error('❌ All recording endpoints failed');
-          }
+        } catch (error) {
+          console.log(`❌ Endpoint ${i + 1} error:`, (error as Error).message);
+          continue; // Try next endpoint
         }
       }
-      
-      // If all endpoints fail, use fallback
+
+      console.log('❌ All recording endpoints failed');
       console.log('🔄 Using fallback recording due to API issues');
       return { recordingId: `fallback-recording-${Date.now()}` };
     } catch (error) {
-      console.error('❌ Failed to start Daily recording:', error);
-      // Fallback to mock recording
+      console.error('🎬 Recording start error:', error);
+      console.log('🔄 Using fallback recording due to error');
       return { recordingId: `fallback-recording-${Date.now()}` };
     }
   }
@@ -359,7 +347,7 @@ class DailyService {
     }
   }
 
-  // Get recording details and download URL
+  // Get recording details and a time-limited download URL
   async getRecording(recordingId: string): Promise<DailyRecording | null> {
     if (!this.isConfigured) {
       console.log('📹 Mock recording info (Daily not configured)');
@@ -367,34 +355,52 @@ class DailyService {
     }
 
     try {
-      const response = await fetch(`${this.config.apiUrl}/recordings/${recordingId}`, {
+      // 1) Fetch recording metadata
+      const metaResp = await fetch(`${this.config.apiUrl}/recordings/${recordingId}`, {
         headers: {
           'Authorization': `Bearer ${this.config.apiKey}`
         }
       });
 
-      if (!response.ok) {
-        if (response.status === 404) {
+      if (!metaResp.ok) {
+        if (metaResp.status === 404) {
           return null;
         }
-        const errorText = await response.text();
-        console.error('❌ Daily get recording API error:', response.status, errorText);
-        
+        const errorText = await metaResp.text();
+        console.error('❌ Daily get recording API error:', metaResp.status, errorText);
         if (process.env.NODE_ENV === 'production') {
-          throw new Error(`Get recording failed: ${response.status} - ${errorText}`);
+          throw new Error(`Get recording failed: ${metaResp.status} - ${errorText}`);
         }
-        
         return null;
       }
 
-      const data = await response.json();
+      const meta = await metaResp.json();
+
+      // 2) Fetch a signed access link so it can be downloaded/played
+      let downloadUrl: string | null = null;
+      try {
+        const linkResp = await fetch(`${this.config.apiUrl}/recordings/${recordingId}/access-link?valid_for_secs=7200`, {
+          headers: {
+            'Authorization': `Bearer ${this.config.apiKey}`
+          }
+        });
+        if (linkResp.ok) {
+          const linkData = await linkResp.json();
+          downloadUrl = linkData.download_link || null;
+        } else {
+          const linkErr = await linkResp.text();
+          console.warn('⚠️ Daily access-link API error:', linkResp.status, linkErr);
+        }
+      } catch (linkError) {
+        console.warn('⚠️ Failed to fetch access link for recording:', linkError);
+      }
       
       return {
-        recordingId: data.id,
-        roomName: data.room_name,
-        createdDate: data.created_at,
-        status: this.mapRecordingStatus(data.status),
-        downloadUrl: data.download_link
+        recordingId: meta.id,
+        roomName: meta.room_name,
+        createdDate: meta.created_at,
+        status: this.mapRecordingStatus(meta.status),
+        downloadUrl: downloadUrl || meta.download_link // fallback if API still returns it
       };
     } catch (error) {
       console.error('❌ Error getting Daily recording:', error);
@@ -428,12 +434,11 @@ class DailyService {
   // Delete a meeting room
   async deleteMeeting(meetingId: string): Promise<void> {
     if (!this.isConfigured) {
-      console.log('🗑️ Mock meeting deleted (Daily not configured)');
+      console.warn('⚠️ Daily service not configured, skipping deleteMeeting');
       return;
     }
 
     try {
-      // For Daily.co, we delete the room using the room name
       const response = await fetch(`${this.config.apiUrl}/rooms/${meetingId}`, {
         method: 'DELETE',
         headers: {
@@ -443,14 +448,12 @@ class DailyService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('❌ Daily delete room API error:', response.status, errorText);
-        // Non-critical error, continue
-      } else {
-        console.log('✅ Room deleted successfully');
+        console.warn('⚠️ Daily delete room API error:', response.status, errorText);
       }
+
+      console.log('🧹 Deleted Daily room (if existed):', meetingId);
     } catch (error) {
-      console.error('❌ Error deleting Daily room:', error);
-      // Non-critical error, continue
+      console.warn('⚠️ Error deleting Daily room:', error);
     }
   }
 

@@ -53,6 +53,8 @@ export function TitleCompanyDashboard() {
     queryKey: ['/api/jobs'],
   });
 
+  const getJobStatus = (job: any): string => job?.jobStatus || job?.job_status || job?.status || 'open';
+
   const recentJobsSlice = recentJobs.slice(0, 5);
 
   return (
@@ -198,8 +200,8 @@ export function TitleCompanyDashboard() {
                           </p>
                         </div>
                         <div className="text-right">
-                          <Badge className={getStatusColor(job.jobStatus)}>
-                            {job.jobStatus}
+                          <Badge className={getStatusColor(getJobStatus(job))}>
+                            {getJobStatus(job)}
                           </Badge>
                           {job.selectedDate && (
                             <p className="text-xs text-gray-500 mt-1">

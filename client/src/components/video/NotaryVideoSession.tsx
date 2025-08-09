@@ -229,6 +229,7 @@ export const NotaryVideoSession: React.FC<NotaryVideoSessionProps> = ({
             onError={handleError}
             signingSessionState={signingSessionState}
             autoJoin={autoJoin}
+            jobId={jobId}
           />
         </NotaryVideoProvider>
       ) : (

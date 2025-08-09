@@ -39,7 +39,6 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
     placeTag,
     currentDocument,
     getTagDimensions,
-    activeTextInputId
   } = useEditorStore();
 
   // Handle tag placement via hotkey
@@ -77,7 +76,7 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
 
     // Ignore keystrokes in input fields or when a text input is selected
     const target = event.target as HTMLElement;
-    const { activeTextInputId } = useEditorStore.getState();
+    const activeTextInputId = (useEditorStore.getState() as any).activeTextInputId;
     if (activeTextInputId) {
       return;
     }
@@ -121,7 +120,7 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
     }
 
     // Tag Placement Shortcuts (allow in both tagging and signing modes)
-    if ((mode.mode === 'tagging' || mode.mode === 'signing') && mode.canPlaceTags && selectedUser) {
+    if ((mode.mode === 'tagging' || mode.mode === 'signing' || mode.mode === 'notary') && mode.canPlaceTags && selectedUser) {
       const tagTypeMap: Record<string, TagType> = {
         'A': 'A', // Name tag
         'S': 'S', // Signature tag

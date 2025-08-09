@@ -32,16 +32,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
   const participant = useParticipant(sessionId);
   
   if (!participant) {
-    return (
-      <div className={cn(
-        "relative aspect-video bg-gray-800 rounded-lg overflow-hidden border-2 border-dashed border-gray-600",
-        className
-      )}>
-        <div className="w-full h-full flex items-center justify-center">
-          <span className="text-gray-400 text-sm">Waiting for participant...</span>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   const displayName = participant.user_name || 'Participant';

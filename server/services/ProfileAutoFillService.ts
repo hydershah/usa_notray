@@ -199,12 +199,14 @@ export class ProfileAutoFillService {
   static async getTagAutoFillData(
     tagType: string, 
     userId: number, 
-    sessionId: string
+    sessionId: string,
+    options?: { allowInTagging?: boolean }
   ): Promise<AutoFillResult> {
     try {
       // 🔒 CRITICAL: Verify this is a signing session, not tagging
       const sessionCheck = await this.validateSigningSession(sessionId);
-      if (!sessionCheck.isSigningSession) {
+      const allowInTagging = options?.allowInTagging === true;
+      if (!sessionCheck.isSigningSession && !allowInTagging) {
         return {
           success: false,
           content: '',
