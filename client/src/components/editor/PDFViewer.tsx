@@ -161,24 +161,26 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   const optimalDimensions = useMemo(() => {
     const content = tag.content || '';
     const fontSize = currentFontSize;
-    
-    // For text tags, always use the tag constants instead of calculating optimal dimensions
-    if (tag.tagType === 'T') {
-      return {
-        width: fixedDimensions.width,
-        height: fixedDimensions.height
-      };
+
+    // Auto-size for any tag that allows text input (Text, Name, Date, Commission, Expiration, Disclosure)
+    const shouldAutoSize = Boolean(TAG_TYPE_CONFIG[tag.tagType]?.allowTextInput);
+
+    if (!shouldAutoSize) {
+      // For non-text-input tags, keep at least fixed dimensions, but also consider content size
+      const optimalWidth = calculateOptimalWidth(content, fontSize, TYPOGRAPHY.fontFamily);
+      const optimalHeight = calculateOptimalHeight(content, fontSize);
+      const width = Math.max(fixedDimensions.width, optimalWidth);
+      const height = Math.max(fixedDimensions.height, optimalHeight);
+      return { width, height };
     }
-    
-    // For other tag types, calculate optimal dimensions based on content
+
+    // For text-input tags, compute optimal size from content
     const optimalWidth = calculateOptimalWidth(content, fontSize, TYPOGRAPHY.fontFamily);
     const optimalHeight = calculateOptimalHeight(content, fontSize);
-    
-    // Use the larger of fixed dimensions or optimal dimensions
-    const width = Math.max(fixedDimensions.width, optimalWidth);
-    const height = Math.max(fixedDimensions.height, optimalHeight);
-    
-    return { width, height };
+    return {
+      width: Math.max(fixedDimensions.width, optimalWidth),
+      height: Math.max(fixedDimensions.height, optimalHeight)
+    };
   }, [tag.content, tag.tagType, currentFontSize, fixedDimensions.width, fixedDimensions.height]);
   
   const displayCoords = useMemo(() => {
@@ -186,11 +188,17 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     const savedWidth = (tag.coordinates.width ?? fixedDimensions.width);
     const savedHeight = (tag.coordinates.height ?? fixedDimensions.height);
 
+    const shouldAutoSize = Boolean(TAG_TYPE_CONFIG[tag.tagType]?.allowTextInput);
+
+    // For text-input tags, allow natural growth if content requires it (do not shrink below saved)
+    const finalUnscaledWidth = shouldAutoSize ? Math.max(savedWidth, optimalDimensions.width) : savedWidth;
+    const finalUnscaledHeight = shouldAutoSize ? Math.max(savedHeight, optimalDimensions.height) : savedHeight;
+
     const coords = {
       x: isDragging && dragCoords ? dragCoords.x : Math.round(tag.coordinates.x * scaleFactor),
       y: isDragging && dragCoords ? dragCoords.y : Math.round(tag.coordinates.y * scaleFactor),
-      width: Math.round(savedWidth * scaleFactor),
-      height: Math.round(savedHeight * scaleFactor)
+      width: Math.round(finalUnscaledWidth * scaleFactor),
+      height: Math.round(finalUnscaledHeight * scaleFactor)
     };
     
     // Debug logging for all tags
@@ -204,7 +212,7 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     });
     
     return coords;
-  }, [tag.coordinates.x, tag.coordinates.y, tag.coordinates.width, tag.coordinates.height, scaleFactor, optimalDimensions.width, optimalDimensions.height]);
+  }, [isDragging, dragCoords, tag.coordinates.x, tag.coordinates.y, tag.coordinates.width, tag.coordinates.height, tag.tagType, scaleFactor, optimalDimensions.width, optimalDimensions.height, fixedDimensions.width, fixedDimensions.height]);
 
   const hasContent = useMemo(() => !!(tag.content || tag.contentData || tag.isCompleted), [tag.content, tag.contentData, tag.isCompleted]);
 
@@ -276,6 +284,9 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     };
   }, [hasContent, isSelected, canEdit, tag.tagType, isMissing, isHighlighted]);
 
+  // Honor per-tag resizability from configuration and current permissions
+  const resizable = Boolean(TAG_TYPE_CONFIG[tag.tagType]?.allowResize && canEdit);
+
   const validateAndSanitizeCoordinates = (coords: any) => {
     const sanitized: any = {};
     
@@ -346,9 +357,8 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   const handleResize = (e: any, direction: any, ref: any, delta: any, position: any) => {
     if (!canEdit) return;
     
-    // For text tags, calculate font size change based on resize distance and let container auto-fit
+    // For text tags, calculate font size change based on resize distance and also update size live
     if (tag.tagType === 'T') {
-      // Use the dominant resize direction (width or height) to determine font scaling
       const widthChange = delta.width;
       const heightChange = delta.height;
       const primaryChange = Math.abs(widthChange) > Math.abs(heightChange) ? widthChange : heightChange;
@@ -359,16 +369,21 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       newFontSize = Math.max(8, Math.min(48, newFontSize));
       setLiveFontSize(newFontSize);
       
-      // Let the container auto-size to text - don't update coordinates during resize
-      // This allows the container to naturally fit the text content
-    } else {
-      // For non-text tags, update size normally (NO font size change)
+      // Live size update so the user sees the element resize immediately
       const newCoordinates = validateAndSanitizeCoordinates({
         width: ref.offsetWidth / scaleFactor,
         height: ref.offsetHeight / scaleFactor
       });
       onUpdate(newCoordinates);
+      return;
     }
+    
+    // For non-text tags (Name, Signature, Initials, Date, etc.), update size normally (NO font size change)
+    const newCoordinates = validateAndSanitizeCoordinates({
+      width: ref.offsetWidth / scaleFactor,
+      height: ref.offsetHeight / scaleFactor
+    });
+    onUpdate(newCoordinates);
   };
 
   const handleResizeStop = (e: any, direction: any, ref: any, delta: any, position: any) => {
@@ -493,16 +508,16 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       onResize={handleResize}
       onResizeStop={handleResizeStop}
       enableResizing={{
-        top: canEdit,
-        right: canEdit,
-        bottom: canEdit,
-        left: canEdit,
-        topRight: canEdit,
-        bottomRight: canEdit,
-        bottomLeft: canEdit,
+        top: resizable,
+        right: resizable,
+        bottom: resizable,
+        left: resizable,
+        topRight: resizable,
+        bottomRight: resizable,
+        bottomLeft: resizable,
         topLeft: false
-      }} // Enable corner and edge resizing for text tags
-        bounds="parent"
+      }}
+      bounds="parent"
       cancel=".no-drag"
       onClick={(e: React.MouseEvent<HTMLDivElement>) => {
         e.stopPropagation();
@@ -579,10 +594,7 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
         position: 'absolute',
         zIndex: isSelected ? 1000 : isDragging ? 999 : 100,
         pointerEvents: 'auto',
-        width: 'auto', // Let the tag expand naturally with content
-        height: 'auto', // Let the tag expand naturally with content
-        minWidth: 'fit-content', // Ensure minimum width fits content
-        minHeight: 'fit-content' // Ensure minimum height fits content
+        // Let react-rnd control width/height so resizing works as expected
       }}
     >
       <div 
@@ -739,6 +751,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const renderTasksRef = useRef<Map<number, any>>(new Map()); // Track render tasks
   const currentDocumentUrlRef = useRef<string | null>(null);
   const isLoadingRef = useRef<boolean>(false);
+  const documentSwitchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const store = useEditorStore();
   const { 
@@ -754,6 +767,11 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     lastUsedFontSize,
     setLastUsedFontSize
   } = store;
+
+  // Determine if user can edit/place tags (respecting mode and store permissions)
+  const canEditTags = useMemo(() => {
+    return editorMode.canPlaceTags && (mode === 'tagging' || mode === 'signing');
+  }, [editorMode.canPlaceTags, mode]);
 
   // Debug: Log store functions to ensure they exist
   console.log('🔍 Store functions:', {
@@ -887,511 +905,10 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const [scaleFactors, setScaleFactors] = useState<Map<number, number>>(new Map());
   const isMountedRef = useRef<boolean>(true);
 
-  // Scroll to tag functionality
-  const scrollToTag = useCallback(async (tagId: string, pageNumber: number) => {
-    console.log('📍 PDFViewer scrollToTag called:', { tagId, pageNumber, tagsCount: tags.length });
-    const tag = tags.find(t => t.id === tagId);
-    if (!tag || !containerRef.current || !pdfDoc) {
-      console.warn('📍 scrollToTag failed:', { tagFound: !!tag, containerExists: !!containerRef.current, pdfDoc: !!pdfDoc });
-      return;
-    }
-
-    console.log('📍 Found tag for scrolling:', { 
-      id: tag.id, 
-      coordinates: tag.coordinates, 
-      pageNumber: tag.coordinates.pageNumber 
-    });
-
-    // Ensure target page is rendered and scale factor is known
-    if (!renderedPages.has(pageNumber)) {
-      try {
-        await renderPage(pageNumber, false);
-      } catch (e) {
-        console.warn('⚠️ Failed to pre-render page before scroll:', pageNumber, e);
-      }
-    }
-
-    // Small delay to allow layout/refs to settle
-    await new Promise(resolve => setTimeout(resolve, 10));
-
-    // Calculate exact position of the tag within the page
-    const pageContainer = pageContainerRefs.current[pageNumber - 1];
-    if (pageContainer) {
-      const scrollContainer = containerRef.current;
-
-      // scaleFactors already includes current zoom for that page
-      const finalScale = scaleFactors.get(pageNumber) || 1;
-      const totalScale = finalScale;
-
-      console.log('📍 Scroll calculation:', {
-        finalScale,
-        totalScale,
-        tagX: tag.coordinates.x,
-        tagY: tag.coordinates.y,
-        pageTop: pageContainer.offsetTop
-      });
-
-      // Calculate tag position within the page
-      const tagX = tag.coordinates.x * totalScale;
-      const tagY = tag.coordinates.y * totalScale;
-      const tagWidth = ((tag.coordinates.width ?? getTagDimensions(tag.tagType).width) * totalScale) || 0;
-      const tagHeight = ((tag.coordinates.height ?? getTagDimensions(tag.tagType).height) * totalScale) || 0;
-
-      // Scroll so the tag is centered in the viewport
-      const containerRect = scrollContainer.getBoundingClientRect();
-      const pageRect = pageContainer.getBoundingClientRect();
-      const pageTop = pageRect.top - containerRect.top + scrollContainer.scrollTop;
-      const pageLeft = pageRect.left - containerRect.left + scrollContainer.scrollLeft;
-      const tagAbsoluteY = pageTop + tagY;
-      const tagAbsoluteX = pageLeft + tagX;
-      const scrollTop = Math.max(
-        0,
-        tagAbsoluteY - (scrollContainer.clientHeight / 2) + (tagHeight / 2)
-      );
-      const scrollLeft = Math.max(
-        0,
-        tagAbsoluteX - (scrollContainer.clientWidth / 2) + (tagWidth / 2)
-      );
-
-      console.log('📍 Scrolling to:', {
-        tagAbsoluteY,
-        scrollTop,
-        currentScrollTop: scrollContainer.scrollTop,
-        scrollLeft,
-        currentScrollLeft: scrollContainer.scrollLeft
-      });
-
-      scrollContainer.scrollTo({
-        top: scrollTop,
-        left: scrollLeft,
-        behavior: 'smooth'
-      });
-
-      // After scrolling, notify caller
-      setTimeout(() => {
-        if (onScrollToTag) {
-          onScrollToTag(tagId, pageNumber);
-        }
-      }, 250);
-    } else {
-      console.warn('📍 Page container not found for page:', pageNumber);
-    }
-  }, [tags, onScrollToTag, viewer.zoomLevel, scaleFactors, renderedPages, pdfDoc, renderPage]);
-
-  // Expose scroll to tag function for external use
-  React.useEffect(() => {
-    console.log('📍 PDFViewer highlightedTagId effect triggered:', highlightedTagId);
-    if (highlightedTagId) {
-      const tag = tags.find(t => t.id === highlightedTagId);
-      if (tag) {
-        console.log('📍 Calling scrollToTag from effect:', tag.id, tag.coordinates.pageNumber);
-        scrollToTag(highlightedTagId, tag.coordinates.pageNumber);
-      } else {
-        console.warn('📍 No tag found for highlightedTagId:', highlightedTagId);
-      }
-    }
-  }, [highlightedTagId, scrollToTag, tags]);
-
-  // Create a stable reference for document switching
-  const documentSwitchTimeoutRef = useRef<NodeJS.Timeout>();
-
-  // Determine if user can edit tags - FIXED: Properly respect canPlaceTags in all modes
-  const canEditTags = useMemo(() => {
-    // In both tagging and signing modes, check if user can place tags
-    // This ensures signers cannot place new tags in signing mode
-    const result = editorMode.canPlaceTags && (mode === 'tagging' || mode === 'signing');
-    // Can edit tags calculation optimized for performance
-    return result;
-  }, [mode, editorMode.canPlaceTags]);
-
-  // Debounced font size updates to prevent API spam during drag
-  const debouncedTagFontSizeUpdates = useRef<Map<string, NodeJS.Timeout>>(new Map());
-
-  // Function to update tag font size with immediate local update + debounced server sync
-  const updateTagFontSize = useCallback(async (tagId: string, fontSize: number) => {
-    try {
-      // ✅ IMMEDIATE LOCAL UPDATE: Update local font size for instant visual feedback
-      setLocalFontSizes(prev => {
-        const newMap = new Map(prev);
-        newMap.set(tagId, fontSize);
-        return newMap;
-      });
-      
-      // Immediately updated local font size for better UX
-
-      // Clear any existing timeout for this tag
-      const existingTimeout = debouncedTagFontSizeUpdates.current.get(tagId);
-      if (existingTimeout) {
-        clearTimeout(existingTimeout);
-      }
-
-      // Set new debounced timeout for server sync
-      const timeout = setTimeout(async () => {
-        try {
-          const response = await fetch(`/api/editor/session/${sessionId}/tag/${tagId}/font-size`, {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
-            },
-            body: JSON.stringify({ fontSize })
-          });
-
-          if (!response.ok) {
-            throw new Error('Failed to update font size');
-          }
-
-          // Server updated font size successfully
-          debouncedTagFontSizeUpdates.current.delete(tagId);
-          
-        } catch (serverError) {
-          console.error('❌ Failed to update tag font size on server:', serverError);
-        }
-      }, 350); // 350ms debounce delay - smooth but not overwhelming server
-
-      debouncedTagFontSizeUpdates.current.set(tagId, timeout);
-      
-    } catch (error) {
-      console.error('❌ Failed to setup tag font size update:', error);
-    }
-  }, [sessionId]);
-
-  // Cleanup debounced font size updates on unmount
-  useEffect(() => {
-    return () => {
-      debouncedTagFontSizeUpdates.current.forEach(timeout => clearTimeout(timeout));
-      debouncedTagFontSizeUpdates.current.clear();
-    };
-  }, []);
-
-  // Load PDF document with improved error handling and redirect support
-  const loadPDF = useCallback(async (url: string) => {
-    // Extract document ID from URL for more accurate comparison
-    const getDocumentIdFromUrl = (url: string) => {
-      const match = url.match(/\/documents\/(\d+)\/preview/);
-      return match ? match[1] : url;
-    };
-
-    const documentId = getDocumentIdFromUrl(url);
-    const currentDocumentId = currentDocumentUrlRef.current ? getDocumentIdFromUrl(currentDocumentUrlRef.current) : null;
-
-    // Only prevent loading if it's the exact same document AND already loaded successfully
-    if (currentDocumentId === documentId && !error && pdfDoc && !loading) {
-      console.log('📄 Skipping load - same document already loaded:', documentId);
-      return;
-    }
-
-    // Prevent concurrent loading of the same document
-    if (isLoadingRef.current && currentDocumentId === documentId) {
-      console.log('📄 Skipping load - already loading this document:', documentId);
-      return;
-    }
-
-    try {
-      console.log('📄 Starting PDF load for document:', documentId, 'URL:', url);
-      isLoadingRef.current = true;
-      setLoading(true);
-      setError(null);
-      
-      // Clear previous PDF state when switching to a different document
-      if (currentDocumentId !== documentId) {
-        console.log('🔄 Switching documents - clearing previous state');
-        
-        // Cancel all active render tasks
-        renderTasksRef.current.forEach((task, pageNumber) => {
-          if (task && typeof task.cancel === 'function') {
-            try {
-              task.cancel();
-              console.log(`🚫 Cancelled render task for page ${pageNumber} on document switch`);
-            } catch (e) {
-              // Ignore cancellation errors
-            }
-          }
-        });
-        renderTasksRef.current.clear();
-        
-        // Clear canvas refs
-        canvasRefs.current = [];
-        
-        // Reset component state
-        setPdfDoc(null);
-        setRenderedPages(new Set());
-        setScaleFactors(new Map());
-        setLoading(true);
-      }
-      
-      // Ensure worker is ready
-      if (!isPDFWorkerReady()) {
-        console.log('🔧 Initializing PDF worker...');
-        initializePDFWorker();
-        await new Promise(resolve => setTimeout(resolve, 200)); // Longer wait for worker
-      }
-
-      // Clean up previous loading task when switching to a different document
-      if (loadingTaskRef.current && currentDocumentId !== documentId) {
-        try {
-          loadingTaskRef.current.destroy();
-          console.log('🗑️ Previous PDF loading task destroyed for document switch');
-        } catch (e: any) {
-          console.log('Previous task cleanup:', e?.message || 'Unknown error');
-        }
-        loadingTaskRef.current = null;
-        await new Promise(resolve => setTimeout(resolve, 50)); // Wait for cleanup
-      }
-
-      // Update current document reference
-      currentDocumentUrlRef.current = url;
-      
-      // FIXED: First fetch the PDF as a blob to handle redirects properly
-      let pdfData: ArrayBuffer | undefined;
-      let retryCount = 0;
-      const maxRetries = 3;
-      const retryDelay = 1000; // Start with 1 second delay
-      
-      while (retryCount <= maxRetries) {
-        try {
-          console.log(`📄 Fetching PDF document... (attempt ${retryCount + 1}/${maxRetries + 1})`);
-          
-          // Replace token placeholder if present
-          const token = localStorage.getItem('token');
-          const fetchUrl = url.includes('{{TOKEN}}') ? url.replace('{{TOKEN}}', token || '') : url;
-          console.log('🔗 Final fetch URL:', fetchUrl.substring(0, 100) + '...');
-          
-          const response = await fetch(fetchUrl, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${token}`
-            },
-            credentials: 'same-origin'
-          });
-          
-          if (!response.ok) {
-            // Try to parse error response as JSON first
-            let errorMessage = `HTTP error! status: ${response.status}`;
-            
-            // Handle specific HTTP status codes
-            if (response.status === 502) {
-              errorMessage = 'Server error (502): The document service is temporarily unavailable. Please try again in a few moments.';
-              console.error('📄 502 Bad Gateway - backend server may be down or misconfigured');
-            } else if (response.status === 404) {
-              // Check if this is a JSON error response (file not ready yet)
-              const contentType = response.headers.get('content-type');
-              if (contentType && contentType.includes('application/json')) {
-                const errorData = await response.json();
-                console.log('📄 JSON error response:', errorData);
-                
-                // If Vultr is accessible but file not found, it might be uploading
-                if (errorData.vultrStatus === 'accessible' && retryCount < maxRetries) {
-                  console.log(`📄 File not found but Vultr is accessible, retrying in ${retryDelay * Math.pow(2, retryCount)}ms...`);
-                  await new Promise(resolve => setTimeout(resolve, retryDelay * Math.pow(2, retryCount)));
-                  retryCount++;
-                  continue; // Retry the request
-                }
-                errorMessage = errorData.message || errorData.error || 'Document not found (404)';
-              } else {
-                errorMessage = 'Document not found (404): The requested PDF file does not exist on the server.';
-              }
-            } else if (response.status === 403) {
-              errorMessage = 'Access denied (403): You do not have permission to view this document.';
-            } else if (response.status === 401) {
-              errorMessage = 'Authentication required (401): Please log in again to access this document.';
-            } else {
-              try {
-                const errorData = await response.json();
-                if (errorData.error || errorData.message) {
-                  errorMessage = errorData.message || errorData.error;
-                  console.log('📄 Server error details:', errorData);
-                }
-              } catch (parseError) {
-                // If not JSON, use status text
-                errorMessage = `HTTP ${response.status}: ${response.statusText || 'Document request failed'}`;
-              }
-            }
-            throw new Error(errorMessage);
-          }
-          
-          // Check if response is JSON (error response) instead of PDF
-          const contentType = response.headers.get('content-type');
-          console.log('📄 Response content-type:', contentType);
-          console.log('📄 Response headers:', Object.fromEntries(response.headers.entries()));
-          
-          if (contentType && contentType.includes('application/json')) {
-            const errorData = await response.json();
-            console.error('📄 Server returned JSON instead of PDF:', errorData);
-            
-            // If this is a "file not found" error and we have retries left, wait and retry
-            if (errorData.error === 'Document not found' && retryCount < maxRetries) {
-              console.log(`📄 Document not ready yet, retrying in ${retryDelay * Math.pow(2, retryCount)}ms...`);
-              await new Promise(resolve => setTimeout(resolve, retryDelay * Math.pow(2, retryCount)));
-              retryCount++;
-              continue; // Retry the request
-            }
-            
-            const errorMessage = errorData.message || errorData.error || 'Document not found on server';
-            throw new Error(errorMessage);
-          }
-          
-          // Check if response is HTML (likely an error page)
-          if (contentType && contentType.includes('text/html')) {
-            const htmlText = await response.text();
-            console.error('📄 Server returned HTML instead of PDF. First 500 chars:', htmlText.substring(0, 500));
-            throw new Error('Server returned an HTML page instead of PDF. This usually means authentication failed or the document URL is incorrect.');
-          }
-          
-          // Get the PDF data as ArrayBuffer
-          pdfData = await response.arrayBuffer();
-          console.log('✅ PDF data fetched successfully, size:', pdfData.byteLength);
-          
-          // Check if the data starts with PDF header
-          const uint8Array = new Uint8Array(pdfData);
-          const header = String.fromCharCode(...Array.from(uint8Array.slice(0, 5)));
-          console.log('📄 PDF header check:', header);
-          
-          if (header !== '%PDF-') {
-            // Log first 100 bytes as text to see what we got
-            const textPreview = String.fromCharCode(...Array.from(uint8Array.slice(0, Math.min(100, uint8Array.length))));
-            console.error('📄 Invalid PDF header. First 100 bytes as text:', textPreview);
-            
-            // Check if this looks like JSON (starts with { or [)
-            if (textPreview.trim().startsWith('{') || textPreview.trim().startsWith('[')) {
-              try {
-                const jsonError = JSON.parse(new TextDecoder().decode(uint8Array));
-                console.error('📄 Received JSON error instead of PDF:', jsonError);
-                
-                // If file not found and we have retries, try again
-                if (jsonError.error === 'Document not found' && retryCount < maxRetries) {
-                  console.log(`📄 Document not ready (JSON response), retrying in ${retryDelay * Math.pow(2, retryCount)}ms...`);
-                  await new Promise(resolve => setTimeout(resolve, retryDelay * Math.pow(2, retryCount)));
-                  retryCount++;
-                  continue;
-                }
-                
-                throw new Error(jsonError.message || jsonError.error || 'The server returned an error instead of the PDF file.');
-              } catch (parseErr) {
-                // Not valid JSON either
-              }
-            }
-            throw new Error('The document does not appear to be a valid PDF file. The server may have returned an error page.');
-          }
-          
-          // Validate PDF data size (basic check for corrupted/empty files)
-          if (pdfData.byteLength < 1000) {
-            console.warn('⚠️ PDF data seems too small:', pdfData.byteLength, 'bytes');
-            
-            // Try to parse as JSON to see if it's an error response
-            try {
-              const textData = new TextDecoder().decode(pdfData);
-              const jsonError = JSON.parse(textData);
-              console.error('📄 Small response is JSON error:', jsonError);
-              
-              // If file not found and we have retries, try again
-              if (jsonError.error === 'Document not found' && retryCount < maxRetries) {
-                console.log(`📄 Document not ready (small JSON), retrying in ${retryDelay * Math.pow(2, retryCount)}ms...`);
-                await new Promise(resolve => setTimeout(resolve, retryDelay * Math.pow(2, retryCount)));
-                retryCount++;
-                continue;
-              }
-              
-              throw new Error(jsonError.message || jsonError.error || 'The document appears to be corrupted or empty.');
-            } catch (parseErr) {
-              // Not JSON, just a small/corrupted file
-              throw new Error('The document appears to be corrupted or empty. Please try uploading the document again.');
-            }
-          }
-          
-          // Success! Break out of the retry loop
-          break;
-          
-        } catch (fetchError) {
-          console.error(`❌ Failed to fetch PDF (attempt ${retryCount + 1}):`, fetchError);
-          
-          // If this is the last retry, throw the error
-          if (retryCount >= maxRetries) {
-            throw fetchError;
-          }
-          
-          // Otherwise, wait and retry with exponential backoff
-          const waitTime = retryDelay * Math.pow(2, retryCount);
-          console.log(`📄 Retrying in ${waitTime}ms...`);
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-          retryCount++;
-        }
-      }
-      
-      // Load the PDF from the ArrayBuffer
-      const loadingTask = pdfjsLib.getDocument({
-        data: pdfData,
-        useWorkerFetch: false,
-        isEvalSupported: false,
-        useSystemFonts: true,
-        verbosity: 0,
-        maxImageSize: 1024 * 1024, // Limit image size
-        cMapPacked: true
-      });
-      
-      loadingTaskRef.current = loadingTask;
-      console.log('📄 PDF loading task created, waiting for promise...');
-      
-      let pdf;
-      try {
-        pdf = await loadingTask.promise;
-      } catch (loadError) {
-        // If component is unmounted, don't throw error
-        if (!isMountedRef.current) {
-          console.log('📄 PDF loading cancelled - component unmounted');
-          return;
-        }
-        throw loadError;
-      }
-      
-      if (!isMountedRef.current) return;
-      
-      console.log('✅ PDF loaded successfully:', { numPages: pdf.numPages, documentId });
-      setPdfDoc(pdf);
-      setRenderedPages(new Set());
-      setScaleFactors(new Map());
-      
-      // Update viewer state with new document info
-      useEditorStore.setState(state => ({
-        viewer: {
-          ...state.viewer,
-          totalPages: pdf.numPages,
-          currentPage: 1,
-          scrollTop: 0 // Reset scroll position for new document
-        }
-      }));
-      
-      setLoading(false);
-      console.log(`🎯 Document ${documentId} loaded and ready for rendering`);
-      
-    } catch (err) {
-      if (!isMountedRef.current) return;
-      console.error('❌ PDF load error:', err);
-      
-      // Reset loading state on error
-      isLoadingRef.current = false;
-      
-      // Provide more specific error messages
-      let errorMessage = 'Failed to load PDF';
-      if (err instanceof Error) {
-        if (err.message.includes('NetworkError') || err.message.includes('fetch')) {
-          errorMessage = 'Network error: Unable to download PDF. Please check your connection and try again.';
-        } else if (err.message.includes('Invalid PDF')) {
-          errorMessage = 'Invalid PDF file. The document may be corrupted or not a valid PDF.';
-        } else if (err.message.includes('Password')) {
-          errorMessage = 'PDF is password protected. Please provide the password.';
-        } else {
-          errorMessage = `Failed to load PDF: ${err.message}`;
-        }
-      }
-      
-      setError(errorMessage);
-      setLoading(false);
-    } finally {
-      // Always reset loading state
-      isLoadingRef.current = false;
-    }
-  }, [documentUrl]);
+  // Prevent repeated re-centering while highlight is active
+  const lastJumpedTagIdRef = useRef<string | null>(null);
+  // Track the most recent requested tag to scroll to; older requests will abort
+  const pendingScrollTagRef = useRef<string | null>(null);
 
   // Render individual page with optimized scaling
   const renderPage = useCallback(async (pageNumber: number, forceRender = false) => {
@@ -1542,7 +1059,76 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       // Clean up from tracking
       renderTasksRef.current.delete(pageNumber);
     }
-  }, [pdfDoc, onPageLoad, viewer.zoomLevel]);
+  }, [pdfDoc, isMountedRef, containerRef, setScaleFactors, viewer.zoomLevel]);
+
+  // Scroll to tag functionality (placed after renderPage)
+  const scrollToTag = useCallback(async (tagId: string, pageNumber: number) => {
+    pendingScrollTagRef.current = tagId;
+    console.log('📍 PDFViewer scrollToTag called:', { tagId, pageNumber, tagsCount: tags.length });
+    const tag = tags.find(t => t.id === tagId);
+    if (!tag || !containerRef.current || !pdfDoc) {
+      console.warn('📍 scrollToTag failed:', { tagFound: !!tag, containerExists: !!containerRef.current, pdfDoc: !!pdfDoc });
+      return;
+    }
+    // Ensure target page is rendered and scale factor is known
+    if (!renderedPages.has(pageNumber)) {
+      try {
+        const containerWidth = (containerRef.current?.clientWidth || 800) - 120;
+        for (let i = 1; i <= pageNumber; i++) {
+          const pageContainer = pageContainerRefs.current[i - 1];
+          if (pageContainer && (!pageContainer.style.height || pageContainer.style.height === '0px')) {
+            try {
+              const page = await pdfDoc.getPage(i);
+              const viewport = page.getViewport({ scale: 1 });
+              const baseScale = Math.min(containerWidth / viewport.width, 1.0);
+              const scaledViewport = page.getViewport({ scale: baseScale * useEditorStore.getState().viewer.zoomLevel });
+              pageContainer.style.width = `${scaledViewport.width}px`;
+              pageContainer.style.height = `${scaledViewport.height}px`;
+            } catch {}
+          }
+          if (pendingScrollTagRef.current !== tagId) return;
+        }
+        await renderPage(pageNumber, false);
+      } catch (e) {
+        console.warn('⚠️ Failed to pre-render page before scroll:', pageNumber, e);
+      }
+    }
+
+    await new Promise(r => setTimeout(r, 10));
+    if (pendingScrollTagRef.current !== tagId) return;
+
+    try { useEditorStore.getState().setCurrentPage(pageNumber); } catch {}
+
+    const pageContainer = pageContainerRefs.current[pageNumber - 1];
+    if (pageContainer) {
+      const scrollContainer = containerRef.current;
+      const finalScale = scaleFactors.get(pageNumber) || 1;
+      const totalScale = finalScale;
+      const tagX = tag.coordinates.x * totalScale;
+      const tagY = tag.coordinates.y * totalScale;
+      const tagWidth = ((tag.coordinates.width ?? getTagDimensions(tag.tagType).width) * totalScale) || 0;
+      const tagHeight = ((tag.coordinates.height ?? getTagDimensions(tag.tagType).height) * totalScale) || 0;
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const pageRect = pageContainer.getBoundingClientRect();
+      const pageTop = pageRect.top - containerRect.top + scrollContainer.scrollTop;
+      const pageLeft = pageRect.left - containerRect.left + scrollContainer.scrollLeft;
+      const tagAbsoluteY = pageTop + tagY;
+      const tagAbsoluteX = pageLeft + tagX;
+      const scrollTop = Math.max(0, tagAbsoluteY - (scrollContainer.clientHeight / 2) + (tagHeight / 2));
+      const scrollLeft = Math.max(0, tagAbsoluteX - (scrollContainer.clientWidth / 2) + (tagWidth / 2));
+
+      if (pendingScrollTagRef.current !== tagId) return;
+      scrollContainer.scrollTo({ top: scrollTop, left: scrollLeft, behavior: 'smooth' });
+
+      setTimeout(() => {
+        if (pendingScrollTagRef.current === tagId) {
+          onScrollToTag?.(tagId, pageNumber);
+        }
+      }, 150);
+    } else {
+      console.warn('📍 Page container not found for page:', pageNumber);
+    }
+  }, [tags, onScrollToTag, viewer.zoomLevel, scaleFactors, renderedPages, pdfDoc, renderPage]);
 
   // Load PDF on URL change with smart debouncing for rapid document switching
   useEffect(() => {
@@ -1704,6 +1290,11 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     const run = async () => {
       console.log('📍 Deep-page jump effect triggered:', { highlightedTagId, pdfDoc: !!pdfDoc });
       if (!highlightedTagId || !pdfDoc) return;
+      // Avoid re-triggering scroll for the same tag while highlight is active
+      if (lastJumpedTagIdRef.current === highlightedTagId) {
+        return;
+      }
+      lastJumpedTagIdRef.current = highlightedTagId;
       const tag = tags.find(t => t.id === highlightedTagId);
       if (!tag) {
         console.warn('📍 Deep-page jump: tag not found:', highlightedTagId);
@@ -1764,7 +1355,14 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       }
     };
     run();
-  }, [highlightedTagId, pdfDoc, renderedPages, tags, onScrollToTag, renderPage, setCurrentPage]);
+  }, [highlightedTagId, pdfDoc, renderedPages, tags, setCurrentPage]);
+
+  // Reset the dedupe flag once highlight clears so future jumps work
+  useEffect(() => {
+    if (!highlightedTagId) {
+      lastJumpedTagIdRef.current = null;
+    }
+  }, [highlightedTagId]);
 
   // Re-render pages on zoom change with debouncing
   useEffect(() => {
@@ -2176,7 +1774,193 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     }
   }, [webSocket]);
 
+  // React to programmatic scroll requests (e.g., notary sync)
+  useEffect(() => {
+    const run = async () => {
+      const targetPage = viewer.pendingScrollToPage;
+      if (!pdfDoc || !targetPage || targetPage < 1 || targetPage > (pdfDoc?.numPages || 0)) {
+        return;
+      }
 
+      try {
+        // Ensure target page is rendered for accurate scrolling
+        if (!renderedPages.has(targetPage)) {
+          // Pre-size placeholders up to target page for correct offsets
+          const containerWidth = (containerRef.current?.clientWidth || 800) - 120;
+          for (let i = 1; i <= targetPage; i++) {
+            const pageContainer = pageContainerRefs.current[i - 1];
+            if (pageContainer && (!pageContainer.style.height || pageContainer.style.height === '0px')) {
+              try {
+                const page = await pdfDoc.getPage(i);
+                const viewport = page.getViewport({ scale: 1 });
+                const baseScale = Math.min(containerWidth / viewport.width, 1.0);
+                const scaledViewport = page.getViewport({ scale: baseScale * useEditorStore.getState().viewer.zoomLevel });
+                pageContainer.style.width = `${scaledViewport.width}px`;
+                pageContainer.style.height = `${scaledViewport.height}px`;
+              } catch {
+                // Ignore placeholder sizing errors
+              }
+            }
+          }
+          await renderPage(targetPage, false);
+        }
+
+        // Wait a tick for DOM to settle
+        await new Promise((r) => setTimeout(r, 10));
+
+        const scrollContainer = containerRef.current;
+        const pageContainer = pageContainerRefs.current[targetPage - 1];
+        if (scrollContainer && pageContainer) {
+          const containerRect = scrollContainer.getBoundingClientRect();
+          const pageRect = pageContainer.getBoundingClientRect();
+          const pageTop = pageRect.top - containerRect.top + scrollContainer.scrollTop;
+
+          // Center the page in the viewport vertically
+          const scrollTop = Math.max(0, pageTop - (scrollContainer.clientHeight - pageRect.height) / 2);
+          scrollContainer.scrollTo({ top: scrollTop, behavior: 'smooth' });
+
+          // Mark page as current and clear pending flag
+          setCurrentPage(targetPage);
+        }
+      } catch (e) {
+        console.warn('Failed to programmatically scroll to page', targetPage, e);
+      }
+    };
+
+    run();
+  }, [viewer.pendingScrollToPage, pdfDoc, renderedPages, renderPage, setCurrentPage]);
+
+  // Load PDF document with improved error handling and redirect support
+  const loadPDF = useCallback(async (url: string) => {
+    // Extract document ID from URL for more accurate comparison
+    const getDocumentIdFromUrl = (u: string) => {
+      const match = u.match(/\/documents\/(\d+)\/preview/);
+      return match ? match[1] : u;
+    };
+
+    const documentId = getDocumentIdFromUrl(url);
+    const currentDocumentId = currentDocumentUrlRef.current ? getDocumentIdFromUrl(currentDocumentUrlRef.current) : null;
+
+    if (currentDocumentId === documentId && !error && pdfDoc && !loading) {
+      console.log('📄 Skipping load - same document already loaded:', documentId);
+      return;
+    }
+    if (isLoadingRef.current && currentDocumentId === documentId) {
+      console.log('📄 Skipping load - already loading this document:', documentId);
+      return;
+    }
+
+    try {
+      console.log('📄 Starting PDF load for document:', documentId, 'URL:', url);
+      isLoadingRef.current = true;
+      setLoading(true);
+      setError(null);
+
+      if (currentDocumentId !== documentId) {
+        // Cancel all active render tasks
+        renderTasksRef.current.forEach((task, pageNumber) => {
+          if (task && typeof task.cancel === 'function') {
+            try { task.cancel(); } catch {}
+          }
+        });
+        renderTasksRef.current.clear();
+        canvasRefs.current = [];
+        setPdfDoc(null);
+        setRenderedPages(new Set());
+        setScaleFactors(new Map());
+        setLoading(true);
+      }
+
+      if (!isPDFWorkerReady()) {
+        initializePDFWorker();
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+
+      if (loadingTaskRef.current && currentDocumentId !== documentId) {
+        try { loadingTaskRef.current.destroy(); } catch {}
+        loadingTaskRef.current = null;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+
+      currentDocumentUrlRef.current = url;
+
+      // Fetch PDF as ArrayBuffer
+      const token = localStorage.getItem('token');
+      const fetchUrl = url.includes('{{TOKEN}}') ? url.replace('{{TOKEN}}', token || '') : url;
+      const response = await fetch(fetchUrl, { headers: { 'Authorization': `Bearer ${token}` }, credentials: 'same-origin' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText || 'Failed to fetch PDF'}`);
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json') || contentType.includes('text/html')) {
+        throw new Error('Server returned non-PDF content while fetching document');
+      }
+      const pdfData = await response.arrayBuffer();
+
+      const loadingTask = pdfjsLib.getDocument({ data: pdfData, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true, verbosity: 0, cMapPacked: true });
+      loadingTaskRef.current = loadingTask;
+      const pdf = await loadingTask.promise;
+      if (!isMountedRef.current) return;
+
+      setPdfDoc(pdf);
+      setRenderedPages(new Set());
+      setScaleFactors(new Map());
+      useEditorStore.setState(state => ({ viewer: { ...state.viewer, totalPages: pdf.numPages, currentPage: 1, scrollTop: 0 } }));
+      setLoading(false);
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      setError(err instanceof Error ? err.message : 'Failed to load PDF');
+      setLoading(false);
+    } finally {
+      isLoadingRef.current = false;
+    }
+  }, [error, pdfDoc, loading]);
+
+  // Debounced font size updates to prevent API spam during drag
+  const debouncedTagFontSizeUpdates = useRef<Map<string, NodeJS.Timeout>>(new Map());
+
+  // Function to update tag font size with immediate local update + debounced server sync
+  const updateTagFontSize = useCallback(async (tagId: string, fontSize: number) => {
+    try {
+      // Immediate local update for better UX
+      setLocalFontSizes(prev => {
+        const next = new Map(prev);
+        next.set(tagId, fontSize);
+        return next;
+      });
+
+      // Debounce server sync
+      const existingTimeout = debouncedTagFontSizeUpdates.current.get(tagId);
+      if (existingTimeout) clearTimeout(existingTimeout);
+
+      const timeout = setTimeout(async () => {
+        try {
+          const response = await fetch(`/api/editor/session/${sessionId}/tag/${tagId}/font-size`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({ fontSize })
+          });
+          if (!response.ok) throw new Error('Failed to update font size');
+          debouncedTagFontSizeUpdates.current.delete(tagId);
+        } catch (err) {
+          console.error('❌ Failed to update tag font size on server:', err);
+        }
+      }, 350);
+
+      debouncedTagFontSizeUpdates.current.set(tagId, timeout);
+    } catch (err) {
+      console.error('❌ Failed to setup tag font size update:', err);
+    }
+  }, [sessionId]);
+
+  // Cleanup debounced font size updates on unmount
+  useEffect(() => {
+    return () => {
+      debouncedTagFontSizeUpdates.current.forEach(t => clearTimeout(t));
+      debouncedTagFontSizeUpdates.current.clear();
+    };
+  }, []);
 
   if (loading) {
     return (

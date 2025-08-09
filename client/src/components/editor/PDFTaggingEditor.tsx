@@ -1623,7 +1623,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
             incompleteTags={incompleteTagsForCurrentDoc}
             onScrollToTag={() => {
               // Clear highlight shortly after scrolling completes to avoid lingering styles
-              window.setTimeout(() => setHighlightedTagId(null), 1500);
+              window.setTimeout(() => setHighlightedTagId(null), 400);
             }}
           />
 

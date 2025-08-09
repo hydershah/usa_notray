@@ -648,30 +648,30 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     if (isLoading || !isNotary) return;
     setIsLoading(true);
     
-    try {
-      // Send sync command via WebSocket with current page and document info
-      if (webSocket.sendMessage) {
-        webSocket.sendMessage({
-          type: 'sync-users',
-          payload: {
-            pageNumber: viewer.currentPage || 1,
-            documentId: currentDocument?.id,
+          try {
+        // Send sync command via WebSocket with current page and document info
+        if (webSocket.sendMessage) {
+          webSocket.sendMessage({
+            type: 'sync_users',
+            payload: {
+              pageNumber: viewer.currentPage || 1,
+              documentId: currentDocument?.id,
+            },
+          });
+        }
+        
+        // Also make API call to record the sync event
+        const targetSessionId = liveSessionId || sessionId;
+        await authenticatedFetch(`/api/session/${targetSessionId}/sync-users`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
           },
+          body: JSON.stringify({
+            pageNumber: viewer.currentPage || 1,
+            documentId: currentDocument?.id
+          })
         });
-      }
-      
-      // Also make API call to record the sync event
-      const targetSessionId = liveSessionId || sessionId;
-      await authenticatedFetch(`/api/session/${targetSessionId}/sync-users`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          pageNumber: viewer.currentPage || 1,
-          documentId: currentDocument?.id
-        })
-      });
 
       toast({
         title: "Success",
@@ -1012,7 +1012,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         <div className="flex-1 overflow-hidden min-w-0">
           <PDFTaggingEditor
             ref={editorRef}
-            sessionId={liveSessionId || sessionId}
+            sessionId={sessionId}
             mode="signing"
             documents={documents}
             participants={participants}

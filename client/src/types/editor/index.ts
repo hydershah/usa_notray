@@ -162,6 +162,7 @@ export interface PDFViewerState {
   zoomLevel: number;
   scrollTop: number;
   documentId: string;
+  pendingScrollToPage?: number | null;
 }
 
 export interface EditorMode {

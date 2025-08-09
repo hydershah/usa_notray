@@ -182,7 +182,8 @@ export const useEditorStore = create<EditorStore>()(
         totalPages: 0,
         zoomLevel: 1.0,
         scrollTop: 0,
-        documentId: ''
+        documentId: '',
+        pendingScrollToPage: null
       },
       
       showGrid: false,
@@ -218,7 +219,10 @@ export const useEditorStore = create<EditorStore>()(
           viewer: {
             ...state.viewer,
             documentId: document?.id || '',
-            currentPage: 1,
+            // Reset pending scroll when switching documents
+            pendingScrollToPage: null,
+            // Reset scroll and page when a new document is set
+            currentPage: document ? 1 : state.viewer.currentPage,
             scrollTop: 0
           }
         })),
@@ -523,7 +527,7 @@ export const useEditorStore = create<EditorStore>()(
       // PDF Viewer Actions
       setCurrentPage: (page) =>
         set((state) => ({
-          viewer: { ...state.viewer, currentPage: page }
+          viewer: { ...state.viewer, currentPage: page, pendingScrollToPage: null }
         })),
       
       setZoomLevel: (zoom) => {
@@ -540,11 +544,10 @@ export const useEditorStore = create<EditorStore>()(
         })),
       
       syncToPage: (page) => {
-        // This will be used by the notary to sync all users to a specific page
+        // Queue a programmatic scroll request for the viewer to handle
         set((state) => ({
-          viewer: { ...state.viewer, currentPage: page }
+          viewer: { ...state.viewer, pendingScrollToPage: page }
         }));
-        // TODO: Send sync command to all participants via WebSocket
       },
       
       // UI Control Actions
