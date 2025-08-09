@@ -578,24 +578,49 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
   }) => {
     try {
       console.log('⬜ Creating whiteout overlay:', request);
-      
+
       // Validate coordinates
       if (!validateCoordinates(request.coordinates)) {
         throw new Error('Invalid coordinates for whiteout overlay');
       }
-      
+
       const sanitizedCoordinates = sanitizeCoordinates(request.coordinates, 'W');
-      
-      // Create overlay object
-      const overlay = {
-        id: `whiteout_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+
+      // Create optimistic whiteout tag for immediate UI feedback
+      const tempId = `temp_whiteout_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const colorCode = (useEditorStore.getState().selectedUser?.colorCode) || '#e5e7eb';
+      const displayName = (useEditorStore.getState().selectedUser?.displayName) || 'User';
+
+      const optimisticWhiteoutTag: DocumentTag = {
+        id: tempId,
+        sessionId,
         documentId: request.documentId,
+        tagType: 'W',
+        assignedUserId: useEditorStore.getState().selectedUser?.userId,
         coordinates: sanitizedCoordinates as TagCoordinates,
-        sessionId: request.sessionId,
+        displayLabel: `${getTagIcon('W')} ${getTagLabel('W')} - ${displayName}`,
+        colorCode,
+        isCompleted: true,
+        content: 'WHITEOUT',
+        contentType: 'whiteout',
+        contentData: { type: 'whiteout', value: 'WHITEOUT' },
         createdAt: new Date(),
+        updatedAt: new Date()
       };
-      
-      // Save to backend first
+
+      // Add optimistic tag to store so it renders immediately
+      addTag(optimisticWhiteoutTag);
+
+      // Broadcast via websocket (optional)
+      if (webSocket && webSocket.tagPlaced) {
+        try {
+          webSocket.tagPlaced(optimisticWhiteoutTag);
+        } catch (wsError) {
+          console.warn('⚠️ Failed to broadcast whiteout placement via WebSocket:', wsError);
+        }
+      }
+
+      // Save to backend
       const response = await fetch(`/api/editor/session/${sessionId}/whiteout-overlay`, {
         method: 'POST',
         headers: {
@@ -608,22 +633,44 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
           sessionId: request.sessionId
         })
       });
-      
+
       if (!response.ok) {
+        // Rollback optimistic tag on failure
+        removeTagFromStore(tempId);
         throw new Error('Failed to save whiteout overlay to server');
       }
-      
+
       const result = await response.json();
-      
-      // Add the overlay to the store's whiteoutOverlays array (not tags array)
-      useEditorStore.getState().addWhiteoutOverlay(overlay);
-      console.log('✅ Whiteout overlay created and added to overlays:', result);
-      
+      const overlay = result.overlay;
+
+      // Replace optimistic tag with server-confirmed whiteout tag
+      removeTagFromStore(tempId);
+
+      const finalWhiteoutTag: DocumentTag = {
+        id: overlay.id.toString(),
+        sessionId,
+        documentId: overlay.documentId.toString(),
+        tagType: 'W',
+        assignedUserId: useEditorStore.getState().selectedUser?.userId,
+        coordinates: overlay.coordinates as TagCoordinates,
+        displayLabel: `${getTagIcon('W')} ${getTagLabel('W')} - ${displayName}`,
+        colorCode,
+        isCompleted: true,
+        content: 'WHITEOUT',
+        contentType: 'whiteout',
+        contentData: { type: 'whiteout', value: 'WHITEOUT' },
+        createdAt: new Date(overlay.createdAt),
+        updatedAt: new Date(overlay.createdAt)
+      };
+
+      addTag(finalWhiteoutTag);
+      console.log('✅ Whiteout overlay placed and rendered as tag:', finalWhiteoutTag.id);
+
     } catch (error) {
       console.error('❌ Failed to place whiteout overlay:', error);
       throw error;
     }
-  }, [sessionId]);
+  }, [sessionId, addTag, removeTagFromStore, webSocket]);
 
   // Update whiteout overlay position/size
   const updateWhiteoutOverlay = useCallback((overlayId: string, coordinates: Partial<TagCoordinates>) => {

@@ -82,10 +82,11 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   onDelete,
   onSelect,
   onMove,
-  onResize,
-  webSocket,
-  readOnly = false
-}) => {
+    onResize,
+  onFontSizeChange,
+   webSocket,
+   readOnly = false
+ }) => {
   // Simplified state - DocuSign style
   const [inputValue, setInputValue] = useState(content);
   const [isEditing, setIsEditing] = useState(isNew && !readOnly);
@@ -249,6 +250,20 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     if (!isSelected) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Font size adjustments while editing or selected
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === '=') {
+        e.preventDefault();
+        const newSize = Math.min(72, (fontSize || 16) + 1);
+        onFontSizeChange?.(newSize);
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === '-') {
+        e.preventDefault();
+        const newSize = Math.max(6, (fontSize || 16) - 1);
+        onFontSizeChange?.(newSize);
+        return;
+      }
+
       switch (e.key) {
         case 'Enter':
           if (!isEditing) {
@@ -268,7 +283,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isSelected, isEditing, content]);
+  }, [isSelected, isEditing, content, fontSize, onFontSizeChange]);
 
   const handleDragStart = (_: any, data: any) => {
     setIsDragging(true);
@@ -597,25 +612,33 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
             value={inputValue}
             onChange={handleInputChange}
             onBlur={handleInputBlur}
-            onKeyDown={handleInputKeyDown}
-            placeholder={TAG_TYPE_CONFIG.T.placeholder}
-            style={{
-              width: '100%',
-              height: `${Math.ceil(fontSize * 1.2)}px`,
-              border: 'none',
-              background: 'transparent',
-              outline: 'none',
-              fontFamily: fontFamily,
-              fontSize: `${fontSize}px`,
-              fontWeight: TYPOGRAPHY.fontWeight.medium,
-              color: textColor,
-              padding: 0,
-              textAlign: 'left',
-              lineHeight: 1,
-              whiteSpace: 'nowrap',
-              alignSelf: 'flex-end'
-            }}
-          />
+                         onKeyDown={handleInputKeyDown}
+             placeholder={TAG_TYPE_CONFIG.T.placeholder}
+             style={{
+               width: '100%',
+               height: `${Math.ceil(fontSize * 1.2)}px`,
+               border: 'none',
+               background: 'transparent',
+               outline: 'none',
+               fontFamily: fontFamily,
+               fontSize: `${fontSize}px`,
+               fontWeight: TYPOGRAPHY.fontWeight.medium,
+               color: textColor,
+               padding: 0,
+               textAlign: 'left',
+               lineHeight: 1,
+               whiteSpace: 'nowrap',
+               alignSelf: 'flex-end'
+             }}
+             onWheel={(e) => {
+               if (e.ctrlKey || e.metaKey) {
+                 e.preventDefault();
+                 const delta = Math.sign(e.deltaY);
+                 const next = Math.min(72, Math.max(6, (fontSize || 16) + (delta > 0 ? -1 : 1)));
+                 onFontSizeChange?.(next);
+               }
+             }}
+           />
         ) : (
           <div
             style={{
