@@ -128,7 +128,9 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
   // 🔧 WebSocket sync callback for real-time text input synchronization
   useEffect(() => {
     const handleWebSocketSync = (eventType: string, data: any) => {
-      console.log('📝 Text input WebSocket sync:', eventType, data);
+      if (typeof window !== 'undefined' && (window as any).__DEBUG_EDITOR__) {
+        console.log('📝 Text input WebSocket sync:', eventType, data);
+      }
       
       switch (eventType) {
         case 'tag_placed':
@@ -560,27 +562,43 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       // Debounce server updates to prevent excessive API calls during drag
       const timeout = setTimeout(async () => {
         try {
-          // Update server with new coordinates after debounce delay
-          // Use the correct endpoint that handles both position and dimensions
-          const response = await fetch(`/api/editor/session/${sessionId}/text-tag/${textInputId}/dimensions`, {
+          // Determine endpoint: use /position when only moving (x,y),
+          // and /dimensions when resizing (width/height provided)
+          const current = textInputs.find(i => i.id === textInputId);
+          const fallbackDims = getTagDimensions('T' as any);
+
+          const xVal = Number.isFinite(coordinates.x) ? coordinates.x : current?.coordinates.x ?? 0;
+          const yVal = Number.isFinite(coordinates.y) ? coordinates.y : current?.coordinates.y ?? 0;
+          const wValRaw = coordinates.width ?? current?.coordinates.width;
+          const hValRaw = coordinates.height ?? current?.coordinates.height;
+
+          const hasSize = wValRaw !== undefined && hValRaw !== undefined;
+          const widthVal = hasSize ? Math.max(1, Math.round((wValRaw as number) || fallbackDims.width)) : undefined;
+          const heightVal = hasSize ? Math.max(1, Math.round((hValRaw as number) || fallbackDims.height)) : undefined;
+
+          const useDimensionsEndpoint = hasSize;
+          const endpoint = useDimensionsEndpoint
+            ? `/api/editor/session/${sessionId}/text-tag/${textInputId}/dimensions`
+            : `/api/editor/session/${sessionId}/text-tag/${textInputId}/position`;
+
+          const body = useDimensionsEndpoint
+            ? JSON.stringify({ x: xVal, y: yVal, width: widthVal, height: heightVal })
+            : JSON.stringify({ x: xVal, y: yVal });
+
+          const response = await fetch(endpoint, {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${localStorage.getItem('token')}`
             },
-            body: JSON.stringify({
-              x: coordinates.x,
-              y: coordinates.y,
-              width: coordinates.width,
-              height: coordinates.height
-            }),
+            body
           });
 
           if (!response.ok) {
             throw new Error('Failed to update text input coordinates');
           }
 
-          console.log(`✅ Text input ${textInputId} moved to coordinates:`, coordinates);
+          console.log(`✅ Text input ${textInputId} moved to coordinates:`, { x: xVal, y: yVal, width: widthVal, height: heightVal });
           lastLocalCoordinateUpdateAt.current.set(textInputId, Date.now());
           debouncedCoordinateUpdates.current.delete(textInputId);
         } catch (error) {
@@ -598,7 +616,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
         variant: "destructive",
       });
     }
-  }, [toast]);
+  }, [toast, sessionId, textInputs]);
 
   // Update font size with debouncing
   const updateFontSize = useCallback(async (textInputId: string, fontSize: number, fontFamily?: string, textColor?: string) => {

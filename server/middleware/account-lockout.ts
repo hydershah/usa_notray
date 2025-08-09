@@ -70,7 +70,8 @@ export class AccountLockout {
 
 // Middleware to check account lockout
 export const checkAccountLockout = (req: Request, res: Response, next: NextFunction) => {
-  const identifier = req.body?.email || req.ip;
+  const identifierRaw = req.body?.email;
+  const identifier = identifierRaw ? String(identifierRaw).trim().toLowerCase() : req.ip;
   
   if (!identifier) {
     return next();
@@ -93,10 +94,10 @@ export const checkAccountLockout = (req: Request, res: Response, next: NextFunct
 
 // Record failed attempt middleware
 export const recordFailedLogin = (identifier: string) => {
-  return AccountLockout.recordFailedAttempt(identifier);
+  return AccountLockout.recordFailedAttempt(String(identifier).trim().toLowerCase());
 };
 
 // Clear attempts on successful login
 export const clearFailedAttempts = (identifier: string) => {
-  AccountLockout.clearAttempts(identifier);
+  AccountLockout.clearAttempts(String(identifier).trim().toLowerCase());
 }; 

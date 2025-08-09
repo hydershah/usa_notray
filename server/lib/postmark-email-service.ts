@@ -123,110 +123,84 @@ class PostmarkEmailService {
 
   // Professional email templates (keeping same structure as existing service)
   private getBaseTemplate(content: string): string {
+    const brandName = process.env.BRAND_NAME || 'USA Notary Services';
+    const brandLogoUrl = process.env.BRAND_LOGO_URL;
+    const brandColor = process.env.BRAND_PRIMARY_COLOR || '#1e40af';
     return `
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Sharp Note</title>
+        <title>${brandName}</title>
         <style>
+            :root { --brand: ${brandColor}; }
             body { 
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
                 line-height: 1.6; 
-                color: #333; 
+                color: #111827; 
                 margin: 0; 
                 padding: 0; 
-                background-color: #f5f5f5;
+                background-color: #f9fafb;
             }
             .container { 
-                max-width: 600px; 
-                margin: 20px auto; 
-                background: white; 
-                border-radius: 8px; 
+                max-width: 640px; 
+                margin: 24px auto; 
+                background: #ffffff; 
+                border-radius: 10px; 
                 overflow: hidden;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.1);
+                border: 1px solid #e5e7eb;
             }
             .header { 
-                background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); 
-                color: white; 
-                padding: 30px 20px; 
+                background: #ffffff; 
+                padding: 20px; 
+                border-bottom: 1px solid #e5e7eb; 
                 text-align: center; 
             }
-            .header h1 { 
-                margin: 0; 
-                font-size: 24px; 
-                font-weight: 600; 
+            .brand { display: inline-flex; align-items: center; gap: 12px; }
+            .brand img { height: 36px; width: auto; display: block; }
+            .brand-name { font-size: 18px; font-weight: 700; color: #111827; letter-spacing: 0.2px; }
+            .content { padding: 28px 24px; }
+            .button { 
+                display: inline-block; 
+                background: var(--brand); 
+                color: #ffffff; 
+                padding: 12px 22px; 
+                text-decoration: none; 
+                border-radius: 8px; 
+                font-weight: 600;
+                margin: 20px 0;
             }
-            .content { 
-                padding: 30px 20px; 
-            }
+            .button:hover { filter: brightness(0.95); }
             .footer { 
-                background: #f8fafc; 
-                padding: 20px; 
+                background: #f9fafb; 
+                padding: 18px; 
                 text-align: center; 
                 font-size: 12px; 
                 color: #6b7280;
                 border-top: 1px solid #e5e7eb;
             }
-            .button { 
-                display: inline-block; 
-                background: #1e40af; 
-                color: white; 
-                padding: 12px 24px; 
-                text-decoration: none; 
-                border-radius: 6px; 
-                font-weight: 600;
-                margin: 20px 0;
-            }
-            .button:hover { 
-                background: #1d4ed8; 
-            }
-            .info-box { 
-                background: #f0f9ff; 
-                border-left: 4px solid #3b82f6; 
-                padding: 15px; 
-                margin: 20px 0; 
-                border-radius: 4px;
-            }
-            .warning-box { 
-                background: #fef3c7; 
-                border-left: 4px solid #f59e0b; 
-                padding: 15px; 
-                margin: 20px 0; 
-                border-radius: 4px;
-            }
-            .success-box { 
-                background: #f0fdf4; 
-                border-left: 4px solid #3b82f6; 
-                padding: 15px; 
-                margin: 20px 0; 
-                border-radius: 4px;
-            }
             @media only screen and (max-width: 600px) {
-                .container { margin: 10px; }
-                .header, .content { padding: 20px 15px; }
-                .header h1 { font-size: 20px; }
+                .container { margin: 12px; }
+                .content { padding: 22px 18px; }
             }
         </style>
     </head>
     <body>
         <div class="container">
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px 0; text-align: center;">
-              <h1>🏛️ Sharp Note</h1>
+            <div class="header">
+                <div class="brand">
+                  ${brandLogoUrl ? `<img src="${brandLogoUrl}" alt="${brandName} logo" />` : ''}
+                  <span class="brand-name">${brandName}</span>
+                </div>
             </div>
             <div class="content">
                 ${content}
             </div>
             <div class="footer">
-                <p><strong>Sharp Note</strong> | Digital Notarization</p>
-                <p>This is an automated message from our secure notarization platform.</p>
-                <p>© ${new Date().getFullYear()} Sharp Note. All rights reserved.</p>
-                <p style="margin-top: 10px;">
-                    <a href="mailto:support@usanotaryservices.com" style="color: #6b7280;">Support</a> | 
-                    <a href="#" style="color: #6b7280;">Privacy Policy</a> | 
-                    <a href="mailto:unsubscribe@usanotaryservices.com" style="color: #6b7280;">Unsubscribe</a>
-                </p>
+                <p><strong>${brandName}</strong> • Secure Online Notarization</p>
+                <p>Questions? Email <a href="mailto:support@usanotaryservices.com" style="color: inherit; text-decoration: underline;">support@usanotaryservices.com</a></p>
             </div>
         </div>
     </body>
@@ -248,49 +222,23 @@ class PostmarkEmailService {
     const invitationLink = `${process.env.CLIENT_URL || 'http://localhost:5173'}/sign/${data.invitationToken}`;
     
     const content = `
-        <h2 style="color: #1f2937; margin-bottom: 16px;">You're Invited to a Document Signing Session</h2>
-        
-        <div style="background-color: #dbeafe; border: 1px solid #60a5fa; border-radius: 8px; padding: 16px; margin: 16px 0;">
-          <p style="margin: 0; color: #1e40af; font-weight: 600;">📋 Important: ID Verification Required</p>
-          <p style="margin: 8px 0 0 0; color: #1e40af; font-size: 14px;">
-            Before you can join the signing session, you must complete identity verification using a government-issued ID and selfie photo. This is required for all signers and witnesses.
-          </p>
+        <p>Hi ${data.signerName},</p>
+        <p>You're invited to sign documents${data.titleCompany ? ` for <strong>${data.titleCompany}</strong>` : ''} as a <strong>${data.signerRole || 'participant'}</strong>.</p>
+        ${data.propertyAddress ? `<p><strong>Property:</strong> ${data.propertyAddress}</p>` : ''}
+        ${(data.scheduledDate && data.scheduledTime) ? `<p><strong>Scheduled:</strong> ${data.scheduledDate} at ${data.scheduledTime}</p>` : ''}
+        <p>To get ready, please set up your account. It takes just a few minutes.</p>
+        <div style="text-align: center;">
+          <a href="${invitationLink}" class="button">Complete Account Setup</a>
         </div>
-        
-        <p style="color: #374151; line-height: 1.6;">
-          Dear <strong>${data.signerName}</strong>, you have been invited to participate as a <strong>${data.signerRole || 'participant'}</strong> in a notarized document signing session.
-        </p>
-        
-        <div style="background-color: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
-          <h3 style="color: #1f2937; margin: 0 0 12px 0; font-size: 16px;">Session Details:</h3>
-          <ul style="color: #4b5563; margin: 0; padding-left: 20px;">
-            <li><strong>Property:</strong> ${data.propertyAddress || 'Not specified'}</li>
-            <li><strong>Closing Type:</strong> ${data.closingType || 'Not specified'}</li>
-            <li><strong>Scheduled:</strong> ${data.scheduledDate || 'To be scheduled'}</li>
-            <li><strong>Your Role:</strong> ${data.signerRole || 'Participant'}</li>
-          </ul>
-        </div>
-        
-        <div style="text-align: center; margin: 24px 0;">
-          <a href="${invitationLink}" 
-             style="background-color: #2563eb; color: white; padding: 12px 24px; 
-                    text-decoration: none; border-radius: 6px; font-weight: 600; 
-                    display: inline-block;">
-            Set Up Account & Verify Identity
-          </a>
-        </div>
-        
-        <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
-          Contact Email: ${data.signerEmail}. ID verification is required before joining sessions. 
-          If you have questions, please contact the notary or title company.
-        </p>
+        <p style="font-size: 13px; color: #6b7280;">If the button doesn't work, copy and paste this link into your browser:<br />${invitationLink}</p>
+        <p>Thank you,<br/>${process.env.BRAND_NAME || 'USA Notary Services'}</p>
     `;
 
     await this.sendEmail({
       to: data.signerEmail,
-      subject: `🏛️ Secure Document Signing Required - ${data.titleCompany}`,
+      subject: `You're invited to sign${data.titleCompany ? ` – ${data.titleCompany}` : ''}`,
       html: this.getBaseTemplate(content),
-      text: `Dear ${data.signerName}, You have been invited to sign documents for ${data.titleCompany}. Please visit: ${invitationLink}`,
+      text: `Hi ${data.signerName}, you're invited to sign${data.titleCompany ? ` for ${data.titleCompany}` : ''}. Complete your setup: ${invitationLink}`,
       tag: 'signer-invitation'
     });
   }

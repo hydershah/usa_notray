@@ -321,37 +321,23 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
   if (isSigner && propMode === 'signing') {
   return (
       <div className={`space-y-4 ${className}`}>
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h3 className="text-sm font-medium text-blue-900 mb-2">
-            Signer View
-                </h3>
-                <p className="text-sm text-blue-700">
-                  Click on tags assigned to you to fill them out. Wait for the notary to activate you if needed.
-                </p>
-              </div>
-              
-        {/* Selection Mode Button */}
-              <button
-                onClick={() => setSelectedTagType(null)}
-                className={`
-                  w-full flex items-center gap-3 p-3 rounded-lg border transition-all duration-200
-                  ${selectedTagType === null 
-                    ? 'border-blue-500 bg-blue-50 text-blue-700' 
-                    : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                  }
-                `}
-                title="Selection mode - click to select your assigned tags"
-              >
-                <div className="flex-1 text-left">
-                  <div className="font-medium">Selection Mode</div>
-                  <div className="text-xs text-gray-600">Click on your assigned tags to fill them</div>
-                </div>
-                {selectedTagType === null && (
-                  <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
-                    <div className="w-2 h-2 bg-white rounded-full"></div>
-                  </div>
-                )}
-              </button>
+        <button
+          onClick={() => setSelectedTagType(null)}
+          className={`
+            w-full flex items-center gap-3 p-3 rounded-lg border transition-all duration-200
+            ${selectedTagType === null 
+              ? 'border-blue-500 bg-blue-50 text-blue-700' 
+              : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+            }
+          `}
+        >
+          <div className="flex-1 text-left" />
+          {selectedTagType === null && (
+            <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
+              <div className="w-2 h-2 bg-white rounded-full"></div>
+            </div>
+          )}
+        </button>
       </div>
     );
   }

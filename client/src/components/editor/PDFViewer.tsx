@@ -211,16 +211,6 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       height: Math.round(finalUnscaledHeight * scaleFactor)
     };
     
-    // Debug logging for all tags
-    console.log('🔍 DEBUG: TagRenderer displayCoords calculation:', {
-      tagId: tag.id,
-      tagType: tag.tagType,
-      scaleFactor,
-      savedCoordinates: tag.coordinates,
-      optimalDimensions,
-      finalCoords: coords
-    });
-    
     return coords;
   }, [isDragging, dragCoords, tag.coordinates.x, tag.coordinates.y, tag.coordinates.width, tag.coordinates.height, tag.tagType, scaleFactor, optimalDimensions.width, optimalDimensions.height, fixedDimensions.width, fixedDimensions.height]);
 
@@ -515,19 +505,36 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
         return null;
       };
 
+      const findImageInObject = (obj: any): string | null => {
+        if (!obj || typeof obj !== 'object') return null;
+        for (const key of Object.keys(obj)) {
+          const value = obj[key];
+          if (isImageLike(value)) return value as string;
+          if (value && typeof value === 'object') {
+            const nested = findImageInObject(value);
+            if (nested) return nested;
+          }
+        }
+        return null;
+      };
+
       const parsedContentData = parseMaybeJson(tag.contentData);
       const parsedContent = parseMaybeJson(tag.content);
+
+      // If server pre-labeled as image via contentType, prefer content value early
+      // This avoids flicker where JSON arrives first
+      if ((tag as any).contentType === 'image' && typeof tag.content === 'string' && isImageLike(tag.content)) {
+        return tag.content;
+      }
 
       const candidates: Array<string | undefined> = [];
 
       const pushCandidates = (obj: any) => {
         if (!obj) return;
-        // Recognize common shapes
         if (typeof obj.value === 'string') candidates.push(obj.value);
         if (typeof obj.image === 'string') candidates.push(obj.image);
         if (typeof obj.url === 'string') candidates.push(obj.url);
         if (obj.data && typeof obj.data.value === 'string') candidates.push(obj.data.value);
-        // If it's explicitly marked as an image-bearing type, prefer its value fields
         if (
           obj.contentType === 'image' ||
           ['signature', 'initials', 'seal'].includes(obj.type)
@@ -536,6 +543,8 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
           if (typeof obj.image === 'string') candidates.push(obj.image);
           if (typeof obj.url === 'string') candidates.push(obj.url);
         }
+        const foundNested = findImageInObject(obj);
+        if (foundNested) candidates.push(foundNested);
       };
 
       pushCandidates(parsedContentData);
@@ -872,10 +881,12 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   }, [editorMode.canPlaceTags, mode]);
 
   // Debug: Log store functions to ensure they exist
-  console.log('🔍 Store functions:', {
-    setZoomLevel: typeof setZoomLevel,
-    currentZoomLevel: viewer.zoomLevel
-  });
+  if ((window as any).__DEBUG_EDITOR__) {
+    console.log('🔍 Store functions:', {
+      setZoomLevel: typeof setZoomLevel,
+      currentZoomLevel: viewer.zoomLevel
+    });
+  }
 
   // Zoom controls with debugging and larger increments
   const handleZoomIn = useCallback(() => {
@@ -1163,11 +1174,26 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const scrollToTag = useCallback(async (tagId: string, pageNumber: number) => {
     pendingScrollTagRef.current = tagId;
     console.log('📍 PDFViewer scrollToTag called:', { tagId, pageNumber, tagsCount: tags.length });
-    const tag = tags.find(t => t.id === tagId);
-    if (!tag || !containerRef.current || !pdfDoc) {
-      console.warn('📍 scrollToTag failed:', { tagFound: !!tag, containerExists: !!containerRef.current, pdfDoc: !!pdfDoc });
+
+    const container = containerRef.current;
+    if (!container || !pdfDoc) {
+      console.warn('📍 scrollToTag aborted: missing container or pdfDoc', { containerExists: !!container, pdfDoc: !!pdfDoc });
       return;
     }
+
+    // Support both non-text tags (in tags[]) and text tags (in textInputs[])
+    const tagObj = tags.find(t => t.id === tagId);
+    const textInputObj = tagObj ? null : (textInputs?.find(ti => ti.id === tagId) || null);
+
+    if (!tagObj && !textInputObj) {
+      console.warn('📍 scrollToTag: no matching tag or text input for id:', tagId);
+      return;
+    }
+
+    const coords = (tagObj ? tagObj.coordinates : (textInputObj as any).coordinates) as {
+      x: number; y: number; width?: number; height?: number; pageNumber: number;
+    };
+
     // Ensure target page is rendered and scale factor is known
     if (!renderedPages.has(pageNumber)) {
       try {
@@ -1199,13 +1225,16 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
     const pageContainer = pageContainerRefs.current[pageNumber - 1];
     if (pageContainer) {
-      const scrollContainer = containerRef.current;
+      const scrollContainer = containerRef.current as HTMLDivElement;
       const finalScale = scaleFactors.get(pageNumber) || 1;
       const totalScale = finalScale;
-      const tagX = tag.coordinates.x * totalScale;
-      const tagY = tag.coordinates.y * totalScale;
-      const tagWidth = ((tag.coordinates.width ?? getTagDimensions(tag.tagType).width) * totalScale) || 0;
-      const tagHeight = ((tag.coordinates.height ?? getTagDimensions(tag.tagType).height) * totalScale) || 0;
+
+      const fallbackDims = getTagDimensions(tagObj ? (tagObj as any).tagType : 'T' as any);
+      const tagX = coords.x * totalScale;
+      const tagY = coords.y * totalScale;
+      const tagWidth = ((coords.width ?? fallbackDims.width) * totalScale) || 0;
+      const tagHeight = ((coords.height ?? fallbackDims.height) * totalScale) || 0;
+
       const containerRect = scrollContainer.getBoundingClientRect();
       const pageRect = pageContainer.getBoundingClientRect();
       const pageTop = pageRect.top - containerRect.top + scrollContainer.scrollTop;
@@ -1226,7 +1255,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     } else {
       console.warn('📍 Page container not found for page:', pageNumber);
     }
-  }, [tags, onScrollToTag, viewer.zoomLevel, scaleFactors, renderedPages, pdfDoc, renderPage]);
+  }, [tags, textInputs, onScrollToTag, viewer.zoomLevel, scaleFactors, renderedPages, pdfDoc, renderPage]);
 
   // Load PDF on URL change with smart debouncing for rapid document switching
   useEffect(() => {
@@ -1386,26 +1415,32 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   // Ensure deep-page jump works: render target page before scrolling
   useEffect(() => {
     const run = async () => {
-      console.log('📍 Deep-page jump effect triggered:', { highlightedTagId, pdfDoc: !!pdfDoc });
+      if ((window as any).__DEBUG_EDITOR__) {
+        console.log('📍 Deep-page jump effect triggered:', { highlightedTagId, pdfDoc: !!pdfDoc });
+      }
       if (!highlightedTagId || !pdfDoc) return;
       // Avoid re-triggering scroll for the same tag while highlight is active
       if (lastJumpedTagIdRef.current === highlightedTagId) {
         return;
       }
       lastJumpedTagIdRef.current = highlightedTagId;
-      const tag = tags.find(t => t.id === highlightedTagId);
-      if (!tag) {
-        console.warn('📍 Deep-page jump: tag not found:', highlightedTagId);
+
+      // Try non-text tags first, then fall back to text inputs
+      const tag = tags.find(t => t.id === highlightedTagId) || null;
+      const textInput = tag ? null : (textInputs?.find(ti => ti.id === highlightedTagId) || null);
+      if (!tag && !textInput) {
+        console.warn('📍 Deep-page jump: no matching tag or text input:', highlightedTagId);
         return;
       }
-      
-      console.log('📍 Deep-page jump processing tag:', { 
-        id: tag.id, 
-        pageNumber: tag.coordinates.pageNumber,
-        coordinates: tag.coordinates 
+
+      const pageNumber = (tag ? tag.coordinates.pageNumber : (textInput as any).coordinates.pageNumber) as number;
+
+      console.log('📍 Deep-page jump processing target:', {
+        id: highlightedTagId,
+        pageNumber,
+        source: tag ? 'tag' : 'textInput'
       });
-      
-      const pageNumber = tag.coordinates.pageNumber;
+
       // If target page not rendered yet, render it now
       if (!renderedPages.has(pageNumber)) {
         console.log('📍 Pre-rendering page:', pageNumber);
@@ -1434,8 +1469,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
           console.warn('Failed to pre-render target page', pageNumber, e);
         }
       }
-      
-      console.log('📍 About to scroll to tag coordinates');
+
+      console.log('📍 About to scroll to target coordinates');
       // Wait a tick for refs to update
       await new Promise(resolve => setTimeout(resolve, 10));
       const pageContainer = pageContainerRefs.current[pageNumber - 1];
@@ -1444,16 +1479,16 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         setCurrentPage(pageNumber);
         // Use the centralized scrollToTag logic to compute exact position and center the tag
         await new Promise(r => setTimeout(r, 10));
-        scrollToTag(tag.id, pageNumber);
+        scrollToTag(highlightedTagId, pageNumber);
       } else {
-        console.warn('📍 Deep-page jump: missing containers', { 
-          pageContainer: !!pageContainer, 
-          scrollContainer: !!scrollContainer 
+        console.warn('📍 Deep-page jump: missing containers', {
+          pageContainer: !!pageContainer,
+          scrollContainer: !!scrollContainer
         });
       }
     };
     run();
-  }, [highlightedTagId, pdfDoc, renderedPages, tags, setCurrentPage]);
+  }, [highlightedTagId, pdfDoc, renderedPages, tags, textInputs, setCurrentPage]);
 
   // Reset the dedupe flag once highlight clears so future jumps work
   useEffect(() => {
@@ -1507,22 +1542,18 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   // Log component state changes (debounced to prevent spam)
   useEffect(() => {
     const timeout = setTimeout(() => {
-      console.log('📊 PDFViewer state update:', {
-        documentUrl: documentUrl?.substring(0, 50) + '...',
-        pdfDocLoaded: !!pdfDoc,
-        numPages: pdfDoc?.numPages,
-        loading,
-        error: !!error,
-        canEditTags,
-        tagsCount: tags.length,
-        scaleFactorsSize: scaleFactors.size,
-        renderedPagesSize: renderedPages.size,
-        currentZoomLevel: viewer.zoomLevel
-      });
+      if ((window as any).__DEBUG_EDITOR__) {
+        console.log('📊 PDFViewer state update:', {
+          zoomLevel: viewer.zoomLevel,
+          currentPage: viewer.currentPage,
+          pageCount: pdfDoc?.numPages,
+          selectedTagType
+        });
+      }
     }, 500);
     
     return () => clearTimeout(timeout);
-  }, [documentUrl, pdfDoc, loading, error, canEditTags, tags.length, scaleFactors.size, renderedPages.size, viewer.zoomLevel]);
+  }, [viewer.zoomLevel, pdfDoc, renderedPages.size, selectedTagType]);
 
   // Monitor zoom level changes
   useEffect(() => {
@@ -1705,10 +1736,12 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     
     // 🚀 REAL-TIME SYNC: Broadcast tag update via WebSocket
     if (webSocket && webSocket.isConnected && webSocket.isReady) {
-      console.log('📡 Broadcasting tag update via WebSocket:', {
-        tagId,
-        coordinates
-      });
+      if ((window as any).__DEBUG_EDITOR__) {
+        console.log('📡 Broadcasting tag update via WebSocket:', {
+          tagId,
+          coordinates
+        });
+      }
       
       try {
         webSocket.sendMessage({
@@ -1724,7 +1757,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         console.error('❌ Failed to send tag update via WebSocket:', error);
       }
     } else {
-      console.warn('⚠️ WebSocket not available for tag update broadcast, state:', webSocket?.readyState);
+      if ((window as any).__DEBUG_EDITOR__) {
+        console.warn('⚠️ WebSocket not available for tag update broadcast, state:', webSocket?.readyState);
+      }
     }
   }, [onTagUpdate, webSocket, sessionId]);
 
@@ -1732,13 +1767,17 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const broadcastTagSave = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {
     // First, update the tag locally and save to backend
     if (onTagUpdate) {
-      console.log('💾 Updating tag position locally:', { tagId, coordinates });
+      if ((window as any).__DEBUG_EDITOR__) {
+        console.log('💾 Updating tag position locally:', { tagId, coordinates });
+      }
       onTagUpdate(tagId, coordinates);
     }
     
     // Also save to server - this is what was missing!
     if (onTagResize) {
-      console.log('🚀 Saving tag coordinates to server:', { tagId, coordinates });
+      if ((window as any).__DEBUG_EDITOR__) {
+        console.log('🚀 Saving tag coordinates to server:', { tagId, coordinates });
+      }
       onTagResize(tagId, coordinates as TagCoordinates);
     }
 
@@ -1754,10 +1793,12 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         pageNumber: (coordinates as any).pageNumber ?? tag?.coordinates.pageNumber ?? 1
       };
 
-      console.log('📡 Broadcasting tag save via WebSocket:', {
-        tagId,
-        coordinates: fullCoordinates
-      });
+      if ((window as any).__DEBUG_EDITOR__) {
+        console.log('📡 Broadcasting tag save via WebSocket:', {
+          tagId,
+          coordinates: fullCoordinates
+        });
+      }
       
       try {
         webSocket.sendMessage({
@@ -1773,7 +1814,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         console.error('❌ Failed to broadcast tag save via WebSocket:', error);
       }
     } else {
-      console.warn('⚠️ WebSocket not available for tag save broadcast, state:', webSocket?.readyState);
+      if ((window as any).__DEBUG_EDITOR__) {
+        console.warn('⚠️ WebSocket not available for tag save broadcast, state:', webSocket?.readyState);
+      }
     }
   }, [onTagUpdate, onTagResize, webSocket, sessionId, tags]);
 
@@ -2449,7 +2492,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                            onTextInputSelect?.(textInput.id);
                          }}
                          onMove={(newCoordinates) => {
-                           console.log('📍 Text input moved:', newCoordinates);
+                           if ((window as any).__DEBUG_EDITOR__) {
+                             console.log('📍 Text input moved:', newCoordinates);
+                           }
                            onMoveTextInput?.(textInput.id, newCoordinates);
                          }}
                          onResize={(newCoordinates) => {

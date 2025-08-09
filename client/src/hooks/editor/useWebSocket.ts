@@ -205,17 +205,23 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
 
         case 'tag_saved':
           console.log('💾 Tag saved (coordinates updated)');
-          // Handle tag_saved similar to tag_updated, but specifically for coordinate changes
-          if (message.payload.tagId && message.payload.coordinates) {
-            updateTag(message.payload.tagId, { coordinates: message.payload.coordinates });
-            
-            // 🔧 SYNC TEXT INPUTS: If it's a text tag, also update text inputs state
-            if (typeof window !== 'undefined' && (window as any).textInputSyncCallback) {
-              (window as any).textInputSyncCallback('tag_updated', {
-                id: message.payload.tagId,
-                updates: { coordinates: message.payload.coordinates },
-                updatedBy: message.payload.updatedBy ?? message.userId
-              });
+          // Handle tag_saved for both legacy and new payload shapes
+          {
+            const tagId = message.payload.tagId;
+            const coordinates = message.payload.coordinates || message.payload?.updates?.coordinates;
+            if (tagId && coordinates) {
+              updateTag(tagId, { coordinates });
+
+              // 🔧 SYNC TEXT INPUTS: If it's a text tag, also update text inputs state
+              if (typeof window !== 'undefined' && (window as any).textInputSyncCallback) {
+                (window as any).textInputSyncCallback('tag_updated', {
+                  id: tagId,
+                  updates: { coordinates },
+                  updatedBy: message.payload.updatedBy ?? message.userId
+                });
+              }
+            } else {
+              console.warn('⚠️ Received tag_saved without coordinates in expected shape:', message.payload);
             }
           }
           break;

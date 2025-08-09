@@ -98,12 +98,14 @@ export default function Login() {
     
     console.log('Login attempt:', { email, password: '***' });
 
+    const normalizedEmail = email.trim().toLowerCase();
+
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          email, 
+          email: normalizedEmail, 
           password, 
           twoFactorCode: twoFactorCode || undefined 
         })
@@ -205,7 +207,7 @@ export default function Login() {
       const response = await fetch('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: forgotPasswordEmail })
+        body: JSON.stringify({ email: forgotPasswordEmail.trim().toLowerCase() })
       });
 
       const data = await response.json();

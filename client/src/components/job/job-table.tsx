@@ -468,9 +468,22 @@ export function JobTable({ onCreateJob }: JobTableProps) {
 
   // Get first signer's name
   const getFirstSignerName = (job: Job): string => {
-    // Use a property that exists on the Job type
-    // For now, using a placeholder since signer data structure needs to be defined
-    return 'Signer Name';
+    // Prefer normalized camelCase if present
+    const fromCamel = (job as any).firstSignerName as string | undefined;
+    if (fromCamel && fromCamel.trim().length > 0) return fromCamel;
+
+    // Support snake_case from raw SQL selections
+    const fromSnake = (job as any).first_signer_name as string | undefined;
+    if (fromSnake && fromSnake.trim().length > 0) return fromSnake;
+
+    // Fallbacks: try embedded signers array if it exists for detailed fetches
+    const signers = (job as any).signers as Array<{ signerName?: string }> | undefined;
+    if (Array.isArray(signers) && signers.length > 0) {
+      const name = signers[0]?.signerName || signers[0] && (signers[0] as any).signer_name;
+      if (name && String(name).trim().length > 0) return String(name);
+    }
+
+    return '—';
   };
 
   // Check if user is title company (to conditionally show title company column)

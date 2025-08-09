@@ -65,8 +65,11 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
           currentUser.role === 'notary' || 
           ['T', 'D'].includes(tag.tagType) // Universal tags
         );
+
+        // Block notaries from interacting with signer-assigned signature tags
+        const isSignatureAssignedToSomeoneElse = tag.tagType === 'S' && currentUser?.role === 'notary' && tag.assignedUserId !== currentUser.userId;
         
-        if (isCurrentUserTag && !tag.isCompleted) {
+        if (isCurrentUserTag && !tag.isCompleted && !isSignatureAssignedToSomeoneElse) {
           console.log('🎯 Interactive tag clicked, triggering input');
           // TODO: Trigger interactive input modal
           // For now, just select the tag
@@ -131,6 +134,9 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
     ['T', 'D'].includes(tag.tagType)
   );
 
+  // For visual feedback, also treat signer-assigned signature tags as non-interactive for notaries
+  const isSignatureAssignedToSomeoneElse = tag.tagType === 'S' && currentUser?.role === 'notary' && tag.assignedUserId !== currentUser.userId;
+
   // Get tag styling based on mode
   const getTagStyle = () => {
     let backgroundColor = 'rgba(255, 255, 255, 0.95)';
@@ -143,7 +149,7 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
         backgroundColor = 'transparent'; // Make completed tags transparent
         borderColor = 'transparent';
         cursor = 'default';
-      } else if (isCurrentUserTag) {
+      } else if (isCurrentUserTag && !isSignatureAssignedToSomeoneElse) {
         backgroundColor = 'rgba(59, 130, 246, 0.1)';
         borderColor = '#3b82f6';
         borderStyle = 'dashed';

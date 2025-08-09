@@ -18,7 +18,7 @@ export const IncompleteTagHUD: React.FC<IncompleteTagHUDProps> = ({
   onJumpToTag,
   className = ''
 }) => {
-  const [isOpen, setIsOpen] = useState<boolean>(true);
+  const [isOpen, setIsOpen] = useState<boolean>(false);
   const [filter, setFilter] = useState<string>('all'); // all | me | user:<id>
   const [cursorIndex, setCursorIndex] = useState<number>(0);
 

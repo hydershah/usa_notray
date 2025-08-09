@@ -22,7 +22,7 @@ import { cn } from '@/lib/utils';
 interface User {
   id: string;
   name: string;
-  role: 'notary' | 'signer' | 'witness' | 'client';
+  role: 'notary' | 'signer' | 'witness' | 'client' | 'admin';
   email?: string;
 }
 
@@ -63,12 +63,11 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
   const { 
     isRecording, 
     startRecording, 
-    stopRecording,
-    recordingState 
+    stopRecording
   } = useRecording();
   
   const { 
-    isScreenSharing, 
+    isSharingScreen, 
     startScreenShare, 
     stopScreenShare 
   } = useScreenShare();
@@ -175,11 +174,19 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
   }, [onError]));
 
   // Network quality monitoring
-  useDailyEvent('network-quality-change', useCallback((event) => {
-    if (event.participant.local) {
-      setConnectionQuality(event.quality.video.score > 0.7 ? 'good' : 'poor');
+  useDailyEvent('network-quality-change', useCallback((event: any) => {
+    try {
+      const isLocal = event?.participant?.local || (event?.participant?.session_id && event?.participant?.session_id === localParticipant?.session_id);
+      if (!isLocal) return;
+
+      // Daily may provide quality as 0-100 or nested score; support both
+      const rawQuality = typeof event?.quality === 'number' ? event.quality : (event?.quality?.video?.score ?? 100);
+      const normalized = rawQuality > 1 ? rawQuality / 100 : rawQuality; // normalize to 0-1
+      setConnectionQuality(normalized >= 0.7 ? 'good' : 'poor');
+    } catch (_) {
+      // ignore malformed event
     }
-  }, []));
+  }, [localParticipant?.session_id]));
 
   // Auto-join when component mounts and retry when needed
   useEffect(() => {
@@ -324,6 +331,8 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
             <ParticipantTile
               sessionId={localParticipant.session_id}
               isLocal={true}
+              onToggleAudio={handleToggleAudio}
+              onToggleVideo={handleToggleVideo}
             />
           )}
           
@@ -359,13 +368,13 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
       <VideoControlPanel
         // Recording controls
         isRecording={isRecording}
-        recordingState={recordingState}
+        recordingState={isRecording ? 'recording' : 'idle'}
         canRecord={canRecord}
         onStartRecording={handleStartRecording}
         onStopRecording={stopRecording}
         
         // Screen sharing controls
-        isScreenSharing={isScreenSharing}
+        isScreenSharing={isSharingScreen}
         canScreenShare={canScreenShare}
         onStartScreenShare={startScreenShare}
         onStopScreenShare={stopScreenShare}

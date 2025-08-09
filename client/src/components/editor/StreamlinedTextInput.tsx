@@ -91,6 +91,26 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   // Keep a local live position in pixels for ultra-smooth dragging
   const [livePosition, setLivePosition] = useState<{ x: number; y: number } | null>(null);
   
+  // requestAnimationFrame throttling for ultra-smooth drag updates
+  const rafRef = useRef<number | null>(null);
+  const latestDragPosRef = useRef<{ x: number; y: number } | null>(null);
+  const cancelPendingRaf = useCallback(() => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+  }, []);
+  
+  const scheduleDragUpdate = useCallback(() => {
+    if (rafRef.current !== null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      if (latestDragPosRef.current) {
+        setLivePosition(latestDragPosRef.current);
+      }
+      rafRef.current = null;
+    });
+  }, []);
+  
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   
@@ -138,6 +158,13 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     }
   }, [displayCoords.x, displayCoords.y, isDragging]);
 
+  // Ensure any pending RAF is cancelled on unmount
+  useEffect(() => {
+    return () => {
+      cancelPendingRaf();
+    };
+  }, [cancelPendingRaf]);
+
   // Allow width-only manual resizing
   const enableResizing = {
     top: false,
@@ -180,15 +207,15 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
       switch (e.key) {
         case 'Enter':
           if (!isEditing) {
-      e.preventDefault();
-      setIsEditing(true);
+            e.preventDefault();
+            setIsEditing(true);
           }
           break;
         case 'Escape':
           if (isEditing) {
-      e.preventDefault();
-      setInputValue(content);
-      setIsEditing(false);
+            e.preventDefault();
+            setInputValue(content);
+            setIsEditing(false);
           }
           break;
         case 'Delete':
@@ -260,7 +287,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
           variant: "destructive"
         });
       }
-    }, 500),
+    }, 400),
     [id, sessionId, coordinates, assignedUserId, webSocket, onSave, toast]
   );
 
@@ -294,18 +321,22 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
 
   // We avoid store updates during drag for ultra-smooth movement; persist on drag stop only
  
-  // Handle drag events with smooth updates
+  // Handle drag events with smooth updates (requestAnimationFrame throttled)
   const handleDragStart = useCallback(() => {
     setIsDragging(true);
   }, []);
 
   const handleDrag = useCallback((e: any, data: any) => {
     // Update only local pixel position; skip store updates until drag stops
-    setLivePosition({ x: data.x, y: data.y });
-  }, []);
+    latestDragPosRef.current = { x: data.x, y: data.y };
+    scheduleDragUpdate();
+  }, [scheduleDragUpdate]);
 
   const handleDragStop = useCallback((e: any, data: any) => {
     setIsDragging(false);
+    cancelPendingRaf();
+    // Flush final position
+    setLivePosition({ x: data.x, y: data.y });
     
     // Snap to grid for professional alignment on drop
     const snappedX = snapToGrid(data.x / scaleFactor);
@@ -315,7 +346,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     if (onMove) {
       onMove({ x: snappedX, y: snappedY });
     }
-  }, [scaleFactor, onMove]);
+  }, [scaleFactor, onMove, cancelPendingRaf]);
 
   // Handle resize
   const handleResizeStart = useCallback(() => {
@@ -499,7 +530,9 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
         padding: '0', // SIMPLE: No padding on container
         boxSizing: 'border-box',
         cursor: isEditing ? 'text' : 'grab',
-        lineHeight: 1
+        lineHeight: 1,
+        willChange: 'transform',
+        backfaceVisibility: 'hidden'
       }}
     >
       <div
@@ -615,6 +648,8 @@ const professionalStyles = `
 .professional-text-tag {
   font-family: ${TYPOGRAPHY.fontFamily};
   transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 .professional-text-tag.selected {
@@ -622,8 +657,8 @@ const professionalStyles = `
 }
 
 .professional-text-tag.dragging {
-  transform: rotate(1deg);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transition: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .professional-text-tag.has-content {

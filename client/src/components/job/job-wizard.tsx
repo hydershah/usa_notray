@@ -1548,7 +1548,7 @@ function JobWizardInternal() {
                                     placeholder="Enter participant name"
                                     className={`h-12 mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerName ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
-                                    disabled={autoPopulatedSigners[index]}
+                                    disabled={autoPopulatedSigners[index] && !isAdmin}
                                   />
                                   {signerErrors[index]?.signerName && (
                                     <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerName}</p>
@@ -1588,7 +1588,7 @@ function JobWizardInternal() {
                                     placeholder="(123) 456-7890"
                                     className={`h-12 mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerPhoneNumber ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
-                                    disabled={autoPopulatedSigners[index]}
+                                    disabled={autoPopulatedSigners[index] && !isAdmin}
                                   />
                                   {signerErrors[index]?.signerPhoneNumber && (
                                     <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerPhoneNumber}</p>

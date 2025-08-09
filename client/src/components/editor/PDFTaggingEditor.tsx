@@ -534,9 +534,9 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         if (mode === 'signing') {
           setZoomLevel(1.5); // 150% zoom for signing mode
           console.log('🔍 Set initial zoom level to 150% for signing mode');
-        } else if (mode === 'tagging') {
-          setZoomLevel(2.0); // 200% zoom for tagging mode
-          console.log('🔍 Set initial zoom level to 200% for tagging mode');
+        } else if (mode === 'tagging' || mode === 'notary') {
+          setZoomLevel(2.25); // 225% zoom for tagging mode
+          console.log('🔍 Set initial zoom level to 225% for tagging mode');
         }
         setHasSetInitialZoom(true);
       }, 200); // Small delay to ensure PDF container is ready
@@ -725,7 +725,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
           switch (tag.tagType) {
             case 'S':
               fallback = profile.signatures?.[0] || profile.signatureImage || profile.signatureData || profile.signatureTyped || '';
-              contentObject = { type: 'signature', value: fallback } as any;
+              contentObject = { type: 'signature', value: fallback, contentType: (typeof fallback === 'string' && (fallback.startsWith('data:image/') || fallback.startsWith('http'))) ? 'image' : 'text' } as any;
               break;
             case 'I':
               fallback = profile.initials?.[0] || profile.initialsImage || profile.initialData || '';
@@ -733,7 +733,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
                 const parts = profile.name.trim().split(' ');
                 if (parts.length >= 2) fallback = `${parts[0][0] || ''}${parts[parts.length - 1][0] || ''}`;
               }
-              contentObject = { type: 'initials', value: fallback } as any;
+              contentObject = { type: 'initials', value: fallback, contentType: (typeof fallback === 'string' && (fallback.startsWith('data:image/') || fallback.startsWith('http'))) ? 'image' : 'text' } as any;
               break;
             case 'A':
               fallback = profile.name || '';
@@ -967,6 +967,20 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
     const isNotary = currentParticipant?.userType === 'notary';
     const isAssignedUser = tag.assignedUserId === currentUserId;
     const isUniversalTag = ['T', 'D'].includes(tag.tagType); // Text and Date tags
+
+    // NEW: Determine the assigned participant to enforce stricter rules for signer signatures
+    const assignedParticipant = participants.find(p => p.userId === tag.assignedUserId);
+    const isAssignedToSignerOrWitness = assignedParticipant?.userType === 'signer' || assignedParticipant?.userType === 'witness';
+
+    // Block notaries (or any non-assigned user) from interacting with signer-assigned signature tags
+    if (tag.tagType === 'S' && isAssignedToSignerOrWitness && !isAssignedUser) {
+      toast({
+        title: "Cannot Edit Signature",
+        description: "Only the assigned signer can complete this signature.",
+        variant: "destructive"
+      });
+      return;
+    }
     
     const canEdit = currentParticipant && (isNotary || isAssignedUser || isUniversalTag);
 
@@ -1036,7 +1050,6 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
     
     // Route by tag type (auto-fill enabled)
     // Check who the tag is assigned to (not who is clicking it)
-    const assignedParticipant = participants.find(p => p.userId === tag.assignedUserId);
     const isTagAssignedToNotary = assignedParticipant?.userType === 'notary';
     
     // Auto-fill from profile for these tags on click (no popups)
@@ -1160,7 +1173,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
       // Update local state
       const updatedTags = tags.map(tag =>
         tag.id === selectedTagForInput.id
-          ? { ...tag, isCompleted: true, contentData: content, content: (typeof content === 'object' && content) ? (content.value || '') : content }
+          ? { ...tag, isCompleted: true, contentData: content, content: (typeof content === 'object' && content) ? (content.value || '') : (content || ''), contentType: (typeof content === 'object' && (content as any).contentType) || (typeof content === 'string' && (content.startsWith('data:image/') || content.startsWith('http') ? 'image' : 'text')) || tag.contentType }
           : tag
       );
       setTags(updatedTags);

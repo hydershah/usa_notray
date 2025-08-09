@@ -80,12 +80,17 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
   const sanitizeCoordinates = (coordinates: Partial<TagCoordinates>, tagType?: string): Partial<TagCoordinates> => {
     const sanitized: Partial<TagCoordinates> = {};
     
-    // Debug tag type
-    console.log('🔍 sanitizeCoordinates - tagType:', tagType, 'type:', typeof tagType);
+    // Reduce noisy logs in production
+    const isDevLoggingEnabled = typeof window !== 'undefined' && (window as any).__DEBUG_EDITOR__;
+    if (isDevLoggingEnabled) {
+      console.log('🔍 sanitizeCoordinates - tagType:', tagType, 'type:', typeof tagType);
+    }
     
     // Get dimensions from store (includes custom dimensions if set by user)
     const storeDimensions = getTagDimensions(tagType as any);
-    console.log('🔍 sanitizeCoordinates - storeDimensions:', storeDimensions);
+    if (isDevLoggingEnabled) {
+      console.log('🔍 sanitizeCoordinates - storeDimensions:', storeDimensions);
+    }
     
     const defaultDimensions = storeDimensions || {
       width: 120, // Use updated standardized width as fallback
@@ -304,7 +309,8 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
               continue;
             }
             
-            const sanitizedUpdateCoordinates = sanitizeCoordinates(updateCoordinates);
+            const tagForUpdate = useEditorStore.getState().tags.find(t => t.id === updateTagId);
+            const sanitizedUpdateCoordinates = sanitizeCoordinates(updateCoordinates, tagForUpdate?.tagType);
             
             const updateResponse = await fetch(`/api/editor/session/${sessionId}/tag/${updateTagId}`, {
               method: 'PUT',
@@ -396,15 +402,19 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
     // 🚀 REAL-TIME SYNC: Broadcast tag placement to all participants
     if (webSocket && webSocket.tagPlaced) {
       try {
-        console.log('📡 Broadcasting tag placement via WebSocket:', {
-          tagId: tempTagId,
-          tagType: command.tagType,
-          coordinates: sanitizedCoordinates
-        });
+        if (typeof window !== 'undefined' && (window as any).__DEBUG_EDITOR__) {
+          console.log('📡 Broadcasting tag placement via WebSocket:', {
+            tagId: tempTagId,
+            tagType: command.tagType,
+            coordinates: sanitizedCoordinates
+          });
+        }
         
         webSocket.tagPlaced(optimisticTag);
         
-        console.log('✅ Tag placement broadcasted successfully');
+        if (typeof window !== 'undefined' && (window as any).__DEBUG_EDITOR__) {
+          console.log('✅ Tag placement broadcasted successfully');
+        }
       } catch (wsError) {
         console.warn('⚠️ Failed to broadcast tag placement via WebSocket:', wsError);
       }
@@ -435,14 +445,16 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       return;
     }
     
-    const sanitizedCoordinates = sanitizeCoordinates(coordinates);
+    // Use tagType if available to improve sanitation precision
+    const tag = tags.find(t => t.id === tagId);
+    const sanitizedCoordinates = sanitizeCoordinates(coordinates, tag?.tagType);
     
     // Update store immediately for smooth UX
     updateTag(tagId, { coordinates: sanitizedCoordinates as TagCoordinates });
     
     // Only save to server on mouse up / drag end
     // This will be called by the TagRenderer on dragStop
-  }, [updateTag]);
+  }, [updateTag, tags]);
 
   // Update tag size with optimistic update - NO SERVER CALL DURING RESIZE
   const updateTagSize = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {
@@ -452,14 +464,15 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       return;
     }
     
-    const sanitizedCoordinates = sanitizeCoordinates(coordinates);
+    const tag = tags.find(t => t.id === tagId);
+    const sanitizedCoordinates = sanitizeCoordinates(coordinates, tag?.tagType);
     
     // Update store immediately for smooth UX
     updateTag(tagId, { coordinates: sanitizedCoordinates as TagCoordinates });
     
     // Only save to server on resize end
     // This will be called by the TagRenderer on resizeStop
-  }, [updateTag]);
+  }, [updateTag, tags]);
 
   // Save tag position/size to server (called only on drag/resize END)
   const saveTagUpdate = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {
@@ -469,13 +482,15 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       return;
     }
     
-    const sanitizedCoordinates = sanitizeCoordinates(coordinates);
+    const tag = tags.find(t => t.id === tagId);
+    const sanitizedCoordinates = sanitizeCoordinates(coordinates, tag?.tagType);
     
     // If dimensions are being updated, save them as custom dimensions for this tag type
     if (coordinates.width !== undefined && coordinates.height !== undefined) {
-      const tag = tags.find(t => t.id === tagId);
       if (tag) {
-        console.log(`💾 Saving custom dimensions for tag type ${tag.tagType}: ${coordinates.width}x${coordinates.height}`);
+        if (typeof window !== 'undefined' && (window as any).__DEBUG_EDITOR__) {
+          console.log(`💾 Saving custom dimensions for tag type ${tag.tagType}: ${coordinates.width}x${coordinates.height}`);
+        }
         setCustomTagDimensions(tag.tagType, {
           width: coordinates.width,
           height: coordinates.height
@@ -493,14 +508,18 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
     // 🚀 REAL-TIME SYNC: Broadcast tag update to all participants
     if (webSocket && webSocket.tagUpdated) {
       try {
-        console.log('📡 Broadcasting tag update via WebSocket:', {
-          tagId,
-          coordinates: sanitizedCoordinates
-        });
+        if (typeof window !== 'undefined' && (window as any).__DEBUG_EDITOR__) {
+          console.log('📡 Broadcasting tag update via WebSocket:', {
+            tagId,
+            coordinates: sanitizedCoordinates
+          });
+        }
         
         webSocket.tagUpdated(tagId, { coordinates: sanitizedCoordinates });
         
-        console.log('✅ Tag update broadcasted successfully');
+        if (typeof window !== 'undefined' && (window as any).__DEBUG_EDITOR__) {
+          console.log('✅ Tag update broadcasted successfully');
+        }
       } catch (wsError) {
         console.warn('⚠️ Failed to broadcast tag update via WebSocket:', wsError);
       }

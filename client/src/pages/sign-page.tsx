@@ -79,7 +79,7 @@ export default function SignPage() {
 
     try {
       const response = await apiRequest("POST", "/api/auth/login", { 
-        email, 
+        email: email.trim().toLowerCase(), 
         password 
       });
 

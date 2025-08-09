@@ -234,10 +234,13 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     }
   }, [liveSessionId, sessionId]);
 
-  const loadLiveSessionState = useCallback(async () => {
+  const loadLiveSessionState = useCallback(async (forceFresh: boolean = false) => {
     try {
       const targetSessionId = liveSessionId || sessionId;
-      const response = await authenticatedFetch(`/api/session/${targetSessionId}/state`);
+      const cacheBuster = forceFresh ? `?ts=${Date.now()}` : '';
+      const response = await authenticatedFetch(`/api/session/${targetSessionId}/state${cacheBuster}`, {
+        headers: forceFresh ? { 'Cache-Control': 'no-cache' } : undefined
+      });
 
       if (response.ok) {
         const data = await response.json();
@@ -252,6 +255,8 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         };
         
         setLiveSession(validSessionState);
+      } else if (response.status === 304) {
+        // Keep optimistic state on 304; no-op
       }
     } catch (error) {
       console.error('Failed to load live session state:', error);
@@ -530,6 +535,11 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     if (isLoading) return;
     setIsLoading(true);
     
+    // Optimistic UI update for instant responsiveness
+    const previousActiveUserId = liveSession.activeUserId;
+    const nextActiveUserId = parseInt(userId);
+    setLiveSession(prev => ({ ...prev, activeUserId: nextActiveUserId }));
+    
     try {
       const targetSessionId = liveSessionId || sessionId;
       const response = await authenticatedFetch(`/api/session/${targetSessionId}/set-active-user`, {
@@ -537,17 +547,20 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ userId: parseInt(userId) })
+        body: JSON.stringify({ userId: nextActiveUserId })
       });
 
       if (response.ok) {
-        await loadLiveSessionState();
+        // Force-refresh to ensure we have the latest from server (bypass cache)
+        await loadLiveSessionState(true);
       } else {
         const errorData = await response.json();
         throw new Error(errorData.message || 'Failed to set active user');
       }
     } catch (error) {
       console.error('Failed to set active user:', error);
+      // Revert optimistic update on error
+      setLiveSession(prev => ({ ...prev, activeUserId: previousActiveUserId }));
       toast({
         variant: "destructive",
         title: "Error",
@@ -556,7 +569,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, liveSessionId, sessionId, loadLiveSessionState, toast]);
+  }, [isLoading, liveSessionId, sessionId, loadLiveSessionState, toast, liveSession.activeUserId]);
 
   const handleSyncUsers = useCallback(async () => {
     if (isLoading || !isNotary) return;

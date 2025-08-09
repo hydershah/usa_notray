@@ -264,7 +264,9 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
 export const getTagDimensions = (tagType: TagType) => {
   const config = TAG_TYPE_CONFIG[tagType];
   if (!config) {
-    console.warn(`Unknown tag type: ${tagType}, using default dimensions`);
+    if (typeof window !== 'undefined' && (window as any).__DEBUG_EDITOR__) {
+      console.warn(`Unknown tag type: ${tagType}, using default dimensions`);
+    }
     return {
       width: 120,
       height: 25,
@@ -291,7 +293,9 @@ const hexToRgba = (hex: string, opacity: number) => {
 export const getTagStyle = (tagType: TagType, isSelected = false, isCompleted = false, userColor?: string) => {
   const config = TAG_TYPE_CONFIG[tagType];
   if (!config) {
-    console.warn(`Unknown tag type: ${tagType}, using default style`);
+    if (typeof window !== 'undefined' && (window as any).__DEBUG_EDITOR__) {
+      console.warn(`Unknown tag type: ${tagType}, using default style`);
+    }
     return {
       backgroundColor: isCompleted ? 'transparent' : hexToRgba(userColor || '#4ECDC4', 0.6),
       borderColor: isSelected ? PROFESSIONAL_COLORS.borderActive : hexToRgba(userColor || '#4ECDC4', 0.9),

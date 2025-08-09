@@ -132,7 +132,7 @@ export interface IStorage {
   deleteJob(id: number): Promise<boolean>;
   getJobs(): Promise<Job[]>;
   getJobsByUserId(userId: number): Promise<Job[]>;
-  getRoleBasedJobs(userId: number, role: string): Promise<Job[]>;
+  getRoleBasedJobs(userId: number, role: string): Promise<{ jobs: Job[], totalCount: number, hasMore: boolean }>;
 
   // Job participant operations
   getJobParticipant(id: number): Promise<JobParticipant | undefined>;
@@ -236,7 +236,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.email, email));
+    const normalized = email.trim().toLowerCase();
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(sql`LOWER(${users.email}) = ${normalized}`);
     return user || undefined;
   }
 
@@ -246,7 +250,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUsersByEmail(email: string): Promise<User[]> {
-    return await db.select().from(users).where(eq(users.email, email));
+    const normalized = email.trim().toLowerCase();
+    return await db
+      .select()
+      .from(users)
+      .where(sql`LOWER(${users.email}) = ${normalized}`);
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
@@ -674,10 +682,25 @@ export class DatabaseStorage implements IStorage {
     if (role === 'admin') {
       // PERFORMANCE FIX: Use pagination instead of loading ALL jobs at once
       const [jobsResult, countResult] = await Promise.all([
-        db.select().from(jobs)
-          .orderBy(desc(jobs.createdAt))
-          .limit(limit)
-          .offset(offset),
+        // Include first signer name via subquery
+        db.execute(sql`
+          SELECT 
+            j.*,
+            COALESCE(
+              (
+                SELECT s.signer_name 
+                FROM signers s 
+                WHERE s.job_id = j.id 
+                ORDER BY s.created_at ASC NULLS LAST, s.id ASC 
+                LIMIT 1
+              ),
+              ''
+            ) AS first_signer_name
+          FROM jobs j
+          ORDER BY j.created_at DESC
+          LIMIT ${limit}
+          OFFSET ${offset}
+        `),
         db.select({ count: count() }).from(jobs)
       ]);
       
@@ -685,30 +708,48 @@ export class DatabaseStorage implements IStorage {
       const hasMore = offset + limit < totalCount;
       
       return {
-        jobs: jobsResult,
+        jobs: (jobsResult.rows as unknown as Job[]),
         totalCount,
         hasMore
       };
     } else if (role === 'notary') {
-      const whereClause = or(
-        eq(jobs.userId, userId),
-        eq(jobs.selectedNotary, userId.toString()),
-        eq(jobs.notaryId, userId) // Also check the modern notaryId field
-      );
-      
+      // Include first signer name and filter by notary involvement
       const [jobsResult, countResult] = await Promise.all([
-        db.select().from(jobs).where(whereClause)
-          .orderBy(desc(jobs.createdAt))
-          .limit(limit)
-          .offset(offset),
-        db.select({ count: count() }).from(jobs).where(whereClause)
+        db.execute(sql`
+          SELECT 
+            j.*,
+            COALESCE(
+              (
+                SELECT s.signer_name 
+                FROM signers s 
+                WHERE s.job_id = j.id 
+                ORDER BY s.created_at ASC NULLS LAST, s.id ASC 
+                LIMIT 1
+              ),
+              ''
+            ) AS first_signer_name
+          FROM jobs j
+          WHERE j.user_id = ${userId}
+             OR j.selected_notary = CAST(${userId} AS TEXT)
+             OR j.notary_id = ${userId}
+          ORDER BY j.created_at DESC
+          LIMIT ${limit}
+          OFFSET ${offset}
+        `),
+        db.select({ count: count() }).from(jobs).where(
+          or(
+            eq(jobs.userId, userId),
+            eq(jobs.selectedNotary, userId.toString()),
+            eq(jobs.notaryId, userId)
+          )
+        )
       ]);
       
       const totalCount = countResult[0].count;
       const hasMore = offset + limit < totalCount;
       
       return {
-        jobs: jobsResult,
+        jobs: (jobsResult.rows as unknown as Job[]),
         totalCount,
         hasMore
       };
@@ -722,12 +763,36 @@ export class DatabaseStorage implements IStorage {
         // This combines created jobs and invited jobs in a single optimized query
         const combinedJobsQuery = sql`
           (
-            SELECT DISTINCT j.* FROM jobs j 
+            SELECT DISTINCT 
+              j.*,
+              COALESCE(
+                (
+                  SELECT s.signer_name 
+                  FROM signers s 
+                  WHERE s.job_id = j.id 
+                  ORDER BY s.created_at ASC NULLS LAST, s.id ASC 
+                  LIMIT 1
+                ),
+                ''
+              ) AS first_signer_name
+            FROM jobs j 
             WHERE j.user_id = ${userId}
           )
           UNION
           (
-            SELECT DISTINCT j.* FROM jobs j
+            SELECT DISTINCT 
+              j.*,
+              COALESCE(
+                (
+                  SELECT s.signer_name 
+                  FROM signers s2 
+                  WHERE s2.job_id = j.id 
+                  ORDER BY s2.created_at ASC NULLS LAST, s2.id ASC 
+                  LIMIT 1
+                ),
+                ''
+              ) AS first_signer_name
+            FROM jobs j
             INNER JOIN signers s ON s.job_id = j.id
             WHERE s.signer_email = ${user.email}
           )
@@ -763,7 +828,7 @@ export class DatabaseStorage implements IStorage {
         console.log(`📋 Found ${jobsResult.rows.length} jobs for ${role} ${user.email} (page ${page}, total: ${totalCount})`);
         
         return {
-          jobs: jobsResult.rows as Job[],
+          jobs: (jobsResult.rows as unknown as Job[]),
           totalCount,
           hasMore
         };

@@ -18,6 +18,9 @@ import {
 } from './middleware/sanitization';
 import { redisCache } from './services/redis-cache';
 import { responseCacheMiddleware } from './middleware/response-cache';
+import { eq } from 'drizzle-orm';
+import { signers } from '@shared/schema';
+import { db } from './db';
 
 export function registerUserManagementRoutes(app: Express) {
   
@@ -749,6 +752,18 @@ export function registerUserManagementRoutes(app: Express) {
         return res.status(404).json({ message: 'User not found' });
       }
 
+      // Propagate phone number changes to signer records linked to this user
+      try {
+        if (updateData.phoneNumber) {
+          await db.update(signers)
+            .set({ signerPhoneNumber: updateData.phoneNumber })
+            .where(eq(signers.userId, userId));
+        }
+      } catch (syncErr) {
+        console.error('Failed to sync signer phone numbers:', syncErr);
+        // Non-fatal: continue
+      }
+      
       // Invalidate user-specific cache to ensure fresh data on next request
       try {
         await redisCache.delPattern(`user:${userId}:*`);

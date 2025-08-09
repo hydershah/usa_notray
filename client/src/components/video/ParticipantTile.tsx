@@ -6,19 +6,28 @@
 import React from 'react';
 import { useParticipant } from '@daily-co/daily-react';
 import { DailyVideo } from '@daily-co/daily-react';
-import { MicOff, VideoOff, Crown } from 'lucide-react';
+import { MicOff, VideoOff, Crown, Mic, Video } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 interface ParticipantTileProps {
   sessionId: string;
   isLocal: boolean;
   className?: string;
+  onToggleAudio?: () => void;
+  onToggleVideo?: () => void;
+}
+
+interface ParticipantUserData {
+  role?: string;
 }
 
 export const ParticipantTile: React.FC<ParticipantTileProps> = ({
   sessionId,
   isLocal,
-  className
+  className,
+  onToggleAudio,
+  onToggleVideo
 }) => {
   const participant = useParticipant(sessionId);
   
@@ -36,9 +45,9 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
   }
 
   const displayName = participant.user_name || 'Participant';
-  const role = participant.userData?.role || 'participant';
-  const hasVideo = participant.video;
-  const hasAudio = participant.audio;
+  const role = (participant.userData as ParticipantUserData | undefined)?.role || 'participant';
+  const hasVideo = participant.tracks?.video?.state === 'playable';
+  const hasAudio = participant.tracks?.audio?.state === 'playable';
   const isNotary = role === 'notary';
   const isOwner = participant.owner;
 
@@ -52,6 +61,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
       {hasVideo ? (
         <DailyVideo
           sessionId={sessionId}
+          type="video"
           automirror={isLocal}
           fit="cover"
           className="w-full h-full object-cover"
@@ -130,6 +140,36 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
           participant.tracks?.video?.state === 'playable' ? "bg-green-400" : "bg-red-400"
         )}></div>
       </div>
+
+      {/* Local Controls: Mic / Camera toggles */}
+      {isLocal && (
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button
+            type="button"
+            onClick={onToggleAudio}
+            size="sm"
+            aria-pressed={hasAudio}
+            className={cn(
+              "rounded-full w-8 h-8 p-0",
+              hasAudio ? "bg-gray-700 hover:bg-gray-600 text-white" : "bg-red-600 hover:bg-red-700 text-white"
+            )}
+          >
+            {hasAudio ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+          </Button>
+          <Button
+            type="button"
+            onClick={onToggleVideo}
+            size="sm"
+            aria-pressed={hasVideo}
+            className={cn(
+              "rounded-full w-8 h-8 p-0",
+              hasVideo ? "bg-gray-700 hover:bg-gray-600 text-white" : "bg-red-600 hover:bg-red-700 text-white"
+            )}
+          >
+            {hasVideo ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
+          </Button>
+        </div>
+      )}
     </div>
   );
 };

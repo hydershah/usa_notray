@@ -203,15 +203,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Email and password are required' });
       }
 
-      const user = await storage.getUserByEmail(email);
+      const normalizedEmail = String(email).trim().toLowerCase();
+
+      const user = await storage.getUserByEmail(normalizedEmail);
       if (!user) {
-        recordFailedLogin(email);
+        recordFailedLogin(normalizedEmail);
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
       const isValidPassword = await bcrypt.compare(password, user.password);
       if (!isValidPassword) {
-        recordFailedLogin(email);
+        recordFailedLogin(normalizedEmail);
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
@@ -238,13 +240,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
         if (!verified) {
-          recordFailedLogin(email);
+          recordFailedLogin(normalizedEmail);
           return res.status(401).json({ message: 'Invalid two-factor authentication code' });
         }
       }
 
       // Clear failed attempts on successful login
-      clearFailedAttempts(email);
+      clearFailedAttempts(normalizedEmail);
 
       // Generate token with privileges included
       const token = jwt.sign(
@@ -714,28 +716,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updateData.password = await bcrypt.hash(updateData.password, 10);
       }
 
-      const user = await storage.updateUser(userId, updateData);
-      if (!user) {
+      const updatedUser = await storage.updateUser(userId, updateData);
+
+      if (!updatedUser) {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      // Invalidate users cache to ensure fresh data on next request
+      // Propagate phone number changes to signer records linked to this user
       try {
-        await redisCache.delPattern(`admin:*`); // Clear admin caches
-        await redisCache.delPattern(`user:*`); // Clear all user caches
-        await redisCache.delPattern(`api:*users*`); // Clear users API cache
-        console.log(`🧹 Invalidated user caches after updating user ${userId}`);
+        if (updateData.phoneNumber) {
+          await db.update(signers)
+            .set({ signerPhoneNumber: updateData.phoneNumber })
+            .where(eq(signers.userId, userId));
+        }
+      } catch (syncErr) {
+        console.error('Failed to sync signer phone numbers:', syncErr);
+        // Non-fatal: continue
+      }
+
+      // Invalidate user-specific cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`user:${userId}:*`);
+        console.log(`🧹 Invalidated cache for user ${userId} after profile update`);
       } catch (cacheError) {
-        console.error('Failed to invalidate cache after user update:', cacheError);
+        console.error('Failed to invalidate cache after profile update:', cacheError);
         // Don't fail the request if cache invalidation fails
       }
 
       res.json({
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        privileges: user.privileges
+        id: updatedUser.id,
+        username: updatedUser.username,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        privileges: updatedUser.privileges
       });
     } catch (error) {
       console.error('Update user error:', error);
@@ -861,7 +874,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        imageUrl = uploadResult.signedUrl || uploadResult.fileKey || '';
+        imageUrl = uploadResult.fileUrl || uploadResult.signedUrl || uploadResult.fileKey || '';
         metadata = { originalName: req.file.originalname, vultrKey: uploadResult.fileKey };
         
       } else if (type === 'drawn') {
@@ -1210,6 +1223,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!updatedUser) {
         return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Propagate phone number changes to signer records linked to this user
+      try {
+        if (updateData.phoneNumber) {
+          await db.update(signers)
+            .set({ signerPhoneNumber: updateData.phoneNumber })
+            .where(eq(signers.userId, userId));
+        }
+      } catch (syncErr) {
+        console.error('Failed to sync signer phone numbers:', syncErr);
+        // Non-fatal: continue
       }
 
       // Invalidate user-specific cache to ensure fresh data on next request
@@ -2221,15 +2246,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Email and password are required' });
       }
 
-      const user = await storage.getUserByEmail(email);
+      const normalizedEmail = String(email).trim().toLowerCase();
+
+      const user = await storage.getUserByEmail(normalizedEmail);
       if (!user) {
-        recordFailedLogin(email);
+        recordFailedLogin(normalizedEmail);
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
       const isValidPassword = await bcrypt.compare(password, user.password);
       if (!isValidPassword) {
-        recordFailedLogin(email);
+        recordFailedLogin(normalizedEmail);
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
@@ -2256,13 +2283,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
         if (!verified) {
-          recordFailedLogin(email);
+          recordFailedLogin(normalizedEmail);
           return res.status(401).json({ message: 'Invalid two-factor authentication code' });
         }
       }
 
       // Clear failed attempts on successful login
-      clearFailedAttempts(email);
+      clearFailedAttempts(normalizedEmail);
 
       // Generate token with privileges included
       const token = jwt.sign(
@@ -2732,28 +2759,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updateData.password = await bcrypt.hash(updateData.password, 10);
       }
 
-      const user = await storage.updateUser(userId, updateData);
-      if (!user) {
+      const updatedUser = await storage.updateUser(userId, updateData);
+      if (!updatedUser) {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      // Invalidate users cache to ensure fresh data on next request
+      // Propagate phone number changes to signer records linked to this user
       try {
-        await redisCache.delPattern(`admin:*`); // Clear admin caches
-        await redisCache.delPattern(`user:*`); // Clear all user caches
-        await redisCache.delPattern(`api:*users*`); // Clear users API cache
-        console.log(`🧹 Invalidated user caches after updating user ${userId}`);
+        if (updateData.phoneNumber) {
+          await db.update(signers)
+            .set({ signerPhoneNumber: updateData.phoneNumber })
+            .where(eq(signers.userId, userId));
+        }
+      } catch (syncErr) {
+        console.error('Failed to sync signer phone numbers:', syncErr);
+        // Non-fatal: continue
+      }
+
+      // Invalidate user-specific cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`user:${userId}:*`);
+        console.log(`🧹 Invalidated cache for user ${userId} after profile update`);
       } catch (cacheError) {
-        console.error('Failed to invalidate cache after user update:', cacheError);
+        console.error('Failed to invalidate cache after profile update:', cacheError);
         // Don't fail the request if cache invalidation fails
       }
 
       res.json({
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        privileges: user.privileges
+        id: updatedUser.id,
+        username: updatedUser.username,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        privileges: updatedUser.privileges
       });
     } catch (error) {
       console.error('Update user error:', error);
@@ -3228,6 +3265,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!updatedUser) {
         return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Propagate phone number changes to signer records linked to this user
+      try {
+        if (updateData.phoneNumber) {
+          await db.update(signers)
+            .set({ signerPhoneNumber: updateData.phoneNumber })
+            .where(eq(signers.userId, userId));
+        }
+      } catch (syncErr) {
+        console.error('Failed to sync signer phone numbers:', syncErr);
+        // Non-fatal: continue
       }
 
       // Invalidate user-specific cache to ensure fresh data on next request
@@ -8304,11 +8353,76 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
 
   // Get or create password reset token for signer - PUBLIC endpoint (no auth required)
   app.post('/api/signers/get-password-reset-token', async (req, res) => {
-    // Auto-fill feature disabled
-    return res.status(410).json({
-      message: 'Auto-fill has been disabled. Please complete tags manually.',
-      error: 'auto_fill_disabled'
-    });
+    try {
+      const { invitationToken } = req.body;
+      
+      if (!invitationToken) {
+        return res.status(400).json({ message: 'Invitation token is required' });
+      }
+
+      // Find signer by invitation token
+      const [signer] = await db
+        .select()
+        .from(signers)
+        .where(eq(signers.invitationToken, invitationToken))
+        .limit(1);
+
+      if (!signer) {
+        return res.status(404).json({ message: 'Invalid invitation token' });
+      }
+
+      // Find user by email
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, signer.signerEmail))
+        .limit(1);
+
+      if (!user) {
+        return res.status(404).json({ message: 'User account not found' });
+      }
+
+      // Check if user already has an active password reset token
+      const [existingToken] = await db
+        .select()
+        .from(passwordResetTokens)
+        .where(
+          and(
+            eq(passwordResetTokens.userId, user.id),
+            eq(passwordResetTokens.used, false),
+            gte(passwordResetTokens.expiresAt, new Date())
+          )
+        )
+        .limit(1);
+
+      if (existingToken) {
+        // Return existing token
+        res.json({ 
+          passwordResetToken: existingToken.token,
+          invitationToken: invitationToken 
+        });
+      } else {
+        // Create new password reset token
+        const passwordResetToken = crypto.randomUUID();
+        const tokenExpiry = new Date();
+        tokenExpiry.setHours(tokenExpiry.getHours() + 24);
+
+        await db.insert(passwordResetTokens).values({
+          userId: user.id,
+          token: passwordResetToken,
+          expiresAt: tokenExpiry,
+          used: false
+        });
+
+        res.json({ 
+          passwordResetToken: passwordResetToken,
+          invitationToken: invitationToken 
+        });
+      }
+    } catch (error) {
+      console.error('Get password reset token error:', error);
+      res.status(500).json({ message: 'Failed to get password reset token' });
+    }
   });
 
   // Test endpoint to send all signer invitations for a job
@@ -8565,7 +8679,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       }
 
       // Find user by email
-      const user = await storage.getUserByEmail(email);
+      const user = await storage.getUserByEmail(email.trim().toLowerCase());
       if (!user) {
         // Don't reveal if user exists for security
         return res.json({ 
@@ -11094,10 +11208,51 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       let finalContentType: string;
       
       if (typeof content === 'object' && content !== null) {
-        // Already structured content (from frontend)
-        structuredContentData = content;
-        finalContent = content.value || JSON.stringify(content);
-        finalContentType = content.type || contentType || 'text';
+        // Structured content from frontend; handle empty image values by deriving defaults
+        const contentObj: any = content;
+        const requestedType = (contentObj && typeof contentObj.type === 'string') ? contentObj.type : undefined;
+        const needsDefaultImage = (
+          (tag.tagType === 'S' || tag.tagType === 'I' || tag.tagType === 'E') &&
+          (
+            contentObj.value === undefined ||
+            (typeof contentObj.value === 'string' && contentObj.value.trim() === '')
+          )
+        );
+
+        if (needsDefaultImage) {
+          try {
+            const { ProfileAutoFillService } = await import('./services/ProfileAutoFillService');
+            const assignedUserId = tag.assignedUserId || req.user.id;
+            const auto = await ProfileAutoFillService.getTagAutoFillData(tag.tagType, assignedUserId, sessionId);
+
+            if (auto?.success && typeof auto.content === 'string' && auto.content.length > 0) {
+              structuredContentData = {
+                ...(auto.contentData || {}),
+                type: tag.tagType === 'S' ? 'signature' : tag.tagType === 'I' ? 'initials' : 'seal',
+                value: auto.content,
+                contentType: 'image',
+                timestamp: new Date().toISOString()
+              };
+              finalContent = auto.content;
+              finalContentType = 'image';
+            } else {
+              // Fallback: keep original structured object
+              structuredContentData = contentObj;
+              finalContent = contentObj.value || JSON.stringify(contentObj);
+              finalContentType = contentObj.type || contentType || 'text';
+            }
+          } catch (e) {
+            // On any error, keep original structured object
+            structuredContentData = contentObj;
+            finalContent = contentObj.value || JSON.stringify(contentObj);
+            finalContentType = contentObj.type || contentType || 'text';
+          }
+        } else {
+          // Normal path: accept provided structured content
+          structuredContentData = contentObj;
+          finalContent = contentObj.value || JSON.stringify(contentObj);
+          finalContentType = contentObj.type || contentType || 'text';
+        }
       } else {
         // Raw content - need to structure based on tag type
         finalContent = content.toString();
