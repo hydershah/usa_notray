@@ -16,6 +16,7 @@ interface DialogHeaderProps {
   children: React.ReactNode;
   onClose?: () => void;
   showCloseButton?: boolean;
+  className?: string;
 }
 
 interface DialogTitleProps {
@@ -30,6 +31,7 @@ interface DialogDescriptionProps {
 interface DialogTriggerProps {
   children: React.ReactNode;
   onClick?: () => void;
+  asChild?: boolean;
 }
 
 interface DialogFooterProps {
@@ -69,9 +71,9 @@ export const DialogContent: React.FC<DialogContentProps> = ({ className = '', ch
   );
 };
 
-export const DialogHeader: React.FC<DialogHeaderProps> = ({ children, onClose, showCloseButton = true }) => {
+export const DialogHeader: React.FC<DialogHeaderProps> = ({ children, onClose, showCloseButton = true, className = '' }) => {
   return (
-    <div className="px-6 py-5 border-b border-gray-100 bg-gray-50/50 relative">
+    <div className={`px-6 py-5 border-b border-gray-100 bg-gray-50/50 relative ${className}`}>
       {showCloseButton && onClose && (
         <button
           onClick={onClose}

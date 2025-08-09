@@ -48,7 +48,6 @@ import {
 } from 'lucide-react';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { JobCompletionReport } from '@/components/job/JobCompletionReport';
-import { JobStatus } from '@/types/job';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn, isMobileDevice } from '@/lib/utils';
@@ -60,7 +59,7 @@ interface JobDetailsModalProps {
   job: any;
   isOpen: boolean;
   onClose: () => void;
-  onStatusUpdate?: (newStatus: JobStatus) => void;
+  onStatusUpdate?: (newStatus: string) => void;
 }
 
 export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDetailsModalProps) {
@@ -83,12 +82,12 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
     digitalCertificates: boolean;
   }>({
     jobInfo: true,
-    schedule: true,
-    signers: true,
-    documents: true,
+    schedule: false,
+    signers: false,
+    documents: false,
     completed: false,
-    completionReport: job?.jobStatus === 'completed', // Auto-expand for completed jobs
-    digitalCertificates: true,
+    completionReport: job?.jobStatus === 'completed',
+    digitalCertificates: false,
   });
   
   // Notary change functionality
@@ -209,6 +208,38 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
       [section]: !prev[section]
     }));
   };
+
+  // Add compact helpers
+  const expandAllSections = () => {
+    setExpandedSections({
+      jobInfo: true,
+      schedule: true,
+      signers: true,
+      documents: true,
+      completed: true,
+      completionReport: true,
+      digitalCertificates: true,
+    });
+  };
+
+  const collapseAllSections = () => {
+    setExpandedSections(prev => ({
+      jobInfo: true,
+      schedule: false,
+      signers: false,
+      documents: false,
+      completed: false,
+      completionReport: prev.completionReport && job?.jobStatus === 'completed',
+      digitalCertificates: false,
+    }));
+  };
+
+  const isCompactView = !expandedSections.schedule &&
+    !expandedSections.signers &&
+    !expandedSections.documents &&
+    !expandedSections.completed &&
+    !expandedSections.digitalCertificates &&
+    !expandedSections.completionReport;
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -580,7 +611,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col p-0" aria-describedby="job-details-description">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0" aria-describedby="job-details-description">
         <DialogHeader className="px-6 py-4 border-b bg-gray-50">
           <div className="flex items-center justify-between">
             <div>
@@ -592,18 +623,66 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                 Quick overview of job #{job.id} information
               </p>
             </div>
-            <Badge className={cn("px-3 py-1 border", getStatusColor(job.jobStatus))}>
-              {getStatusIcon(job.jobStatus)}
-              <span className="ml-1 font-medium">{job.jobStatus?.toUpperCase()}</span>
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge className={cn("px-3 py-1 border", getStatusColor(job.jobStatus))}>
+                {getStatusIcon(job.jobStatus)}
+                <span className="ml-1 font-medium">{job.jobStatus?.toUpperCase()}</span>
+              </Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => (isCompactView ? expandAllSections() : collapseAllSections())}
+                title={isCompactView ? 'Expand all sections' : 'Collapse all sections'}
+              >
+                {isCompactView ? (
+                  <>
+                    <ChevronDown className="h-3 w-3 mr-1" /> Expand all
+                  </>
+                ) : (
+                  <>
+                    <ChevronUp className="h-3 w-3 mr-1" /> Collapse all
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-700">
+            <div className="flex items-center gap-1">
+              <Calendar className="h-3 w-3" />
+              <span>{job.selectedDate || 'Not scheduled'}</span>
+              {job.selectedTime && <span className="opacity-60">at {job.selectedTime}</span>}
+            </div>
+            <div className="flex items-center gap-1">
+              <Users className="h-3 w-3" />
+              <span>{job.signers?.length || 0} signers</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <FileText className="h-3 w-3" />
+              <span>{jobDocuments.length} docs</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <FileCheck className="h-3 w-3" />
+              <span>{completedDocuments.length} completed</span>
+            </div>
+            <div
+              className={cn(
+                'px-2 py-0.5 rounded-full border',
+                certificateVerification?.canStartJob
+                  ? 'bg-green-50 text-green-700 border-green-200'
+                  : 'bg-yellow-50 text-yellow-700 border-yellow-200'
+              )}
+            >
+              {certificateVerification?.canStartJob ? 'Certs: Ready' : 'Certs: Check'}
+            </div>
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-6 py-3 space-y-3">
           {/* Job Information Section */}
           <Card className="border-0 shadow-sm">
             <CardHeader 
-              className="cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg"
+              className="py-2 cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg"
               onClick={() => toggleSection('jobInfo')}
             >
               <div className="flex items-center justify-between">
@@ -652,7 +731,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                       <span className="text-sm text-gray-600">Update Status:</span>
                       <select
                         value={job.jobStatus}
-                        onChange={(e) => onStatusUpdate(e.target.value as JobStatus)}
+                        onChange={(e) => onStatusUpdate(e.target.value)}
                         className="text-sm border rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-primary"
                       >
                         <option value="open">Open</option>
@@ -670,7 +749,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
           {/* Schedule & Property Section */}
           <Card className="border-0 shadow-sm">
             <CardHeader 
-              className="cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg"
+              className="py-2 cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg"
               onClick={() => toggleSection('schedule')}
             >
               <div className="flex items-center justify-between">
@@ -829,7 +908,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
           {job.signers && job.signers.length > 0 && (
             <Card className="border-0 shadow-sm">
               <CardHeader 
-                className="cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg"
+                className="py-2 cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg"
                 onClick={() => toggleSection('signers')}
               >
                 <div className="flex items-center justify-between">
@@ -845,15 +924,15 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                 <CardContent className="pt-0">
                   <div className="space-y-3">
                     {job.signers.map((signer: any) => (
-                      <div key={signer.id} className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                        <div className="flex items-start justify-between mb-3">
+                      <div key={signer.id} className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                        <div className="flex items-start justify-between mb-2">
                           <div className="flex items-center gap-3">
                             <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center border-2 border-gray-200">
                               <User className="h-5 w-5 text-gray-600" />
                             </div>
                             <div>
-                              <p className="font-medium text-gray-900">{signer.signerName}</p>
-                              <div className="flex items-center gap-4 text-sm text-gray-600 mt-1">
+                              <p className="font-medium text-gray-900 text-sm">{signer.signerName}</p>
+                              <div className="flex items-center gap-4 text-xs text-gray-600 mt-1">
                                 <span className="flex items-center gap-1">
                                   <Mail className="h-3 w-3" />
                                   {signer.signerEmail}
@@ -869,14 +948,14 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                             <Badge className={getRoleColor(signer.signerRole)}>
                               {formatRole(signer.signerRole)}
                             </Badge>
-                            <Badge variant={signer.invitationSentAt ? "success" : "secondary"}>
+                            <Badge className={signer.invitationSentAt ? 'bg-green-100 text-green-800 border-green-200' : ''}>
                               {signer.invitationSentAt ? 'Invited' : 'Pending'}
                             </Badge>
                           </div>
                         </div>
                         
                         {/* Invitation Actions */}
-                        <div className="flex items-center gap-2 mt-3">
+                        <div className="flex items-center gap-1 mt-2">
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -888,10 +967,10 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                                       copyToClipboard(`${window.location.origin}/sign/${signer.invitationToken}`);
                                     }
                                   }}
-                                  className="h-8"
+                                  className="h-7 px-2 text-xs"
                                 >
                                   <Copy className="h-3 w-3 mr-1" />
-                                  Copy Link
+                                  Copy
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>Copy invitation link</TooltipContent>
@@ -930,7 +1009,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                                       });
                                     }
                                   }}
-                                  className="h-8"
+                                  className="h-7 px-2 text-xs"
                                 >
                                   <RefreshCw className="h-3 w-3 mr-1" />
                                   Resend
@@ -951,7 +1030,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                                       window.open(`/sign/${signer.invitationToken}`, '_blank');
                                     }
                                   }}
-                                  className="h-8"
+                                  className="h-7 px-2 text-xs"
                                 >
                                   <Link2 className="h-3 w-3 mr-1" />
                                   Test
@@ -963,7 +1042,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                         </div>
                         
                         {/* Verification Management */}
-                        <div className="mt-4 pt-3 border-t border-gray-200">
+                        <div className="mt-3 pt-3 border-t border-gray-200">
                           <div className="flex items-center justify-between mb-2">
                             <h5 className="text-sm font-medium text-gray-700">Verification Status</h5>
                           </div>
@@ -995,7 +1074,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
           {/* Digital Certificate Status Section */}
           <Card className="border-0 shadow-sm">
             <CardHeader 
-              className="cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg"
+              className="py-2 cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg"
               onClick={() => toggleSection('digitalCertificates')}
             >
               <div className="flex items-center justify-between">
@@ -1035,6 +1114,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                     onGenerateCertificate={handleGenerateCertificate}
                     onRefresh={refetchCertificates}
                     isLoading={isLoadingCertificates}
+                    compact
                   />
                 )}
               </CardContent>
@@ -1045,7 +1125,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
           {/* Documents Section */}
           <Card className="border-0 shadow-sm">
             <CardHeader 
-              className="cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg"
+              className="py-2 cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg"
               onClick={() => toggleSection('documents')}
             >
               <div className="flex items-center justify-between">
@@ -1095,10 +1175,10 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                 ) : (
                   <div className="space-y-2">
                     {jobDocuments.map((document) => (
-                      <div key={document.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors group">
+                      <div key={document.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
                         <div className="flex items-center gap-3 flex-1">
-                          <div className="h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                            <FileText className="h-5 w-5 text-blue-600" />
+                          <div className="h-9 w-9 bg-blue-100 rounded-lg flex items-center justify-center">
+                            <FileText className="h-4 w-4 text-blue-600" />
                           </div>
                           <div className="flex-1">
                             <p className="font-medium text-gray-900 text-sm">{document.originalName}</p>
@@ -1117,7 +1197,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-1 opacity-100">
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -1175,14 +1255,14 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
           {/* Completed Documents Section */}
           <Card className="border-0 shadow-sm">
             <CardHeader 
-              className="cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg"
+              className="py-2 cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg"
               onClick={() => toggleSection('completed')}
             >
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base flex items-center gap-2">
                   <FileCheck className="h-4 w-4 text-green-600" />
                   Completed Documents
-                  <Badge variant="success" className="ml-2">{completedDocuments.length}</Badge>
+                  <Badge className="ml-2 bg-green-100 text-green-800 border-green-200">{completedDocuments.length}</Badge>
                 </CardTitle>
                 {expandedSections.completed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </div>
@@ -1203,21 +1283,21 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                 ) : (
                   <div className="space-y-3">
                     {completedDocuments.map((completedDoc) => (
-                      <div key={completedDoc.id} className="border border-green-200 bg-green-50 rounded-lg p-4">
+                      <div key={completedDoc.id} className="border border-green-200 bg-green-50 rounded-lg p-3">
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex items-center gap-3">
-                            <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
-                              <FileCheck className="h-6 w-6 text-green-600" />
+                            <div className="h-10 w-10 bg-green-100 rounded-lg flex items-center justify-center">
+                              <FileCheck className="h-5 w-5 text-green-600" />
                             </div>
                             <div>
-                              <h4 className="font-medium text-green-900">
+                              <h4 className="font-medium text-green-900 text-sm">
                                 {completedDoc.fileName || completedDoc.documentName || 'Signed Document'}
                               </h4>
-                              <p className="text-sm text-green-700">
+                              <p className="text-xs text-green-700">
                                 Completed: {new Date(completedDoc.completedAt || completedDoc.createdAt).toLocaleString()}
                               </p>
                               {completedDoc.fileSize && (
-                                <p className="text-xs text-green-600 mt-1">
+                                <p className="text-[11px] text-green-600 mt-1">
                                   Size: {formatFileSize(completedDoc.fileSize)}
                                 </p>
                               )}
@@ -1234,18 +1314,6 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                                 Digital Certificate
                               </Badge>
                             )}
-                          </div>
-                        </div>
-
-                        {/* Document Info */}
-                        <div className="grid grid-cols-2 gap-4 mb-3 text-sm">
-                          <div>
-                            <span className="text-green-700 font-medium">Version:</span>
-                            <span className="ml-2 text-green-900">v{completedDoc.versionNumber || 1}</span>
-                          </div>
-                          <div>
-                            <span className="text-green-700 font-medium">Status:</span>
-                            <span className="ml-2 text-green-900">{completedDoc.status || 'Completed'}</span>
                           </div>
                         </div>
 
@@ -1343,7 +1411,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
           {/* Completion Report Section */}
           <Card className="shadow-sm">
             <CardHeader 
-              className="cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg"
+              className="py-2 cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg"
               onClick={() => toggleSection('completionReport')}
             >
               <div className="flex items-center justify-between">

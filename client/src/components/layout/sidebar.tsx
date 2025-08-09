@@ -17,20 +17,13 @@ import {
   ChevronRight,
   ChevronDown,
   Activity,
-  Search,
   Star,
-  Clock,
-  AlertCircle,
-  CheckCircle,
-  Award,
-  Zap,
-  BarChart3,
   Bell,
-  HelpCircle,
   Download,
-  Clipboard,
   UserCheck,
-  PenTool
+  PenTool,
+  CheckCircle,
+  Award
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -41,30 +34,30 @@ interface MenuItem {
   path: string;
   roles: string[];
   badge?: number;
-  section?: string;
   description?: string;
   subsections?: MenuItem[];
 }
 
-// Much more streamlined and intuitive menu structure
+// Simplified, flat menu with a single cascading Admin item
 const menuItems: MenuItem[] = [
-  // Core Work Area
+  // Primary actions
   {
-    id: 'dashboard',
-    label: 'Dashboard',
-    icon: Home,
-    path: '/dashboard',
-    roles: ['admin', 'title_company', 'notary', 'client', 'signer', 'witness'],
-    section: 'work',
-    description: 'Your main workspace'
+    id: 'create-job',
+    label: 'Create Job',
+    icon: Plus,
+    path: '/create-job',
+    roles: ['admin', 'title_company', 'notary'],
+    description: 'Start a new notarization'
   },
+  // Removed Job Details direct link; details are accessible from Jobs list
+
+  // Workflows
   {
     id: 'jobs',
     label: 'My Jobs',
     icon: Briefcase,
     path: '/jobs',
     roles: ['admin', 'title_company', 'notary', 'client'],
-    section: 'work',
     description: 'Active & completed jobs'
   },
   {
@@ -73,7 +66,6 @@ const menuItems: MenuItem[] = [
     icon: PenTool,
     path: '/signing-jobs',
     roles: ['signer', 'witness'],
-    section: 'work',
     description: 'Your signing assignments'
   },
   {
@@ -82,17 +74,7 @@ const menuItems: MenuItem[] = [
     icon: FileText,
     path: '/job-request',
     roles: ['signer', 'client'],
-    section: 'work',
     description: 'Request notarization services'
-  },
-  {
-    id: 'create-job',
-    label: 'New Job',
-    icon: Plus,
-    path: '/create-job',
-    roles: ['admin', 'title_company', 'notary'],
-    section: 'work',
-    description: 'Start a new notarization'
   },
   {
     id: 'calendar',
@@ -100,18 +82,24 @@ const menuItems: MenuItem[] = [
     icon: Calendar,
     path: '/calendar',
     roles: ['admin', 'notary'],
-    section: 'work',
     description: 'Schedule & appointments'
   },
-  
-  // Personal & Account
+
+  // Personal
+  {
+    id: 'dashboard',
+    label: 'Dashboard',
+    icon: Home,
+    path: '/dashboard',
+    roles: ['admin', 'title_company', 'notary', 'client', 'signer', 'witness'],
+    description: 'Your main workspace'
+  },
   {
     id: 'profile',
     label: 'My Profile',
     icon: User,
     path: '/profile',
     roles: ['admin', 'title_company', 'notary', 'client', 'signer', 'witness'],
-    section: 'personal',
     description: 'Profile, signatures & stamps'
   },
   {
@@ -120,7 +108,6 @@ const menuItems: MenuItem[] = [
     icon: Download,
     path: '/my-documents',
     roles: ['signer', 'witness', 'client', 'notary'],
-    section: 'personal',
     description: 'Your signed documents and downloads'
   },
   {
@@ -129,7 +116,6 @@ const menuItems: MenuItem[] = [
     icon: UserCheck,
     path: '/id-verification',
     roles: ['signer', 'witness', 'client'],
-    section: 'personal',
     description: 'Identity verification and KYC'
   },
   {
@@ -138,7 +124,6 @@ const menuItems: MenuItem[] = [
     icon: DollarSign,
     path: '/payments',
     roles: ['admin', 'title_company', 'notary'],
-    section: 'personal',
     description: 'Billing & financials'
   },
   {
@@ -147,7 +132,6 @@ const menuItems: MenuItem[] = [
     icon: FileText,
     path: '/my-logs',
     roles: ['admin', 'title_company', 'notary', 'client', 'signer', 'witness'],
-    section: 'personal',
     description: 'Your notarization history'
   },
   {
@@ -156,26 +140,23 @@ const menuItems: MenuItem[] = [
     icon: Bell,
     path: '/notifications',
     roles: ['signer', 'witness', 'client', 'notary', 'admin'],
-    section: 'personal',
     description: 'Job updates and alerts'
   },
-  
 
-  
-  // Management (Admin/Title Company)
+  // Admin (Management + System)
   {
-    id: 'management',
-    label: 'Management',
+    id: 'admin',
+    label: 'Admin',
     icon: Settings,
-    path: '/management',
+    path: '/admin',
     roles: ['admin', 'title_company'],
-    section: 'management',
-    description: 'System management',
+    description: 'Administration and settings',
     subsections: [
+      // Management subset (admin + title company)
       {
         id: 'admin-overview',
         label: 'Overview',
-        icon: BarChart3,
+        icon: Activity,
         path: '/dashboard',
         roles: ['admin'],
         description: 'System overview and statistics'
@@ -197,12 +178,12 @@ const menuItems: MenuItem[] = [
         description: 'Centralized approvals dashboard'
       },
       {
-        id: 'job-requests',
+        id: 'admin-job-requests',
         label: 'Job Requests',
         icon: FileText,
         path: '/admin/job-requests',
         roles: ['admin'],
-        description: 'Review and approve signer job requests'
+        description: 'Review signer job requests'
       },
       {
         id: 'verification',
@@ -251,20 +232,9 @@ const menuItems: MenuItem[] = [
         path: '/admin/logs',
         roles: ['admin'],
         description: 'System audit logs'
-      }
-    ]
-  },
-  
-  // System Configuration (Admin only)
-  {
-    id: 'system',
-    label: 'System',
-    icon: Settings,
-    path: '/system',
-    roles: ['admin'],
-    section: 'system',
-    description: 'System configuration',
-    subsections: [
+      },
+
+      // System subset (admin only)
       {
         id: 'closing-types',
         label: 'Closing Types',
@@ -293,34 +263,6 @@ const menuItems: MenuItem[] = [
   }
 ];
 
-const sectionTitles: Record<string, { title: string; icon: any; color: string }> = {
-  work: { 
-    title: 'Work', 
-    icon: Briefcase, 
-    color: 'from-blue-500 to-blue-600' 
-  },
-  personal: { 
-    title: 'Personal', 
-    icon: User, 
-    color: 'from-green-500 to-green-600' 
-  },
-  support: {
-    title: 'Support',
-    icon: HelpCircle,
-    color: 'from-amber-500 to-orange-500'
-  },
-  management: { 
-    title: 'Management', 
-    icon: Shield, 
-    color: 'from-purple-500 to-purple-600' 
-  },
-  system: { 
-    title: 'System', 
-    icon: Settings, 
-    color: 'from-orange-500 to-red-500' 
-  }
-};
-
 export function Sidebar() {
   const [location, setLocation] = useLocation();
   const { user } = useAuth();
@@ -339,14 +281,13 @@ export function Sidebar() {
     const isAdmin = user?.isAdmin || user?.role === 'admin';
     const isNotary = user?.isNotary || user?.role === 'notary';
     
-    // Special handling for create job - only show for subscriber notaries or admins/title companies
+    // Only show Create Job for subscriber notaries or admins/title companies
     if (item.id === 'create-job') {
       return isAdmin || 
              userRole === 'title_company' || 
              (isNotary && user?.notaryType === 'subscriber');
     }
-    
-    // Check if user has the required role/privileges for this menu item
+
     return item.roles.some(requiredRole => {
       switch (requiredRole) {
         case 'admin':
@@ -358,14 +299,6 @@ export function Sidebar() {
       }
     });
   });
-
-  // Group items by section
-  const groupedItems = filteredMenuItems.reduce((acc, item) => {
-    const section = item.section || 'work';
-    if (!acc[section]) acc[section] = [];
-    acc[section].push(item);
-    return acc;
-  }, {} as Record<string, MenuItem[]>);
 
   const renderMenuItem = (item: MenuItem, level = 0) => {
     const Icon = item.icon;
@@ -431,7 +364,18 @@ export function Sidebar() {
         {/* Subsections */}
         {hasSubsections && isExpanded && (
           <div className="mt-2 space-y-1">
-            {item.subsections!.map(subItem => renderMenuItem(subItem, level + 1))}
+            {item.subsections!.filter(sub => {
+              const userRole = user?.role || '';
+              const isAdmin = user?.isAdmin || user?.role === 'admin';
+              return sub.roles.some(requiredRole => {
+                switch (requiredRole) {
+                  case 'admin':
+                    return isAdmin;
+                  default:
+                    return userRole === requiredRole;
+                }
+              });
+            }).map(subItem => renderMenuItem(subItem, level + 1))}
           </div>
         )}
       </div>
@@ -441,32 +385,12 @@ export function Sidebar() {
   return (
     <nav className="w-80 bg-white/95 backdrop-blur-sm h-screen sticky top-0 border-r border-gray-200/50 overflow-y-auto shadow-lg">
       <div className="h-full flex flex-col p-6 space-y-8">
-        {/* Navigation Sections */}
-        <div className="flex-1 space-y-6">
-          {Object.entries(groupedItems).map(([section, items]) => {
-            const sectionInfo = sectionTitles[section];
-            const SectionIcon = sectionInfo.icon;
-            
-            return (
-              <div key={section} className="space-y-3">
-                <div className="flex items-center gap-3 px-3 py-2">
-                  <div className={`p-1.5 bg-gradient-to-br ${sectionInfo.color} rounded-lg shadow-md`}>
-                    <SectionIcon className="h-4 w-4 text-white" />
-                  </div>
-                  <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">
-                    {sectionInfo.title}
-                  </h3>
-                </div>
-                
-                <div className="space-y-2">
-                  {items.map(item => renderMenuItem(item))}
-                </div>
-              </div>
-            );
-          })}
+        {/* Flat navigation list (no section headers) */}
+        <div className="flex-1 space-y-2">
+          {filteredMenuItems.map(item => renderMenuItem(item))}
         </div>
         
-        {/* Enhanced Footer */}
+        {/* Footer */}
         <div className="mt-auto">
           <div className="bg-gradient-to-r from-gray-50 to-white border border-gray-200 rounded-xl p-4 shadow-sm">
             <div className="text-center">

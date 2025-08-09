@@ -40,13 +40,15 @@ interface CertificateStatusCardProps {
   onGenerateCertificate?: (userId: number) => void;
   onRefresh?: () => void;
   isLoading?: boolean;
+  compact?: boolean;
 }
 
 const CertificateStatusCard: React.FC<CertificateStatusCardProps> = ({
   verification,
   onGenerateCertificate,
   onRefresh,
-  isLoading = false
+  isLoading = false,
+  compact = false
 }) => {
   const [generatingFor, setGeneratingFor] = useState<number | null>(null);
 
@@ -128,6 +130,35 @@ const CertificateStatusCard: React.FC<CertificateStatusCardProps> = ({
       day: 'numeric'
     });
   };
+
+  if (compact) {
+    const { totalParticipants, withValidCertificates, withoutCertificates, withExpiredCertificates } = verification.summary;
+    const issues = withoutCertificates + withExpiredCertificates;
+
+    return (
+      <div className="w-full flex items-center justify-between gap-3 p-3 rounded-md border border-gray-200">
+        <div className="flex items-center gap-2 min-w-0">
+          <Shield className="h-4 w-4 text-gray-700" />
+          <div className="flex items-center gap-2 text-sm">
+            {verification.canStartJob ? (
+              <span className="text-green-700 font-medium">Ready to Start</span>
+            ) : (
+              <span className="text-red-700 font-medium">Blocked</span>
+            )}
+            <span className="text-gray-500">·</span>
+            <span className="text-gray-600 truncate">
+              {totalParticipants} total · {withValidCertificates} valid · {withoutCertificates} missing · {withExpiredCertificates} expired
+            </span>
+          </div>
+        </div>
+        {onRefresh && (
+          <Button variant="outline" size="sm" onClick={onRefresh} disabled={isLoading}>
+            {isLoading ? 'Checking…' : 'Refresh'}
+          </Button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <Card className="w-full">

@@ -225,10 +225,11 @@ export function ParticipantRolesManagement() {
   };
 
   const handleSave = () => {
+    const enforcedData = { ...formData, requiresIdVerification: true };
     if (editingRole) {
-      updateRoleMutation.mutate({ id: editingRole.id, roleData: formData });
+      updateRoleMutation.mutate({ id: editingRole.id, roleData: enforcedData });
     } else {
-      createRoleMutation.mutate(formData);
+      createRoleMutation.mutate(enforcedData);
     }
   };
 
@@ -341,14 +342,7 @@ export function ParticipantRolesManagement() {
                   />
                 </div>
                 
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="requiresIdVerification">Requires ID Verification</Label>
-                  <Switch
-                    id="requiresIdVerification"
-                    checked={formData.requiresIdVerification}
-                    onCheckedChange={(checked) => setFormData({ ...formData, requiresIdVerification: checked })}
-                  />
-                </div>
+                {/* ID Verification is always required for compliance; option removed */}
                 
                 <div className="flex items-center justify-between">
                   <Label htmlFor="isActive">Active</Label>

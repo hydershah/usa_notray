@@ -58,7 +58,7 @@ export function NotaryAssignmentCard({ jobId }: NotaryAssignmentCardProps) {
 
   if (loading) {
     return (
-      <Card>
+      <Card className="border-none shadow-none">
         <CardHeader>
           <CardTitle className="flex items-center">
             <User className="h-5 w-5 mr-2" />
@@ -77,7 +77,7 @@ export function NotaryAssignmentCard({ jobId }: NotaryAssignmentCardProps) {
 
   if (error) {
     return (
-      <Card>
+      <Card className="border-none shadow-none">
         <CardHeader>
           <CardTitle className="flex items-center">
             <User className="h-5 w-5 mr-2" />
@@ -95,7 +95,7 @@ export function NotaryAssignmentCard({ jobId }: NotaryAssignmentCardProps) {
   }
 
   return (
-    <Card>
+    <Card className="border-none shadow-none">
       <CardHeader>
         <CardTitle className="flex items-center">
           <User className="h-5 w-5 mr-2" />

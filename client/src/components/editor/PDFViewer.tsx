@@ -888,70 +888,95 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const isMountedRef = useRef<boolean>(true);
 
   // Scroll to tag functionality
-  const scrollToTag = useCallback((tagId: string, pageNumber: number) => {
+  const scrollToTag = useCallback(async (tagId: string, pageNumber: number) => {
     console.log('📍 PDFViewer scrollToTag called:', { tagId, pageNumber, tagsCount: tags.length });
     const tag = tags.find(t => t.id === tagId);
-    if (!tag || !containerRef.current) {
-      console.warn('📍 scrollToTag failed:', { tagFound: !!tag, containerExists: !!containerRef.current });
+    if (!tag || !containerRef.current || !pdfDoc) {
+      console.warn('📍 scrollToTag failed:', { tagFound: !!tag, containerExists: !!containerRef.current, pdfDoc: !!pdfDoc });
       return;
     }
-    
+
     console.log('📍 Found tag for scrolling:', { 
       id: tag.id, 
       coordinates: tag.coordinates, 
       pageNumber: tag.coordinates.pageNumber 
     });
 
+    // Ensure target page is rendered and scale factor is known
+    if (!renderedPages.has(pageNumber)) {
+      try {
+        await renderPage(pageNumber, false);
+      } catch (e) {
+        console.warn('⚠️ Failed to pre-render page before scroll:', pageNumber, e);
+      }
+    }
+
+    // Small delay to allow layout/refs to settle
+    await new Promise(resolve => setTimeout(resolve, 10));
+
     // Calculate exact position of the tag within the page
     const pageContainer = pageContainerRefs.current[pageNumber - 1];
     if (pageContainer) {
       const scrollContainer = containerRef.current;
-      
-      // Get the current scale factor for this page
-      const currentZoom = viewer.zoomLevel || 1;
-      const scaleFactor = scaleFactors.get(pageNumber) || 1;
-      const totalScale = scaleFactor * currentZoom;
-      
+
+      // scaleFactors already includes current zoom for that page
+      const finalScale = scaleFactors.get(pageNumber) || 1;
+      const totalScale = finalScale;
+
       console.log('📍 Scroll calculation:', {
-        currentZoom,
-        scaleFactor,
+        finalScale,
         totalScale,
         tagX: tag.coordinates.x,
         tagY: tag.coordinates.y,
         pageTop: pageContainer.offsetTop
       });
-      
+
       // Calculate tag position within the page
       const tagX = tag.coordinates.x * totalScale;
       const tagY = tag.coordinates.y * totalScale;
-      
-      // Calculate absolute scroll position: page top + tag Y position - viewport offset
-      const pageTop = pageContainer.offsetTop;
+      const tagWidth = ((tag.coordinates.width ?? getTagDimensions(tag.tagType).width) * totalScale) || 0;
+      const tagHeight = ((tag.coordinates.height ?? getTagDimensions(tag.tagType).height) * totalScale) || 0;
+
+      // Scroll so the tag is centered in the viewport
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const pageRect = pageContainer.getBoundingClientRect();
+      const pageTop = pageRect.top - containerRect.top + scrollContainer.scrollTop;
+      const pageLeft = pageRect.left - containerRect.left + scrollContainer.scrollLeft;
       const tagAbsoluteY = pageTop + tagY;
-      const viewportOffset = 150; // Keep tag 150px from top of viewport
-      const scrollTop = Math.max(0, tagAbsoluteY - viewportOffset);
-      
+      const tagAbsoluteX = pageLeft + tagX;
+      const scrollTop = Math.max(
+        0,
+        tagAbsoluteY - (scrollContainer.clientHeight / 2) + (tagHeight / 2)
+      );
+      const scrollLeft = Math.max(
+        0,
+        tagAbsoluteX - (scrollContainer.clientWidth / 2) + (tagWidth / 2)
+      );
+
       console.log('📍 Scrolling to:', {
         tagAbsoluteY,
         scrollTop,
-        currentScrollTop: scrollContainer.scrollTop
+        currentScrollTop: scrollContainer.scrollTop,
+        scrollLeft,
+        currentScrollLeft: scrollContainer.scrollLeft
       });
-      
+
       scrollContainer.scrollTo({
         top: scrollTop,
+        left: scrollLeft,
         behavior: 'smooth'
       });
 
-      // After scrolling, highlight the tag briefly
+      // After scrolling, notify caller
       setTimeout(() => {
         if (onScrollToTag) {
           onScrollToTag(tagId, pageNumber);
         }
-      }, 500); // Wait for scroll to complete
+      }, 250);
     } else {
       console.warn('📍 Page container not found for page:', pageNumber);
     }
-  }, [tags, onScrollToTag, viewer.zoomLevel, scaleFactors]);
+  }, [tags, onScrollToTag, viewer.zoomLevel, scaleFactors, renderedPages, pdfDoc, renderPage]);
 
   // Expose scroll to tag function for external use
   React.useEffect(() => {
@@ -1728,36 +1753,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       const scrollContainer = containerRef.current;
       if (pageContainer && scrollContainer) {
         setCurrentPage(pageNumber);
-        
-        // Calculate exact position of the tag within the page
-        const currentZoom = useEditorStore.getState().viewer.zoomLevel || 1;
-        const scaleFactor = scaleFactors.get(pageNumber) || 1;
-        const totalScale = scaleFactor * currentZoom;
-        
-        // Calculate tag position within the page
-        const tagY = tag.coordinates.y * totalScale;
-        
-        // Calculate absolute scroll position: page top + tag Y position - viewport offset
-        const pageTop = pageContainer.offsetTop;
-        const tagAbsoluteY = pageTop + tagY;
-        const viewportOffset = 150; // Keep tag 150px from top of viewport
-        const scrollTop = Math.max(0, tagAbsoluteY - viewportOffset);
-        
-        console.log('📍 Deep-page jump scroll calculation:', {
-          pageNumber,
-          currentZoom,
-          scaleFactor,
-          totalScale,
-          tagY: tag.coordinates.y,
-          scaledTagY: tagY,
-          pageTop,
-          tagAbsoluteY,
-          scrollTop,
-          currentScrollTop: scrollContainer.scrollTop
-        });
-        
-        scrollContainer.scrollTo({ top: scrollTop, behavior: 'smooth' });
-        onScrollToTag?.(tag.id, pageNumber);
+        // Use the centralized scrollToTag logic to compute exact position and center the tag
+        await new Promise(r => setTimeout(r, 10));
+        scrollToTag(tag.id, pageNumber);
       } else {
         console.warn('📍 Deep-page jump: missing containers', { 
           pageContainer: !!pageContainer, 

@@ -132,6 +132,7 @@ router.get('/job-invitations', verifyToken, requireNotaryOrAdmin, cacheUserData(
     const jobIds = basicJobs.rows.map(job => job.id);
 
     // Step 2: Get participant counts efficiently (single query for all jobs)
+    const jobIdsSql = sql.join(jobIds.map((id: number) => sql`${id}`), sql`, `);
     const participantStats = await db.execute(sql`
       SELECT 
         jp.job_id,
@@ -146,7 +147,7 @@ router.get('/job-invitations', verifyToken, requireNotaryOrAdmin, cacheUserData(
         END) as verified_participants
       FROM job_participants jp
       LEFT JOIN users u ON jp.user_id = u.id AND u.role NOT IN ('admin', 'notary')
-      WHERE jp.job_id = ANY(${jobIds})
+      WHERE jp.job_id IN (${jobIdsSql})
       GROUP BY jp.job_id
     `);
 
@@ -154,7 +155,7 @@ router.get('/job-invitations', verifyToken, requireNotaryOrAdmin, cacheUserData(
     const documentCounts = await db.execute(sql`
       SELECT job_id, COUNT(*) as document_count
       FROM job_documents
-      WHERE job_id = ANY(${jobIds})
+      WHERE job_id IN (${jobIdsSql})
       GROUP BY job_id
     `);
 

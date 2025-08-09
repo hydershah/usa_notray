@@ -315,28 +315,29 @@ export default function JobDetailsPage() {
 
   return (
     <MainLayout>
-      <div className="max-w-6xl mx-auto p-6 space-y-6">
+      <div className="max-w-6xl mx-auto p-6 space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3">
             <Button variant="outline" onClick={handleBackToJobs}>
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to Jobs
             </Button>
             <div>
-              <h1 className="text-3xl font-bold">Job #{job.id}</h1>
-              <p className="text-gray-600">{job.titleCompany}</p>
+              <h1 className="text-2xl font-semibold">Job #{job.id}</h1>
+              <p className="text-gray-600 text-sm">{job.titleCompany}</p>
             </div>
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2">
             <Button 
               onClick={() => setIsEditModalOpen(true)}
               variant="outline"
               className="border-orange-600 text-orange-600 hover:bg-orange-50"
               title="Edit job details, signers, and documents"
+              size="sm"
             >
               <Edit3 className="h-4 w-4 mr-2" />
-              Edit Job
+              Edit
             </Button>
             <Button 
               onClick={handleStartTagging} 
@@ -354,9 +355,10 @@ export default function JobDetailsPage() {
                   ? 'Notary needs a valid digital certificate to start tagging'
                   : 'Start tagging documents'
               }
+              size="sm"
             >
               <Edit3 className="h-4 w-4 mr-2" />
-              Start Tagging
+              Tag
             </Button>
             <Button 
               onClick={handleStartLiveSession} 
@@ -371,9 +373,10 @@ export default function JobDetailsPage() {
                   ? 'All participants need valid digital certificates to start'
                   : 'Start the live signing session'
               }
+              size="sm"
             >
               <Video className="h-4 w-4 mr-2" />
-              Start Live Session
+              Live Session
             </Button>
             <Badge className={getStatusColor(job.jobStatus)}>
               {job.jobStatus}
@@ -381,44 +384,45 @@ export default function JobDetailsPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Assigned Notary */}
-          <NotaryAssignmentCard jobId={job.id} />
+          <div className="lg:col-span-1">
+            <NotaryAssignmentCard jobId={job.id} />
+          </div>
 
           {/* Job Information */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
+          <Card className="border-none shadow-none lg:col-span-2">
+            <CardHeader className="py-3">
+              <CardTitle className="flex items-center text-base">
                 <FileText className="h-5 w-5 mr-2" />
                 Job Information
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            <CardContent className="space-y-3 pt-0">
+              <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <label className="text-sm font-medium text-gray-500">Reference</label>
-                  <p className="text-sm">{job.internalReference || `Job #${job.id}`}</p>
+                  <label className="text-[12px] font-medium text-gray-500">Reference</label>
+                  <p>{job.internalReference || `Job #${job.id}`}</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-500">Closing Type</label>
-                  <p className="text-sm">{job.closingType}</p>
+                  <label className="text-[12px] font-medium text-gray-500">Closing Type</label>
+                  <p>{job.closingType}</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-500">KBA Required</label>
-                  <p className="text-sm">{job.kbaRequired ? 'Yes' : 'No'}</p>
+                  <label className="text-[12px] font-medium text-gray-500">KBA Required</label>
+                  <p>{job.kbaRequired ? 'Yes' : 'No'}</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-500">Created</label>
-                  <p className="text-sm">{formatDate(job.createdAt)}</p>
+                  <label className="text-[12px] font-medium text-gray-500">Created</label>
+                  <p>{formatDate(job.createdAt)}</p>
                 </div>
               </div>
-              
               {(job.scheduledAt || job.selectedDate || job.selectedTime) && (
                 <div>
-                  <label className="text-sm font-medium text-gray-500">Scheduled</label>
-                  <div className="flex items-center mt-1">
+                  <label className="text-[12px] font-medium text-gray-500">Scheduled</label>
+                  <div className="flex items-center mt-1 text-sm">
                     <Calendar className="h-4 w-4 mr-2 text-blue-600" />
-                    <span className="text-sm">
+                    <span>
                       {job.scheduledAt ? (
                         `${new Date(job.scheduledAt).toLocaleDateString()} at ${new Date(job.scheduledAt).toLocaleTimeString()}`
                       ) : (
@@ -428,13 +432,12 @@ export default function JobDetailsPage() {
                   </div>
                 </div>
               )}
-
               {job.propertyAddressOne && (
                 <div>
-                  <label className="text-sm font-medium text-gray-500">Property Address</label>
-                  <div className="flex items-start mt-1">
+                  <label className="text-[12px] font-medium text-gray-500">Property Address</label>
+                  <div className="flex items-start mt-1 text-sm">
                     <MapPin className="h-4 w-4 mr-2 text-gray-600 mt-0.5" />
-                    <div className="text-sm">
+                    <div>
                       <p>{job.propertyAddressOne}</p>
                       {job.propertyAddressTwo && <p>{job.propertyAddressTwo}</p>}
                       <p>{job.propertyCity}, {job.propertyState} {job.propertyZipCode}</p>
@@ -446,70 +449,69 @@ export default function JobDetailsPage() {
           </Card>
 
           {/* Signers */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
+          <Card className="border-none shadow-none lg:col-span-3">
+            <CardHeader className="py-3">
+              <CardTitle className="flex items-center text-base">
                 <Users className="h-5 w-5 mr-2" />
                 Signers ({job.signers?.length || 0})
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-0">
               {job.signers && job.signers.length > 0 ? (
-                <div className="space-y-3">
+                <div className="divide-y divide-gray-200 border-t border-b">
                   {job.signers.map((signer: any, index: number) => (
-                    <div key={signer.id} className="border rounded-lg p-3">
+                    <div key={signer.id} className="py-3">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="font-medium">{signer.signerName}</p>
-                          <p className="text-sm text-gray-600 capitalize">{signer.signerRole}</p>
+                          <p className="font-medium text-sm">{signer.signerName}</p>
+                          <p className="text-xs text-gray-600 capitalize">{signer.signerRole}</p>
                         </div>
-                        <Badge variant="outline">
-                          Signer {index + 1}
-                        </Badge>
+                        <Badge variant="outline">Signer {index + 1}</Badge>
                       </div>
-                      
                       {(signer.signerEmail || signer.signerPhone) && (
-                        <div className="mt-2 space-y-1">
+                        <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-600">
                           {signer.signerEmail && (
-                            <div className="flex items-center text-sm text-gray-600">
+                            <div className="flex items-center">
                               <Mail className="h-3 w-3 mr-2" />
                               {signer.signerEmail}
                             </div>
                           )}
                           {signer.signerPhone && (
-                            <div className="flex items-center text-sm text-gray-600">
+                            <div className="flex items-center">
                               <Phone className="h-3 w-3 mr-2" />
                               {signer.signerPhone}
                             </div>
                           )}
                         </div>
                       )}
-                      
                       <div className="mt-2">
-                        <Badge className={signer.invitationSentAt ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}>
-                          {signer.invitationSentAt ? "Invitation Sent" : "Pending"}
+                        <Badge className={signer.invitationSentAt ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>
+                          {signer.invitationSentAt ? 'Invitation Sent' : 'Pending'}
                         </Badge>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-500 text-center py-4">No signers added yet</p>
+                <p className="text-gray-500 text-center py-4 text-sm">No signers added yet</p>
               )}
             </CardContent>
           </Card>
 
           {/* Completion Report */}
-          <JobCompletionReport 
-            jobId={job.id} 
-            jobStatus={job.jobStatus} 
-          />
+          <div className="lg:col-span-3">
+            <JobCompletionReport 
+              jobId={job.id} 
+              jobStatus={job.jobStatus}
+              minimal
+            />
+          </div>
         </div>
 
         {/* Digital Certificate Status */}
         {isLoadingCertificates && (
-          <Card className="border-blue-300 bg-blue-50">
-            <CardContent className="pt-6">
+          <Card className="border-none bg-blue-50 shadow-none">
+            <CardContent className="pt-4">
               <div className="text-blue-800 flex items-center space-x-2">
                 <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
                 <p>🔄 <strong>Loading certificate verification...</strong></p>
@@ -519,8 +521,8 @@ export default function JobDetailsPage() {
         )}
         
         {certificateError && (
-          <Card className="border-red-300 bg-red-50">
-            <CardContent className="pt-6">
+          <Card className="border-none bg-red-50 shadow-none">
+            <CardContent className="pt-4">
               <div className="text-red-800">
                 <p>❌ <strong>Certificate Verification Error:</strong></p>
                 <p className="text-sm mt-1">{certificateError.message}</p>
@@ -538,8 +540,8 @@ export default function JobDetailsPage() {
         )}
         
         {!isLoadingCertificates && !certificateError && !certificateVerification && (
-          <Card className="border-yellow-300 bg-yellow-50">
-            <CardContent className="pt-6">
+          <Card className="border-none bg-yellow-50 shadow-none">
+            <CardContent className="pt-4">
               <div className="text-yellow-800">
                 <p>🔍 <strong>DEBUG:</strong> Certificate verification data not loaded</p>
                 <p className="text-sm">jobId: {jobId}</p>
@@ -563,34 +565,33 @@ export default function JobDetailsPage() {
             onGenerateCertificate={handleGenerateCertificate}
             onRefresh={refetchCertificates}
             isLoading={isLoadingCertificates}
+            compact
           />
         )}
 
-
-
         {/* Documents */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
+        <Card className="border-none shadow-none">
+          <CardHeader className="py-3">
+            <CardTitle className="flex items-center text-base">
               <FileText className="h-5 w-5 mr-2" />
               Documents ({documents.length})
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-0">
             {documents.length > 0 ? (
-              <div className="space-y-3">
+              <div className="divide-y divide-gray-200 border-t border-b">
                 {documents.map((document: any) => (
-                  <div key={document.id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div key={document.id} className="py-3 flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <FileText className="h-8 w-8 text-blue-600" />
+                      <FileText className="h-6 w-6 text-blue-600" />
                       <div>
-                        <p className="font-medium">{document.originalName}</p>
-                        <p className="text-sm text-gray-600">
+                        <p className="font-medium text-sm">{document.originalName}</p>
+                        <p className="text-xs text-gray-600">
                           Uploaded {formatDate(document.uploadedAt)}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-1">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -620,43 +621,43 @@ export default function JobDetailsPage() {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 text-gray-500">
-                <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p className="mb-2">No documents uploaded yet</p>
+              <div className="text-center py-6 text-gray-500">
+                <FileText className="h-10 w-10 mx-auto mb-3 opacity-50" />
+                <p className="text-sm">No documents uploaded yet</p>
               </div>
             )}
           </CardContent>
         </Card>
 
         {/* Completed Documents */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
+        <Card className="border-none shadow-none">
+          <CardHeader className="py-3">
+            <CardTitle className="flex items-center text-base">
               <FileCheck className="h-5 w-5 mr-2 text-green-600" />
               Completed Documents ({completedDocuments.length})
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-0">
             {completedDocuments.length > 0 ? (
-              <div className="space-y-3">
+              <div className="divide-y divide-green-200 border-t border-b">
                 {completedDocuments.map((document: any) => (
-                  <div key={document.id} className="flex items-center justify-between p-3 border border-green-200 bg-green-50 rounded-lg">
+                  <div key={document.id} className="py-3 flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <FileCheck className="h-8 w-8 text-green-600" />
+                      <FileCheck className="h-6 w-6 text-green-600" />
                       <div>
-                        <p className="font-medium text-green-900">{document.fileName || `job_${jobId}_signed.pdf`}</p>
-                        <p className="text-sm text-green-700">
+                        <p className="font-medium text-green-900 text-sm">{document.fileName || `job_${jobId}_signed.pdf`}</p>
+                        <p className="text-xs text-green-700">
                           Completed: {formatDate(document.completedAt || document.createdAt)}
                         </p>
                         {document.fileSize && (
-                          <p className="text-xs text-green-600">
+                          <p className="text-[11px] text-green-600">
                             Size: {(document.fileSize / 1024 / 1024).toFixed(2)} MB
                           </p>
                         )}
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <Badge className="bg-green-100 text-green-800 border-green-200">
+                      <Badge className="bg-green-100 text-green-800 border-green-200"> 
                         <CheckCircle className="h-3 w-3 mr-1" />
                         Signed & Completed
                       </Badge>
@@ -664,7 +665,6 @@ export default function JobDetailsPage() {
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          // Download signed document
                           const downloadUrl = `/api/documents/signed/${encodeURIComponent(document.fileName)}`;
                           window.open(downloadUrl, '_blank');
                         }}
@@ -678,17 +678,17 @@ export default function JobDetailsPage() {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 text-gray-500">
-                <FileCheck className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p className="mb-2">No completed documents yet</p>
-                <p className="text-sm">Documents will appear here after signing sessions</p>
+              <div className="text-center py-6 text-gray-500">
+                <FileCheck className="h-10 w-10 mx-auto mb-3 opacity-50" />
+                <p className="text-sm">No completed documents yet</p>
+                <p className="text-xs">Documents will appear here after signing sessions</p>
               </div>
             )}
           </CardContent>
         </Card>
 
         {/* Session Recording & Activity Timeline */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <SessionRecordingCard jobId={job.id} />
           <ActivityTimelineCard jobId={job.id} />
         </div>

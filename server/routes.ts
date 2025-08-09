@@ -5092,7 +5092,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
-      const roleData = req.body;
+      const roleData = { ...req.body, requiresIdVerification: true };
       const role = await storage.createParticipantRole(roleData);
       res.status(201).json(role);
     } catch (error) {
@@ -5108,7 +5108,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const roleId = parseInt(req.params.id);
-      const updateData = req.body;
+      const updateData = { ...req.body, requiresIdVerification: true };
       const role = await storage.updateParticipantRole(roleId, updateData);
       
       if (!role) {

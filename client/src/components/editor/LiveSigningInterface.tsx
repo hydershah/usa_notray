@@ -1012,7 +1012,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         <div className="flex-1 overflow-hidden min-w-0">
           <PDFTaggingEditor
             ref={editorRef}
-            sessionId={sessionId}
+            sessionId={liveSessionId || sessionId}
             mode="signing"
             documents={documents}
             participants={participants}

@@ -27,12 +27,19 @@ export const IncompleteTagHUD: React.FC<IncompleteTagHUDProps> = ({
     const total = tags.length;
     const unfilledTags = tags
       .filter(t => !t.isCompleted)
+      .filter(t => t.id) // Ensure tag has valid ID
       .sort((a, b) => {
         if (a.documentId !== b.documentId) return String(a.documentId).localeCompare(String(b.documentId));
         if (a.coordinates.pageNumber !== b.coordinates.pageNumber) return a.coordinates.pageNumber - b.coordinates.pageNumber;
         return String(a.id).localeCompare(String(b.id));
       });
     const completed = total - unfilledTags.length;
+    console.log('🎯 HUD: Processed unfilled tags:', { 
+      total, 
+      unfilled: unfilledTags.length, 
+      completed,
+      tagIds: unfilledTags.map(t => t.id)
+    });
     return { unfilled: unfilledTags, completedCount: completed, totalCount: total };
   }, [tags]);
 
@@ -56,21 +63,29 @@ export const IncompleteTagHUD: React.FC<IncompleteTagHUDProps> = ({
   const current = filteredUnfilled[cursorIndex];
 
   const jumpTo = useCallback((idx: number) => {
+    console.log('🎯 HUD jumpTo called with index:', idx, 'total:', filteredUnfilled.length);
     if (filteredUnfilled.length === 0) return;
     const target = filteredUnfilled[idx];
-    if (target) onJumpToTag(target.id);
+    if (target) {
+      console.log('🎯 HUD jumping to tag:', target.id, 'on page:', target.coordinates.pageNumber);
+      onJumpToTag(target.id);
+    }
   }, [filteredUnfilled, onJumpToTag]);
 
   const jumpNext = useCallback(() => {
+    console.log('🎯 HUD jumpNext called, current index:', cursorIndex, 'total:', filteredUnfilled.length);
     if (filteredUnfilled.length === 0) return;
     const next = (cursorIndex + 1) % filteredUnfilled.length;
+    console.log('🎯 HUD jumpNext moving to index:', next);
     setCursorIndex(next);
     jumpTo(next);
   }, [cursorIndex, filteredUnfilled.length, jumpTo]);
 
   const jumpPrev = useCallback(() => {
+    console.log('🎯 HUD jumpPrev called, current index:', cursorIndex, 'total:', filteredUnfilled.length);
     if (filteredUnfilled.length === 0) return;
     const prev = (cursorIndex - 1 + filteredUnfilled.length) % filteredUnfilled.length;
+    console.log('🎯 HUD jumpPrev moving to index:', prev);
     setCursorIndex(prev);
     jumpTo(prev);
   }, [cursorIndex, filteredUnfilled.length, jumpTo]);

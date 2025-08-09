@@ -20,6 +20,7 @@ import { toast } from 'sonner';
 interface JobCompletionReportProps {
   jobId: number;
   jobStatus: string;
+  minimal?: boolean;
 }
 
 interface CompletionReportInfo {
@@ -28,7 +29,7 @@ interface CompletionReportInfo {
   generatedAt?: string;
 }
 
-export function JobCompletionReport({ jobId, jobStatus }: JobCompletionReportProps) {
+export function JobCompletionReport({ jobId, jobStatus, minimal = false }: JobCompletionReportProps) {
   const [reportInfo, setReportInfo] = useState<CompletionReportInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -143,6 +144,16 @@ export function JobCompletionReport({ jobId, jobStatus }: JobCompletionReportPro
   }, [jobId]);
 
   if (loading) {
+    if (minimal) {
+      return (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            <span>Loading report information...</span>
+          </div>
+        </div>
+      );
+    }
     return (
       <Card>
         <CardHeader>
@@ -164,7 +175,57 @@ export function JobCompletionReport({ jobId, jobStatus }: JobCompletionReportPro
   const isJobCompleted = jobStatus === 'completed';
   const hasReport = reportInfo?.exists;
 
-
+  if (minimal) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <FileText className="h-4 w-4" />
+          <span>Completion Report</span>
+        </div>
+        {!isJobCompleted ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Clock className="h-3 w-3" />
+            <span>Generated after job is finished</span>
+          </div>
+        ) : hasReport ? (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-green-600 text-sm">
+              <CheckCircle className="h-4 w-4" />
+              <span>Available</span>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={downloadReport} disabled={downloading} size="sm">
+                {downloading ? (
+                  <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                ) : (
+                  <Download className="h-3 w-3 mr-1" />
+                )}
+                Download
+              </Button>
+              <Button variant="outline" onClick={generateReport} disabled={generating} size="sm">
+                <RefreshCw className="h-3 w-3" />
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-amber-600 text-sm">
+            <AlertCircle className="h-4 w-4" />
+            <span>Not generated</span>
+            <Button
+              onClick={generateReport}
+              disabled={generating}
+              variant="outline"
+              size="sm"
+              className="ml-auto"
+            >
+              <FileText className="h-3 w-3 mr-1" />
+              Generate
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <Card>

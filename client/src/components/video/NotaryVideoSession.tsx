@@ -215,7 +215,7 @@ export const NotaryVideoSession: React.FC<NotaryVideoSessionProps> = ({
   // Main video session
   return (
     <div className={cn("h-full", className)}>
-      {memoizedToken ? (
+      {(memoizedToken || memoizedRoomUrl) ? (
         <NotaryVideoProvider 
           token={memoizedToken}
           roomUrl={memoizedRoomUrl}

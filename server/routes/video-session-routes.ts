@@ -51,6 +51,20 @@ router.post('/notary/:jobId/video-session',
       const { jobId } = req.params;
       const { participants } = req.body;
 
+      // Ensure the requesting user (admin/notary) is included as a participant (as notary/host)
+      const user = req.user as AuthUser | undefined;
+      const isAdminOrNotary = !!user && (user.role === 'admin' || user.role === 'notary' || (Array.isArray(user.privileges) && user.privileges.includes('admin')));
+      const existingIds = Array.isArray(participants) ? new Set(participants.map((p: any) => p.id?.toString())) : new Set<string>();
+      const finalParticipants = Array.isArray(participants) ? [...participants] : [];
+      if (isAdminOrNotary && user && !existingIds.has(user.id.toString())) {
+        finalParticipants.push({
+          id: user.id.toString(),
+          name: (user as any).firstName && (user as any).lastName ? `${(user as any).firstName} ${(user as any).lastName}` : (user as any).username || user.email || 'Host',
+          role: 'notary' as const,
+          email: user.email
+        });
+      }
+
       // Check if database schema exists
       const schemaExists = await checkDatabaseSchema();
       if (!schemaExists) {
@@ -65,7 +79,7 @@ router.post('/notary/:jobId/video-session',
       
       // Generate tokens for each participant
       const tokens = await Promise.all(
-        participants.map((participant: any) =>
+        finalParticipants.map((participant: any) =>
           dailyApi.createMeetingToken(room.name, participant)
         )
       );
@@ -88,7 +102,7 @@ router.post('/notary/:jobId/video-session',
           .returning();
 
         // Create participants
-        const participantData = participants.map((p: any) => ({
+        const participantData = finalParticipants.map((p: any) => ({
           sessionId: session.id,
           userId: parseInt(p.id),
           role: p.role,
@@ -105,7 +119,7 @@ router.post('/notary/:jobId/video-session',
           roomName: room.name,
           status: 'active',
           message: 'Video session created successfully',
-          participants: participants.map((p: any, index: number) => ({
+          participants: finalParticipants.map((p: any, index: number) => ({
             ...p,
             token: tokens[index]
           }))

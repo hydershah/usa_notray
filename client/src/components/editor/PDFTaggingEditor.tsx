@@ -22,6 +22,7 @@ import type {
   TagCoordinates
 } from '@/types/editor';
 import type { WebSocketConnection } from '@/hooks/editor/useWebSocket';
+import { authApi } from '@/lib/auth';
 
 interface PDFTaggingEditorProps {
   sessionId: string;
@@ -178,16 +179,25 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
   useImperativeHandle(ref, () => ({
     jumpToTag: async (tagId: string) => {
       try {
+        console.log('🎯 jumpToTag called with tagId:', tagId);
         const targetTag = useEditorStore.getState().tags.find(t => t.id.toString() === tagId.toString());
         if (!targetTag) {
-          console.warn('jumpToTag: tag not found', tagId);
+          console.warn('🚫 jumpToTag: tag not found', tagId, 'Available tags:', useEditorStore.getState().tags.map(t => t.id));
           return;
         }
+
+        console.log('🎯 Found target tag:', { 
+          id: targetTag.id, 
+          documentId: targetTag.documentId, 
+          pageNumber: targetTag.coordinates.pageNumber,
+          currentDoc: currentDocument?.id 
+        });
 
         // Switch document if needed
         if (!currentDocument || currentDocument.id !== targetTag.documentId) {
           const targetDoc = documents.find(d => d.id === targetTag.documentId);
           if (targetDoc) {
+            console.log('🔄 Switching to document:', targetDoc.id);
             await (async () => {
               await handleDocumentChange(targetDoc);
             })();
@@ -195,6 +205,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         }
 
         // Set page and highlight
+        console.log('📄 Setting page to:', targetTag.coordinates.pageNumber, 'and highlighting tag:', targetTag.id);
         setCurrentPage(targetTag.coordinates.pageNumber);
         setHighlightedTagId(targetTag.id);
         // Clear highlight after a short delay
@@ -410,11 +421,26 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         if (currentParticipant) {
           setCurrentUser(currentParticipant);
           setSelectedUser(currentParticipant);
+        } else {
+          const authUser = authApi.getStoredUser();
+          if (authUser) {
+            const defaultTarget = participants.find(p => p.userType === 'signer')
+              || participants.find(p => p.userType === 'witness')
+              || participants[0];
+            if (defaultTarget) {
+              setSelectedUser(defaultTarget);
+            }
+          }
         }
 
         // Set mode configuration - PROPER SIGNER RESTRICTIONS
-        const isNotary = currentParticipant?.userType === 'notary' || currentParticipant?.role === 'notary';
-        const isAdmin = currentParticipant?.role === 'admin';
+        const authUser = authApi.getStoredUser();
+        const authRole = authUser?.role || '';
+        const authPrivileges = authUser?.privileges || [];
+        const isAdminFromAuth = authRole === 'admin' || authPrivileges.includes('admin');
+        const isNotaryFromAuth = authRole === 'notary' || !!authUser?.isNotary;
+        const isNotary = currentParticipant?.userType === 'notary' || currentParticipant?.role === 'notary' || isNotaryFromAuth;
+        const isAdmin = currentParticipant?.role === 'admin' || isAdminFromAuth;
         
         const canPlaceTags = mode === 'tagging' || (mode === 'signing' && (isNotary || isAdmin));
         
@@ -426,7 +452,9 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
           isAdmin,
           canPlaceTags,
           userType: currentParticipant?.userType,
-          role: currentParticipant?.role
+          role: currentParticipant?.role,
+          authRole,
+          authPrivileges
         });
         
         setMode({
@@ -1604,12 +1632,34 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
             tags={tags.filter(t => t.documentId === currentDocument.id)}
             participants={participants}
             currentUserId={currentUserId}
-            onJumpToTag={(tagId) => {
-              // delegate to exposed handler
-              const target = useEditorStore.getState().tags.find(t => t.id.toString() === tagId.toString());
-              if (!target) return;
-              setHighlightedTagId(tagId);
-              setCurrentPage(target.coordinates.pageNumber);
+            onJumpToTag={async (tagId) => {
+              // Call the actual jumpToTag function from useImperativeHandle
+              try {
+                console.log('🎯 HUD calling jumpToTag for:', tagId);
+                const targetTag = useEditorStore.getState().tags.find(t => t.id.toString() === tagId.toString());
+                if (!targetTag) {
+                  console.warn('🚫 HUD jumpToTag: tag not found', tagId);
+                  return;
+                }
+
+                // Switch document if needed
+                if (!currentDocument || currentDocument.id !== targetTag.documentId) {
+                  const targetDoc = documents.find(d => d.id === targetTag.documentId);
+                  if (targetDoc) {
+                    console.log('🔄 HUD switching to document:', targetDoc.id);
+                    await handleDocumentChange(targetDoc);
+                  }
+                }
+
+                // Set page and highlight
+                console.log('📄 HUD setting page to:', targetTag.coordinates.pageNumber, 'and highlighting tag:', targetTag.id);
+                setCurrentPage(targetTag.coordinates.pageNumber);
+                setHighlightedTagId(targetTag.id);
+                // Clear highlight after a short delay
+                window.setTimeout(() => setHighlightedTagId(null), 2000);
+              } catch (e) {
+                console.error('HUD jumpToTag failed', e);
+              }
             }}
             className="pointer-events-auto"
           />
