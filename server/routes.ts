@@ -8500,6 +8500,11 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   
   // Register admin logs routes
   app.use('/api/admin', adminLogsRoutes);
+  
+  // Register admin auth/security routes
+  const adminAuthSecurityRoutes = (await import('./routes/admin-auth-security-routes')).default;
+  app.use('/api/admin', adminAuthSecurityRoutes);
+
   app.use('/api/notary', notaryVerificationRoutes);
   app.use('/api/notary', notaryJobApprovalRoutes);
   
@@ -10786,8 +10791,8 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       }
 
       // Parse existing contentData and update styling
-      let contentData: any = {
-        fontSize: 12,
+      let contentData: { fontSize: number; fontFamily: string; textColor: string; timestamp?: string } = {
+        fontSize: 16,
         fontFamily: 'Arial',
         textColor: '#000000'
       };

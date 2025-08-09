@@ -27,6 +27,7 @@ const breadcrumbMap: Record<string, { label: string; parent?: string }> = {
   '/admin/approvals-hub': { label: 'Approvals Hub', parent: 'Management' },
   '/admin/verification': { label: 'KYC/KBA', parent: 'Management' },
   '/admin/users': { label: 'Users', parent: 'Management' },
+  '/admin/banned-users': { label: 'Banned Users', parent: 'Management' },
   '/admin/notaries': { label: 'Notaries', parent: 'Management' },
   '/admin/companies': { label: 'Companies', parent: 'Management' },
   '/admin/job-requests': { label: 'Job Requests', parent: 'Management' },

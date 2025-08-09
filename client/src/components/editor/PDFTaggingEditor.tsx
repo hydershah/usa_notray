@@ -148,9 +148,18 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
     setCurrentPage,
     updateTag
   } = useEditorStore();
-
-  const isNotaryUser = useMemo(() => {
-    return currentUser?.userType === 'notary' || currentUser?.role === 'notary';
+ 
+  const canSeeRightPanel = useMemo(() => {
+    const authUser = authApi.getStoredUser();
+    const authIsAdmin = !!(authUser?.role === 'admin' || authUser?.isAdmin || authUser?.privileges?.includes?.('admin'));
+    const authIsNotary = !!(authUser?.role === 'notary' || authUser?.isNotary);
+    return (
+      currentUser?.userType === 'notary' ||
+      currentUser?.role === 'notary' ||
+      currentUser?.role === 'admin' ||
+      authIsAdmin ||
+      authIsNotary
+    );
   }, [currentUser]);
 
   // Handle document switching (placed before jumpToTag to avoid use-before-declare)
@@ -458,7 +467,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         const isNotary = currentParticipant?.userType === 'notary' || currentParticipant?.role === 'notary' || isNotaryFromAuth;
         const isAdmin = currentParticipant?.role === 'admin' || isAdminFromAuth;
         
-        const canPlaceTags = mode === 'tagging' || ((mode === 'signing' || mode === 'notary') && (isNotary || isAdmin));
+        const canPlaceTags = mode === 'tagging' || mode === 'signing' || mode === 'notary';
         
         console.log('🔧 Setting editor mode:', {
           mode,
@@ -680,11 +689,8 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
   }, [sessionId, toast, tags, setTags, currentUserId, updateTag]);
 
   // Auto-fill disabled in signing mode
-  const handleAutoFillTag = useCallback(async (tag: DocumentTag) => {
+  const handleAutoFillTag = useCallback(async (tag: DocumentTag): Promise<boolean> => {
     try {
-      // Prepare selected tag so handleTagContentSave can update it
-      setSelectedTagForInput(tag);
-
       // Attempt to get default content from server (derived from user profile)
       const response = await fetch(`/api/editor/session/${sessionId}/tag/${tag.id}/default-content`, {
         method: 'GET',
@@ -770,7 +776,8 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         }
       }
 
-      if (typeof contentObject === 'object' ? !!contentObject.value : (contentObject || '').toString().trim().length > 0) {
+      const hasValue = typeof contentObject === 'object' ? !!contentObject.value : (contentObject || '').toString().trim().length > 0;
+      if (hasValue) {
         // Save directly without opening any modal
         const saveResponse = await fetch(`/api/editor/session/${sessionId}/tag/${tag.id}/content`, {
           method: 'PUT',
@@ -797,20 +804,15 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
           contentType: result?.tag?.contentType || (typeof contentObject === 'object' ? (contentObject as any).contentType : undefined)
         });
         toast({ title: 'Filled', description: 'Field auto-filled from profile.' });
-      } else {
-        toast({
-          title: 'Profile Data Missing',
-          description: 'No profile data available to auto-fill this tag.',
-          variant: 'destructive'
-        });
+        return true;
       }
+
+      // No data to auto-fill
+      return false;
     } catch (err) {
       console.error('❌ Auto-fill failed:', err);
-      toast({
-        title: 'Auto-fill Failed',
-        description: err instanceof Error ? err.message : 'Could not auto-fill from profile',
-        variant: 'destructive'
-      });
+      // Surface failure to caller so it can decide to open manual modal
+      return false;
     }
   }, [sessionId, currentUserId, userProfiles, toast, tags, setTags, updateTag]);
 
@@ -1038,14 +1040,23 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
     if (!tag.isCompleted) {
       try {
         if (tag.tagType === 'D') {
-          const content = { type: 'date', value: new Date(), isRequired: true } as any;
+          const todayStr = new Date().toLocaleDateString();
+          const content = { type: 'date', value: todayStr, isRequired: true } as any;
           await handleTagContentSave(content, tag.id);
           return;
         }
         if (tag.tagType === 'X') {
           const profile = userProfiles[tag.assignedUserId || currentUserId];
           if (profile?.commissionExpiration) {
-            const content = { type: 'date', value: profile.commissionExpiration, isRequired: true } as any;
+            let expValue: string;
+            const rawVal: any = profile.commissionExpiration;
+            if (rawVal instanceof Date) {
+              expValue = rawVal.toLocaleDateString();
+            } else {
+              const d = new Date(rawVal);
+              expValue = isNaN(d.getTime()) ? String(rawVal) : d.toLocaleDateString();
+            }
+            const content = { type: 'date', value: expValue, isRequired: true } as any;
             await handleTagContentSave(content, tag.id);
             return;
           }
@@ -1105,8 +1116,60 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         toast({ variant: 'destructive', title: 'Could not apply notary signature', description: e instanceof Error ? e.message : 'Unknown error' });
       }
     } else if (autoFillTags.includes(tag.tagType as TagType) && !tag.isCompleted) {
-      // 🚀 AUTO-FILL: apply from user profile without any popup
-      await handleAutoFillTag(tag);
+      // 🚀 AUTO-FILL first; if nothing to fill, handle per tag without generic modal
+      const filled = await handleAutoFillTag(tag);
+      if (!filled) {
+        if (tag.tagType === 'S') {
+          // Signature only: open modal to select signature
+          setSelectedTagForInput(tag);
+          setTagModalPosition(position);
+        } else {
+          // No TagInputModal for other tags (A, I, N, O, X)
+          switch (tag.tagType) {
+            case 'X':
+              toast({
+                title: 'Commission Expiration Required',
+                description: 'Add your commission expiration date in your profile to auto-fill this field.',
+                variant: 'destructive'
+              });
+              break;
+            case 'A':
+              toast({
+                title: 'Name Required',
+                description: 'Your profile is missing your full name. Update your profile to auto-fill.',
+                variant: 'destructive'
+              });
+              break;
+            case 'I':
+              toast({
+                title: 'Initials Required',
+                description: 'Add initials to your profile to auto-fill this field.',
+                variant: 'destructive'
+              });
+              break;
+            case 'N':
+              toast({
+                title: 'Commission Number Required',
+                description: 'Add your commission number in your profile to auto-fill.',
+                variant: 'destructive'
+              });
+              break;
+            case 'O':
+              toast({
+                title: 'Disclosure Missing',
+                description: 'Provide your disclosure statement in your profile to auto-fill this field.',
+                variant: 'destructive'
+              });
+              break;
+            default:
+              toast({
+                title: 'Profile Info Required',
+                description: 'This tag requires profile information. Please update your profile.',
+                variant: 'destructive'
+              });
+          }
+        }
+      }
     } else if (sealTags.includes(tag.tagType)) {
       // 🔖 SEAL DIALOG: Open seal configuration dialog
       console.log('🔖 Opening seal configuration dialog for tag:', tag.tagType, 'ID:', tag.id);
@@ -1179,7 +1242,18 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
       }
 
       // Update local state atomically for this tag
-      const computedContent = (typeof content === 'object' && content) ? (content.value || '') : (content || '');
+      const normalizeContentValue = (val: unknown): string => {
+        if (val == null) return '';
+        if (val instanceof Date) return val.toLocaleDateString();
+        if (typeof val === 'string') return val;
+        if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+        try { return String(val); } catch { return ''; }
+      };
+
+      const computedContent = (typeof content === 'object' && content)
+        ? normalizeContentValue((content as any).value)
+        : normalizeContentValue(content);
+
       const computedContentType = (typeof content === 'object' && (content as any).contentType) || (typeof content === 'string' && (content.startsWith('data:image/') || content.startsWith('http') ? 'image' : 'text')) || undefined;
       updateTag(effectiveTagId, {
         isCompleted: true,
@@ -1199,11 +1273,11 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
       } catch {}
 
       // Auto-resize tag based on new content for text-like tags only
-      const contentValue = typeof content === 'string' ? content : content?.value || '';
+      const contentValue = typeof content === 'string' ? content : (content?.value || '');
       const contentType = typeof content === 'object' && content ? (content as any).contentType : undefined;
       const isImageContent = contentType === 'image' || (typeof contentValue === 'string' && (contentValue.startsWith('data:image/') || contentValue.startsWith('http')));
 
-      if (!isImageContent && contentValue.trim().length > 0) {
+      if (!isImageContent && typeof contentValue === 'string' && contentValue.trim().length > 0) {
         const { calculateOptimalWidth } = await import('@/lib/constants/tagConstants');
         const optimalWidth = calculateOptimalWidth(contentValue, 12, 'Arial');
         const optimalHeight = 25;
@@ -1251,13 +1325,9 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
 
     } catch (error) {
       console.error('Failed to save tag content:', error);
-      toast({
-        title: "Save Failed",
-        description: "Failed to save tag content. Please try again.",
-        variant: "destructive"
-      });
+      toast({ title: 'Save Failed', description: error instanceof Error ? error.message : 'Unknown error', variant: 'destructive' });
     }
-  }, [selectedTagForInput, sessionId, currentUserId, tags, setTags, toast, updateTag]);
+  }, [sessionId, currentUserId, selectedTagForInput?.id, updateTag, tags, toast]);
 
   // Handle tag placement from PDF click
   const handleTagPlacement = useCallback(async (coordinates: TagCoordinates) => {
@@ -1270,23 +1340,22 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
       hasCurrentDocument: !!currentDocument
     });
     
-    // Auto-select a signer if staff user can place tags but no target selected
-    if (!selectedUser) {
-      const staffCanPlace = useEditorStore.getState().mode.canPlaceTags;
-      if (staffCanPlace) {
-        const fallbackTarget = participants.find(p => p.userType === 'signer') || participants.find(p => p.userType === 'witness') || participants[0];
-        if (fallbackTarget) {
-          setSelectedUser(fallbackTarget);
-        }
-      }
+    // Determine target user; auto-select a signer if staff can place and none selected
+    const targetUser = selectedUser || (
+      useEditorStore.getState().mode.canPlaceTags
+        ? (participants.find(p => p.userType === 'signer') || participants.find(p => p.userType === 'witness') || participants[0])
+        : null
+    );
+    if (!selectedUser && targetUser) {
+      setSelectedUser(targetUser);
     }
 
-    if (!selectedTagType || !selectedUser || !currentDocument) {
+    if (!selectedTagType || !targetUser || !currentDocument) {
       console.error('❌ Missing required data for tag placement:', {
         selectedTagType,
-        selectedUser: !!selectedUser,
+        selectedUser: !!targetUser,
         currentDocument: !!currentDocument,
-        selectedUserDetails: selectedUser,
+        selectedUserDetails: targetUser,
         currentDocumentDetails: currentDocument
       });
       return;
@@ -1341,8 +1410,8 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         await placeTextInput({
           documentId: currentDocument.id,
           coordinates: textInputCoordinates,
-          assignedUserId: parseInt(selectedUser.userId.toString())
-        }, selectedUser.colorCode || '#4ECDC4');
+          assignedUserId: parseInt(targetUser.userId.toString())
+        }, targetUser.colorCode || '#4ECDC4');
         
         console.log('✅ Streamlined text input placed successfully!');
         console.log('Text inputs after placement:', textInputs);
@@ -1393,7 +1462,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
           documentId: currentDocument.id,
           tagType: selectedTagType,
           coordinates,
-          assignedUserId: selectedUser.userId
+          assignedUserId: targetUser.userId
         });
         
         console.log('🔍 DEBUG: Store state before placement:', {
@@ -1420,7 +1489,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
             documentId: currentDocument.id,
             tagType: selectedTagType,
             coordinates: professionalCoordinates,
-            assignedUserId: selectedUser.userId
+            assignedUserId: targetUser.userId
           });
         }
         
@@ -1428,7 +1497,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
           documentId: currentDocument.id,
           tagType: selectedTagType,
           coordinates: professionalCoordinates,
-          assignedUserId: selectedUser.userId
+          assignedUserId: targetUser.userId
         });
         
         console.log('✅ Tag placed successfully!');
@@ -1716,7 +1785,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         </div>
 
         {/* Right Column - Simplified Controls (hidden for signers at all sizes) */}
-        {!(mode === 'signing' && !isNotaryUser) && (
+        {!(mode === 'signing' && !canSeeRightPanel) && (
           <div className="w-64 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col min-h-0">
             <div className="h-full min-h-0 flex flex-col">
               {/* Tagging Toolbar */}
@@ -1729,7 +1798,17 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
                   onSessionComplete={handleSessionComplete}
                   liveSessionState={liveSessionState}
                   onSetActiveUser={onSetActiveUser}
-                  canControlSession={mode === 'signing' && (currentUser?.userType === 'notary' || currentUser?.role === 'admin')}
+                  canControlSession={(() => {
+                    const authUser = authApi.getStoredUser();
+                    const authIsAdmin = !!(authUser?.role === 'admin' || authUser?.isAdmin || authUser?.privileges?.includes?.('admin'));
+                    const authIsNotary = !!(authUser?.role === 'notary' || authUser?.isNotary);
+                    return mode === 'signing' && (
+                      currentUser?.userType === 'notary' ||
+                      currentUser?.role === 'admin' ||
+                      authIsAdmin ||
+                      authIsNotary
+                    );
+                  })()}
                   className="h-full"
                 />
               </div>

@@ -226,6 +226,14 @@ const menuItems: MenuItem[] = [
         description: 'Manage preferred notaries'
       },
       {
+        id: 'banned-users',
+        label: 'Banned Users',
+        icon: Shield,
+        path: '/admin/banned-users',
+        roles: ['admin'],
+        description: 'View and unlock temporarily banned users'
+      },
+      {
         id: 'system-logs',
         label: 'System Logs',
         icon: Activity,

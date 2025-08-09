@@ -179,6 +179,17 @@ export class LiveSigningSessionService {
             // Update 2: Set active user (if needed)
             this.setActiveUser(session.sessionId, notaryUserId)
           ]);
+
+          // Invalidate caches that affect session state visibility immediately
+          try {
+            const { SmartCacheInvalidation } = await import('../smart-cache-invalidation');
+            await SmartCacheInvalidation.invalidateByContext({
+              sessionId: session.sessionId,
+              operationType: 'session_state_change'
+            });
+          } catch (invalidateError) {
+            console.warn('⚠️ Smart cache invalidation failed:', invalidateError);
+          }
         }
         
         // Clear session cache to ensure fresh data

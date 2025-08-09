@@ -227,18 +227,18 @@ export class PDFProcessorService {
 
     let toDraw = text || '';
 
-    // Trim text to fit the available width (no wrapping in PDF renderer)
-    // Use binary search on character count for efficiency
+    // Render single line and clip visually at tag bounds. Avoid inserting ellipsis so final PDF shows only the typed text.
+    // Compute maximum substring that fits, without adding any extra characters.
     const fits = (s: string) => font.widthOfTextAtSize(s, fontSize) <= availableWidth;
     if (!fits(toDraw)) {
       let lo = 0;
       let hi = toDraw.length;
       while (lo < hi) {
         const mid = Math.floor((lo + hi + 1) / 2);
-        const candidate = toDraw.slice(0, mid) + '…';
+        const candidate = toDraw.slice(0, mid);
         if (fits(candidate)) lo = mid; else hi = mid - 1;
       }
-      toDraw = toDraw.slice(0, lo) + (lo < text.length ? '…' : '');
+      toDraw = toDraw.slice(0, lo);
     }
 
     page.drawText(toDraw, {

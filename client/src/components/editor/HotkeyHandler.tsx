@@ -88,7 +88,7 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
     const ctrlKey = event.ctrlKey || event.metaKey;
 
     // User Switching Shortcuts
-    if (key === '`' || key === '~') {
+    if (key === '`' || key === '~' || key === '0') {
       event.preventDefault();
       if (onUserSwitch) {
         onUserSwitch(0); // 0 for notary
@@ -120,7 +120,7 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
     }
 
     // Tag Placement Shortcuts (allow in both tagging and signing modes)
-    if ((mode.mode === 'tagging' || mode.mode === 'signing' || mode.mode === 'notary') && mode.canPlaceTags && selectedUser) {
+    if ((mode.mode === 'tagging' || mode.mode === 'signing' || mode.mode === 'notary') && mode.canPlaceTags) {
       const tagTypeMap: Record<string, TagType> = {
         'A': 'A', // Name tag
         'S': 'S', // Signature tag
@@ -147,9 +147,28 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
           setSelectedTagType(null);
           return;
         }
+
+        // Force-select notary on notary-specific keys and on Date (D)
+        const forceNotaryKeys: TagType[] = ['N', 'X', 'O', 'E', 'W', 'D'];
+        const shouldForceNotary = forceNotaryKeys.includes(tagType);
+        if (shouldForceNotary) {
+          const notary = participants.find(p => p.userType === 'notary');
+          if (notary && (!selectedUser || selectedUser.userType !== 'notary')) {
+            setSelectedUser(notary);
+          }
+        }
+
+        // Default to notary if no user is currently selected
+        if (!selectedUser) {
+          const notary = participants.find(p => p.userType === 'notary');
+          if (notary) {
+            setSelectedUser(notary);
+          }
+        }
         
-        // Check if user has permission for this tag type
-        const hasPermission = checkTagPermission(tagType, selectedUser.userType);
+        // Check if user has permission for this tag type based on the effective user type
+        const effectiveUserType = shouldForceNotary ? 'notary' : (selectedUser?.userType || 'signer');
+        const hasPermission = checkTagPermission(tagType, effectiveUserType);
         
         if (hasPermission) {
           if (onTagTypeSelect) {

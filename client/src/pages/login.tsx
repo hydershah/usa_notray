@@ -676,30 +676,48 @@ export default function Login() {
             </Button>
           </div>
         ) : (
-          <form onSubmit={handleForgotPassword} className="space-y-4">
+          <form onSubmit={handleForgotPassword} className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="forgot-email">Email Address</Label>
-              <Input
-                id="forgot-email"
-                type="email"
-                placeholder="Enter your email address"
-                value={forgotPasswordEmail}
-                onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                required
-              />
+              <div className="relative">
+                <Mail aria-hidden className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  id="forgot-email"
+                  type="email"
+                  placeholder="name@company.com"
+                  value={forgotPasswordEmail}
+                  onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                  required
+                  autoFocus
+                  inputMode="email"
+                  className="pl-9"
+                />
+              </div>
+              <p className="text-xs text-gray-500">We'll send a secure link to reset your password.</p>
+              {forgotPasswordEmail.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forgotPasswordEmail) && (
+                <div className="flex items-center gap-2 text-xs text-red-600">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  <span>Enter a valid email address.</span>
+                </div>
+              )}
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col sm:flex-row sm:justify-end gap-2">
               <Button 
                 type="button" 
                 variant="outline" 
                 onClick={handleCloseForgotPassword}
                 disabled={isForgotPasswordLoading}
+                className="w-full sm:w-auto"
               >
                 Cancel
               </Button>
               <Button 
                 type="submit"
-                disabled={isForgotPasswordLoading || !forgotPasswordEmail}
+                disabled={
+                  isForgotPasswordLoading ||
+                  !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forgotPasswordEmail)
+                }
+                className="w-full sm:w-auto"
               >
                 {isForgotPasswordLoading ? (
                   <>

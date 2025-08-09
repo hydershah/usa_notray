@@ -167,7 +167,7 @@ export function registerTextTagRoutes(app: Express) {
           colorCode,
           isCompleted: createdTag.isCompleted,
           content: createdTag.content,
-          fontSize: parsedContentData.fontSize || 12,
+                     fontSize: parsedContentData.fontSize || 16,
           fontFamily: parsedContentData.fontFamily || 'Arial',
           textColor: parsedContentData.textColor || '#000000',
           immediateEdit: parsedContentData.immediateEdit || true,
@@ -207,7 +207,7 @@ export function registerTextTagRoutes(app: Express) {
       const contentData = {
         type: 'text',
         value: content.toString(),
-        fontSize: fontSize || 12,
+                 fontSize: fontSize || 16,
         fontFamily: fontFamily || 'Arial',
         textColor: textColor || '#000000',
         timestamp: new Date().toISOString()
@@ -357,10 +357,10 @@ export function registerTextTagRoutes(app: Express) {
       }
 
       // Parse existing contentData and update styling
-      let contentData = {
+      let contentData: { type: string; value: string; fontSize: number; fontFamily: string; textColor: string; timestamp?: string } = {
         type: 'text',
         value: currentTag.content || '',
-        fontSize: 12,
+        fontSize: 16,
         fontFamily: 'Arial',
         textColor: '#000000'
       };
@@ -470,27 +470,24 @@ export function registerTextTagRoutes(app: Express) {
       try {
         const { WebSocketService } = await import('../services/editor/WebSocketService');
         
-        const syncMessage = {
-          type: 'tag_updated',
-          payload: {
-            tagId: updatedTag.id.toString(),
-            tagType: 'T', // Text tag type
-            updates: {
-              coordinates: {
-                x: updatedTag.xPosition,
-                y: updatedTag.yPosition,
-                width: updatedTag.width,
-                height: updatedTag.height,
-                pageNumber: updatedTag.pageNumber
-              }
-            },
-            updatedBy: req.user.id,
-            source: 'position_update'
-          },
-          userId: req.user.id.toString(),
-          sessionId,
-          timestamp: Date.now()
-        };
+                 const syncMessage = {
+           type: 'text_input_position_updated',
+           payload: {
+             textInputId: updatedTag.id.toString(),
+             coordinates: {
+               x: updatedTag.xPosition,
+               y: updatedTag.yPosition,
+               width: updatedTag.width,
+               height: updatedTag.height,
+               pageNumber: updatedTag.pageNumber
+             },
+             updatedBy: req.user.id,
+             updatedByName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || undefined
+           },
+           userId: req.user.id.toString(),
+           sessionId,
+           timestamp: Date.now()
+         };
 
         WebSocketService.broadcastToSession(sessionId, syncMessage);
         console.log(`🔄 Text tag position update broadcasted for tag ${tagId} in session ${sessionId}`);
@@ -576,21 +573,18 @@ export function registerTextTagRoutes(app: Express) {
         const { WebSocketService } = await import('../services/editor/WebSocketService');
         
         const syncMessage = {
-          type: 'tag_updated',
+          type: 'text_input_position_updated',
           payload: {
-            tagId: updatedTag.id.toString(),
-            tagType: 'T', // Text tag type
-            updates: {
-              coordinates: {
-                x: updatedTag.xPosition,
-                y: updatedTag.yPosition,
-                width: updatedTag.width,
-                height: updatedTag.height,
-                pageNumber: updatedTag.pageNumber
-              }
+            textInputId: updatedTag.id.toString(),
+            coordinates: {
+              x: updatedTag.xPosition,
+              y: updatedTag.yPosition,
+              width: updatedTag.width,
+              height: updatedTag.height,
+              pageNumber: updatedTag.pageNumber
             },
             updatedBy: req.user.id,
-            source: 'dimensions_update'
+            updatedByName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || undefined
           },
           userId: req.user.id.toString(),
           sessionId,

@@ -150,7 +150,7 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   const currentFontSize =
     liveFontSize !== undefined
       ? liveFontSize
-      : localFontSize || contentDataFontSize || 12;
+      : localFontSize || contentDataFontSize || 16; // default normalized to 16 for text
   
   // Remove debug logs for better performance during drag operations
   
@@ -165,24 +165,35 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     // Auto-size for any tag that allows text input (Text, Name, Date, Commission, Expiration, Disclosure)
     const shouldAutoSize = Boolean(TAG_TYPE_CONFIG[tag.tagType]?.allowTextInput);
 
+    // Helper to convert measured display px to unscaled PDF units
+    const toUnscaled = (px: number) => px / Math.max(0.0001, scaleFactor);
+
     if (!shouldAutoSize) {
-      // For non-text-input tags, do not auto-inflate height; keep at least fixed dimensions
-      const optimalWidth = calculateOptimalWidth(content, fontSize, TYPOGRAPHY.fontFamily);
-      const width = Math.max(fixedDimensions.width, optimalWidth);
-      const height = fixedDimensions.height; // lock height to fixed min for non-text-input tags
+      // For non-text-input tags, keep at least fixed dimensions
+      // Width is kept to saved/default; height fixed (no inflation)
+      const width = fixedDimensions.width;
+      const height = fixedDimensions.height;
       return { width, height };
     }
 
-    // For text-input tags, compute optimal size from content
-    const optimalWidth = calculateOptimalWidth(content, fontSize, TYPOGRAPHY.fontFamily);
-    // Keep height minimal for single-line tags; do not inflate beyond configured min
-    const optimalHeight = fixedDimensions.height;
+    // For text-input tags, compute optimal size from content and convert to unscaled units
+    const optimalWidthPx = calculateOptimalWidth(content, fontSize, TYPOGRAPHY.fontFamily);
+    const optimalHeightPx = calculateOptimalHeight(content, fontSize);
+
+    const optimalWidthUnscaled = toUnscaled(optimalWidthPx);
+    const optimalHeightUnscaled = toUnscaled(optimalHeightPx);
+
+    // Respect configured minimums if present
+    const minWidth = TAG_TYPE_CONFIG[tag.tagType]?.minWidth ?? fixedDimensions.minWidth ?? 1;
+    const minHeight = TAG_TYPE_CONFIG[tag.tagType]?.minHeight ?? fixedDimensions.minHeight ?? 1;
+
     return {
-      width: Math.max(fixedDimensions.width, optimalWidth),
-      height: Math.max(fixedDimensions.height, optimalHeight)
+      width: Math.max(minWidth, optimalWidthUnscaled),
+      height: Math.max(minHeight, optimalHeightUnscaled)
     };
-  }, [tag.content, tag.tagType, currentFontSize, fixedDimensions.width, fixedDimensions.height]);
+  }, [tag.content, tag.tagType, currentFontSize, fixedDimensions.width, fixedDimensions.height, scaleFactor]);
   
+  // Prefer content-fit sizing when there is content so the outline hugs text
   const displayCoords = useMemo(() => {
     // Use saved coordinates for width/height with fallback to fixed dimensions
     const savedWidth = (tag.coordinates.width ?? fixedDimensions.width);
@@ -191,18 +202,15 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     const shouldAutoSize = Boolean(TAG_TYPE_CONFIG[tag.tagType]?.allowTextInput);
 
     // Ensure dimensions never go below configured minimums
-    const minWidth = fixedDimensions.minWidth ?? 0;
-    const minHeight = fixedDimensions.minHeight ?? 25;
+    const minWidth = TAG_TYPE_CONFIG[tag.tagType]?.minWidth ?? fixedDimensions.minWidth ?? 0;
+    const minHeight = TAG_TYPE_CONFIG[tag.tagType]?.minHeight ?? fixedDimensions.minHeight ?? 1;
 
-    // For text-input tags, allow natural growth if content requires it (do not shrink below saved)
-    const finalUnscaledWidth = Math.max(
-      shouldAutoSize ? Math.max(savedWidth, optimalDimensions.width) : savedWidth,
-      minWidth
-    );
-    const finalUnscaledHeight = Math.max(
-      shouldAutoSize ? Math.max(savedHeight, optimalDimensions.height) : savedHeight,
-      minHeight
-    );
+    // If the tag has any content, let the box hug the content; otherwise keep saved size
+    const hasAnyContent = Boolean(tag.content || tag.contentData || tag.isCompleted);
+
+    // Prefer saved/manual dimensions once a tag exists; avoid snapping to content after completion
+    const finalUnscaledWidth = Math.max(savedWidth, minWidth);
+    const finalUnscaledHeight = Math.max(savedHeight, minHeight);
 
     const coords = {
       x: isDragging && dragCoords ? dragCoords.x : Math.round(tag.coordinates.x * scaleFactor),
@@ -274,13 +282,15 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       fontFamily: TYPOGRAPHY.fontFamily,
       fontSize: TYPOGRAPHY.fontSize.tag,
       fontWeight: TYPOGRAPHY.fontWeight.medium,
+      // Remove transitions to avoid flicker
       transition: 'none',
       boxShadow,
       // DocuSign style enhancements
       position: 'relative' as const,
       overflow: 'visible' as const,
       minHeight: 'fit-content' as const,
-      animation: isMissing && !hasContent && !isWhiteout ? 'pulse 2s infinite' : 'none'
+      // Disable pulsing animation on tags to prevent flashing sensation
+      animation: 'none'
     };
   }, [hasContent, isSelected, canEdit, tag.tagType, isMissing, isHighlighted]);
 
@@ -301,11 +311,11 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       sanitized.y = isFinite(coords.y) ? Math.round(coords.y) : 0;
     }
     if (coords.width !== undefined) {
-      const w = isFinite(coords.width) && coords.width > 0 ? Math.round(coords.width) : 100;
+      const w = isFinite(coords.width) && coords.width > 0 ? Math.round(coords.width) : Math.round(minWidth);
       sanitized.width = Math.max(w, Math.round(minWidth));
     }
     if (coords.height !== undefined) {
-      const h = isFinite(coords.height) && coords.height > 0 ? Math.round(coords.height) : 25;
+      const h = isFinite(coords.height) && coords.height > 0 ? Math.round(coords.height) : Math.round(minHeight);
       sanitized.height = Math.max(h, Math.round(minHeight));
     }
     
@@ -497,7 +507,7 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
         if (!input) return null;
         if (typeof input === 'object') return input as any;
         if (typeof input === 'string') {
-          const str = input.trim();
+          const str = input?.toString().trim();
           if ((str.startsWith('{') && str.endsWith('}')) || (str.startsWith('[') && str.endsWith(']'))) {
             try { return JSON.parse(str); } catch {}
           }
@@ -559,41 +569,46 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   }, [tag.tagType, tag.content, tag.contentData]);
 
   return (
-    <Rnd
-      size={{ width: displayCoords.width, height: displayCoords.height }}
-      position={{ x: displayCoords.x, y: displayCoords.y }}
-      minWidth={Math.round(((TAG_TYPE_CONFIG[tag.tagType]?.minWidth ?? fixedDimensions.minWidth ?? 0) * scaleFactor))}
-      minHeight={Math.round(((TAG_TYPE_CONFIG[tag.tagType]?.minHeight ?? fixedDimensions.minHeight ?? 25) * scaleFactor))}
-      onDrag={(e, d) => {
-        setIsDragging(true);
-        setDragCoords({ x: d.x, y: d.y });
-      }}
-      onDragStart={handleDragStart}
-      onDragStop={(e, d) => {
-        setIsDragging(false);
-        setDragCoords(null);
-        if (onUpdate && canEdit) {
-          onUpdate({
-            x: d.x / scaleFactor,
-            y: d.y / scaleFactor
-          });
-        }
-      }}
-      onResize={handleResize}
-      onResizeStop={handleResizeStop}
-      enableResizing={{
-        top: resizable,
-        right: resizable,
-        bottom: resizable,
-        left: resizable,
-        topRight: resizable,
-        bottomRight: resizable,
-        bottomLeft: resizable,
-        topLeft: false
-      }}
-      bounds="parent"
-      cancel=".no-drag"
-      onClick={(e: React.MouseEvent<HTMLDivElement>) => {
+        <Rnd
+       size={{ width: displayCoords.width, height: displayCoords.height }}
+       position={{ x: displayCoords.x, y: displayCoords.y }}
+       minWidth={Math.round(((TAG_TYPE_CONFIG[tag.tagType]?.minWidth ?? fixedDimensions.minWidth ?? 0) * scaleFactor))}
+       minHeight={Math.round(((TAG_TYPE_CONFIG[tag.tagType]?.minHeight ?? fixedDimensions.minHeight ?? 25) * scaleFactor))}
+       onDrag={(e, d) => {
+         setIsDragging(true);
+         setDragCoords({ x: d.x, y: d.y });
+       }}
+       onDragStart={handleDragStart}
+       onDragStop={(e, d) => {
+         setIsDragging(false);
+         setDragCoords(null);
+         if (onUpdate && canEdit) {
+           onUpdate({
+             x: d.x / scaleFactor,
+             y: d.y / scaleFactor
+           });
+         }
+       }}
+       onResize={handleResize}
+       onResizeStop={handleResizeStop}
+       enableResizing={{
+         top: resizable,
+         right: resizable,
+         bottom: resizable,
+         left: resizable,
+         topRight: resizable,
+         bottomRight: resizable,
+         bottomLeft: resizable,
+         topLeft: false
+       }}
+       resizeHandleStyles={{
+         right: { width: '12px', right: '-6px', cursor: 'ew-resize' },
+         bottom: { height: '12px', bottom: '-6px', cursor: 'ns-resize' },
+         bottomRight: { width: '12px', height: '12px', right: '-6px', bottom: '-6px', cursor: 'nwse-resize', background: PROFESSIONAL_COLORS.borderActive, borderRadius: '50%' }
+       }}
+       bounds="parent"
+       cancel=".no-drag"
+       onClick={(e: React.MouseEvent<HTMLDivElement>) => {
         e.stopPropagation();
         
         // Prevent interference with text inputs
@@ -688,7 +703,7 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
           width: '100%',
           height: '100%',
           display: 'flex',
-          alignItems: 'center', // SIMPLE CENTER: Center the text like PDF
+          alignItems: 'flex-end',
           justifyContent: 'flex-start',
           overflow: 'visible', // Allow content to expand naturally
           textOverflow: 'clip', // Don't clip text
@@ -710,22 +725,22 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
               draggable={false}
             />
           ) : (
-            <span 
-              data-text-content
-              style={{ 
-                fontFamily: TYPOGRAPHY.fontFamily,
-                fontSize: `${currentFontSize}px`,
-                fontWeight: TYPOGRAPHY.fontWeight.medium,
-                color: '#1e293b', // Dark text for maximum visibility
-                lineHeight: '1.2',
-                display: 'block',
-                width: '100%',
-                wordWrap: 'break-word',
-                overflowWrap: 'break-word',
-                whiteSpace: 'normal', // Allow text to wrap to multiple lines
-                overflow: 'visible' // Show all content, don't hide overflow
-              }}
-            >
+                         <span 
+               data-text-content
+               style={{ 
+                 fontFamily: TYPOGRAPHY.fontFamily,
+                 fontSize: `${currentFontSize}px`,
+                 fontWeight: TYPOGRAPHY.fontWeight.medium,
+                 color: '#1e293b', // Dark text for maximum visibility
+                 lineHeight: '1',
+                 display: 'block',
+                 width: '100%',
+                 wordWrap: 'break-word',
+                 overflowWrap: 'break-word',
+                 whiteSpace: 'normal', // Allow text to wrap to multiple lines
+                 overflow: 'visible' // Show all content, don't hide overflow
+               }}
+             >
               {(() => {
                 // Avoid rendering raw JSON in the tag box; show a friendly label instead
                 const isJsonString = typeof tag.content === 'string' && tag.content.trim().startsWith('{');
@@ -877,8 +892,10 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
   // Determine if user can edit/place tags (respecting mode and store permissions)
   const canEditTags = useMemo(() => {
-    return editorMode.canPlaceTags && (mode === 'tagging' || mode === 'signing');
-  }, [editorMode.canPlaceTags, mode]);
+    // Always allow tag interaction in both tagging and signing modes
+    // canPlaceTags controls NEW tag placement, but we want existing tag interaction
+    return mode === 'tagging' || mode === 'signing';
+  }, [mode]);
 
   // Debug: Log store functions to ensure they exist
   if ((window as any).__DEBUG_EDITOR__) {
@@ -1643,8 +1660,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     let finalTagX: number;
     let finalTagY: number;
     
-    // Position tag with bottom-left corner at mouse click for better UX
-    // This means we need to offset the Y coordinate by the tag height
+    // Position tag with bottom-left corner at mouse click for consistent UX
     finalTagX = Math.max(0, Math.round(pdfX));
     finalTagY = Math.max(0, Math.round(pdfY - dimensions.height));
     
@@ -2223,8 +2239,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
                     {/* Font Size Control - Only show when a text tag is selected */}
           {(selectedTag || selectedTextInputId) && (
-            // Show for any tag that allows text input
-            selectedTag?.tagType === 'T' || selectedTag?.tagType === 'O' || selectedTag?.tagType === 'D' || 
+            // Show for any tag that allows text input (excluding Date tags)
+            selectedTag?.tagType === 'T' || selectedTag?.tagType === 'O' || 
             selectedTag?.tagType === 'A' || selectedTag?.tagType === 'N' || selectedTag?.tagType === 'X' ||
             selectedTextInputId
           ) && (
@@ -2245,39 +2261,18 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                   
                   if (selectedTag) {
                     targetId = selectedTag.id;
-                    console.log('🎨 Changing font size for selected tag:', targetId, 'from', currentFontSize, 'to', newSize);
                   } else if (selectedTextInputId) {
-                    const selectedTextInput = textInputs?.find(ti => ti.id === selectedTextInputId);
-                    if (selectedTextInput) {
-                      targetId = selectedTextInput.id;
-                      console.log('🎨 Changing font size for selected text input:', targetId, 'from', currentFontSize, 'to', newSize);
-                    }
+                    targetId = selectedTextInputId;
                   }
                   
-                  if (!targetId) {
-                    console.log('❌ No target found for font size change');
-                    return;
-                  }
-                  
-                  setLastUsedFontSize(newSize);
-                  
-                  // Update local font size immediately for instant feedback
-                  setLocalFontSizes(prev => {
-                    const newMap = new Map(prev);
-                    newMap.set(targetId, newSize);
-                    return newMap;
-                  });
-                  
-                  if (onFontSizeChange) {
-                    console.log('🎨 Calling onFontSizeChange with:', targetId, newSize);
+                  if (targetId && onFontSizeChange) {
                     onFontSizeChange(targetId, newSize);
                   }
                 }}
-                className="px-2 py-1 bg-white border rounded text-sm font-medium min-w-16 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                title="Select font size"
+                className="border border-gray-300 rounded px-2 py-1 text-sm bg-white"
               >
                 {Array.from({ length: 17 }, (_, i) => {
-                  const size = 8 + (i * 2); // 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40
+                  const size = 8 + (i * 2);
                   return (
                     <option key={size} value={size}>
                       {size}px
@@ -2435,29 +2430,28 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                     }}
                   />
                   
-                          {/* Tags overlay - Text tags are handled separately via textInputs */}
-                  {pageTags.filter(tag => tag.tagType !== 'T').map(tag => {
-                    return (
-                      <div key={`${tag.id}-${scaleFactor}`} className={`absolute top-0 left-0 w-full h-full ${selectedTagType ? 'pointer-events-none' : 'pointer-events-auto'}`}>
-                        <MemoizedTagRenderer
-                          tag={tag}
-                          scaleFactor={scaleFactor}
-                          isSelected={selectedTag?.id === tag.id}
-                          canEdit={canEditTags}
-                          onUpdate={(coords) => handleTagUpdate(tag.id, coords)}
-                          onSave={(coords) => broadcastTagSave(tag.id, coords)}
-                          onDelete={() => handleTagDelete(tag.id)}
-                          onSelect={() => handleTagSelect(tag)}
-                          onTagClick={onTagClick}
-                          mode={mode}
-                          onFontSizeChange={updateTagFontSize}
-                          localFontSize={localFontSizes.get(tag.id)}
-                          isHighlighted={highlightedTagId === tag.id}
-                          isMissing={incompleteTags.includes(tag.id)}
-                        />
-                      </div>
-                    );
-                  })}
+                                            {/* Tags overlay - Text tags are handled separately via textInputs */}
+                                     {pageTags.filter(tag => tag.tagType !== 'T').map(tag => {
+                     return (
+                       <MemoizedTagRenderer
+                         key={`${tag.id}`}
+                         tag={tag}
+                         scaleFactor={scaleFactor}
+                         isSelected={selectedTag?.id === tag.id}
+                         canEdit={canEditTags}
+                         onUpdate={(coords) => handleTagUpdate(tag.id, coords)}
+                         onSave={(coords) => broadcastTagSave(tag.id, coords)}
+                         onDelete={() => handleTagDelete(tag.id)}
+                         onSelect={() => handleTagSelect(tag)}
+                         onTagClick={onTagClick}
+                         mode={mode}
+                         onFontSizeChange={updateTagFontSize}
+                         localFontSize={localFontSizes.get(tag.id)}
+                         isHighlighted={highlightedTagId === tag.id}
+                         isMissing={incompleteTags.includes(tag.id)}
+                       />
+                     );
+                   })}
                   
                   {/* Whiteout overlays disabled: handled via 'W' tags for consistency */}
 

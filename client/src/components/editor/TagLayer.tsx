@@ -163,7 +163,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       }}
       onDragStop={handleDragStop}
       disableDragging={!canModifyTag}
-      enableResizing={false} // Professional fixed sizing - no resize
+      enableResizing={canModifyTag && Boolean(TAG_TYPE_CONFIG[tag.tagType]?.allowResize)}
       bounds="parent"
       onClick={(e: React.MouseEvent) => {
         e.stopPropagation();
@@ -187,7 +187,8 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           justifyContent: 'flex-start',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap'
+          whiteSpace: 'nowrap',
+          paddingLeft: '2px'
         }}
       >
         {hasContent ? (

@@ -512,12 +512,24 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
-      <Route path="/admin/users">
+            <Route path="/admin/users">
         <ProtectedRoute allowedRoles={['admin']}>
           <MainLayout>
             <ErrorBoundary fallback={<LoadingFallback />}>
-              <React.Suspense fallback={<LoadingFallback />}>
+              <React.Suspense fallback={<LoadingFallback />}> 
                 {React.createElement(React.lazy(() => import("@/components/admin/AdminUsers").then(m => ({ default: m.AdminUsers }))))}
+              </React.Suspense>
+            </ErrorBoundary>
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/banned-users">
+        <ProtectedRoute allowedRoles={['admin']}>
+          <MainLayout>
+            <ErrorBoundary fallback={<LoadingFallback />}>
+              <React.Suspense fallback={<LoadingFallback />}> 
+                {React.createElement(React.lazy(() => import("@/components/admin/AdminBannedUsers").then(m => ({ default: m.AdminBannedUsers }))))}
               </React.Suspense>
             </ErrorBoundary>
           </MainLayout>

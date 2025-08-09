@@ -66,6 +66,34 @@ export class AccountLockout {
     const data = this.attempts.get(identifier);
     return data?.attempts || 0;
   }
+
+  // List currently locked accounts for admin
+  static listLockedAccounts(): Array<{ identifier: string; attempts: number; lastAttempt: number; lockedUntil: number; timeRemainingSeconds: number }> {
+    const now = Date.now();
+    const result: Array<{ identifier: string; attempts: number; lastAttempt: number; lockedUntil: number; timeRemainingSeconds: number }> = [];
+    this.attempts.forEach((data, identifier) => {
+      if (data.lockedUntil && data.lockedUntil > now) {
+        result.push({
+          identifier,
+          attempts: data.attempts,
+          lastAttempt: data.lastAttempt,
+          lockedUntil: data.lockedUntil,
+          timeRemainingSeconds: Math.ceil((data.lockedUntil - now) / 1000)
+        });
+      }
+    });
+    // Sort by soonest unlock first
+    result.sort((a, b) => a.lockedUntil - b.lockedUntil);
+    return result;
+  }
+
+  // Force unlock a specific identifier (admin)
+  static adminUnlock(identifier: string): boolean {
+    const normalized = String(identifier).trim().toLowerCase();
+    const existed = this.attempts.has(normalized);
+    this.attempts.delete(normalized);
+    return existed;
+  }
 }
 
 // Middleware to check account lockout

@@ -226,6 +226,24 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
           }
           break;
 
+        // ✅ Dedicated streamlined text input movement event
+        case 'text_input_position_updated': {
+          const { textInputId, coordinates } = message.payload || {};
+          if (textInputId && coordinates) {
+            if (typeof window !== 'undefined' && (window as any).textInputSyncCallback) {
+              (window as any).textInputSyncCallback('text_input_position_updated', {
+                textInputId,
+                coordinates,
+                updatedBy: message.payload.updatedBy ?? message.userId,
+                updatedByName: message.payload.updatedByName
+              });
+            }
+          } else {
+            console.warn('⚠️ text_input_position_updated missing expected payload:', message.payload);
+          }
+          break;
+        }
+
         case 'tag_content_updated':
           console.log('✏️ Tag content updated by another user:', {
             tagId: message.payload.tagId,

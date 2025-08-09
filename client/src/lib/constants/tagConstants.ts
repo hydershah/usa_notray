@@ -135,9 +135,9 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     color: PROFESSIONAL_COLORS.primary,
     borderColor: PROFESSIONAL_COLORS.borderActive,
     defaultWidth: 120,  // Reduced size
-    defaultHeight: 25,  // Reduced size
-    minWidth: 1,
-    minHeight: 1,
+    defaultHeight: 22,  // tighter default height
+    minWidth: 1,        // allow hugging content
+    minHeight: 1,       // allow hugging content
     allowResize: true,
     allowTextInput: true
   },
@@ -160,8 +160,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Initial here',
     color: PROFESSIONAL_COLORS.accent,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 120,  // Reduced size
-    defaultHeight: 25,  // Reduced size
+    defaultWidth: 120,
+    defaultHeight: 22,
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -173,8 +173,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Commission #',
     color: PROFESSIONAL_COLORS.success,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 120,  // Reduced size
-    defaultHeight: 25,  // Reduced size
+    defaultWidth: 120,
+    defaultHeight: 22,
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -186,8 +186,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Expiration Date',
     color: '#fef3c7', // Light yellow background
     borderColor: '#d97706', // Darker orange border for better contrast
-    defaultWidth: 120,  // Reduced size
-    defaultHeight: 25,  // Reduced size
+    defaultWidth: 120,
+    defaultHeight: 22,
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -199,8 +199,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Disclosure info',
     color: '#fef3c7', // Light yellow background for high visibility
     borderColor: '#d97706', // Dark orange border for maximum contrast
-    defaultWidth: 120,  // Reduced size
-    defaultHeight: 25,  // Reduced size
+    defaultWidth: 120,
+    defaultHeight: 22,
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -225,8 +225,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Whiteout area',
     color: '#ffffff', // Pure white background for true whiteout
     borderColor: '#e5e7eb', // Light gray border
-    defaultWidth: 120,  // Reduced size
-    defaultHeight: 25,  // Reduced size
+    defaultWidth: 120,
+    defaultHeight: 20,  // thinner whiteout by default
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -238,10 +238,12 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Text',
     color: '#f8fafc', // Slightly lighter background
     borderColor: '#475569', // Darker border for better contrast
-    defaultWidth: 120,  // Standardized size
-    defaultHeight: 25,  // Standardized size
-    minWidth: 1,
-    minHeight: 1,
+    // Stable default size so the tag never flashes invisible or overly large
+    defaultWidth: 160,
+    defaultHeight: 28,
+    // Sensible minimums to prevent flicker while still allowing shrink-to-fit
+    minWidth: 24,
+    minHeight: 20,
     allowResize: true,
     allowTextInput: true
   },
@@ -251,8 +253,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'MM/DD/YYYY',
     color: '#fef3c7', // Light yellow background
     borderColor: '#d97706', // Darker orange border for better contrast
-    defaultWidth: 120,  // Reduced size
-    defaultHeight: 25,  // Reduced size
+    defaultWidth: 120,
+    defaultHeight: 22,
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -348,7 +350,24 @@ export const isWithinBounds = (
 
 // Calculate optimal width based on text content and font size
 export const calculateOptimalWidth = (text: string, fontSize: number = 12, fontFamily: string = 'Arial'): number => {
-  if (!text || text.trim().length === 0) {
+  // Normalize to a safe string to avoid runtime errors when non-strings are passed
+  const safeText = (() => {
+    if (typeof text === 'string') return text;
+    // Fallbacks for unexpected runtimes
+    const anyVal: any = text as any;
+    if (anyVal == null) return '';
+    if (typeof anyVal === 'number' || typeof anyVal === 'boolean') return String(anyVal);
+    if (anyVal instanceof Date) {
+      try { return anyVal.toLocaleDateString(); } catch { return anyVal.toISOString(); }
+    }
+    if (typeof anyVal === 'object') {
+      const candidate = anyVal.text ?? anyVal.value ?? anyVal.display ?? '';
+      return typeof candidate === 'string' ? candidate : '';
+    }
+    try { return String(anyVal); } catch { return ''; }
+  })();
+
+  if (safeText.trim().length === 0) {
     return 1; // Absolute minimum when empty so box can be placed tightly
   }
   
@@ -363,7 +382,7 @@ export const calculateOptimalWidth = (text: string, fontSize: number = 12, fontF
   context.font = `${fontSize}px ${fontFamily}`;
   
   // Measure text width
-  const textMetrics = context.measureText(text);
+  const textMetrics = context.measureText(safeText);
   const textWidth = textMetrics.width;
   
   // Minimal padding so the blue box hugs the content
@@ -377,18 +396,34 @@ export const calculateOptimalWidth = (text: string, fontSize: number = 12, fontF
 
 // Calculate optimal height based on text content and font size
 export const calculateOptimalHeight = (text: string, fontSize: number = 12): number => {
-  // One-line height estimation with minimal padding
-  const lineHeight = fontSize * 1.2; // 1.2 line height
+  // Normalize to a safe string as above
+  const safeText = (() => {
+    if (typeof text === 'string') return text;
+    const anyVal: any = text as any;
+    if (anyVal == null) return '';
+    if (typeof anyVal === 'number' || typeof anyVal === 'boolean') return String(anyVal);
+    if (anyVal instanceof Date) {
+      try { return anyVal.toLocaleDateString(); } catch { return anyVal.toISOString(); }
+    }
+    if (typeof anyVal === 'object') {
+      const candidate = anyVal.text ?? anyVal.value ?? anyVal.display ?? '';
+      return typeof candidate === 'string' ? candidate : '';
+    }
+    try { return String(anyVal); } catch { return ''; }
+  })();
+
+  // Tight one-line height estimation to hug text content
+  const lineHeight = fontSize * 1.0; // exact font size
   const padding = 2; // total (1px top + 1px bottom)
   const singleLineHeight = Math.ceil(lineHeight) + padding;
 
-  if (!text || text.trim().length === 0) {
+  if (safeText.trim().length === 0) {
     return Math.max(singleLineHeight, 1);
   }
   
   // Rough multi-line estimate (kept conservative)
   const avgCharWidth = fontSize * 0.6;
-  const estimatedWidth = text.length * avgCharWidth;
+  const estimatedWidth = safeText.length * avgCharWidth;
   const maxWidth = 200; // Assume wrap threshold
   const estimatedLines = Math.ceil(estimatedWidth / maxWidth);
   const actualLines = Math.max(1, estimatedLines);

@@ -669,8 +669,13 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
         const unscaledWidth = Math.max(1, Math.round(widthPx / Math.max(0.0001, scaleFactor)));
         const lineHeightPx = Math.ceil((current.fontSize || 16) * 1.2);
         const unscaledHeight = Math.max(1, Math.round(lineHeightPx / Math.max(0.0001, scaleFactor)));
-        const newWidth = Math.max(current.coordinates.width || fallbackDims.width, unscaledWidth);
-        const newHeight = Math.max(current.coordinates.height || fallbackDims.height, unscaledHeight, fallbackDims.height);
+
+        // Allow shrinking as content becomes shorter, but never below configured minimums
+        const minWidth = fallbackDims.width;
+        const minHeight = fallbackDims.height;
+        const newWidth = Math.max(minWidth, unscaledWidth);
+        const newHeight = Math.max(minHeight, unscaledHeight);
+
         // Persist new size (debounced inside moveTextInput)
         moveTextInput(textInputId, {
           x: current.coordinates.x,
