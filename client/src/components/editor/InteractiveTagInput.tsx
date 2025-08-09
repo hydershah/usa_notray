@@ -77,7 +77,7 @@ const TAG_CONFIG = {
   },
   'T': { // Text
     label: 'Text',
-    placeholder: 'Enter text',
+    placeholder: 'Text',
     type: 'text' as const,
     maxLength: 500,
     required: false,
@@ -139,42 +139,14 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
 
   const config = TAG_CONFIG[tag.tagType as keyof typeof TAG_CONFIG];
 
-  // Initialize content from user profile
+  // Initialize content without auto-fill from user profile
   useEffect(() => {
-    if (!userProfile) return;
-
-    let initialValue = '';
-    
-    switch (tag.tagType) {
-      case 'A': // Name
-        initialValue = userProfile.name || '';
-        break;
-      case 'S': // Signature
-        initialValue = userProfile.signatures?.[0] || '';
-        break;
-      case 'I': // Initials
-        initialValue = userProfile.initials?.[0] || '';
-        break;
-      case 'N': // Commission Number
-        initialValue = userProfile.commissionNumber || '';
-        break;
-      case 'X': // Commission Expiration
-        initialValue = userProfile.commissionExpiration || '';
-        break;
-      case 'O': // Disclosure
-        initialValue = userProfile.disclosure || '';
-        break;
-      case 'D': // Date
-        initialValue = new Date().toLocaleDateString();
-        break;
-    }
-
     setContent({
       type: config?.type || 'text',
-      value: config?.type === 'date' ? new Date() : initialValue,
+      value: config?.type === 'date' ? new Date() : '',
       isRequired: config?.required || false
     });
-  }, [tag.tagType, userProfile, config]);
+  }, [tag.tagType, config]);
 
   // Auto-focus when editing starts
   useEffect(() => {

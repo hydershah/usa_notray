@@ -91,6 +91,10 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       width: 120, // Use updated standardized width as fallback
       height: 25  // Use updated standardized height as fallback
     };
+
+    // Derive minimums if available; fall back to 25 for height and 40 for width
+    const minWidth = (storeDimensions as any)?.minWidth ?? 40;
+    const minHeight = (storeDimensions as any)?.minHeight ?? 25;
     
     if (coordinates.x !== undefined) {
       sanitized.x = isFinite(coordinates.x) ? Math.round(coordinates.x) : 0;
@@ -99,10 +103,12 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       sanitized.y = isFinite(coordinates.y) ? Math.round(coordinates.y) : 0;
     }
     if (coordinates.width !== undefined) {
-      sanitized.width = isFinite(coordinates.width) && coordinates.width > 0 ? Math.round(coordinates.width) : defaultDimensions.width;
+      const w = isFinite(coordinates.width) && coordinates.width > 0 ? Math.round(coordinates.width) : defaultDimensions.width;
+      sanitized.width = Math.max(w, minWidth);
     }
     if (coordinates.height !== undefined) {
-      sanitized.height = isFinite(coordinates.height) && coordinates.height > 0 ? Math.round(coordinates.height) : defaultDimensions.height;
+      const h = isFinite(coordinates.height) && coordinates.height > 0 ? Math.round(coordinates.height) : defaultDimensions.height;
+      sanitized.height = Math.max(h, minHeight);
     }
     if (coordinates.pageNumber !== undefined) {
       sanitized.pageNumber = isFinite(coordinates.pageNumber) ? Math.round(coordinates.pageNumber) : 1;

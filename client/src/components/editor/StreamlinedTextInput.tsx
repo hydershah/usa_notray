@@ -11,6 +11,7 @@ import {
   LAYOUT,
   TAG_TYPE_CONFIG 
 } from '@/lib/constants/tagConstants';
+import { useEditorStore } from '@/hooks/editor/useEditorStore';
 
 // Simple debounce utility
 function debounce<T extends (...args: any[]) => any>(
@@ -125,9 +126,9 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   const displayCoords = {
     x: coordinates.x * scaleFactor,
     y: coordinates.y * scaleFactor,
-    // Use saved dimensions with fallback, and scale to current zoom
-    width: (coordinates.width || fixedDimensions.width) * scaleFactor,
-    height: (coordinates.height || fixedDimensions.height) * scaleFactor
+    // Use saved dimensions with fallback, and scale to current zoom – keep visual size stable across zoom
+    width: (coordinates.width || fixedDimensions.width) * (scaleFactor / (useEditorStore.getState().viewer.zoomLevel || 1)),
+    height: (coordinates.height || fixedDimensions.height) * (scaleFactor / (useEditorStore.getState().viewer.zoomLevel || 1))
   };
 
   // Keep local live position in sync when not dragging
@@ -151,11 +152,11 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   
   const canEdit = true; // Always allow editing for text inputs
 
-  // Min/Max constraints for resize
-  const minWidthPx = (fixedDimensions.minWidth || 80) * scaleFactor;
-  const maxWidthPx = 800 * scaleFactor; // generous maximum
-  const minHeightPx = (fixedDimensions.minHeight || 20) * scaleFactor;
-  const maxHeightPx = 120 * scaleFactor; // keep single-line ergonomics
+  // Min/Max constraints for resize (visual – independent of zoom)
+  const minWidthPx = (fixedDimensions.minWidth || 80);
+  const maxWidthPx = 800; // generous maximum
+  const minHeightPx = (fixedDimensions.minHeight || 25);
+  const maxHeightPx = 120; // keep single-line ergonomics
   
   // Memoized professional styling
   const professionalStyle = useMemo(() => getTagStyle('T', isSelected, hasContent, userColor), [hasContent, isSelected, userColor]);
@@ -338,16 +339,18 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     
     // Final resize update with snapped coordinates
     if (onResize) {
+      const zoomLevel = useEditorStore.getState().viewer.zoomLevel || 1;
+      const sizeScale = scaleFactor / zoomLevel;
       const snappedX = snapToGrid(position.x / scaleFactor);
       const snappedY = snapToGrid(position.y / scaleFactor);
-      const snappedWidth = snapToGrid(ref.offsetWidth / scaleFactor);
-      const snappedHeight = snapToGrid(ref.offsetHeight / scaleFactor);
+      const snappedWidth = snapToGrid(ref.offsetWidth / sizeScale);
+      const snappedHeight = snapToGrid(ref.offsetHeight / sizeScale);
       
       onResize({
         x: snappedX,
         y: snappedY,
         width: Math.max(snappedWidth, 40), // Minimum width
-        height: Math.max(snappedHeight, 20) // Minimum height
+        height: Math.max(snappedHeight, 25) // Minimum height
       });
     }
     setIsResizing(false);
@@ -412,7 +415,8 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
         x: coordinates.x,
         y: coordinates.y,
         width: desiredWidthUnscaled,
-        height: coordinates.height || Math.max(fixedDimensions.height, Math.ceil(fontSize + 6))
+        // Do not auto-inflate height based on font size; enforce only the configured minimum
+        height: Math.max(coordinates.height || fixedDimensions.height, fixedDimensions.height)
       });
     }
   }, [inputValue, fontSize, fontFamily, scaleFactor, isResizing, coordinates.x, coordinates.y, coordinates.width, coordinates.height, fixedDimensions.width, fixedDimensions.height, onResize, measureTextWidth]);
@@ -434,22 +438,23 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
         x: coordinates.x,
         y: coordinates.y,
         width: desiredWidthUnscaled,
-        height: coordinates.height || fixedDimensions.height
+        // Keep existing height; ensure it does not fall below the configured minimum
+        height: Math.max(coordinates.height || fixedDimensions.height, fixedDimensions.height)
       });
     }
   }, [isEditing, isResizing, inputValue, fontSize, fontFamily, scaleFactor, coordinates.x, coordinates.y, coordinates.width, coordinates.height, fixedDimensions.width, fixedDimensions.height, onResize, measureTextWidth]);
 
-  // Ensure height fits font size when font changes (single-line field)
+  // Ensure height respects only the configured minimum when font changes (no auto-growth)
   useEffect(() => {
     if (isResizing) return;
-    const minHeight = Math.max(fixedDimensions.height, Math.ceil(fontSize + 6));
+    const enforcedMin = fixedDimensions.height; // already 25 for text
     const currentHeight = coordinates.height || fixedDimensions.height;
-    if (onResize && minHeight - currentHeight > 0.5) {
+    if (onResize && currentHeight < enforcedMin - 0.5) {
       onResize({
         x: coordinates.x,
         y: coordinates.y,
         width: coordinates.width || fixedDimensions.width,
-        height: minHeight
+        height: enforcedMin
       });
     }
   }, [fontSize, isResizing, coordinates.x, coordinates.y, coordinates.width, coordinates.height, fixedDimensions.width, fixedDimensions.height, onResize]);

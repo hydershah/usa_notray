@@ -8,15 +8,12 @@ import {
   Play, 
   Pause, 
   Square, 
-  Users,
-  Video,
   ChevronLeft,
   ChevronRight,
   Clock,
   CheckCircle,
   Loader2,
-  RefreshCw,
-  Zap
+  RefreshCw
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/auth';
 import { NotaryVideoSession } from '@/components/video';
@@ -293,7 +290,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
           
           // Handle incomplete tags error with detailed user-friendly message
           if (errorData.error === 'incomplete_user_tags' && errorData.incompleteTags) {
-            const detailedMessage = `Some tags still need to be filled:\n\n${errorData.unfilledSummary}\n\n${errorData.instructions || 'Please click on each unfilled tag to auto-fill it with your profile data.'}`;
+            const detailedMessage = `Some tags still need to be filled:\n\n${errorData.unfilledSummary}\n\n${errorData.instructions || 'Please click on each unfilled tag and complete the required information.'}`;
             
             const customError = new Error(detailedMessage);
             customError.name = 'IncompleteTagsError';
@@ -358,87 +355,6 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     }
     return false;
   };
-
-  // Bulk fill handler for filling all user's assigned tags
-  const handleBulkFillTags = useCallback(async () => {
-    if (isLoading) return;
-    
-    try {
-      setIsLoading(true);
-      
-      // Get current user's unfilled tags
-      const { tags } = useEditorStore.getState();
-      const unfilledTags = tags.filter(tag => 
-        tag.assignedUserId?.toString() === currentUserId && 
-        !tag.isCompleted &&
-        ['A', 'I', 'N', 'X', 'D', 'O', 'S'].includes(tag.tagType) // Only auto-fillable tag types
-      );
-      
-      if (unfilledTags.length === 0) {
-        toast({
-          title: "No tags to fill",
-          description: "All your assigned tags are already completed"
-        });
-        return;
-      }
-      
-      toast({
-        title: "Filling tags...",
-        description: `Auto-filling ${unfilledTags.length} tag(s)...`
-      });
-      
-      // Fill each tag sequentially to avoid overwhelming the server
-      let filledCount = 0;
-      let errorCount = 0;
-      
-      for (const tag of unfilledTags) {
-        try {
-          const response = await authenticatedFetch(`/api/editor/session/${sessionId}/tag/${tag.id}/fill`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          });
-          
-          if (response.ok) {
-            filledCount++;
-          } else {
-            errorCount++;
-            console.warn(`Failed to fill tag ${tag.id}:`, await response.text());
-          }
-        } catch (error) {
-          errorCount++;
-          console.error(`Error filling tag ${tag.id}:`, error);
-        }
-        
-        // Small delay to prevent rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-      
-      if (filledCount > 0) {
-        toast({
-          title: "Tags filled successfully",
-          description: `${filledCount} tag(s) filled${errorCount > 0 ? `, ${errorCount} failed` : ''}`
-        });
-      } else if (errorCount > 0) {
-        toast({
-          title: "Failed to fill tags",
-          description: "Some tags could not be auto-filled. Please try filling them individually.",
-          variant: "destructive"
-        });
-      }
-      
-    } catch (error: any) {
-      console.error('Bulk fill error:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fill tags. Please try again.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isLoading, currentUserId, sessionId, toast]);
 
   // Add request tracking refs to prevent duplicate requests
   const activeRequestRef = useRef<AbortController | null>(null);
@@ -588,11 +504,9 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
           });
           setIsLoading(false); // Don't show toast for this error
           return;
-        } else if (error?.message?.includes('Connection lost') || error?.message?.includes('longer than expected')) {
-          errorMessage = error.message + ' Please refresh the page to check the session status.';
-        } else if (error?.message?.includes('tags haven\'t been filled')) {
+        } else if (error?.message?.includes("haven't been filled") || error?.message?.includes('have not been filled')) {
           // Fallback for incomplete tags messages without detailed info
-          errorMessage = error.message + '\n\nTip: Click on the orange pulsing tags to fill them automatically, or use the lightning bolt (⚡) button to fill all your tags at once.';
+          errorMessage = error.message + '\n\nTip: Click each orange pulsing tag and enter the required information.';
         }
       } else if (error?.message?.includes('timed out')) {
         errorMessage = 'The server is taking too long to respond. Please check your connection and try again.';
@@ -775,19 +689,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
               <span className="text-green-800 font-medium">Session Active</span>
             </div>
             
-            <Button 
-              onClick={handleBulkFillTags}
-              size="lg"
-              variant="outline"
-              className="bg-orange-50 border-orange-300 text-orange-700 hover:bg-orange-100 px-5 py-3 text-base font-medium"
-              disabled={buttonDisabled}
-              title="Auto-fill all your assigned tags with profile data"
-            >
-              <div className="flex items-center gap-2">
-                {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Zap className="h-5 w-5" />}
-                <span>Auto-Fill</span>
-              </div>
-            </Button>
+            {/* Auto-Fill button removed */}
             
             <Button 
               onClick={() => handleSessionAction('pause')} 
@@ -805,7 +707,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
             <Button 
               onClick={() => handleSessionAction('complete')} 
               size="lg"
-                             className="bg-blue-600 hover:bg-blue-700 px-5 py-3 text-base font-semibold"
+              className="bg-blue-600 hover:bg-blue-700 px-5 py-3 text-base font-semibold"
               disabled={buttonDisabled}
             >
               <div className="flex items-center gap-2">
@@ -908,31 +810,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         <div className="flex items-center gap-2">
           {renderSessionControls()}
           
-          <Button
-            variant="outline"
-            size="default"
-            onClick={() => setShowVideo(!showVideo)}
-            className="px-3 py-2"
-            title="Toggle video panel"
-          >
-            <div className="flex items-center gap-2">
-              <Video className="h-4 w-4" />
-              <span className="text-sm font-medium">Video</span>
-            </div>
-          </Button>
-          
-          <Button
-            variant="outline"
-            size="default"
-            onClick={() => setShowParticipants(!showParticipants)}
-            className="px-3 py-2"
-            title="Toggle participants panel"
-          >
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              <span className="text-sm font-medium">Participants</span>
-            </div>
-          </Button>
+          {/* Video and Participants buttons removed */}
         </div>
       </div>
 
@@ -961,10 +839,6 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
           <UnfilledTagsAlert
             unfilledTags={unfilledTagsError.unfilledTags}
             currentUserId={currentUserId}
-            onBulkFill={() => {
-              setUnfilledTagsError(null); // Close alert first
-              handleBulkFillTags();
-            }}
             onTagClick={(tagId) => {
               try {
                 editorRef.current?.jumpToTag(tagId);
@@ -981,7 +855,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
       <div className="flex-1 flex overflow-hidden">
         {/* Enhanced Video Panel - Reduced width */}
         {showVideo && (
-          <div className="w-80 bg-gradient-to-b from-gray-50 to-gray-100 border-r border-gray-200 flex-shrink-0 shadow-sm">
+          <div className="w-64 bg-gradient-to-b from-gray-50 to-gray-100 border-r border-gray-200 flex-shrink-0 shadow-sm">
             <div className="h-full flex flex-col">
 
               

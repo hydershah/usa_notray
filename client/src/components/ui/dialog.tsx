@@ -1,5 +1,6 @@
 import React from 'react';
 import { X } from 'lucide-react';
+import { createPortal } from 'react-dom';
 
 interface DialogProps {
   open: boolean;
@@ -48,9 +49,10 @@ export const Dialog: React.FC<DialogProps> = ({ open, onOpenChange, children }) 
     }
   };
 
-  return (
-    <div 
-      className="fixed inset-0 z-50 bg-black bg-opacity-50 overflow-y-auto"
+  const overlay = (
+    <div
+      className="fixed inset-0 z-[1000000] bg-black bg-opacity-50 overflow-y-auto"
+      data-dialog-root
       onClick={handleBackdropClick}
     >
       <div className="flex min-h-full items-center justify-center p-4">
@@ -58,11 +60,14 @@ export const Dialog: React.FC<DialogProps> = ({ open, onOpenChange, children }) 
       </div>
     </div>
   );
+
+  // Render at document.body level to escape any stacking contexts in the editor
+  return typeof document !== 'undefined' ? createPortal(overlay, document.body) : overlay;
 };
 
 export const DialogContent: React.FC<DialogContentProps> = ({ className = '', children }) => {
   return (
-    <div 
+    <div
       className={`bg-white rounded-xl shadow-2xl border border-gray-100 w-full max-w-4xl max-h-[90vh] overflow-hidden ${className}`}
       onClick={(e) => e.stopPropagation()}
     >

@@ -166,17 +166,17 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     const shouldAutoSize = Boolean(TAG_TYPE_CONFIG[tag.tagType]?.allowTextInput);
 
     if (!shouldAutoSize) {
-      // For non-text-input tags, keep at least fixed dimensions, but also consider content size
+      // For non-text-input tags, do not auto-inflate height; keep at least fixed dimensions
       const optimalWidth = calculateOptimalWidth(content, fontSize, TYPOGRAPHY.fontFamily);
-      const optimalHeight = calculateOptimalHeight(content, fontSize);
       const width = Math.max(fixedDimensions.width, optimalWidth);
-      const height = Math.max(fixedDimensions.height, optimalHeight);
+      const height = fixedDimensions.height; // lock height to fixed min for non-text-input tags
       return { width, height };
     }
 
     // For text-input tags, compute optimal size from content
     const optimalWidth = calculateOptimalWidth(content, fontSize, TYPOGRAPHY.fontFamily);
-    const optimalHeight = calculateOptimalHeight(content, fontSize);
+    // Keep height minimal for single-line tags; do not inflate beyond configured min
+    const optimalHeight = fixedDimensions.height;
     return {
       width: Math.max(fixedDimensions.width, optimalWidth),
       height: Math.max(fixedDimensions.height, optimalHeight)
@@ -190,9 +190,19 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
 
     const shouldAutoSize = Boolean(TAG_TYPE_CONFIG[tag.tagType]?.allowTextInput);
 
+    // Ensure dimensions never go below configured minimums
+    const minWidth = fixedDimensions.minWidth ?? 0;
+    const minHeight = fixedDimensions.minHeight ?? 25;
+
     // For text-input tags, allow natural growth if content requires it (do not shrink below saved)
-    const finalUnscaledWidth = shouldAutoSize ? Math.max(savedWidth, optimalDimensions.width) : savedWidth;
-    const finalUnscaledHeight = shouldAutoSize ? Math.max(savedHeight, optimalDimensions.height) : savedHeight;
+    const finalUnscaledWidth = Math.max(
+      shouldAutoSize ? Math.max(savedWidth, optimalDimensions.width) : savedWidth,
+      minWidth
+    );
+    const finalUnscaledHeight = Math.max(
+      shouldAutoSize ? Math.max(savedHeight, optimalDimensions.height) : savedHeight,
+      minHeight
+    );
 
     const coords = {
       x: isDragging && dragCoords ? dragCoords.x : Math.round(tag.coordinates.x * scaleFactor),
@@ -290,6 +300,10 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   const validateAndSanitizeCoordinates = (coords: any) => {
     const sanitized: any = {};
     
+    // Respect configured minimum sizes for the tag type
+    const minWidth = fixedDimensions.minWidth ?? 0;
+    const minHeight = fixedDimensions.minHeight ?? 25;
+
     if (coords.x !== undefined) {
       sanitized.x = isFinite(coords.x) ? Math.round(coords.x) : 0;
     }
@@ -297,10 +311,12 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       sanitized.y = isFinite(coords.y) ? Math.round(coords.y) : 0;
     }
     if (coords.width !== undefined) {
-      sanitized.width = isFinite(coords.width) && coords.width > 0 ? Math.round(coords.width) : 100;
+      const w = isFinite(coords.width) && coords.width > 0 ? Math.round(coords.width) : 100;
+      sanitized.width = Math.max(w, Math.round(minWidth));
     }
     if (coords.height !== undefined) {
-      sanitized.height = isFinite(coords.height) && coords.height > 0 ? Math.round(coords.height) : 30;
+      const h = isFinite(coords.height) && coords.height > 0 ? Math.round(coords.height) : 25;
+      sanitized.height = Math.max(h, Math.round(minHeight));
     }
     
     return sanitized;
@@ -372,7 +388,8 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       // Live size update so the user sees the element resize immediately
       const newCoordinates = validateAndSanitizeCoordinates({
         width: ref.offsetWidth / scaleFactor,
-        height: ref.offsetHeight / scaleFactor
+        // prevent height growth during resize for text tags
+        height: Math.max(fixedDimensions.height, ref.offsetHeight / scaleFactor)
       });
       onUpdate(newCoordinates);
       return;
@@ -381,7 +398,8 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     // For non-text tags (Name, Signature, Initials, Date, etc.), update size normally (NO font size change)
     const newCoordinates = validateAndSanitizeCoordinates({
       width: ref.offsetWidth / scaleFactor,
-      height: ref.offsetHeight / scaleFactor
+      // prevent height growth beyond min due to resize jitter
+      height: Math.max(fixedDimensions.height, ref.offsetHeight / scaleFactor)
     });
     onUpdate(newCoordinates);
   };
@@ -410,15 +428,19 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     let finalWidth = manualWidth;
     let finalHeight = manualHeight;
     
+    // Configured minimums
+    const minWidth = TAG_TYPE_CONFIG[tag.tagType]?.minWidth ?? fixedDimensions.minWidth ?? 0;
+    const minHeight = TAG_TYPE_CONFIG[tag.tagType]?.minHeight ?? fixedDimensions.minHeight ?? 25;
+    
     // Only calculate optimal dimensions for text tags (type 'T')
     if (tag.tagType === 'T') {
       const content = tag.content || '';
       const optimalWidth = calculateOptimalWidth(content, currentFontSize, TYPOGRAPHY.fontFamily);
-      const optimalHeight = calculateOptimalHeight(content, currentFontSize);
+      const optimalHeight = fixedDimensions.height;
       
       // For text tags, use the larger of manual resize or optimal dimensions
-      finalWidth = Math.max(manualWidth, optimalWidth);
-      finalHeight = Math.max(manualHeight, optimalHeight);
+      finalWidth = Math.max(manualWidth, optimalWidth, minWidth);
+      finalHeight = Math.max(manualHeight, optimalHeight, minHeight);
       
       console.log('📏 Text tag resize with optimal dimensions:', {
         tagId: tag.id,
@@ -433,11 +455,15 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       });
     } else {
       // For non-text tags (Name, Signature, Initials, Date, etc.), use manual dimensions directly
-      console.log('📏 Non-text tag resize with manual dimensions:', {
+      finalWidth = Math.max(manualWidth, minWidth);
+      finalHeight = Math.max(manualHeight, minHeight);
+      console.log('📏 Non-text tag resize with manual dimensions (clamped to min):', {
         tagId: tag.id,
         tagType: tag.tagType,
         manualWidth,
-        manualHeight
+        manualHeight,
+        finalWidth,
+        finalHeight
       });
     }
     
@@ -470,26 +496,65 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   // Determine if this tag should render an image (signature/initials/seal)
   const imageSource: string | null = useMemo(() => {
     try {
-      let parsed: any = null;
-      if (tag.contentData) {
-        parsed = typeof tag.contentData === 'string' ? JSON.parse(tag.contentData) : tag.contentData;
-      }
-      const value = parsed?.value ?? tag.content;
-      const isImageLike = (v: unknown) => typeof v === 'string' && (
-        v.startsWith('data:image/') || v.startsWith('http') || v.includes('vultrobjects.com')
-      );
-      // Render image if content type explicitly says image, or value looks like an image URL/data URI
-      if (parsed?.contentType === 'image' || isImageLike(value)) {
-        return (value as string) || null;
-      }
-    } catch {}
-    return null;
+      const isImageLike = (v: unknown) =>
+        typeof v === 'string' && (
+          (v as string).startsWith('data:image/') ||
+          /^https?:\/\//.test(v as string) ||
+          (v as string).includes('vultrobjects.com')
+        );
+
+      const parseMaybeJson = (input: unknown): any | null => {
+        if (!input) return null;
+        if (typeof input === 'object') return input as any;
+        if (typeof input === 'string') {
+          const str = input.trim();
+          if ((str.startsWith('{') && str.endsWith('}')) || (str.startsWith('[') && str.endsWith(']'))) {
+            try { return JSON.parse(str); } catch {}
+          }
+        }
+        return null;
+      };
+
+      const parsedContentData = parseMaybeJson(tag.contentData);
+      const parsedContent = parseMaybeJson(tag.content);
+
+      const candidates: Array<string | undefined> = [];
+
+      const pushCandidates = (obj: any) => {
+        if (!obj) return;
+        // Recognize common shapes
+        if (typeof obj.value === 'string') candidates.push(obj.value);
+        if (typeof obj.image === 'string') candidates.push(obj.image);
+        if (typeof obj.url === 'string') candidates.push(obj.url);
+        if (obj.data && typeof obj.data.value === 'string') candidates.push(obj.data.value);
+        // If it's explicitly marked as an image-bearing type, prefer its value fields
+        if (
+          obj.contentType === 'image' ||
+          ['signature', 'initials', 'seal'].includes(obj.type)
+        ) {
+          if (typeof obj.value === 'string') candidates.push(obj.value);
+          if (typeof obj.image === 'string') candidates.push(obj.image);
+          if (typeof obj.url === 'string') candidates.push(obj.url);
+        }
+      };
+
+      pushCandidates(parsedContentData);
+      pushCandidates(parsedContent);
+      if (typeof tag.content === 'string') candidates.push(tag.content);
+
+      const found = candidates.find((v) => v && isImageLike(v));
+      return found || null;
+    } catch {
+      return null;
+    }
   }, [tag.tagType, tag.content, tag.contentData]);
 
   return (
     <Rnd
       size={{ width: displayCoords.width, height: displayCoords.height }}
       position={{ x: displayCoords.x, y: displayCoords.y }}
+      minWidth={Math.round(((TAG_TYPE_CONFIG[tag.tagType]?.minWidth ?? fixedDimensions.minWidth ?? 0) * scaleFactor))}
+      minHeight={Math.round(((TAG_TYPE_CONFIG[tag.tagType]?.minHeight ?? fixedDimensions.minHeight ?? 25) * scaleFactor))}
       onDrag={(e, d) => {
         setIsDragging(true);
         setDragCoords({ x: d.x, y: d.y });
@@ -565,16 +630,28 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
               width: rect.width,
               height: rect.height
             });
-          } else if (e.detail === 1) {
-            // Single-click: just select the tag (with debouncing)
-            setTimeout(() => {
-              const currentClickTime = currentTarget._lastClickTime || 0;
-              if (Math.abs(currentClickTime - clickTime) < 50) { // Only if no subsequent clicks
-                console.log('🔗 Single-click confirmed - selecting tag:', tag.id, 'type:', tag.tagType);
-                onSelect();
-              }
-            }, 250); // Wait to see if double click follows
-          }
+                     } else if (e.detail === 1) {
+             // Single-click: auto-fill supported tags, otherwise select (with debouncing)
+             setTimeout(() => {
+               const currentClickTime = currentTarget._lastClickTime || 0;
+               if (Math.abs(currentClickTime - clickTime) < 50) { // Only if no subsequent clicks
+                 const autoFillTypes = ['A','S','I','N','X','D','O'];
+                 if (onTagClick && autoFillTypes.includes(tag.tagType) && !tag.isCompleted) {
+                   const rect = currentTarget.getBoundingClientRect();
+                   console.log('🎯 Single-click auto-fill for tag:', tag.id, 'type:', tag.tagType);
+                   onTagClick(tag, {
+                     x: rect.left,
+                     y: rect.top,
+                     width: rect.width,
+                     height: rect.height
+                   });
+                 } else {
+                   console.log('🔗 Single-click confirmed - selecting tag:', tag.id, 'type:', tag.tagType);
+                   onSelect();
+                 }
+               }
+             }, 150);
+           }
         } else {
           // In tagging mode or for completed tags, just select immediately
           console.log('🔗 Selecting tag:', tag.id, 'type:', tag.tagType, 'onSelect function:', typeof onSelect);
@@ -615,24 +692,45 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       >
         {/* DocuSign style tag content */}
         {hasContent ? (
-          <span 
-            data-text-content
-            style={{ 
-              fontFamily: TYPOGRAPHY.fontFamily,
-              fontSize: `${currentFontSize}px`,
-              fontWeight: TYPOGRAPHY.fontWeight.medium,
-              color: '#1e293b', // Dark text for maximum visibility
-              lineHeight: '1.2',
-              display: 'block',
-              width: '100%',
-              wordWrap: 'break-word',
-              overflowWrap: 'break-word',
-              whiteSpace: 'normal', // Allow text to wrap to multiple lines
-              overflow: 'visible' // Show all content, don't hide overflow
-            }}
-          >
-            {tag.content || tag.displayLabel || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Content'}
-          </span>
+          imageSource && !imageLoadError ? (
+            <img
+              src={imageSource}
+              alt={TAG_TYPE_CONFIG[tag.tagType]?.label || 'Image'}
+              onError={() => setImageLoadError(true)}
+              style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block' }}
+              draggable={false}
+            />
+          ) : (
+            <span 
+              data-text-content
+              style={{ 
+                fontFamily: TYPOGRAPHY.fontFamily,
+                fontSize: `${currentFontSize}px`,
+                fontWeight: TYPOGRAPHY.fontWeight.medium,
+                color: '#1e293b', // Dark text for maximum visibility
+                lineHeight: '1.2',
+                display: 'block',
+                width: '100%',
+                wordWrap: 'break-word',
+                overflowWrap: 'break-word',
+                whiteSpace: 'normal', // Allow text to wrap to multiple lines
+                overflow: 'visible' // Show all content, don't hide overflow
+              }}
+            >
+              {(() => {
+                // Avoid rendering raw JSON in the tag box; show a friendly label instead
+                const isJsonString = typeof tag.content === 'string' && tag.content.trim().startsWith('{');
+                const isSignatureLike = tag.tagType === 'S' || tag.tagType === 'I' || tag.tagType === 'E';
+                if (isSignatureLike && (isJsonString || !tag.content)) {
+                  return TAG_TYPE_CONFIG[tag.tagType]?.label || 'Signature';
+                }
+                if (isJsonString) {
+                  return tag.displayLabel || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Content';
+                }
+                return tag.content || tag.displayLabel || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Content';
+              })()}
+            </span>
+          )
         ) : (
           <span style={{ 
             fontFamily: TYPOGRAPHY.fontFamily,

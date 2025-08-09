@@ -4302,144 +4302,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`🕐 Scheduling job ${jobId} for ${selectedDate} at ${selectedTime}`);
 
-      // Check if this job needs auto assignment
-      if (job.isRandomAssignment && job.notaryOption === 'auto' && !job.notaryId) {
-        console.log(`🎲 Job ${jobId} marked for auto assignment, finding available notaries...`);
+      // Regular schedule update for jobs that already have a notary or don't need auto assignment
+      const updatedJob = await storage.updateJob(jobId, {
+        selectedDate,
+        selectedTime
+      });
 
-        // Use the random notary service to find available notaries for this time slot
-        const randomNotaryService = new (await import('./random-notary-service')).RandomNotaryService();
-        
-        const qualifications = {
-          requiresNSA: job.requiresNSA || false,
-          requiresSpanishSpeaking: job.requiresSpanishSpeaking || false
-        };
-
-        const timeSlot = {
-          date: selectedDate,
-          startTime: selectedTime,
-          endTime: addHourToTime(selectedTime) // Assume 1-hour appointment
-        };
-
-        // Get rejected notaries from job data
-        const excludeIds = job.rejectedNotaries ? job.rejectedNotaries.map((id: string) => parseInt(id)) : [];
-
-        const selectedNotary = await randomNotaryService.selectRandomNotary(qualifications, timeSlot, excludeIds);
-
-        if (selectedNotary) {
-          console.log(`✅ Found available notary: ${selectedNotary.firstName} ${selectedNotary.lastName} for job ${jobId}`);
+      // If job already has a notary, update their calendar
+      if (job.notaryId) {
+        try {
+          const startDateTime = new Date(`${selectedDate} ${selectedTime}`);
+          const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour duration
           
-          // Use the random notary service to assign the notary (includes calendar booking)
-          const assignmentSuccess = await randomNotaryService.assignNotaryToJob(
-            jobId, 
-            selectedNotary.id, 
-            timeSlot, 
-            'random'
-          );
-
-          if (assignmentSuccess) {
-            // Update the approval status since notary needs to approve the assignment
-            await storage.updateJob(jobId, {
-              notaryApprovalStatus: 'assigned_pending_approval'
-            });
-
-            // Send notification to the assigned notary
-            try {
-              const notificationService = new (await import('./notification-service')).NotificationService();
-              await notificationService.sendJobAssignmentNotification(jobId, selectedNotary.id);
-            } catch (notificationError) {
-              console.error('Failed to send job assignment notification:', notificationError);
-            }
-
-            const updatedJob = await storage.getJob(jobId);
-            return res.json({
-              ...updatedJob,
-              message: `Job scheduled and assigned to ${selectedNotary.firstName} ${selectedNotary.lastName}`,
-              assignedNotary: {
-                id: selectedNotary.id,
-                name: `${selectedNotary.firstName} ${selectedNotary.lastName}`
-              }
-            });
-          } else {
-            console.error(`❌ Failed to assign notary ${selectedNotary.id} to job ${jobId}`);
-            return res.status(500).json({ message: 'Failed to assign notary to job' });
-          }
-        } else {
-          console.log(`❌ No available notaries found for job ${jobId} on ${selectedDate} at ${selectedTime}`);
-          
-          // Update the job with the selected time but no notary
-          const updatedJob = await storage.updateJob(jobId, {
-            selectedDate,
-            selectedTime,
-            notaryApprovalStatus: 'pending_assignment'
-          });
-
-          return res.json({
-            ...updatedJob,
-            message: 'Job scheduled but no notaries available at this time. Please try a different time or assign manually.',
-            requiresManualAssignment: true
-          });
-        }
-      } else {
-        // Regular schedule update for jobs that already have a notary or don't need auto assignment
-        const updatedJob = await storage.updateJob(jobId, {
-          selectedDate,
-          selectedTime
-        });
-
-        // If job already has a notary, update their calendar
-        if (job.notaryId) {
-          try {
-            const startDateTime = new Date(`${selectedDate} ${selectedTime}`);
-            const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour duration
-            
-            // Check if calendar event already exists
-            const existingEvent = await db
-              .select()
-              .from(calendarEvents)
-              .where(
-                and(
-                  eq(calendarEvents.jobId, jobId),
-                  eq(calendarEvents.notaryId, job.notaryId)
-                )
+          // Check if calendar event already exists
+          const existingEvent = await db
+            .select()
+            .from(calendarEvents)
+            .where(
+              and(
+                eq(calendarEvents.jobId, jobId),
+                eq(calendarEvents.notaryId, job.notaryId)
               )
-              .limit(1);
+            )
+            .limit(1);
 
-            if (existingEvent.length > 0) {
-              // Update existing calendar event
-              await db
-                .update(calendarEvents)
-                .set({
-                  startDateTime,
-                  endDateTime,
-                  title: `Notarization Job #${jobId}`,
-                  description: `Job for ${job.titleCompany} - ${job.closingType}\nProperty: ${job.propertyAddressOne}, ${job.propertyCity}, ${job.propertyState}`,
-                  location: `${job.propertyAddressOne}, ${job.propertyCity}, ${job.propertyState} ${job.propertyZipCode}`
-                })
-                .where(eq(calendarEvents.id, existingEvent[0].id));
-            } else {
-              // Create new calendar event
-              await db.insert(calendarEvents).values({
-                notaryId: job.notaryId,
-                title: `Notarization Job #${jobId}`,
-                description: `Job for ${job.titleCompany} - ${job.closingType}\nProperty: ${job.propertyAddressOne}, ${job.propertyCity}, ${job.propertyState}`,
+          if (existingEvent.length > 0) {
+            // Update existing calendar event
+            await db
+              .update(calendarEvents)
+              .set({
                 startDateTime,
                 endDateTime,
-                location: `${job.propertyAddressOne}, ${job.propertyCity}, ${job.propertyState} ${job.propertyZipCode}`,
-                eventType: 'job',
-                jobId: jobId,
-                isAllDay: false
-              });
-            }
-          } catch (calendarError) {
-            console.warn('Failed to update calendar event:', calendarError);
+                title: `Notarization Job #${jobId}`,
+                description: `Job for ${job.titleCompany} - ${job.closingType}\nProperty: ${job.propertyAddressOne}, ${job.propertyCity}, ${job.propertyState}`,
+                location: `${job.propertyAddressOne}, ${job.propertyCity}, ${job.propertyState} ${job.propertyZipCode}`
+              })
+              .where(eq(calendarEvents.id, existingEvent[0].id));
+          } else {
+            // Create new calendar event
+            await db.insert(calendarEvents).values({
+              notaryId: job.notaryId,
+              title: `Notarization Job #${jobId}`,
+              description: `Job for ${job.titleCompany} - ${job.closingType}\nProperty: ${job.propertyAddressOne}, ${job.propertyCity}, ${job.propertyState}`,
+              startDateTime,
+              endDateTime,
+              location: `${job.propertyAddressOne}, ${job.propertyCity}, ${job.propertyState} ${job.propertyZipCode}`,
+              eventType: 'job',
+              jobId: jobId,
+              isAllDay: false
+            });
           }
+        } catch (calendarError) {
+          console.warn('Failed to update calendar event:', calendarError);
         }
-
-        res.json({
-          ...updatedJob,
-          message: 'Job schedule updated successfully'
-        });
       }
+
+      res.json({
+        ...updatedJob,
+        message: 'Job schedule updated successfully'
+      });
     } catch (error) {
       console.error('Update job schedule error:', error);
       res.status(500).json({ message: 'Internal server error' });
@@ -8383,76 +8304,11 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
 
   // Get or create password reset token for signer - PUBLIC endpoint (no auth required)
   app.post('/api/signers/get-password-reset-token', async (req, res) => {
-    try {
-      const { invitationToken } = req.body;
-      
-      if (!invitationToken) {
-        return res.status(400).json({ message: 'Invitation token is required' });
-      }
-
-      // Find signer by invitation token
-      const [signer] = await db
-        .select()
-        .from(signers)
-        .where(eq(signers.invitationToken, invitationToken))
-        .limit(1);
-
-      if (!signer) {
-        return res.status(404).json({ message: 'Invalid invitation token' });
-      }
-
-      // Find user by email
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.email, signer.signerEmail))
-        .limit(1);
-
-      if (!user) {
-        return res.status(404).json({ message: 'User account not found' });
-      }
-
-      // Check if user already has an active password reset token
-      const [existingToken] = await db
-        .select()
-        .from(passwordResetTokens)
-        .where(
-          and(
-            eq(passwordResetTokens.userId, user.id),
-            eq(passwordResetTokens.used, false),
-            gte(passwordResetTokens.expiresAt, new Date())
-          )
-        )
-        .limit(1);
-
-      if (existingToken) {
-        // Return existing token
-        res.json({ 
-          passwordResetToken: existingToken.token,
-          invitationToken: invitationToken 
-        });
-      } else {
-        // Create new password reset token
-        const passwordResetToken = crypto.randomUUID();
-        const tokenExpiry = new Date();
-        tokenExpiry.setHours(tokenExpiry.getHours() + 24);
-
-        await db.insert(passwordResetTokens).values({
-          userId: user.id,
-          token: passwordResetToken,
-          expiresAt: tokenExpiry,
-          used: false
-        });
-
-        res.json({ 
-          passwordResetToken: passwordResetToken,
-          invitationToken: invitationToken 
-        });
-      }
-    } catch (error) {
-      console.error('Get password reset token error:', error);
-      res.status(500).json({ message: 'Failed to get password reset token' });
-    }
+    // Auto-fill feature disabled
+    return res.status(410).json({
+      message: 'Auto-fill has been disabled. Please complete tags manually.',
+      error: 'auto_fill_disabled'
+    });
   });
 
   // Test endpoint to send all signer invitations for a job
@@ -9846,7 +9702,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         error: 'get_session_state_failed'
       });
     }
-      });
+  });
 
   // Set active user (for user switching via keyboard shortcuts)
   app.post('/api/session/:sessionId/set-active-user', verifyToken, async (req: any, res) => {
@@ -10157,56 +10013,56 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
             // Live signing session - check if tags have real content from users
             const incompleteTags = tags.filter(tag => !tag.isCompleted);
             
-                      if (incompleteTags.length > 0 && !force) {
-            // Get user information for better error messaging
-            const userIds = [...new Set(incompleteTags.map(t => t.assignedUserId))];
-            const usersData = await db
-              .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
-              .from(users)
-              .where(inArray(users.id, userIds));
-            
-            const userMap = new Map(usersData.map(u => [u.id, `${u.firstName} ${u.lastName}`]));
-            
-            const detailedIncompleteTags = incompleteTags.map(t => ({
-              id: t.id,
-              type: t.tagType,
-              assignedUserId: t.assignedUserId,
-              assignedUserName: userMap.get(t.assignedUserId) || 'Unknown User',
-              hasContent: !!(t.content && t.content.trim()),
-              coordinates: t.coordinates,
-              note: 'User needs to click this tag to fill it with real content'
-            }));
-            
-            console.log(`❌ Live signing session completion blocked - users haven't filled all tags:`, detailedIncompleteTags);
-            
-            // Group tags by assigned user for clearer messaging
-            const tagsByUser = detailedIncompleteTags.reduce((acc, tag) => {
-              const userName = tag.assignedUserName;
-              if (!acc[userName]) acc[userName] = [];
-              acc[userName].push(tag);
-              return acc;
-            }, {} as Record<string, typeof detailedIncompleteTags>);
-            
-            const unfilledSummary = Object.entries(tagsByUser)
-              .map(([userName, userTags]) => 
-                `${userName}: ${userTags.length} tag(s) - ${userTags.map(t => `${t.type} (#${t.id})`).join(', ')}`
-              ).join('; ');
-            
-            return res.status(400).json({
-              success: false,
-              message: `Cannot complete session: ${incompleteTags.length} tags haven't been filled by users. ${unfilledSummary}`,
-              error: 'incomplete_user_tags',
-              canForce: true,
-              incompleteTags: detailedIncompleteTags,
-              unfilledSummary,
-              instructions: 'Each user must click on their assigned unfilled tags to auto-fill them with profile data, or manually enter content for text tags.'
-            });
+            if (incompleteTags.length > 0 && !force) {
+              // Get user information for better error messaging
+              const userIds = [...new Set(incompleteTags.map(t => t.assignedUserId))];
+              const usersData = await db
+                .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+                .from(users)
+                .where(inArray(users.id, userIds));
+              
+              const userMap = new Map(usersData.map(u => [u.id, `${u.firstName} ${u.lastName}`]));
+              
+              const detailedIncompleteTags = incompleteTags.map(t => ({
+                id: t.id,
+                type: t.tagType,
+                assignedUserId: t.assignedUserId,
+                assignedUserName: userMap.get(t.assignedUserId) || 'Unknown User',
+                hasContent: !!(t.content && t.content.trim()),
+                coordinates: t.coordinates,
+                note: 'User needs to click this tag to fill it with real content'
+              }));
+              
+              console.log(`❌ Live signing session completion blocked - users haven't filled all tags:`, detailedIncompleteTags);
+              
+              // Group tags by assigned user for clearer messaging
+              const tagsByUser = detailedIncompleteTags.reduce((acc, tag) => {
+                const userName = tag.assignedUserName;
+                if (!acc[userName]) acc[userName] = [];
+                acc[userName].push(tag);
+                return acc;
+              }, {} as Record<string, typeof detailedIncompleteTags>);
+              
+              const unfilledSummary = Object.entries(tagsByUser)
+                .map(([userName, userTags]) => 
+                  `${userName}: ${userTags.length} tag(s) - ${userTags.map(t => `${t.type} (#${t.id})`).join(', ')}`
+                ).join('; ');
+              
+              return res.status(400).json({
+                success: false,
+                message: `Cannot complete session: ${incompleteTags.length} tags haven't been filled by users. ${unfilledSummary}`,
+                error: 'incomplete_user_tags',
+                canForce: true,
+                incompleteTags: detailedIncompleteTags,
+                unfilledSummary,
+                instructions: 'Each user must click on their assigned unfilled tags to auto-fill them with profile data, or manually enter content for text tags.'
+              });
             }
           }
           
           // For tagging sessions, no validation needed - tags are just markers
 
-                               // Generate final PDF with real user content (only for live signing sessions)
+          // Generate final PDF with real user content (only for live signing sessions)
           if (session.sessionType === 'notary' && tags.length > 0 && tags.some(t => t.isCompleted)) {
             try {
               const { PDFProcessorService } = await import('./services/pdf-processor.service');
@@ -11088,95 +10944,12 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     }
   });
 
-  // Click to fill tag with profile data (auto-fill from user profile)
+  // Click to fill tag with profile data (auto-fill from user profile) — disabled
   app.post('/api/editor/session/:sessionId/tag/:tagId/fill', verifyToken, tagAutoFillDeduplication, async (req: any, res) => {
-    try {
-      const { sessionId, tagId } = req.params;
-      
-      const { TagService } = await import('./services/editor/TagService');
-      const { ProfileAutoFillService } = await import('./services/ProfileAutoFillService');
-      
-      // Get tag details first
-      const tags = await TagService.getSessionTags(sessionId);
-      const tag = tags.find(t => t.id === tagId);
-      
-      if (!tag) {
-        return res.status(404).json({ message: 'Tag not found' });
-      }
-      
-      // 🔒 CRITICAL: Use ProfileAutoFillService with signing session validation
-      const userId = parseInt(tag.assignedUserId) || req.user.id;
-      const autoFillResult = await ProfileAutoFillService.getTagAutoFillData(
-        tag.tagType, 
-        userId, 
-        sessionId
-      );
-      
-      if (!autoFillResult.success) {
-        return res.status(400).json({ 
-          message: autoFillResult.message || 'Auto-fill failed',
-          error: 'auto_fill_failed',
-          autoFillResult
-        });
-      }
-      
-      // Update tag with profile content and mark as completed
-      const updatedTag = await TagService.updateTag(tagId, {
-        content: autoFillResult.content,
-        contentType: autoFillResult.contentType,
-        contentData: autoFillResult.contentData ? JSON.stringify(autoFillResult.contentData) : null,
-        isCompleted: true,
-        completedBy: req.user.id,
-        completedAt: new Date(),
-        updatedBy: req.user.id
-      });
-
-      // 🚀 REAL-TIME SYNC: Broadcast auto-fill update to all session participants  
-      try {
-        const { WebSocketService } = await import('./services/editor/WebSocketService');
-        
-        const syncMessage = {
-          type: 'tag_content_updated',
-          payload: {
-            tagId: updatedTag.id,
-            tagType: tag.tagType,
-            content: autoFillResult.content,
-            contentType: autoFillResult.contentType,
-            contentData: autoFillResult.contentData,
-            isCompleted: true,
-            completedBy: req.user.id,
-            completedAt: new Date(),
-            updatedBy: req.user.id,
-            source: 'auto_fill'
-          },
-          userId: req.user.id.toString(),
-          sessionId,
-          timestamp: Date.now()
-        };
-
-        WebSocketService.broadcastToSession(sessionId, syncMessage);
-        console.log(`🔄 Auto-fill update broadcasted for tag ${tagId} in session ${sessionId}`);
-        
-      } catch (wsError) {
-        console.warn('Failed to broadcast auto-fill update via WebSocket:', wsError);
-        // Don't fail the request if WebSocket broadcast fails
-      }
-      
-      res.json({
-        success: true,
-        tag: updatedTag,
-        message: autoFillResult.message || 'Tag auto-filled successfully',
-        autoFillResult,
-        source: 'profile_auto_fill'
-      });
-      
-    } catch (error) {
-      console.error('Fill tag error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : 'Failed to fill tag with profile data',
-        error: 'tag_fill_failed'
-      });
-    }
+    return res.status(410).json({
+      message: 'Auto-fill has been disabled. Please complete tags manually.',
+      error: 'auto_fill_disabled'
+    });
   });
 
   // Configure seal/stamp with notarization details
@@ -12085,73 +11858,11 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
 
   // Whereby diagnostic endpoint
   app.get('/api/whereby/diagnostics', verifyToken, async (req: any, res) => {
-    try {
-      const { wherebyService } = await import('./lib/whereby-service');
-      
-      // Test Whereby configuration
-      const configValidation = wherebyService.validateConfiguration();
-      const configStatus = wherebyService.getConfigStatus();
-      
-      const diagnostics = {
-        server: {
-          nodeVersion: process.version,
-          platform: process.platform,
-          environment: process.env.NODE_ENV,
-          timestamp: new Date().toISOString()
-        },
-        whereby: {
-          apiKeyConfigured: configStatus.hasApiKey ? 'configured' : 'missing',
-          apiUrl: configStatus.apiUrl,
-          serviceConfigured: configStatus.configured,
-          configurationValid: configValidation.valid,
-          configurationErrors: configValidation.errors,
-          configurationWarnings: configValidation.warnings,
-          serviceStatus: configValidation.valid ? 'ready' : (process.env.NODE_ENV === 'production' ? 'misconfigured' : 'fallback-mode')
-        },
-        authentication: {
-          jwtSecret: process.env.JWT_SECRET ? 'configured' : 'missing',
-          userId: req.user.id,
-          userRole: req.user.role
-        },
-        features: {
-          videoConferencing: true,
-          cloudRecording: configStatus.configured,
-          hostControls: configStatus.configured,
-          waitingRoom: false,
-          complianceMode: true,
-          fallbackMode: !configStatus.configured
-        }
-      };
-
-      console.log('Whereby diagnostics requested by user:', req.user.id);
-      console.log('Whereby service status:', configStatus);
-      
-      const recommendations = [];
-      if (configValidation.errors.length > 0) {
-        recommendations.push(...configValidation.errors.map(error => `❌ ${error}`));
-      }
-      if (configValidation.warnings.length > 0) {
-        recommendations.push(...configValidation.warnings.map(warning => `⚠️ ${warning}`));
-      }
-      if (!configStatus.configured) {
-        recommendations.push('📝 Set WHEREBY_API_KEY environment variable for full video functionality');
-        if (process.env.NODE_ENV === 'development') {
-          recommendations.push('💡 Development mode: Video will use fallback implementation');
-        }
-      }
-      
-      res.json({
-        success: true,
-        diagnostics,
-        recommendations
-      });
-    } catch (error) {
-      console.error('Whereby diagnostics error:', error);
-      res.status(500).json({ 
-        message: 'Failed to get Whereby diagnostics',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
+    // Auto-fill feature disabled
+    return res.status(410).json({
+      message: 'Auto-fill has been disabled. Please complete tags manually.',
+      error: 'auto_fill_disabled'
+    });
   });
 
   // Vultr cloud storage diagnostic endpoint

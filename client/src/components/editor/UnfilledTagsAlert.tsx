@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, Zap, MapPin } from 'lucide-react';
+import { AlertTriangle, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
@@ -18,7 +18,6 @@ interface UnfilledTag {
 interface UnfilledTagsAlertProps {
   unfilledTags: UnfilledTag[];
   currentUserId: string;
-  onBulkFill?: () => void;
   onTagClick?: (tagId: string) => void;
   onClose?: () => void;
 }
@@ -39,7 +38,6 @@ const TAG_TYPE_LABELS = {
 export const UnfilledTagsAlert: React.FC<UnfilledTagsAlertProps> = ({
   unfilledTags,
   currentUserId,
-  onBulkFill,
   onTagClick,
   onClose
 }) => {
@@ -50,13 +48,6 @@ export const UnfilledTagsAlert: React.FC<UnfilledTagsAlertProps> = ({
     acc[userName].push(tag);
     return acc;
   }, {} as Record<string, UnfilledTag[]>);
-
-  // Get current user's unfilled tags
-  const currentUserTags = unfilledTags.filter(tag => 
-    tag.assignedUserId?.toString() === currentUserId
-  );
-
-  const hasCurrentUserTags = currentUserTags.length > 0;
 
   return (
     <Alert className="border-orange-200 bg-orange-50">
@@ -77,16 +68,6 @@ export const UnfilledTagsAlert: React.FC<UnfilledTagsAlertProps> = ({
                 <h4 className="font-medium text-gray-900">
                   {userName} ({userTags.length} unfilled tag{userTags.length !== 1 ? 's' : ''})
                 </h4>
-                {hasCurrentUserTags && onBulkFill && (
-                  <Button
-                    onClick={onBulkFill}
-                    size="sm"
-                    className="bg-orange-600 hover:bg-orange-700 text-white"
-                  >
-                    <Zap className="h-3 w-3 mr-1" />
-                    Fill All Mine
-                  </Button>
-                )}
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -126,28 +107,14 @@ export const UnfilledTagsAlert: React.FC<UnfilledTagsAlertProps> = ({
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
           <h4 className="font-medium text-blue-900 mb-2">What to do:</h4>
           <ul className="text-sm text-blue-800 space-y-1">
-            <li>• <strong>Click on orange pulsing tags</strong> to auto-fill them with profile data</li>
-            {hasCurrentUserTags && (
-              <li>• <strong>Use the lightning bolt (⚡) button</strong> to fill all your tags at once</li>
-            )}
-            <li>• <strong>Signatures and seals</strong> will open selection dialogs</li>
+            <li>• <strong>Click each orange pulsing tag</strong> and enter the required information</li>
+            <li>• <strong>Signatures and seals</strong> will open selection or configuration dialogs</li>
             <li>• <strong>Text tags</strong> require manual typing</li>
           </ul>
         </div>
 
         {/* Action buttons */}
         <div className="flex items-center gap-2 pt-2">
-          {hasCurrentUserTags && onBulkFill && (
-            <Button
-              onClick={onBulkFill}
-              size="sm"
-              className="bg-orange-600 hover:bg-orange-700 text-white"
-            >
-              <Zap className="h-4 w-4 mr-2" />
-              Fill All My Tags ({currentUserTags.length})
-            </Button>
-          )}
-          
           {onClose && (
             <Button
               onClick={onClose}

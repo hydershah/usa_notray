@@ -77,6 +77,8 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
   const [selectedSealTag, setSelectedSealTag] = useState<DocumentTag | null>(null);
   const [sealDialogLoading, setSealDialogLoading] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
+  // Cache of signer signature choices within this session: userId -> content object
+  const signatureChoiceRef = useRef<Map<string, { type: 'signature'; value: string }>>(new Map());
   
   const { toast } = useToast();
 
@@ -666,93 +668,139 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
     }
   }, [sessionId, toast, tags, setTags, currentUserId]);
 
-  // Handle auto-fill tag with profile data - MOVED BEFORE useEffect to fix hoisting issue
+  // Auto-fill disabled in signing mode
   const handleAutoFillTag = useCallback(async (tag: DocumentTag) => {
     try {
-      console.log('🔥 Auto-filling tag:', tag.id, 'Type:', tag.tagType);
-      
-      // 🔒 CRITICAL: Don't auto-fill temporary tags
-      if (tag.id.startsWith('temp_')) {
-        console.log('⏳ Skipping auto-fill for temporary tag, waiting for server ID:', tag.id);
-        toast({
-          title: "Processing...", 
-          description: "Tag is being saved, please try again in a moment",
-          variant: "default"
-        });
-        return;
-      }
-      
-      const response = await fetch(`/api/editor/session/${sessionId}/tag/${tag.id}/fill`, {
-        method: 'POST',
+      // Prepare selected tag so handleTagContentSave can update it
+      setSelectedTagForInput(tag);
+
+      // Attempt to get default content from server (derived from user profile)
+      const response = await fetch(`/api/editor/session/${sessionId}/tag/${tag.id}/default-content`, {
+        method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Auto-fill failed');
+      let contentValue: string | undefined;
+      if (response.ok) {
+        const data = await response.json();
+        contentValue = (data?.content ?? '').toString();
       }
 
-      const result = await response.json();
-      
-      console.log('✅ Tag auto-filled successfully:', {
-        tagId: tag.id,
-        tagType: tag.tagType,
-        autoFillResult: result.autoFillResult,
-        resultTag: result.tag,
-        contentFromAutoFill: result.autoFillResult?.content,
-        contentFromTag: result.tag?.content,
-        contentDataFromAutoFill: result.autoFillResult?.contentData,
-        contentDataFromTag: result.tag?.contentData,
-        contentTypeFromAutoFill: result.autoFillResult?.contentType,
-        hasImageContent: result.autoFillResult?.contentType === 'image',
-        contentLength: result.autoFillResult?.content?.length || 0
-      });
-      
-      // Update local state with the auto-filled tag - PREFER SERVER RESPONSE
-      const updatedTags = tags.map(t =>
-        t.id === tag.id ? {
-          ...t,
-          // Use server response data (result.tag) first, then fallback to autoFillResult
-          isCompleted: true,
-          content: result.tag?.content || result.autoFillResult?.content,
-          contentData: result.tag?.contentData || (result.autoFillResult?.contentData ? JSON.stringify(result.autoFillResult.contentData) : undefined),
-          contentType: result.tag?.contentType || result.autoFillResult?.contentType,
-          updatedAt: new Date()
-        } : t
-      );
-      setTags(updatedTags);
+      // Build a content payload object suitable for handleTagContentSave
+      const buildContentObject = (valueFromServer?: string) => {
+        const value = (valueFromServer ?? '').toString();
+        switch (tag.tagType) {
+          case 'S':
+            return { type: 'signature', value } as any;
+          case 'I':
+            return { type: 'initials', value } as any;
+          case 'A':
+            return { type: 'name', value } as any;
+          case 'N':
+            return { type: 'commission_number', value } as any;
+          case 'X':
+            return { type: 'commission_expiration', value } as any;
+          case 'D': {
+            const today = new Date().toLocaleDateString();
+            return { type: 'current_date', value: value || today } as any;
+          }
+          case 'O':
+            return { type: 'notary_disclosure', value } as any;
+          default:
+            return value || '';
+        }
+      };
 
-      // Show success message
-      toast({
-        title: "Tag Auto-Filled",
-        description: result.message || 'Tag filled with profile data',
-        variant: "default"
-      });
+      let contentObject = buildContentObject(contentValue);
 
-      console.log('✅ Tag auto-filled successfully:', {
-        autoFillResult: result.autoFillResult,
-        resultTag: result.tag,
-        contentFromAutoFill: result.autoFillResult?.content,
-        contentFromTag: result.tag?.content,
-        contentDataFromAutoFill: result.autoFillResult?.contentData,
-        contentDataFromTag: result.tag?.contentData,
-        contentTypeFromAutoFill: result.autoFillResult?.contentType,
-        hasImageContent: result.autoFillResult?.contentType === 'image',
-        contentLength: result.autoFillResult?.content?.length || 0
-      });
-      
-    } catch (error) {
-      console.error('❌ Failed to auto-fill tag:', error);
+      // If server didn't provide a value, fall back to loaded user profile data
+      const needsFallback = (typeof contentObject === 'object' && !contentObject.value) || (typeof contentObject === 'string' && contentObject.trim() === '');
+      if (needsFallback) {
+        const profile = userProfiles[tag.assignedUserId || currentUserId];
+        if (profile) {
+          let fallback = '' as string;
+          switch (tag.tagType) {
+            case 'S':
+              fallback = profile.signatures?.[0] || profile.signatureImage || profile.signatureData || profile.signatureTyped || '';
+              contentObject = { type: 'signature', value: fallback } as any;
+              break;
+            case 'I':
+              fallback = profile.initials?.[0] || profile.initialsImage || profile.initialData || '';
+              if (!fallback && profile.name) {
+                const parts = profile.name.trim().split(' ');
+                if (parts.length >= 2) fallback = `${parts[0][0] || ''}${parts[parts.length - 1][0] || ''}`;
+              }
+              contentObject = { type: 'initials', value: fallback } as any;
+              break;
+            case 'A':
+              fallback = profile.name || '';
+              contentObject = { type: 'name', value: fallback } as any;
+              break;
+            case 'N':
+              fallback = profile.commissionNumber || '';
+              contentObject = { type: 'commission_number', value: fallback } as any;
+              break;
+            case 'X':
+              fallback = profile.commissionExpiration || '';
+              contentObject = { type: 'commission_expiration', value: fallback } as any;
+              break;
+            case 'D':
+              fallback = new Date().toLocaleDateString();
+              contentObject = { type: 'current_date', value: fallback } as any;
+              break;
+            case 'O':
+              fallback = profile.disclosure || '';
+              contentObject = { type: 'notary_disclosure', value: fallback } as any;
+              break;
+          }
+        }
+      }
+
+      if (typeof contentObject === 'object' ? !!contentObject.value : (contentObject || '').toString().trim().length > 0) {
+        // Save directly without opening any modal
+        const saveResponse = await fetch(`/api/editor/session/${sessionId}/tag/${tag.id}/content`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            content: contentObject,
+            completedBy: currentUserId,
+            completedAt: new Date().toISOString()
+          })
+        });
+        if (!saveResponse.ok) {
+          const errData = await saveResponse.json().catch(() => ({}));
+          throw new Error(errData.message || 'Failed to save auto-filled content');
+        }
+        const result = await saveResponse.json().catch(() => ({}));
+        const updatedTags = tags.map(t =>
+          t.id === tag.id
+            ? { ...t, isCompleted: true, contentData: (typeof contentObject === 'object' ? contentObject : undefined), content: (typeof contentObject === 'object' ? (contentObject as any).value || '' : (contentObject || '')), contentType: result?.tag?.contentType || undefined }
+            : t
+        );
+        setTags(updatedTags);
+        toast({ title: 'Filled', description: 'Field auto-filled from profile.' });
+      } else {
+        toast({
+          title: 'Profile Data Missing',
+          description: 'No profile data available to auto-fill this tag.',
+          variant: 'destructive'
+        });
+      }
+    } catch (err) {
+      console.error('❌ Auto-fill failed:', err);
       toast({
-        title: "Auto-Fill Failed",
-        description: error instanceof Error ? error.message : 'Failed to auto-fill tag',
-        variant: "destructive"
+        title: 'Auto-fill Failed',
+        description: err instanceof Error ? err.message : 'Could not auto-fill from profile',
+        variant: 'destructive'
       });
     }
-  }, [sessionId, toast, tags, setTags]);
+  }, [sessionId, currentUserId, userProfiles, toast, tags, setTags]);
 
   // Handle seal configuration
   const handleSealConfig = useCallback(async (config: { applicableSigners: number[]; notarizationType: string; notaryNote?: string }) => {
@@ -964,16 +1012,35 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
 
     console.log('✅ All permission checks passed, determining tag interaction type');
     
-    // 🚀 NEW AUTO-FILL LOGIC: Route by tag type - NOTARY SIGNATURE AUTO-APPLY
+    // Auto-complete date-based tags on click with no modal
+    if ((tag.tagType === 'D' || tag.tagType === 'X') && !tag.isCompleted) {
+      try {
+        // Prefer notary profile expiration for 'X', else today; 'D' always today
+        let dateValue: Date | string = new Date();
+        if (tag.tagType === 'X') {
+          const profile = userProfiles[tag.assignedUserId || currentUserId];
+          if (profile?.commissionExpiration) {
+            dateValue = profile.commissionExpiration; // may be YYYY-MM-DD or ISO; rendering will normalize
+          }
+        }
+        const content = { type: 'date', value: dateValue, isRequired: true } as any;
+        // Reuse existing save logic without showing modal
+        setSelectedTagForInput(tag);
+        await handleTagContentSave(content);
+        return;
+      } catch (e) {
+        console.warn('⚠️ Auto-complete date failed, falling back to modal if available', e);
+        // continue below to default routing
+      }
+    }
+    
+    // Route by tag type (auto-fill enabled)
     // Check who the tag is assigned to (not who is clicking it)
     const assignedParticipant = participants.find(p => p.userId === tag.assignedUserId);
     const isTagAssignedToNotary = assignedParticipant?.userType === 'notary';
     
-    // For notary tags, signatures should auto-apply since they always have their signature in profile
-    // For signer/witness tags, signatures should open selection modal
-    const baseAutoFillTags = ['A', 'I', 'N', 'X', 'D', 'O']; // Auto-fill from profile
-    const autoFillTags = isTagAssignedToNotary ? [...baseAutoFillTags, 'S'] : baseAutoFillTags; // Include signatures for notary tags
-    const modalTags = isTagAssignedToNotary ? [] : ['S']; // Only show signature modal for signer/witness tags
+    // Auto-fill from profile for these tags on click (no popups)
+    const autoFillTags: TagType[] = ['A', 'I', 'N', 'X', 'D', 'O', 'S'];
     
     console.log('🎯 Tag interaction routing:', {
       tagType: tag.tagType,
@@ -982,9 +1049,6 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
       isTagAssignedToNotary,
       currentUserIsNotary: isNotary,
       autoFillTags,
-      modalTags,
-      willAutoApply: autoFillTags.includes(tag.tagType),
-      willShowModal: modalTags.includes(tag.tagType)
     });
     const sealTags = ['E']; // Seal tags that open configuration dialog
     const inlineEditTags = ['T']; // Inline text editing
@@ -994,83 +1058,40 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
       // ⚡ INSTANT: Complete whiteout tags immediately without user interaction
       console.log('⚡ Instant completion for tag:', tag.tagType);
       await handleInstantTagCompletion(tag);
+    } else if (isTagAssignedToNotary && tag.tagType === 'S') {
+      // 🔐 NOTARY SIGNATURE: never prompt, always fetch/apply from notary profile
+      console.log('🔐 Applying notary signature automatically');
+      try {
+        const response = await fetch(`/api/editor/session/${sessionId}/tag/${tag.id}/content`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          // Ask server to derive default content from notary profile for signature
+          body: JSON.stringify({ content: { type: 'signature', value: '' }, completedBy: currentUserId, completedAt: new Date().toISOString() })
+        });
+        if (!response.ok) throw new Error('Failed to apply notary signature');
+        const result = await response.json();
+        const updatedTags = useEditorStore.getState().tags.map(t =>
+          t.id === tag.id
+            ? { ...t, isCompleted: true, content: result?.tag?.content || t.content, contentType: 'image', contentData: result?.tag?.contentData || t.contentData }
+            : t
+        );
+        setTags(updatedTags);
+        toast({ title: 'Notary Signature Applied', description: 'Applied from notary profile.' });
+      } catch (e) {
+        console.error('Notary signature auto-apply failed:', e);
+        toast({ variant: 'destructive', title: 'Could not apply notary signature', description: e instanceof Error ? e.message : 'Unknown error' });
+      }
+    } else if (autoFillTags.includes(tag.tagType as TagType) && !tag.isCompleted) {
+      // 🚀 AUTO-FILL: apply from user profile without any popup
+      await handleAutoFillTag(tag);
     } else if (sealTags.includes(tag.tagType)) {
       // 🔖 SEAL DIALOG: Open seal configuration dialog
       console.log('🔖 Opening seal configuration dialog for tag:', tag.tagType, 'ID:', tag.id);
       setSelectedSealTag(tag);
       setShowSealDialog(true);
-    } else if (modalTags.includes(tag.tagType)) {
-      // 🎯 MODAL: Open selection modal for signer/witness signature tags
-      console.log('🎯 Opening selection modal for tag:', tag.tagType, 'assigned to:', assignedParticipant?.displayName, '(signer/witness)', {
-        tagId: tag.id,
-        assignedUserId: tag.assignedUserId,
-        assignedUserType: assignedParticipant?.userType,
-        currentUserId,
-        currentUserIsNotary: isNotary,
-        isTagAssignedToNotary
-      });
-      
-      // For signature tags, ensure we have the user profile loaded
-      if (tag.tagType === 'S') {
-        const targetUserId = tag.assignedUserId || currentUserId;
-        const userProfile = userProfiles[targetUserId];
-        console.log('📋 User profile for signature:', {
-          targetUserId,
-          targetUserName: assignedParticipant?.displayName,
-          targetUserType: assignedParticipant?.userType,
-          hasProfile: !!userProfile,
-          hasSignatures: !!userProfile?.signatures?.length,
-          hasSignatureData: !!userProfile?.signatureData,
-          hasSignatureImage: !!userProfile?.signatureImage,
-          userProfilesKeys: Object.keys(userProfiles),
-          userProfilesLength: Object.keys(userProfiles).length,
-          isSignerTag: !isTagAssignedToNotary,
-          currentUserIsNotary: isNotary
-        });
-        
-        // If no profile loaded, show a helpful message but still open the modal
-        if (!userProfile) {
-          console.warn('⚠️ No user profile loaded, but opening modal anyway');
-          toast({
-            title: "Loading Profile",
-            description: "Opening signature selection...",
-            variant: "default"
-          });
-        }
-      }
-      
-      console.log('📍 Setting modal state:', {
-        tagId: tag.id,
-        position,
-        willOpenModal: true
-      });
-      
-      setSelectedTagForInput(tag);
-      setTagModalPosition(position);
-      
-      // Force a small delay to ensure state is set
-      setTimeout(() => {
-        console.log('✅ Modal state should be set:', {
-          selectedTagForInput: !!tag,
-          tagModalPosition: !!position
-        });
-      }, 50);
-    } else if (autoFillTags.includes(tag.tagType)) {
-      // 🔥 AUTO-FILL: Call API to fill with profile data (includes notary signatures)
-      console.log('🎯 Auto-filling tag with profile data:', tag.tagType, 'assigned to:', assignedParticipant?.displayName, isTagAssignedToNotary ? '(notary tag)' : '(general tag)');
-      
-      // Extra safety check - don't auto-fill seal tags
-      if (tag.tagType === 'E') {
-        console.error('🚫 BLOCKED: Attempted to auto-fill seal tag, should use dialog instead:', tag.id);
-        toast({
-          title: "Seal Configuration Required",
-          description: "Seal tags require configuration dialog, not auto-fill",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      await handleAutoFillTag(tag);
     } else if (inlineEditTags.includes(tag.tagType)) {
       // ✏️ INLINE EDIT: Start inline text editing for text tags
       console.log('✏️ Starting inline text editing for tag:', tag.tagType);
@@ -1081,23 +1102,15 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         // Select the text input first
         selectTextInput(matchingTextInput.id);
         
-        // ✅ DIRECT APPROACH: Instead of synthetic events, directly trigger editing via state
-        // This prevents duplication by avoiding multiple event handlers
         setTimeout(() => {
           console.log('🎯 Directly triggering text input editing for:', matchingTextInput.id);
-          
-          // Try to find the text input element and call its click handler directly
           const textElement = document.querySelector(`[data-text-input-id="${matchingTextInput.id}"]`);
           if (textElement) {
-            // Instead of dispatching events, directly call the StreamlinedTextInput's selection logic
-            // The component will handle starting edit mode when selected
             const inputElement = textElement.querySelector('input');
             if (inputElement) {
-              inputElement.focus();
-              inputElement.click();
+              (inputElement as HTMLInputElement).focus();
+              (inputElement as HTMLInputElement).click();
             } else {
-              // If no input field is visible, the component isn't in edit mode yet
-              // The single click will trigger edit mode
               (textElement as HTMLElement).click();
             }
           }
@@ -1117,12 +1130,10 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         });
       }
     } else {
-      // 📝 FALLBACK: Show modal for unknown tag types
-      console.log('📝 Fallback to modal for unknown tag type:', tag.tagType);
-      setSelectedTagForInput(tag);
-      setTagModalPosition(position);
+      // No other path; do nothing
+      console.log('ℹ️ No auto-fill or inline edit path for tag type:', tag.tagType);
     }
-  }, [mode, participants, currentUserId, liveSessionState, toast, handleAutoFillTag, userProfiles, textInputs, selectTextInput]);
+  }, [mode, participants, currentUserId, liveSessionState, toast, userProfiles, textInputs, selectTextInput]);
 
   // Handle tag content save
   const handleTagContentSave = useCallback(async (content: any) => {
@@ -1149,25 +1160,39 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
       // Update local state
       const updatedTags = tags.map(tag =>
         tag.id === selectedTagForInput.id
-          ? { ...tag, isCompleted: true, contentData: content }
+          ? { ...tag, isCompleted: true, contentData: content, content: (typeof content === 'object' && content) ? (content.value || '') : content }
           : tag
       );
       setTags(updatedTags);
 
-      // Auto-resize tag based on new content
-      const contentValue = typeof content === 'string' ? content : content.value || '';
-      if (contentValue.trim().length > 0) {
+      // Cache signer signature choice so subsequent signature tags auto-apply without modal
+      try {
+        if (selectedTagForInput.tagType === 'S' && content && typeof content === 'object' && content.type === 'signature' && typeof content.value === 'string') {
+          const userKey = (selectedTagForInput.assignedUserId || currentUserId || '').toString();
+          signatureChoiceRef.current.set(userKey, { type: 'signature', value: content.value });
+          console.log('🗂️ Cached signature for user', userKey);
+        }
+      } catch {}
+
+      // Auto-resize tag based on new content for text-like tags only
+      const contentValue = typeof content === 'string' ? content : content?.value || '';
+      const contentType = typeof content === 'object' && content ? (content as any).contentType : undefined;
+      const isImageContent = contentType === 'image' || (typeof contentValue === 'string' && (contentValue.startsWith('data:image/') || contentValue.startsWith('http')));
+
+      // Skip auto-resize for image-based tags (signatures, initials, seals)
+      if (!isImageContent && contentValue.trim().length > 0) {
         // Calculate optimal dimensions for the tag
         const { calculateOptimalWidth, calculateOptimalHeight } = await import('@/lib/constants/tagConstants');
         
         const optimalWidth = calculateOptimalWidth(contentValue, 12, 'Arial');
-        const optimalHeight = calculateOptimalHeight(contentValue, 12);
+        // Do not auto-inflate height; cap to minimum height for single-line text tags
+        const optimalHeight = 25;
         
         // Get current tag dimensions
         const currentTag = tags.find(tag => tag.id === selectedTagForInput.id);
         if (currentTag) {
           const currentWidth = currentTag.coordinates.width || 100;
-          const currentHeight = currentTag.coordinates.height || 30;
+          const currentHeight = currentTag.coordinates.height || 25;
           
           // Use the larger of current dimensions or optimal dimensions
           const newWidth = Math.max(currentWidth, optimalWidth);
@@ -1189,7 +1214,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
             });
             
             if (updateResponse.ok) {
-              console.log('✅ Tag auto-resized based on content:', {
+              console.log('✅ Tag auto-resized based on text content:', {
                 tagId: selectedTagForInput.id,
                 oldWidth: currentWidth,
                 oldHeight: currentHeight,
@@ -1359,7 +1384,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         const professionalCoordinates = {
           ...coordinates,
           width: tagDimensions?.width || 120,
-          height: tagDimensions?.height || 30
+          height: tagDimensions?.height || 25
         };
         
         console.log('🔍 Final professionalCoordinates:', professionalCoordinates);
@@ -1666,12 +1691,12 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         </div>
 
         {/* Right Column - Simplified Controls */}
-        <div className="w-72 bg-white border-l border-gray-200">
-          <div className="h-full flex flex-col">
+        <div className="w-64 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col min-h-0">
+          <div className="h-full min-h-0 flex flex-col">
 
             
             {/* Tagging Toolbar */}
-            <div className="flex-1">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
               <TaggingToolbar
                 participants={participants}
                 sessionId={sessionId}

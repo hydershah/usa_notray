@@ -42,7 +42,7 @@ const TagTypeButton: React.FC<TagTypeButtonProps> = ({
       onClick={onClick}
       disabled={isDisabled}
       className={`
-        relative flex flex-col items-center gap-1 p-2 rounded-lg border transition-all duration-200 min-h-[60px]
+        w-full flex items-center justify-between p-2 pr-3 rounded-lg border transition-all duration-200 min-h-[40px]
         ${isSelected 
           ? 'border-blue-500 bg-blue-50 text-blue-700' 
           : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
@@ -54,14 +54,11 @@ const TagTypeButton: React.FC<TagTypeButtonProps> = ({
       `}
       title={`${tagInfo.description} (${shortcut}) - ${user.displayName}`}
     >
-      {/* Tag Icon */}
-      <span className="text-lg font-bold">{tagInfo.icon}</span>
-      
-      {/* Tag Label */}
-      <span className="text-xs font-medium text-center leading-tight">{tagInfo.label}</span>
-      
-      {/* Shortcut Key */}
-      <div className="absolute top-1 right-1 w-4 h-4 bg-gray-600 text-white text-xs rounded flex items-center justify-center font-mono">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="shrink-0 text-base">{tagInfo.icon}</span>
+        <span className="text-sm font-medium truncate">{tagInfo.label}</span>
+      </div>
+      <div className="shrink-0 w-5 h-5 bg-gray-600 text-white text-xs rounded flex items-center justify-center font-mono">
         {shortcut}
       </div>
     </button>
@@ -94,7 +91,13 @@ const UserTagSection: React.FC<UserTagSectionProps> = ({
   canControlSession
 }) => {
   const isCurrentUser = currentUser?.userId === user.userId;
-  const userColor = USER_COLORS[user.userType] || '#6B7280';
+  const getUserColor = (u: SessionParticipant): string => {
+    if (u.userType === 'notary') return USER_COLORS.notary;
+    if (u.userType === 'signer') return USER_COLORS.signer1;
+    if (u.userType === 'witness') return USER_COLORS.witness1;
+    return '#6B7280';
+  };
+  const userColor = getUserColor(user);
   
   // Check if user is currently active in live session
   const isActiveUser = liveSessionState?.activeUserId === parseInt(user.userId);
@@ -160,7 +163,7 @@ const UserTagSection: React.FC<UserTagSectionProps> = ({
       </div>
       
       {/* User's Tags */}
-      <div className="grid grid-cols-4 gap-1.5">
+      <div className="flex flex-col gap-1.5">
         {tags.map((tagType) => {
           const isSelected = selectedTagType === tagType && selectedUser?.userId === user.userId;
           const shortcut = tagType; // Use tag type as shortcut
@@ -355,9 +358,9 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
 
   // Main interface - show all users with their tags
   return (
-    <div className={`space-y-4 ${className}`}>
+    <div className={`h-full min-h-0 flex flex-col gap-4 ${className}`} style={{ minWidth: 0 }}>
       {/* Header */}
-      <div className="space-y-2">
+      <div className="space-y-2 pr-3">
         <h2 className="text-lg font-semibold text-gray-900">
           {propMode === 'signing' ? 'Signing Tools' : 'Tagging Tools'}
         </h2>
@@ -384,7 +387,10 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
 
       {/* User Sections with Tags */}
       {participants && participants.length > 0 && canPlaceTags && (
-        <div className="space-y-4">
+        <div
+          className="flex-1 overflow-y-auto overscroll-contain space-y-4 pr-3"
+          style={{ scrollbarGutter: 'stable both-edges' as any }}
+        >
           {participants.map((participant) => {
             const availableTags = getAvailableTagTypes(participant);
             if (availableTags.length === 0) return null;

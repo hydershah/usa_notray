@@ -137,7 +137,7 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     defaultWidth: 120,  // Reduced size
     defaultHeight: 25,  // Reduced size
     minWidth: 80,
-    minHeight: 24,
+    minHeight: 25,
     allowResize: true,
     allowTextInput: true
   },
@@ -228,14 +228,14 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     defaultWidth: 120,  // Reduced size
     defaultHeight: 25,  // Reduced size
     minWidth: 50,
-    minHeight: 20,
+    minHeight: 25,
     allowResize: true,
     allowTextInput: false
   },
   'T': {
     label: 'Text',
     icon: '📄',
-    placeholder: 'Enter text',
+    placeholder: 'Text',
     color: '#f8fafc', // Slightly lighter background
     borderColor: '#475569', // Darker border for better contrast
     defaultWidth: 120,  // Standardized size
@@ -380,7 +380,7 @@ export const calculateOptimalWidth = (text: string, fontSize: number = 12, fontF
 // Calculate optimal height based on text content and font size
 export const calculateOptimalHeight = (text: string, fontSize: number = 12): number => {
   if (!text || text.trim().length === 0) {
-    return 30; // Default minimum height
+    return 25; // Default minimum height aligned with 25px requirement
   }
   
   // For single line text, use font size + padding
