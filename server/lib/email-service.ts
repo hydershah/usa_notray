@@ -45,39 +45,72 @@ class EmailService {
   private getClientUrl(): string {
     // Priority order for determining client URL:
     // 1. CLIENT_URL environment variable (highest priority)
-    // 2. Detect from common deployment environment variables
-    // 3. Build from HOST and PORT if available
-    // 4. Default to localhost for development
-    
+    // 2. SERVER_URL / FRONTEND_URL / BACKEND_URL
+    // 3. Detect from common deployment environment variables
+    // 4. Fly.io detection via FLY_APP_NAME
+    // 5. Build from HOST and PORT if available
+    // 6. Default to localhost for development
+
+    const normalizeUrl = (url: string) => {
+      if (!url) return url;
+      const trimmed = url.trim().replace(/\/$/, '');
+      if (/^https?:\/\//i.test(trimmed)) return trimmed;
+      return `https://${trimmed}`; // ensure protocol
+    };
+
     if (process.env.CLIENT_URL) {
-      console.log(`✅ Using configured CLIENT_URL: ${process.env.CLIENT_URL}`);
-      return process.env.CLIENT_URL;
+      const url = normalizeUrl(process.env.CLIENT_URL);
+      console.log(`✅ Using configured CLIENT_URL: ${url}`);
+      return url;
     }
-    
+
+    if (process.env.SERVER_URL) {
+      const url = normalizeUrl(process.env.SERVER_URL);
+      console.log(`✅ Using SERVER_URL: ${url}`);
+      return url;
+    }
+
+    if (process.env.FRONTEND_URL) {
+      const url = normalizeUrl(process.env.FRONTEND_URL);
+      console.log(`✅ Using FRONTEND_URL: ${url}`);
+      return url;
+    }
+
+    if (process.env.BACKEND_URL) {
+      const url = normalizeUrl(process.env.BACKEND_URL);
+      console.log(`✅ Using BACKEND_URL: ${url}`);
+      return url;
+    }
+
     // Enhanced Railway.com detection with multiple domain support
     if (process.env.RAILWAY_STATIC_URL) {
       console.log(`✅ Using Railway static URL: ${process.env.RAILWAY_STATIC_URL}`);
-      return process.env.RAILWAY_STATIC_URL;
+      return normalizeUrl(process.env.RAILWAY_STATIC_URL);
     }
-    
+
     // Railway Public URL (custom domains)
     if (process.env.RAILWAY_PUBLIC_URL) {
       console.log(`✅ Using Railway public URL: ${process.env.RAILWAY_PUBLIC_URL}`);
-      return process.env.RAILWAY_PUBLIC_URL;
+      return normalizeUrl(process.env.RAILWAY_PUBLIC_URL);
     }
-    
+
     // Railway Service URL (auto-generated)
     if (process.env.RAILWAY_SERVICE_URL) {
       console.log(`✅ Using Railway service URL: ${process.env.RAILWAY_SERVICE_URL}`);
-      return process.env.RAILWAY_SERVICE_URL;
+      return normalizeUrl(process.env.RAILWAY_SERVICE_URL);
     }
-    
+
+    // Fly.io default domain
+    if (process.env.FLY_APP_NAME) {
+      const flyUrl = `https://${process.env.FLY_APP_NAME}.fly.dev`;
+      console.log(`✅ Using Fly.io URL: ${flyUrl}`);
+      return flyUrl;
+    }
+
     // Railway Environment-specific URL construction
     if (process.env.RAILWAY_ENVIRONMENT_NAME && process.env.RAILWAY_PROJECT_NAME) {
       const envName = process.env.RAILWAY_ENVIRONMENT_NAME;
       const projectName = process.env.RAILWAY_PROJECT_NAME;
-      
-      // Handle different environment patterns
       let constructedUrl;
       if (envName === 'production') {
         constructedUrl = `https://${projectName}.up.railway.app`;
@@ -87,42 +120,37 @@ class EmailService {
       console.log(`✅ Using constructed Railway URL: ${constructedUrl}`);
       return constructedUrl;
     }
-    
+
     // Auto-detect from common deployment platforms
     if (process.env.VERCEL_URL) {
       const vercelUrl = `https://${process.env.VERCEL_URL}`;
       console.log(`✅ Using Vercel URL: ${vercelUrl}`);
       return vercelUrl;
     }
-    
+
     if (process.env.NETLIFY_URL) {
       console.log(`✅ Using Netlify URL: ${process.env.NETLIFY_URL}`);
-      return process.env.NETLIFY_URL;
+      return normalizeUrl(process.env.NETLIFY_URL);
     }
-    
+
     if (process.env.RENDER_EXTERNAL_URL) {
       console.log(`✅ Using Render URL: ${process.env.RENDER_EXTERNAL_URL}`);
-      return process.env.RENDER_EXTERNAL_URL;
+      return normalizeUrl(process.env.RENDER_EXTERNAL_URL);
     }
-    
+
     // Heroku detection
     if (process.env.HEROKU_APP_NAME) {
       const herokuUrl = `https://${process.env.HEROKU_APP_NAME}.herokuapp.com`;
       console.log(`✅ Using Heroku URL: ${herokuUrl}`);
       return herokuUrl;
     }
-    
+
     // Generic environment detection
     if (process.env.APP_URL) {
       console.log(`✅ Using APP_URL: ${process.env.APP_URL}`);
-      return process.env.APP_URL;
+      return normalizeUrl(process.env.APP_URL);
     }
-    
-    if (process.env.FRONTEND_URL) {
-      console.log(`✅ Using FRONTEND_URL: ${process.env.FRONTEND_URL}`);
-      return process.env.FRONTEND_URL;
-    }
-    
+
     // Build from HOST and PORT if available
     if (process.env.HOST && process.env.PORT) {
       const protocol = process.env.HTTPS === 'true' ? 'https' : 'http';
@@ -130,20 +158,16 @@ class EmailService {
       console.log(`✅ Using HOST:PORT URL: ${hostUrl}`);
       return hostUrl;
     }
-    
+
     // Development fallback
     const isProduction = process.env.NODE_ENV === 'production';
-    const isDevelopment = process.env.NODE_ENV === 'development';
-    
     if (isProduction) {
-      // Log warning for production without proper URL configuration
       console.warn('⚠️ CRITICAL: CLIENT_URL not configured for production environment!');
-      console.warn('⚠️ Please set CLIENT_URL environment variable to your production domain');
+      console.warn('⚠️ Please set CLIENT_URL (or SERVER_URL/FRONTEND_URL) to your production domain');
       console.warn('⚠️ Email links may not work correctly without proper URL configuration');
       return 'https://localhost:3000'; // HTTPS for production
     }
-    
-    // Development default - using port 3002 as specified by user
+
     console.log(`✅ Using development default: http://localhost:3002`);
     return 'http://localhost:3002'; // Frontend runs on port 3002
   }
@@ -695,6 +719,7 @@ class EmailService {
         
         <div style="text-align: center; margin: 30px 0;">
             <a href="${resetLink}" 
+               target="_blank" rel="noopener noreferrer"
                style="display: inline-block; 
                       background: #1e40af; 
                       color: white; 
@@ -711,7 +736,7 @@ class EmailService {
         <div class="warning-box">
             <p><strong>⚠️ Security Information:</strong></p>
             <ul style="margin: 10px 0;">
-                <li>This link expires in 1 hour for security</li>
+                <li>This link expires in 24 hours for security</li>
                 <li>If you didn't request this reset, please ignore this email</li>
                 <li>Your password remains unchanged until you complete the reset</li>
             </ul>

@@ -301,7 +301,7 @@ class PostmarkEmailService {
         <p>We received a request to reset your password for Sharp Note platform.</p>
         
         <div style="text-align: center; margin: 30px 0;">
-            <a href="${resetLink}" class="button">
+            <a href="${resetLink}" class="button" target="_blank" rel="noopener noreferrer">
                 🔑 Reset Password
             </a>
         </div>
@@ -309,7 +309,7 @@ class PostmarkEmailService {
         <div class="warning-box">
             <p><strong>⚠️ Security Information:</strong></p>
             <ul style="margin: 10px 0;">
-                <li>This link expires in 1 hour for security</li>
+                <li>This link expires in 24 hours for security</li>
                 <li>If you didn't request this reset, please ignore this email</li>
                 <li>Your password remains unchanged until you complete the reset</li>
             </ul>
