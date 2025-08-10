@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { useEditorStore } from './useEditorStore';
 import type { PlaceTagCommand, DocumentTag, TagCoordinates } from '../../types/editor';
-import { getTagIcon, getTagLabel } from '../../lib/utils/tagUtils';
+import { getTagLabel } from '../../lib/utils/tagUtils';
 
 // Simple debounce implementation
 function debounce<T extends (...args: any[]) => any>(
@@ -391,7 +391,7 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       tagType: command.tagType,
       assignedUserId: command.assignedUserId || selectedUser.userId,
       coordinates: sanitizedCoordinates as TagCoordinates,
-      displayLabel: `${getTagIcon(command.tagType)} ${getTagLabel(command.tagType)} - ${selectedUser.displayName}`,
+      displayLabel: `${getTagLabel(command.tagType)} - ${selectedUser.displayName}`,
       colorCode: selectedUser.colorCode || '#4ECDC4',
       isCompleted: false,
       createdAt: new Date(),
@@ -598,7 +598,7 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
         tagType: 'W',
         assignedUserId: useEditorStore.getState().selectedUser?.userId,
         coordinates: sanitizedCoordinates as TagCoordinates,
-        displayLabel: `${getTagIcon('W')} ${getTagLabel('W')} - ${displayName}`,
+        displayLabel: `${getTagLabel('W')} - ${displayName}`,
         colorCode,
         isCompleted: true,
         content: 'WHITEOUT',
@@ -653,7 +653,7 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
         tagType: 'W',
         assignedUserId: useEditorStore.getState().selectedUser?.userId,
         coordinates: overlay.coordinates as TagCoordinates,
-        displayLabel: `${getTagIcon('W')} ${getTagLabel('W')} - ${displayName}`,
+        displayLabel: `${getTagLabel('W')} - ${displayName}`,
         colorCode,
         isCompleted: true,
         content: 'WHITEOUT',

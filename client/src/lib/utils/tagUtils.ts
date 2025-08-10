@@ -1,19 +1,20 @@
 // Tag utility functions for PDF tagging system
 
 export const getTagIcon = (tagType: string): string => {
+  // Emojis removed per product requirement
   const icons: Record<string, string> = {
-    'A': '✍️', // Name
-    'S': '📝', // Signature
-    'I': '🔤', // Initials
-    'N': '🆔', // Commission Number
-    'X': '📅', // Expiration
-    'O': '📋', // Disclosure
-    'E': '🔖', // Seal
-    'W': '⬜', // Whiteout
-    'T': '📝', // Text
-    'D': '📆'  // Date
+    'A': '',
+    'S': '',
+    'I': '',
+    'N': '',
+    'X': '',
+    'O': '',
+    'E': '',
+    'W': '',
+    'T': '',
+    'D': ''
   };
-  return icons[tagType] || '📝';
+  return icons[tagType] || '';
 };
 
 export const getTagLabel = (tagType: string): string => {

@@ -23,16 +23,16 @@ interface UnfilledTagsAlertProps {
 }
 
 const TAG_TYPE_LABELS = {
-  'A': '✍️ Name',
-  'S': '📝 Signature', 
-  'I': '🔤 Initials',
-  'N': '🆔 Commission #',
-  'X': '📅 Expiration',
-  'O': '📋 Disclosure',
-  'E': '🔖 Seal',
-  'D': '📆 Date',
-  'T': '📝 Text',
-  'W': '⬜ Whiteout'
+  'A': 'Name',
+  'S': 'Signature', 
+  'I': 'Initials',
+  'N': 'Commission #',
+  'X': 'Expiration',
+  'O': 'Disclosure',
+  'E': 'Seal',
+  'D': 'Date',
+  'T': 'Text',
+  'W': 'Whiteout'
 } as const;
 
 export const UnfilledTagsAlert: React.FC<UnfilledTagsAlertProps> = ({

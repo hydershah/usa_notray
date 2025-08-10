@@ -130,12 +130,12 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
 }> = {
   'A': {
     label: 'Name',
-    icon: '👤',
-    placeholder: 'Full Name',
+    icon: '',
+    placeholder: 'Name',
     color: PROFESSIONAL_COLORS.primary,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 120,  // Reduced size
-    defaultHeight: 22,  // tighter default height
+    defaultWidth: 80,   // Changed to 20x80px format
+    defaultHeight: 20,  // Changed to 20x80px format
     minWidth: 1,        // allow hugging content
     minHeight: 1,       // allow hugging content
     allowResize: true,
@@ -143,8 +143,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
   },
   'S': {
     label: 'Signature',
-    icon: '✍️',
-    placeholder: 'Sign here',
+    icon: '',
+    placeholder: 'Sign',
     color: PROFESSIONAL_COLORS.signature,
     borderColor: PROFESSIONAL_COLORS.borderActive,
     defaultWidth: 160,  // Reduced from 180 - slightly bigger for signatures
@@ -156,12 +156,12 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
   },
   'I': {
     label: 'Initials',
-    icon: '📝',
-    placeholder: 'Initial here',
+    icon: '',
+    placeholder: 'Initial',
     color: PROFESSIONAL_COLORS.accent,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 120,
-    defaultHeight: 22,
+    defaultWidth: 80,   // Changed to 20x80px format
+    defaultHeight: 20,  // Changed to 20x80px format
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -169,12 +169,12 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
   },
   'N': {
     label: 'Commission Number',
-    icon: '🔢',
-    placeholder: 'Commission #',
+    icon: '',
+    placeholder: 'Comm #',
     color: PROFESSIONAL_COLORS.success,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 120,
-    defaultHeight: 22,
+    defaultWidth: 80,   // Changed to 20x80px format
+    defaultHeight: 20,  // Changed to 20x80px format
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -182,12 +182,12 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
   },
   'X': {
     label: 'Commission Expiration',
-    icon: '📅',
-    placeholder: 'Expiration Date',
+    icon: '',
+    placeholder: 'Exp Date',
     color: '#fef3c7', // Light yellow background
     borderColor: '#d97706', // Darker orange border for better contrast
-    defaultWidth: 120,
-    defaultHeight: 22,
+    defaultWidth: 80,   // Changed to 20x80px format
+    defaultHeight: 20,  // Changed to 20x80px format
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -195,12 +195,12 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
   },
   'O': {
     label: 'Disclosure',
-    icon: '📋',
-    placeholder: 'Disclosure info',
+    icon: '',
+    placeholder: 'Disclosure',
     color: '#fef3c7', // Light yellow background for high visibility
     borderColor: '#d97706', // Dark orange border for maximum contrast
-    defaultWidth: 120,
-    defaultHeight: 22,
+    defaultWidth: 80,   // Changed to 20x80px format
+    defaultHeight: 20,  // Changed to 20x80px format
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -208,8 +208,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
   },
   'E': {
     label: 'Notary Seal',
-    icon: '🔏',
-    placeholder: 'Notary seal',
+    icon: '',
+    placeholder: 'Seal',
     color: PROFESSIONAL_COLORS.primary,
     borderColor: PROFESSIONAL_COLORS.borderActive,
     defaultWidth: 80,   // Reduced from 100 - slightly bigger for seals
@@ -221,12 +221,12 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
   },
   'W': {
     label: 'Whiteout',
-    icon: '⬜',
-    placeholder: 'Whiteout area',
+    icon: '',
+    placeholder: 'Whiteout',
     color: '#ffffff', // Pure white background for true whiteout
     borderColor: '#e5e7eb', // Light gray border
-    defaultWidth: 120,
-    defaultHeight: 20,  // thinner whiteout by default
+    defaultWidth: 80,   // Changed to 20x80px format
+    defaultHeight: 20,  // Changed to 20x80px format
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -234,13 +234,13 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
   },
   'T': {
     label: 'Text',
-    icon: '📄',
+    icon: '',
     placeholder: 'Text',
     color: '#f8fafc', // Slightly lighter background
     borderColor: '#475569', // Darker border for better contrast
     // Stable default size so the tag never flashes invisible or overly large
-    defaultWidth: 160,
-    defaultHeight: 28,
+    defaultWidth: 80,   // Changed to 20x80px format
+    defaultHeight: 20,  // Changed to 20x80px format
     // Sensible minimums to prevent flicker while still allowing shrink-to-fit
     minWidth: 24,
     minHeight: 20,
@@ -249,12 +249,12 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
   },
   'D': {
     label: 'Date',
-    icon: '📅',
-    placeholder: 'MM/DD/YYYY',
+    icon: '',
+    placeholder: 'Date',
     color: '#fef3c7', // Light yellow background
     borderColor: '#d97706', // Darker orange border for better contrast
-    defaultWidth: 120,
-    defaultHeight: 22,
+    defaultWidth: 80,   // Changed to 20x80px format
+    defaultHeight: 20,  // Changed to 20x80px format
     minWidth: 1,
     minHeight: 1,
     allowResize: true,

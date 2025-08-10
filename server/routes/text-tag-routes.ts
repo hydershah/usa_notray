@@ -50,7 +50,7 @@ export function registerTextTagRoutes(app: Express) {
       }
 
       // Generate display label and color for text tag
-      const displayLabel = `✏️ Text - ${assignedUser.firstName} ${assignedUser.lastName}`;
+      const displayLabel = `Text - ${assignedUser.firstName} ${assignedUser.lastName}`;
       const colorCode = getUserColor(assignedUser);
 
       // ✅ FIX: Use provided font size from client, fallback to 16px if not provided
@@ -125,7 +125,7 @@ export function registerTextTagRoutes(app: Express) {
                 height: createdTag.height,
                 pageNumber: createdTag.pageNumber
               },
-              displayLabel: `✏️ Text - ${assignedUser.firstName} ${assignedUser.lastName}`,
+              displayLabel: `Text - ${assignedUser.firstName} ${assignedUser.lastName}`,
               colorCode: colorCode,
               isCompleted: false,
               content: createdTag.content || '',
@@ -246,7 +246,7 @@ export function registerTextTagRoutes(app: Express) {
         .where(eq(users.id, updatedTag.assignedUserId))
         .limit(1);
 
-      const displayLabel = user ? `✏️ Text - ${user.firstName} ${user.lastName}` : 'Text Tag';
+      const displayLabel = user ? `Text - ${user.firstName} ${user.lastName}` : 'Text Tag';
       const colorCode = user ? getUserColor(user) : '#000000';
 
       // Parse updated contentData for response
@@ -741,7 +741,7 @@ export function registerTextTagRoutes(app: Express) {
         .where(eq(users.id, tag.assignedUserId))
         .limit(1);
 
-      const displayLabel = user ? `✏️ Text - ${user.firstName} ${user.lastName}` : 'Text Tag';
+      const displayLabel = user ? `Text - ${user.firstName} ${user.lastName}` : 'Text Tag';
       const colorCode = user ? getUserColor(user) : '#000000';
 
       // Parse contentData if available

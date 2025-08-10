@@ -731,16 +731,16 @@ export class TagService {
   
   private static getTagTypeInfo(tagType: string) {
     const TAG_TYPE_INFO = {
-      'A': { label: 'Name', icon: '✍️' },
-      'S': { label: 'Signature', icon: '📝' },
-      'I': { label: 'Initials', icon: '🔤' },
-      'N': { label: 'Commission #', icon: '🆔' },
-      'X': { label: 'Expiration', icon: '📅' },
-      'O': { label: 'Disclosure', icon: '📋' },
-      'E': { label: 'Seal', icon: '🔖' },
-      'W': { label: 'Whiteout', icon: '⬜' },
-      'T': { label: 'Text', icon: '📝' },
-      'D': { label: 'Date', icon: '📆' },
+      'A': { label: 'Name', icon: '' },
+      'S': { label: 'Signature', icon: '' },
+      'I': { label: 'Initials', icon: '' },
+      'N': { label: 'Commission #', icon: '' },
+      'X': { label: 'Expiration', icon: '' },
+      'O': { label: 'Disclosure', icon: '' },
+      'E': { label: 'Seal', icon: '' },
+      'W': { label: 'Whiteout', icon: '' },
+      'T': { label: 'Text', icon: '' },
+      'D': { label: 'Date', icon: '' },
     } as const;
     
     return TAG_TYPE_INFO[tagType as keyof typeof TAG_TYPE_INFO] || { label: 'Unknown', icon: '❓' };

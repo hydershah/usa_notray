@@ -353,7 +353,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
               background: 'transparent',
               outline: 'none',
               fontFamily: fontFamily,
-              fontSize: `${fontSize}px`,
+              fontSize: `${hasContent ? fontSize : Math.max(10, Math.round(fontSize * 0.85))}px`,
               fontWeight: TYPOGRAPHY.fontWeight.medium,
               color: textColor,
               padding: 0,
@@ -368,7 +368,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
               color: hasContent ? textColor : PROFESSIONAL_COLORS.textPlaceholder,
               fontStyle: hasContent ? 'normal' : 'italic',
               fontFamily: fontFamily,
-              fontSize: `${fontSize}px`,
+              fontSize: `${hasContent ? fontSize : Math.max(10, Math.round(fontSize * 0.85))}px`,
               fontWeight: hasContent ? TYPOGRAPHY.fontWeight.medium : TYPOGRAPHY.fontWeight.normal,
             }}
           >
