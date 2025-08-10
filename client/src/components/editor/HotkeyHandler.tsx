@@ -149,26 +149,14 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
           return;
         }
 
-        // Force-select notary on notary-specific keys and on Date (D)
-        const forceNotaryKeys: TagType[] = ['N', 'X', 'O', 'E', 'W', 'D'];
-        const shouldForceNotary = forceNotaryKeys.includes(tagType);
-        if (shouldForceNotary) {
-          const notary = participants.find(p => p.userType === 'notary');
-          if (notary && (!selectedUser || selectedUser.userType !== 'notary')) {
-            setSelectedUser(notary);
-          }
-        }
-
-        // Default to notary if no user is currently selected
-        if (!selectedUser) {
-          const notary = participants.find(p => p.userType === 'notary');
-          if (notary) {
-            setSelectedUser(notary);
-          }
+        // Always default to notary for hotkey tag placement
+        const notary = participants.find(p => p.userType === 'notary');
+        if (notary && (!selectedUser || selectedUser.userType !== 'notary')) {
+          setSelectedUser(notary);
         }
         
         // Check if user has permission for this tag type based on the effective user type
-        const effectiveUserType = shouldForceNotary ? 'notary' : (selectedUser?.userType || 'signer');
+        const effectiveUserType = selectedUser?.userType || 'notary';
         const hasPermission = checkTagPermission(tagType, effectiveUserType);
         
         if (hasPermission) {
