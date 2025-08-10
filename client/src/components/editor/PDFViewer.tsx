@@ -205,12 +205,17 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     const minWidth = TAG_TYPE_CONFIG[tag.tagType]?.minWidth ?? fixedDimensions.minWidth ?? 0;
     const minHeight = TAG_TYPE_CONFIG[tag.tagType]?.minHeight ?? fixedDimensions.minHeight ?? 1;
 
-    // If the tag has any content, let the box hug the content; otherwise keep saved size
+    // If the tag has any content, prefer the larger of saved size and content-fit size
     const hasAnyContent = Boolean(tag.content || tag.contentData || tag.isCompleted);
 
-    // Prefer saved/manual dimensions once a tag exists; avoid snapping to content after completion
-    const finalUnscaledWidth = Math.max(savedWidth, minWidth);
-    const finalUnscaledHeight = Math.max(savedHeight, minHeight);
+    const finalUnscaledWidth = Math.max(
+      savedWidth,
+      shouldAutoSize && hasAnyContent ? optimalDimensions.width : minWidth
+    );
+    const finalUnscaledHeight = Math.max(
+      savedHeight,
+      shouldAutoSize && hasAnyContent ? optimalDimensions.height : minHeight
+    );
 
     const coords = {
       x: isDragging && dragCoords ? dragCoords.x : Math.round(tag.coordinates.x * scaleFactor),
@@ -289,8 +294,10 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       position: 'relative' as const,
       overflow: 'visible' as const,
       minHeight: 'fit-content' as const,
-      // Disable pulsing animation on tags to prevent flashing sensation
-      animation: 'none'
+      // Disable animations and transitions completely
+      animation: 'none !important',
+      transform: 'translateZ(0)', // Hardware acceleration
+      willChange: 'transform'
     };
   }, [hasContent, isSelected, canEdit, tag.tagType, isMissing, isHighlighted]);
 
@@ -637,45 +644,26 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
         }
         
         if (mode === 'signing' && onTagClick && !tag.isCompleted) {
-          // Improved double-click detection with timing check
+          // Double-click to trigger interactive fill only; single-click just selects
           const clickTime = e.timeStamp;
-          const currentTarget = e.currentTarget as any; // Capture reference before setTimeout
+          const currentTarget = e.currentTarget as any;
           const lastClickTime = currentTarget._lastClickTime || 0;
           const timeDiff = clickTime - lastClickTime;
           currentTarget._lastClickTime = clickTime;
-          
+
           if (e.detail === 2 && timeDiff < 500) {
-            // Confirmed double-click within reasonable time
             const rect = currentTarget.getBoundingClientRect();
-            console.log('🎯 Double-click confirmed - triggering interactive input for tag:', tag.id, 'type:', tag.tagType);
+            console.log('🎯 Double-click confirmed - opening tag interaction:', tag.id, tag.tagType);
             onTagClick(tag, {
               x: rect.left,
               y: rect.top,
               width: rect.width,
               height: rect.height
             });
-                     } else if (e.detail === 1) {
-             // Single-click: auto-fill supported tags, otherwise select (with debouncing)
-             setTimeout(() => {
-               const currentClickTime = currentTarget._lastClickTime || 0;
-               if (Math.abs(currentClickTime - clickTime) < 50) { // Only if no subsequent clicks
-                 const autoFillTypes = ['A','S','I','N','X','D','O'];
-                 if (onTagClick && autoFillTypes.includes(tag.tagType) && !tag.isCompleted) {
-                   const rect = currentTarget.getBoundingClientRect();
-                   console.log('🎯 Single-click auto-fill for tag:', tag.id, 'type:', tag.tagType);
-                   onTagClick(tag, {
-                     x: rect.left,
-                     y: rect.top,
-                     width: rect.width,
-                     height: rect.height
-                   });
-                 } else {
-                   console.log('🔗 Single-click confirmed - selecting tag:', tag.id, 'type:', tag.tagType);
-                   onSelect();
-                 }
-               }
-             }, 150);
-           }
+          } else if (e.detail === 1) {
+            // Single-click: select only
+            onSelect();
+          }
         } else {
           // In tagging mode or for completed tags, just select immediately
           console.log('🔗 Selecting tag:', tag.id, 'type:', tag.tagType, 'onSelect function:', typeof onSelect);
@@ -2430,35 +2418,38 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                     }}
                   />
                   
-                                            {/* Tags overlay - Text tags are handled separately via textInputs */}
+                  {/* Tags overlay - Text tags are handled separately via textInputs */}
                                      {pageTags.filter(tag => tag.tagType !== 'T').map(tag => {
-                     return (
-                       <MemoizedTagRenderer
-                         key={`${tag.id}`}
-                         tag={tag}
-                         scaleFactor={scaleFactor}
-                         isSelected={selectedTag?.id === tag.id}
-                         canEdit={canEditTags}
-                         onUpdate={(coords) => handleTagUpdate(tag.id, coords)}
-                         onSave={(coords) => broadcastTagSave(tag.id, coords)}
-                         onDelete={() => handleTagDelete(tag.id)}
-                         onSelect={() => handleTagSelect(tag)}
-                         onTagClick={onTagClick}
-                         mode={mode}
-                         onFontSizeChange={updateTagFontSize}
-                         localFontSize={localFontSizes.get(tag.id)}
-                         isHighlighted={highlightedTagId === tag.id}
-                         isMissing={incompleteTags.includes(tag.id)}
-                       />
-                     );
-                   })}
+                    return (
+                      <div key={`${tag.id}`} className="absolute top-0 left-0 w-full h-full pointer-events-none" style={{willChange: 'transform'}}> 
+                        <MemoizedTagRenderer
+                          tag={tag}
+                          scaleFactor={scaleFactor}
+                          isSelected={selectedTag?.id === tag.id}
+                          canEdit={canEditTags}
+                          onUpdate={(coords) => handleTagUpdate(tag.id, coords)}
+                          onSave={(coords) => broadcastTagSave(tag.id, coords)}
+                          onDelete={() => handleTagDelete(tag.id)}
+                          onSelect={() => handleTagSelect(tag)}
+                          onTagClick={onTagClick}
+                          mode={mode}
+                          onFontSizeChange={updateTagFontSize}
+                          localFontSize={localFontSizes.get(tag.id)}
+                          isHighlighted={highlightedTagId === tag.id}
+                          isMissing={incompleteTags.includes(tag.id)}
+                        />
+                      </div>
+                    );
+                  })}
                   
                   {/* Whiteout overlays disabled: handled via 'W' tags for consistency */}
 
                   {/* Text inputs overlay (separate from regular tags) - STABLE KEY */}
                   {textInputs?.filter(textInput => textInput.coordinates.pageNumber === pageNumber).map((textInput) => {
-                    // Use ID-based key to remain stable across drag/resize; temp IDs remain consistent until server id is applied
-                    const primaryKey = textInput.id ? `text-${textInput.id}` : `text-temp-${pageNumber}`;
+                    // Use creation timestamp as a stable key so temp->server ID swap doesn't remount
+                    const createdAt = (textInput as any).createdAt;
+                    const createdKey = createdAt ? (createdAt instanceof Date ? createdAt.getTime() : Date.parse(createdAt)) : undefined;
+                    const primaryKey = createdKey ? `text-${createdKey}` : `text-${textInput.id}`;
                      
                      return (
                        <StreamlinedTextInput

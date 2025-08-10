@@ -42,75 +42,24 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
   const lastLocalCoordinateUpdateAt = useRef<Map<string, number>>(new Map());
   const { toast } = useToast();
 
-  // 🚧 Ensure unique text input IDs – remove accidental duplicates (e.g., when optimistic + WebSocket updates overlap)
+  // Remove duplicate text inputs by ID
   useEffect(() => {
     if (textInputs.length < 2) return;
 
-    // First pass: de-duplicate by exact id
     const seen = new Set<string>();
-    const dedupedById: StreamlinedTextInput[] = [];
+    const deduped: StreamlinedTextInput[] = [];
 
-    let hadIdDuplicates = false;
     for (const input of textInputs) {
-      if (seen.has(input.id)) {
-        hadIdDuplicates = true;
-        continue; // Skip duplicate
-      }
-      seen.add(input.id);
-      dedupedById.push(input);
-    }
-
-    // Second pass: merge temp/real pairs at the same spot (race between optimistic + WebSocket)
-    // We only collapse pairs when one id is temporary and the other is a real id,
-    // both on the same page, and their positions/sizes are effectively identical.
-    // This avoids hurting legitimate nearby fields.
-    const toRemoveTempIds = new Set<string>();
-    const POSITION_TOLERANCE = 2; // very small tolerance in PDF units to avoid false positives
-    const SIZE_TOLERANCE = 2;
-
-    for (let i = 0; i < dedupedById.length; i++) {
-      for (let j = i + 1; j < dedupedById.length; j++) {
-        const a = dedupedById[i];
-        const b = dedupedById[j];
-
-        // Only consider pairs where exactly one is a temp id
-        const aIsTemp = a.id.startsWith('text_temp_');
-        const bIsTemp = b.id.startsWith('text_temp_');
-        if (aIsTemp === bIsTemp) continue;
-
-        // Same page and essentially the same position/size
-        const samePage = a.coordinates.pageNumber === b.coordinates.pageNumber;
-        if (!samePage) continue;
-
-        const dx = Math.abs(a.coordinates.x - b.coordinates.x);
-        const dy = Math.abs(a.coordinates.y - b.coordinates.y);
-        const dw = Math.abs((a.coordinates.width || 0) - (b.coordinates.width || 0));
-        const dh = Math.abs((a.coordinates.height || 0) - (b.coordinates.height || 0));
-
-        const nearSamePos = dx <= POSITION_TOLERANCE && dy <= POSITION_TOLERANCE;
-        const nearSameSize = dw <= SIZE_TOLERANCE && dh <= SIZE_TOLERANCE;
-        if (nearSamePos && nearSameSize) {
-          // Prefer keeping the real id. Remove the temp entry.
-          const tempIdToRemove = aIsTemp ? a.id : b.id;
-          toRemoveTempIds.add(tempIdToRemove);
-        }
+      if (!seen.has(input.id)) {
+        seen.add(input.id);
+        deduped.push(input);
       }
     }
 
-    const hadTempRealPairs = toRemoveTempIds.size > 0;
-
-    if (hadIdDuplicates || hadTempRealPairs) {
-      if (hadIdDuplicates) {
-        console.warn('🧹 Removing duplicate text inputs with identical IDs:', textInputs.map(i => i.id));
-      }
-      if (hadTempRealPairs) {
-        console.warn('🧹 Collapsing temp/real text input pairs at the same spot:', Array.from(toRemoveTempIds));
-      }
-      setTextInputs(
-        dedupedById.filter(input => !toRemoveTempIds.has(input.id))
-      );
+    if (deduped.length < textInputs.length) {
+      setTextInputs(deduped);
     }
-  }, [textInputs]);
+  }, [textInputs.length]);
 
   // 🔧 Persistence key for temporary text inputs
   const tempStorageKey = `temp_text_inputs_${sessionId}`;
@@ -268,20 +217,17 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           
         case 'tag_updated':
           if (data.updates.coordinates) {
-            // ✅ FIX: Don't override local changes with WebSocket updates from the same user
-            // This prevents text tag resize reversion when user resizes and WebSocket broadcasts old data
-            const isOwnUpdate = (data.updatedBy ?? data.updatedById) === useEditorStore.getState().currentUser?.id?.toString();
+            // Skip updates that were recently made locally
+            const lastLocalUpdate = lastLocalCoordinateUpdateAt.current.get(data.id) || 0;
+            const timeSinceLocal = Date.now() - lastLocalUpdate;
             
-            if (!isOwnUpdate) {
-              // Only apply coordinate updates from other users to prevent overriding local changes
+            if (timeSinceLocal > 1000) {
+              // Only apply if enough time has passed since local update
               setTextInputs(prev => prev.map(input => 
                 input.id === data.id 
                   ? { ...input, coordinates: { ...input.coordinates, ...data.updates.coordinates } }
                   : input
               ));
-              console.log(`🔄 Applied text tag coordinate update from another user: ${data.id}`);
-            } else {
-              console.log(`⚠️ Skipped text tag coordinate update from self to prevent override: ${data.id}`);
             }
           }
           break;
@@ -489,21 +435,13 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       const locallyTypedContent = tempLocal?.content || '';
       setTextInputs(prev => prev.map(input => {
         if (input.id === tempId) {
-          console.log('🔄 Updating text input ID transition:', {
-            tempId,
-            newId: tag.id,
-            preservingContent: input.content,
-            serverContent: tag.content,
-            willPreserveUserContent: input.content !== ''
-          });
-          
+          const keepContent = input.content !== '' ? input.content : (tag.content || '');
           return {
-            ...input, // Preserve user's current state (including any typed content)
-            id: tag.id, // Update to real server ID
-            // Keep isNew as true to maintain positioning state until user starts editing
-            isNew: input.content === '' ? true : false,
-            // Explicitly preserve content to prevent server overwrite - NEVER use server content if user has typed something
-            content: input.content !== '' ? input.content : tag.content || ''
+            ...input,
+            id: tag.id,
+            // Keep editing state to avoid re-mount flicker and data loss
+            isNew: input.isNew,
+            content: keepContent
           };
         }
         return input;
@@ -578,6 +516,9 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           : input
       ));
 
+      // Track this local update to prevent echo
+      lastLocalCoordinateUpdateAt.current.set(textInputId, Date.now());
+      
       // If this is a temporary ID, don't call the server yet (prevents 400s)
       if (textInputId.startsWith('text_temp_') || textInputId.startsWith('temp')) {
         return;
@@ -660,30 +601,8 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
 
       console.log(`✅ Text content saved locally for ${textInputId}: "${content}"`);
 
-      // Auto-size width based on content and current font
-      const current = textInputs.find(i => i.id === textInputId);
-      if (current) {
-        const widthPx = calculateOptimalWidth(content, current.fontSize || 16, current.fontFamily || 'Arial');
-        const fallbackDims = getTagDimensions('T' as any);
-        const scaleFactor = useEditorStore.getState().viewer.zoomLevel || 1;
-        const unscaledWidth = Math.max(1, Math.round(widthPx / Math.max(0.0001, scaleFactor)));
-        const lineHeightPx = Math.ceil((current.fontSize || 16) * 1.2);
-        const unscaledHeight = Math.max(1, Math.round(lineHeightPx / Math.max(0.0001, scaleFactor)));
-
-        // Allow shrinking as content becomes shorter, but never below configured minimums
-        const minWidth = fallbackDims.width;
-        const minHeight = fallbackDims.height;
-        const newWidth = Math.max(minWidth, unscaledWidth);
-        const newHeight = Math.max(minHeight, unscaledHeight);
-
-        // Persist new size (debounced inside moveTextInput)
-        moveTextInput(textInputId, {
-          x: current.coordinates.x,
-          y: current.coordinates.y,
-          width: newWidth,
-          height: newHeight
-        });
-      }
+      // Skip auto-resize on save to prevent zigzagging
+      // Let the StreamlinedTextInput component handle sizing based on content
 
       // Do not attempt server save for temporary IDs
       if (textInputId.startsWith('text_temp_') || textInputId.startsWith('temp')) {

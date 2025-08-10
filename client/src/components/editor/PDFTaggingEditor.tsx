@@ -323,31 +323,13 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
     return () => document.removeEventListener('click', handleGlobalClick);
   }, [selectedTextInputId, selectTextInput, justPlacedTextInput, scaleFactor, currentPage]);
 
-  // ✅ NEW: Clear text input selection when tag selection changes to a different tag
-  // This ensures no multi-selection conflicts between text inputs and tags
+  // Clear text input selection when tag selection changes
   useEffect(() => {    
-    // If a tag is selected and it's not a text tag, clear text input selection
+    // Only clear text input if selecting a non-text tag
     if (selectedTag && selectedTag.tagType !== 'T' && selectedTextInputId) {
-      console.log('🧹 Auto-clearing text input selection - non-text tag selected:', {
-        selectedTag: selectedTag.id,
-        tagType: selectedTag.tagType,
-        clearingTextInput: selectedTextInputId
-      });
       selectTextInput(null);
     }
-    
-    // If a text tag is selected, ensure the corresponding text input is selected
-    if (selectedTag && selectedTag.tagType === 'T') {
-      const matchingTextInput = textInputs.find(input => input.id === selectedTag.id.toString());
-      if (matchingTextInput && selectedTextInputId !== matchingTextInput.id) {
-        console.log('🔗 Syncing text input selection with text tag selection:', {
-          tagId: selectedTag.id,
-          textInputId: matchingTextInput.id
-        });
-        selectTextInput(matchingTextInput.id);
-      }
-    }
-  }, [selectedTag, selectedTextInputId, selectTextInput, textInputs]);
+  }, [selectedTag?.id, selectedTag?.tagType]);
 
   // ✅ CLEANUP: Clear text input selection when session changes or component unmounts
   useEffect(() => {
@@ -1382,22 +1364,12 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         // Use professional fixed dimensions for text tags
         const dimensions = getTagDimensions('T');
         
-        console.log('🔍 DEBUG: Text tag placement - dimensions from getTagDimensions:', dimensions);
-        console.log('🔍 DEBUG: TAG_TYPE_CONFIG T dimensions:', TAG_TYPE_CONFIG['T']);
-        console.log('🔍 DEBUG: Original coordinates:', coordinates);
-        
         // Use the fixed dimensions instead of coordinates from click
         const textInputCoordinates = {
           ...coordinates,
           width: dimensions?.width || 120,  // Use updated constant dimensions for text tags
           height: dimensions?.height || 25   // Use updated constant dimensions for text tags
         };
-        
-        console.log('🔍 DEBUG: Final textInputCoordinates being sent to server:', textInputCoordinates);
-        console.log('🔍 DEBUG: width being sent:', textInputCoordinates.width);
-        console.log('🔍 DEBUG: height being sent:', textInputCoordinates.height);
-        
-        console.log('📏 Using dimensions for text tag:', dimensions);
         
         // Set flag to suppress global click handler for the next click
         setJustPlacedTextInput(true);

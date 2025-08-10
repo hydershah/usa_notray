@@ -77,6 +77,7 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
     // Ignore keystrokes in input fields or when a text input is selected
     const target = event.target as HTMLElement;
     const activeTextInputId = (useEditorStore.getState() as any).activeTextInputId;
+    // Suppress all hotkeys while a text input is active/being edited
     if (activeTextInputId) {
       return;
     }

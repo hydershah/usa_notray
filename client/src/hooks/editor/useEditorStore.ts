@@ -55,6 +55,9 @@ interface EditorStore {
   
   // PDF viewer state
   viewer: PDFViewerState;
+
+  // Active text input (used to suppress hotkeys while typing)
+  activeTextInputId: string | null;
   
   // UI state
   showGrid: boolean;
@@ -117,6 +120,9 @@ interface EditorStore {
   setZoomLevel: (zoom: number) => void;
   setScrollTop: (scrollTop: number) => void;
   syncToPage: (page: number) => void;
+
+  // Actions - Active text input tracking
+  setActiveTextInputId: (textInputId: string | null) => void;
   
   // Actions - UI Controls
   toggleGrid: () => void;
@@ -185,6 +191,9 @@ export const useEditorStore = create<EditorStore>()(
         documentId: '',
         pendingScrollToPage: null
       },
+
+      // Hotkey suppression when editing a text input
+      activeTextInputId: null,
       
       showGrid: false,
       snapToGrid: true,
@@ -549,6 +558,9 @@ export const useEditorStore = create<EditorStore>()(
           viewer: { ...state.viewer, pendingScrollToPage: page }
         }));
       },
+
+      // Active text input tracking
+      setActiveTextInputId: (textInputId) => set({ activeTextInputId: textInputId }),
       
       // UI Control Actions
       toggleGrid: () => set((state) => ({ showGrid: !state.showGrid })),

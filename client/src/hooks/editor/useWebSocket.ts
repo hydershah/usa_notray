@@ -169,22 +169,47 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
           // Update participant list in store
           break;
 
-        case 'tag_placed':
+        case 'tag_placed': {
           console.log('📝 Tag placed');
-          addTag(message.payload.tag);
+          const serverTag = message.payload.tag as any;
+
+          // 🔧 De-dupe: remove any recent optimistic temp tag that matches this server tag
+          try {
+            const existingTags = useEditorStore.getState().tags;
+            const now = Date.now();
+            const isClose = (a: number, b: number, tol = 8) => Math.abs(a - b) <= tol;
+            const tempCandidate = existingTags.find(t =>
+              t.id.startsWith('temp_') &&
+              t.tagType === serverTag.tagType &&
+              t.documentId === serverTag.documentId &&
+              t.coordinates?.pageNumber === serverTag.coordinates?.pageNumber &&
+              isClose((t.coordinates?.x as number) || 0, (serverTag.coordinates?.x as number) || 0) &&
+              isClose((t.coordinates?.y as number) || 0, (serverTag.coordinates?.y as number) || 0) &&
+              (now - new Date(t.createdAt as any).getTime() < 7000)
+            );
+            if (tempCandidate) {
+              console.log('🧹 Removing matching optimistic temp tag:', tempCandidate.id);
+              deleteTag(tempCandidate.id);
+            }
+          } catch (e) {
+            console.warn('De-dupe temp tag failed (non-fatal):', e);
+          }
+
+          addTag(serverTag);
           
           // 🔧 SYNC TEXT INPUTS: If it's a text tag, also update text inputs state
-          if (message.payload.tag.tagType === 'T') {
-            console.log('📝 Syncing new text tag to text inputs:', message.payload.tag.id);
+          if (serverTag.tagType === 'T') {
+            console.log('📝 Syncing new text tag to text inputs:', serverTag.id);
             // Trigger text input reload or direct state update, include origin user id
             if (typeof window !== 'undefined' && (window as any).textInputSyncCallback) {
               (window as any).textInputSyncCallback('tag_placed', {
-                ...message.payload.tag,
+                ...serverTag,
                 updatedBy: message.userId
               });
             }
           }
           break;
+        }
 
         case 'tag_updated':
           console.log('✏️ Tag updated');
