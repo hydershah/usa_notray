@@ -43,9 +43,10 @@ export function registerEmailLinkAuth(app: Express): void {
   app.post('/api/auth/register-email', registrationLimiter, sanitizeHtml, preventSqlInjection, async (req, res) => {
     try {
       const { email, password }: RegistrationRequest = registrationSchema.parse(req.body);
+      const normalizedEmail = email.toLowerCase().trim();
       
       // Check if user already exists
-      const existingUser = await storage.getUserByEmail(email);
+      const existingUser = await storage.getUserByEmail(normalizedEmail);
       if (existingUser) {
         return res.status(409).json({
           message: 'An account with this email already exists. Please try logging in instead.'
@@ -63,7 +64,7 @@ export function registerEmailLinkAuth(app: Express): void {
       expiresAt.setHours(expiresAt.getHours() + 24);
       
       pendingRegistrations.set(verificationToken, {
-        email: email.toLowerCase().trim(),
+        email: normalizedEmail,
         hashedPassword,
         token: verificationToken,
         expiresAt
@@ -72,9 +73,9 @@ export function registerEmailLinkAuth(app: Express): void {
       // Send verification email
       try {
         await emailService.sendEmailVerificationLink({
-          userEmail: email.toLowerCase().trim(),
+          userEmail: normalizedEmail,
           verificationToken,
-          userName: email.split('@')[0] // Use email prefix as name
+          userName: normalizedEmail.split('@')[0] // Use email prefix as name
         });
         
         console.log(`📧 Verification email sent to: ${email}`);
@@ -88,7 +89,7 @@ export function registerEmailLinkAuth(app: Express): void {
 
       res.status(200).json({
         message: 'Registration successful! Please check your email and click the verification link to activate your account.',
-        email: email.toLowerCase().trim()
+        email: normalizedEmail
       });
 
     } catch (error) {

@@ -40,7 +40,7 @@ export function registerCompanyAuthRoutes(app: Express): void {
       }
 
       // Check if primary user email already exists
-      const existingUser = await storage.getUserByEmail(validatedData.primaryUserEmail);
+      const existingUser = await storage.getUserByEmail(validatedData.primaryUserEmail.trim().toLowerCase());
       if (existingUser) {
         return res.status(409).json({ 
           message: 'User with this email already exists' 

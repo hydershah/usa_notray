@@ -190,8 +190,9 @@ export function registerUserManagementRoutes(app: Express) {
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ') || '';
 
-      // Check if user already exists
-      const existingUser = await storage.getUserByEmail(email);
+      // Normalize email for uniqueness and check if user already exists
+      const normalizedEmail = String(email).trim().toLowerCase();
+      const existingUser = await storage.getUserByEmail(normalizedEmail);
       if (existingUser) {
         return res.status(409).json({ message: 'User with this email already exists' });
       }
@@ -231,8 +232,8 @@ export function registerUserManagementRoutes(app: Express) {
 
       // Prepare user data
       const userData = {
-        username: email, // Use email as username
-        email: email,
+        username: normalizedEmail, // Use normalized email as username
+        email: normalizedEmail,
         password: password, // Will be hashed in storage
         firstName: firstName,
         lastName: lastName,
@@ -881,7 +882,15 @@ export function registerUserManagementRoutes(app: Express) {
         requiresSpanish === 'true'
       );
       
-      res.json(notaries.map(notary => ({
+      // Deduplicate by email (case-insensitive) to avoid duplicates that differ only by case
+      const uniqueByEmail = new Map<string, any>();
+      for (const n of notaries) {
+        const key = (n.email || '').toLowerCase();
+        if (!uniqueByEmail.has(key)) uniqueByEmail.set(key, n);
+      }
+      const dedupedNotaries = Array.from(uniqueByEmail.values());
+
+      res.json(dedupedNotaries.map(notary => ({
         id: notary.id,
         fullName: notary.fullName,
         email: notary.email,

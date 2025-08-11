@@ -1730,10 +1730,90 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                       setPreferredNotary(null);
                                     }
                                   }}
-                                  defaultValue={field.value}
+                                  value={field.value}
                                   className={`grid grid-cols-1 ${isAdmin ? 'md:grid-cols-3' : currentUser?.role === 'title_company' ? 'md:grid-cols-2' : 'md:grid-cols-2'} ${singlePage ? 'gap-3' : 'gap-6'}`}
                                 >
-                                  {/* options unchanged */}
+                                  {/* Admin: Assign Myself as Notary */}
+                                  {isAdmin && (
+                                    <label
+                                      htmlFor="admin_self"
+                                      className={`p-3 border rounded-lg cursor-pointer block ${
+                                        field.value === 'admin_self'
+                                          ? 'border-gray-900 bg-gray-50'
+                                          : 'border-gray-200 hover:bg-gray-50'
+                                      }`}
+                                    >
+                                      <div className="flex items-center space-x-3">
+                                        <RadioGroupItem value="admin_self" id="admin_self" />
+                                        <div className="flex-1 min-w-0">
+                                          <Label htmlFor="admin_self" className="text-sm font-medium text-gray-900 cursor-pointer">
+                                            Assign Myself as Notary
+                                          </Label>
+                                          <p className="text-xs text-gray-600">You will be the assigned notary for this job.</p>
+                                        </div>
+                                      </div>
+                                    </label>
+                                  )}
+
+                                  {/* Assign Specific Notary */}
+                                  <label
+                                    htmlFor="assign"
+                                    className={`p-3 border rounded-lg cursor-pointer block ${
+                                      field.value === 'assign'
+                                        ? 'border-gray-900 bg-gray-50'
+                                        : 'border-gray-200 hover:bg-gray-50'
+                                    }`}
+                                  >
+                                    <div className="flex items-center space-x-3">
+                                      <RadioGroupItem value="assign" id="assign" />
+                                      <div className="flex-1 min-w-0">
+                                        <Label htmlFor="assign" className="text-sm font-medium text-gray-900 cursor-pointer">
+                                          Assign Specific Notary
+                                        </Label>
+                                        <p className="text-xs text-gray-600">Choose a contractor notary and pick their available time.</p>
+                                      </div>
+                                    </div>
+                                  </label>
+
+                                  {/* Auto Assignment */}
+                                  <label
+                                    htmlFor="auto"
+                                    className={`p-3 border rounded-lg cursor-pointer block ${
+                                      field.value === 'auto'
+                                        ? 'border-gray-900 bg-gray-50'
+                                        : 'border-gray-200 hover:bg-gray-50'
+                                    }`}
+                                  >
+                                    <div className="flex items-center space-x-3">
+                                      <RadioGroupItem value="auto" id="auto" />
+                                      <div className="flex-1 min-w-0">
+                                        <Label htmlFor="auto" className="text-sm font-medium text-gray-900 cursor-pointer">
+                                          Auto Assignment
+                                        </Label>
+                                        <p className="text-xs text-gray-600">System selects the best available notary for your chosen time.</p>
+                                      </div>
+                                    </div>
+                                  </label>
+
+                                  {/* Notary ID Code Assignment */}
+                                  <label
+                                    htmlFor="id_code"
+                                    className={`p-3 border rounded-lg cursor-pointer block ${
+                                      field.value === 'id_code'
+                                        ? 'border-gray-900 bg-gray-50'
+                                        : 'border-gray-200 hover:bg-gray-50'
+                                    }`}
+                                  >
+                                    <div className="flex items-center space-x-3">
+                                      <RadioGroupItem value="id_code" id="id_code" />
+                                      <div className="flex-1 min-w-0">
+                                        <Label htmlFor="id_code" className="text-sm font-medium text-gray-900 cursor-pointer">
+                                          Enter Notary ID Code
+                                        </Label>
+                                        <p className="text-xs text-gray-600">Enter a notary's unique code to assign them directly.</p>
+                                      </div>
+                                    </div>
+                                  </label>
                                 </RadioGroup>
                               </FormControl>
                               <FormMessage className="text-red-600 text-sm mt-1" />

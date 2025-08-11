@@ -326,6 +326,26 @@ export class ProfileAutoFillService {
         }
         
         if (signatureRecord && signatureRecord.imageUrl) {
+          // Ensure long-lived access URL for stored key
+          try {
+            const raw = signatureRecord.imageUrl;
+            if (!raw.startsWith('data:image/')) {
+              let key: string | null = null;
+              if (/^https?:\/\//i.test(raw) && raw.includes('vultrobjects.com')) {
+                const url = new URL(raw);
+                key = url.pathname.replace(/^\//, '');
+              } else if (!/^https?:\/\//i.test(raw)) {
+                key = raw;
+              }
+              if (key) {
+                const { VultrUploadHandler } = await import('../vultr-upload-handler');
+                const access = await VultrUploadHandler.getFileUrl(key, 24 * 30);
+                signatureRecord.imageUrl = access.url;
+              }
+            }
+          } catch (e) {
+            // Non-blocking
+          }
           console.log('✅ Found signature in userSignatures table:', {
             id: signatureRecord.id,
             name: signatureRecord.name,
@@ -445,6 +465,23 @@ export class ProfileAutoFillService {
         }
         
         if (initialsRecord && initialsRecord.imageUrl) {
+          try {
+            const raw = initialsRecord.imageUrl;
+            if (!raw.startsWith('data:image/')) {
+              let key: string | null = null;
+              if (/^https?:\/\//i.test(raw) && raw.includes('vultrobjects.com')) {
+                const url = new URL(raw);
+                key = url.pathname.replace(/^\//, '');
+              } else if (!/^https?:\/\//i.test(raw)) {
+                key = raw;
+              }
+              if (key) {
+                const { VultrUploadHandler } = await import('../vultr-upload-handler');
+                const access = await VultrUploadHandler.getFileUrl(key, 24 * 30);
+                initialsRecord.imageUrl = access.url;
+              }
+            }
+          } catch (e) {}
           console.log('✅ Found initials in userSignatures table:', {
             id: initialsRecord.id,
             name: initialsRecord.name,

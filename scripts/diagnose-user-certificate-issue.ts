@@ -12,7 +12,7 @@ async function diagnoseUserCertificateIssue() {
     const [user] = await db
       .select()
       .from(users)
-      .where(eq(users.email, targetEmail))
+      .where(eq(users.email, targetEmail.trim().toLowerCase()))
       .limit(1);
 
     if (!user) {

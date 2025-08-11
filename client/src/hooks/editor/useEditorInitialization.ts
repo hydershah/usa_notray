@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
 import { useEditorStore } from './useEditorStore';
 import type { 
   EditorSession, 
@@ -32,28 +32,10 @@ export const useEditorInitialization = ({
     setSelectedUser,
     setCurrentDocument,
     setMode,
-    setTags,
-    clearSession,
-    tags // Add tags to dependencies
+    clearSession
   } = useEditorStore();
 
-  const loadSessionTags = useCallback(async () => {
-    if (!sessionId) return;
-    try {
-      const response = await fetch(`/api/editor/session/${sessionId}/tags`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      if (response.ok) {
-        const { tags: existingTags } = await response.json();
-        setTags(existingTags);
-        console.log(`✅ Loaded ${existingTags.length} existing tags for session`);
-      }
-    } catch (error) {
-      console.error('Failed to load session tags:', error);
-    }
-  }, [sessionId, setTags]);
+  // Note: Tag loading is now handled by PDFTaggingEditor to avoid race conditions
 
   useEffect(() => {
     // Only initialize if the session ID is new
@@ -61,7 +43,7 @@ export const useEditorInitialization = ({
       return;
     }
 
-    console.log('🚀 Starting editor initialization for session:', sessionId);
+    console.log('🚀 [useEditorInitialization] Starting basic editor state setup for session:', sessionId);
 
     // Set up editor state with props data
     setSession({ id: sessionId, status: 'active', sessionType: mode } as EditorSession);
@@ -86,9 +68,9 @@ export const useEditorInitialization = ({
       showPlaceholders: true
     });
 
-    loadSessionTags();
+    // Tags will be loaded by PDFTaggingEditor to prevent race conditions
     
-    console.log('✅ PDF editor state initialized');
+    console.log('✅ [useEditorInitialization] Basic editor state setup completed (tags will be loaded by PDFTaggingEditor)');
 
     // Cleanup on unmount or when session ID changes
     return () => {

@@ -162,6 +162,17 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
     );
   }, [currentUser]);
 
+  // Keep streamlined text inputs in sync with tag list for the current document
+  useEffect(() => {
+    try {
+      if (!currentDocument) return;
+      const currentDocTags = tags.filter(t => t.documentId === currentDocument.id);
+      loadTextInputsFromTags(currentDocTags);
+    } catch (e) {
+      // No-op: defensive guard
+    }
+  }, [tags, currentDocument?.id, loadTextInputsFromTags]);
+
   // Handle document switching (placed before jumpToTag to avoid use-before-declare)
   const handleDocumentChange = useCallback(async (document: SessionDocument) => {
     try {
@@ -396,6 +407,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
   useEffect(() => {
     const initializeSession = async () => {
       try {
+        console.log(`🚀 [PDFTaggingEditor] Initializing session ${sessionId} with mode ${mode}`);
         setIsLoading(true);
         setError(null);
 
@@ -472,7 +484,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         });
 
         // Load existing tags for all documents in session
-        console.log(`🔍 Loading existing tags for session: ${sessionId}`);
+        console.log(`🔍 [PDFTaggingEditor] Loading existing tags for session: ${sessionId}`);
         const response = await fetch(`/api/editor/session/${sessionId}/tags?t=${Date.now()}`, {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`,
@@ -483,7 +495,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
 
         if (response.ok) {
           const { tags: existingTags } = await response.json();
-          console.log(`✅ Loaded ${existingTags.length} existing tags:`, existingTags);
+          console.log(`✅ [PDFTaggingEditor] Loaded ${existingTags.length} existing tags:`, existingTags);
           
           // Filter out any temporary tags that might have persisted
           const validTags = existingTags.filter((tag: any) => {
@@ -494,6 +506,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
             return true;
           });
           
+          console.log(`🏷️ [PDFTaggingEditor] Setting ${validTags.length} valid tags in store`);
           setTags(validTags);
           
           // Load text tags into streamlined text input system for current document

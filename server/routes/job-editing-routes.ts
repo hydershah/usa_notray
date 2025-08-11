@@ -169,7 +169,7 @@ export function registerJobEditingRoutes(app: Express) {
       const existingUser = await db
         .select()
         .from(users)
-        .where(eq(users.email, signerEmail))
+        .where(eq(users.email, signerEmail.trim().toLowerCase()))
         .limit(1);
 
       if (existingUser.length > 0) {

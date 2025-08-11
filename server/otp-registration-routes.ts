@@ -77,7 +77,7 @@ export function registerOtpRoutes(app: Express): void {
       const { email, password }: RegistrationRequest = registrationSchema.parse(req.body);
       
       // Check if user already exists
-      const existingUser = await storage.getUserByEmail(email);
+      const existingUser = await storage.getUserByEmail(email.trim().toLowerCase());
       if (existingUser) {
         return res.status(409).json({
           message: 'An account with this email already exists. Please try logging in instead.',
@@ -255,7 +255,7 @@ export function registerOtpRoutes(app: Express): void {
       }
 
       // Check if user was created in the meantime
-      const existingUser = await storage.getUserByEmail(email);
+      const existingUser = await storage.getUserByEmail(email.trim().toLowerCase());
       if (existingUser) {
         return res.status(409).json({
           message: 'An account with this email already exists. Please try logging in instead.',
@@ -325,7 +325,7 @@ export function registerOtpRoutes(app: Express): void {
       }).parse(req.body);
 
       // Check if user already exists
-      const existingUser = await storage.getUserByEmail(email);
+      const existingUser = await storage.getUserByEmail(email.trim().toLowerCase());
       if (existingUser) {
         return res.status(409).json({
           message: 'An account with this email already exists. Please try logging in instead.',

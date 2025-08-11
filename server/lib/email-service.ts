@@ -436,10 +436,8 @@ class EmailService {
     console.log(`📧 Sending ${isNewUser ? 'NEW USER' : 'EXISTING USER'} invitation to ${normalizedEmail}`);
 
     if (isNewUser) {
-      // NEW USER: Send account setup email
       await this.sendNewUserSignerInvitation({ ...data, signerEmail: normalizedEmail });
     } else {
-      // EXISTING USER: Send job notification email
       await this.sendExistingUserJobNotification({ ...data, signerEmail: normalizedEmail }, existingUser);
     }
   }

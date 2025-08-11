@@ -200,7 +200,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Email and password are required' });
       }
 
-      const user = await storage.getUserByEmail(email);
+      const user = await storage.getUserByEmail(email.trim().toLowerCase());
       if (!user) {
         recordFailedLogin(email);
         return res.status(401).json({ message: 'Invalid credentials' });
@@ -283,7 +283,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userData = insertUserSchema.parse(req.body);
       
       // Check if user already exists
-      const existingUser = await storage.getUserByEmail(userData.email);
+      const existingUser = await storage.getUserByEmail(userData.email.trim().toLowerCase());
       if (existingUser) {
         return res.status(400).json({ message: 'User already exists' });
       }
@@ -2218,7 +2218,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Email and password are required' });
       }
 
-      const user = await storage.getUserByEmail(email);
+      const user = await storage.getUserByEmail(email.trim().toLowerCase());
       if (!user) {
         recordFailedLogin(email);
         return res.status(401).json({ message: 'Invalid credentials' });
@@ -2301,7 +2301,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userData = insertUserSchema.parse(req.body);
       
       // Check if user already exists
-      const existingUser = await storage.getUserByEmail(userData.email);
+      const existingUser = await storage.getUserByEmail(userData.email.trim().toLowerCase());
       if (existingUser) {
         return res.status(400).json({ message: 'User already exists' });
       }
@@ -8955,7 +8955,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       }
 
       // Find user by email
-      const user = await storage.getUserByEmail(email);
+      const user = await storage.getUserByEmail(email.trim().toLowerCase());
       if (!user) {
         // Don't reveal if user exists for security
         return res.json({ 

@@ -258,11 +258,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
+    // Normalize identity fields to avoid case-variant duplicates
+    const normalizedEmail = String(insertUser.email).trim().toLowerCase();
+    const normalizedUsername = String(insertUser.username ?? normalizedEmail).trim().toLowerCase();
     const hashedPassword = await bcrypt.hash(insertUser.password, 10);
     const [user] = await db
       .insert(users)
       .values({
         ...insertUser,
+        email: normalizedEmail,
+        username: normalizedUsername,
         password: hashedPassword,
       })
       .returning();
@@ -270,9 +275,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUser(id: number, updateData: Partial<InsertUser>): Promise<User | undefined> {
+    // Normalize identity fields if provided
+    const normalizedUpdate: Partial<InsertUser> = { ...updateData };
+    if (normalizedUpdate.email) {
+      normalizedUpdate.email = String(normalizedUpdate.email).trim().toLowerCase();
+    }
+    if (normalizedUpdate.username) {
+      normalizedUpdate.username = String(normalizedUpdate.username).trim().toLowerCase();
+    }
+
     const [user] = await db
       .update(users)
-      .set(updateData)
+      .set(normalizedUpdate)
       .where(eq(users.id, id))
       .returning();
     return user || undefined;
@@ -1269,17 +1283,58 @@ export class DatabaseStorage implements IStorage {
         .where(eq(userSignatures.userId, userId))
         .orderBy(desc(userSignatures.createdAt));
 
-      // Transform to match expected format
-      return signatures.map(sig => ({
-        id: sig.id.toString(),
-        userId: sig.userId,
-        name: sig.name || 'Unnamed Signature',
-        type: sig.type, // 'uploaded', 'drawn', 'generated'
-        imageUrl: sig.imageUrl,
-        metadata: sig.metadata || {},
-        isDefault: sig.isDefault || false,
-        createdAt: sig.createdAt
-      }));
+      // Resolve a stable, viewable URL for each signature. We store only the
+      // storage key in the DB; signed URLs expire. If historical rows contain
+      // a full URL, derive the key and re-generate a fresh signed URL.
+      const { VultrUploadHandler } = await import('./vultr-upload-handler');
+
+      const results = await Promise.all(
+        signatures.map(async (sig) => {
+          let resolvedUrl = sig.imageUrl || '';
+          try {
+            if (resolvedUrl) {
+              const isDataUri = resolvedUrl.startsWith('data:image/');
+              const isHttp = /^https?:\/\//i.test(resolvedUrl);
+
+              if (!isDataUri) {
+                // Attempt to convert any form into a storage key
+                let key: string | null = null;
+                if (isHttp && resolvedUrl.includes('vultrobjects.com')) {
+                  // Extract key from old persisted signed URL
+                  const url = new URL(resolvedUrl);
+                  key = url.pathname.replace(/^\//, '');
+                } else if (!isHttp) {
+                  // Already a key
+                  key = resolvedUrl;
+                }
+
+                if (key) {
+                  const access = await VultrUploadHandler.getFileUrl(key, 24 * 30); // 30 days
+                  resolvedUrl = access.url || resolvedUrl;
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to resolve signature URL, returning raw value', {
+              id: sig.id,
+              reason: (e as Error)?.message,
+            });
+          }
+
+          return {
+            id: sig.id.toString(),
+            userId: sig.userId,
+            name: sig.name || 'Unnamed Signature',
+            type: sig.type, // 'uploaded', 'drawn', 'generated'
+            imageUrl: resolvedUrl,
+            metadata: sig.metadata || {},
+            isDefault: sig.isDefault || false,
+            createdAt: sig.createdAt,
+          };
+        })
+      );
+
+      return results;
     } catch (error) {
       console.error('Error fetching user signatures:', error);
       return [];

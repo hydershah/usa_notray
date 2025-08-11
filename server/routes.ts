@@ -286,9 +286,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/auth/register', registrationLimiter, sanitizeHtml, preventSqlInjection, async (req, res) => {
     try {
       const userData = insertUserSchema.parse(req.body);
+      // Normalize email/username to enforce case-insensitive uniqueness
+      userData.email = String(userData.email).trim().toLowerCase();
+      userData.username = String(userData.username || userData.email).trim().toLowerCase();
       
       // Check if user already exists
-      const existingUser = await storage.getUserByEmail(userData.email);
+      const existingUser = await storage.getUserByEmail(userData.email.trim().toLowerCase());
       if (existingUser) {
         return res.status(400).json({ message: 'User already exists' });
       }
@@ -1546,7 +1549,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const signers = JSON.parse(signersJson);
     
     // Get existing users in single batch query
-    const signerEmails = signers.map((s: any) => s.signerEmail);
+    const signerEmails = signers.map((s: any) => String(s.signerEmail).trim().toLowerCase());
     const existingUsers = await db.select()
       .from(users)
       .where(inArray(users.email, signerEmails));
@@ -1557,7 +1560,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const signersToProcess = [];
     
     for (const signerData of signers) {
-      const existingUser = existingUserMap.get(signerData.signerEmail);
+      const existingUser = existingUserMap.get(String(signerData.signerEmail).trim().toLowerCase());
       
       if (existingUser) {
         // Validate existing user
@@ -2011,7 +2014,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const signers = JSON.parse(req.body.signers);
         
         // 🚀 STEP 1: Check all existing users in one query
-        const signerEmails = signers.map((s: any) => s.signerEmail);
+        // Normalize emails to lower-case for case-insensitive matching
+        const signerEmails = signers.map((s: any) => String(s.signerEmail).trim().toLowerCase());
         const existingUsers = await db.select()
           .from(users)
           .where(inArray(users.email, signerEmails));
@@ -2025,7 +2029,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // First pass: validate and prepare bcrypt promises
         for (const signerData of signers) {
-          const existingUser = existingUserMap.get(signerData.signerEmail);
+          const existingUser = existingUserMap.get(String(signerData.signerEmail).trim().toLowerCase());
           
           if (!existingUser) {
             // Prepare bcrypt promise for parallel execution (reduced from 10 to 8 rounds = 4x faster)
@@ -2033,8 +2037,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             bcryptPromises.push(bcrypt.hash(tempPassword, 8));
             
             newUsersData.push({
-              username: signerData.signerEmail,
-              email: signerData.signerEmail,
+              username: String(signerData.signerEmail).trim().toLowerCase(),
+              email: String(signerData.signerEmail).trim().toLowerCase(),
               // password will be set after parallel bcrypt completes
               role: 'signer',
               firstName: signerData.signerName.split(' ')[0] || '',
@@ -2331,7 +2335,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userData = insertUserSchema.parse(req.body);
       
       // Check if user already exists
-      const existingUser = await storage.getUserByEmail(userData.email);
+      const existingUser = await storage.getUserByEmail(userData.email.trim().toLowerCase());
       if (existingUser) {
         return res.status(400).json({ message: 'User already exists' });
       }
@@ -2916,7 +2920,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        imageUrl = uploadResult.signedUrl || uploadResult.fileKey || '';
+        // Store the stable storage key in DB (never store short-lived signed URLs)
+        imageUrl = uploadResult.fileKey || uploadResult.fileUrl || '';
         metadata = { originalName: req.file.originalname, vultrKey: uploadResult.fileKey };
         
       } else if (type === 'drawn') {
@@ -2945,7 +2950,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        imageUrl = uploadResult.signedUrl || uploadResult.fileKey || '';
+        // Store storage key; URL will be generated on read
+        imageUrl = uploadResult.fileKey || uploadResult.fileUrl || '';
         metadata = { style: 'handwritten', vultrKey: uploadResult.fileKey };
         
       } else if (type === 'generated') {
@@ -2967,7 +2973,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
           }
 
-          imageUrl = uploadResult.signedUrl || uploadResult.fileKey || '';
+          // Store storage key; URL will be generated on read
+          imageUrl = uploadResult.fileKey || uploadResult.fileUrl || '';
           
           // Parse metadata if provided
           try {
@@ -3588,7 +3595,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const signers = JSON.parse(signersJson);
     
     // Get existing users in single batch query
-    const signerEmails = signers.map((s: any) => s.signerEmail);
+    const signerEmails = signers.map((s: any) => String(s.signerEmail).trim().toLowerCase());
     const existingUsers = await db.select()
       .from(users)
       .where(inArray(users.email, signerEmails));
@@ -3599,7 +3606,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const signersToProcess = [];
     
     for (const signerData of signers) {
-      const existingUser = existingUserMap.get(signerData.signerEmail);
+      const existingUser = existingUserMap.get(String(signerData.signerEmail).trim().toLowerCase());
       
       if (existingUser) {
         // Validate existing user
@@ -4053,7 +4060,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const signers = JSON.parse(req.body.signers);
         
         // 🚀 STEP 1: Check all existing users in one query
-        const signerEmails = signers.map((s: any) => s.signerEmail);
+        const signerEmails = signers.map((s: any) => String(s.signerEmail).trim().toLowerCase());
         const existingUsers = await db.select()
           .from(users)
           .where(inArray(users.email, signerEmails));
@@ -4067,7 +4074,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // First pass: validate and prepare bcrypt promises
         for (const signerData of signers) {
-          const existingUser = existingUserMap.get(signerData.signerEmail);
+          const existingUser = existingUserMap.get(String(signerData.signerEmail).trim().toLowerCase());
           
           if (!existingUser) {
             // Prepare bcrypt promise for parallel execution (reduced from 10 to 8 rounds = 4x faster)
@@ -4075,8 +4082,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             bcryptPromises.push(bcrypt.hash(tempPassword, 8));
             
             newUsersData.push({
-              username: signerData.signerEmail,
-              email: signerData.signerEmail,
+              username: String(signerData.signerEmail).trim().toLowerCase(),
+              email: String(signerData.signerEmail).trim().toLowerCase(),
               // password will be set after parallel bcrypt completes
               role: 'signer',
               firstName: signerData.signerName.split(' ')[0] || '',
@@ -7442,7 +7449,15 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         )
         .orderBy(users.firstName, users.lastName, users.username);
 
-      res.json(availableNotaries);
+      // Remove duplicates that differ only by email case
+      const dedupedMap = new Map<string, any>();
+      for (const n of availableNotaries) {
+        const key = (n.email || '').toLowerCase();
+        if (!dedupedMap.has(key)) dedupedMap.set(key, n);
+      }
+      const dedupedNotaries = Array.from(dedupedMap.values());
+
+      res.json(dedupedNotaries);
     } catch (error) {
       console.error('Error fetching available notaries:', error);
       res.status(500).json({ error: 'Failed to fetch available notaries' });
@@ -8223,7 +8238,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       const [existingUser] = await db
         .select()
         .from(users)
-        .where(eq(users.email, data.signer.signerEmail))
+        .where(eq(users.email, data.signer.signerEmail.trim().toLowerCase()))
         .limit(1);
 
       // Return setup information
@@ -8307,7 +8322,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       const [existingUser] = await db
         .select()
         .from(users)
-        .where(eq(users.email, data.signer.signerEmail))
+        .where(eq(users.email, data.signer.signerEmail.trim().toLowerCase()))
         .limit(1);
 
       // Return signer and job information

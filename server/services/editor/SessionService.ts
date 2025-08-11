@@ -280,7 +280,7 @@ export class SessionService {
           const [signerUser] = await db
             .select()
             .from(users)
-            .where(eq(users.email, signer.signerEmail))
+            .where(eq(users.email, signer.signerEmail.trim().toLowerCase()))
             .limit(1);
           
           if (signerUser) {

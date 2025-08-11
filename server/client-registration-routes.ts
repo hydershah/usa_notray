@@ -47,7 +47,7 @@ export function registerClientRoutes(app: Express): void {
       const lastName = nameParts.slice(1).join(' ') || '';
 
       // Check if user already exists
-      const existingUser = await storage.getUserByEmail(email);
+      const existingUser = await storage.getUserByEmail(email.trim().toLowerCase());
       if (existingUser) {
         return res.status(409).json({ 
           message: 'An account with this email already exists. Please try logging in instead.' 
