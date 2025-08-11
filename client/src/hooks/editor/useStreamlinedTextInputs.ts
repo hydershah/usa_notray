@@ -274,6 +274,18 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
             }
           }
           break;
+
+        // ✅ NEW: Handle font size updates broadcast via WebSocket
+        case 'tag_font_size_updated': {
+          const { tagId, fontSize } = data || {};
+          if (!tagId) break;
+          setTextInputs(prev => prev.map(input => 
+            input.id === tagId 
+              ? { ...input, fontSize: typeof fontSize === 'number' ? fontSize : input.fontSize }
+              : input
+          ));
+          break;
+        }
           
         // ✅ NEW: Handle text input position/resize updates from WebSocket
         case 'text_input_position_updated':
@@ -867,7 +879,33 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       };
     });
 
-    setTextInputs(convertedInputs);
+    // Merge with existing state to preserve any optimistic entries and avoid vanishing on placement
+    setTextInputs(prev => {
+      const byId = new Map<string, StreamlinedTextInput>(prev.map(i => [i.id, i]));
+
+      // Overwrite/insert server-derived inputs
+      for (const input of convertedInputs) {
+        const existing = byId.get(input.id);
+        byId.set(input.id, {
+          ...(existing || {}),
+          ...input,
+          // Preserve original creation time if present to keep stable keys
+          createdAt: existing?.createdAt || input.createdAt
+        });
+      }
+
+      // Preserve recent optimistic temp inputs that haven't been persisted yet
+      const now = Date.now();
+      prev.forEach(input => {
+        const isTemp = input.id.startsWith('text_temp_') || input.id.startsWith('temp_') || input.id.startsWith('temp');
+        const isRecent = now - new Date(input.createdAt).getTime() < 15000; // 15s window
+        if (isTemp && isRecent && !byId.has(input.id)) {
+          byId.set(input.id, input);
+        }
+      });
+
+      return Array.from(byId.values());
+    });
   }, []);
 
   // Get text input by ID

@@ -319,6 +319,26 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
           
           break;
 
+        // ✅ NEW: Font size updates for text tags
+        case 'tag_font_size_updated': {
+          const { tagId, fontSize, contentData } = message.payload || {};
+          if (tagId) {
+            // Update tag record so it reflects new font size metadata
+            updateTag(tagId, {
+              contentData: contentData ?? undefined
+            } as any);
+
+            // Also inform streamlined text inputs to adjust font size immediately
+            if (typeof window !== 'undefined' && (window as any).textInputSyncCallback) {
+              (window as any).textInputSyncCallback('tag_font_size_updated', {
+                tagId,
+                fontSize
+              });
+            }
+          }
+          break;
+        }
+
         case 'tag_deleted':
           console.log('🗑️ Tag deleted by another user');
           deleteTag(message.payload.tagId);
