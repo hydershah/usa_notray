@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, inArray } from 'drizzle-orm';
+import { eq, and, desc, sql, inArray, count } from 'drizzle-orm';
 import { db } from '../../db';
 import { editorSessions, sessionParticipantsStatus, liveSessionEvents, users, documentTags } from '../../../shared/schema';
 import { redisCache } from '../redis-cache';
@@ -45,6 +45,88 @@ export interface SessionTransitionResult {
 }
 
 export class LiveSigningSessionService {
+  /**
+   * Ensure a live (notary) session has tags by copying from the latest tagging session
+   * for the same job when needed. This preserves the separate video session while
+   * carrying over all prepared tags to the live session for use during signing.
+   */
+  private static async ensureTagsForLiveSession(session: any): Promise<void> {
+    try {
+      // Safety: require a valid session id and job id
+      if (!session?.id || !session?.jobId) {
+        return;
+      }
+
+      // If the current session already has tags, do nothing
+      const existingCountRows = await db
+        .select({ count: count() })
+        .from(documentTags)
+        .where(eq(documentTags.sessionId, session.id));
+      const existingCount = Number(existingCountRows?.[0]?.count || 0);
+      if (existingCount > 0) {
+        return;
+      }
+
+      // Find the latest tagging session for this job
+      const [taggingSession] = await db
+        .select()
+        .from(editorSessions)
+        .where(
+          and(
+            eq(editorSessions.jobId, session.jobId),
+            eq(editorSessions.sessionType, 'tagging' as any)
+          )
+        )
+        .orderBy(desc(editorSessions.createdAt))
+        .limit(1);
+
+      if (!taggingSession || taggingSession.id === session.id) {
+        return;
+      }
+
+      // Load tags from the tagging session
+      const sourceTags = await db
+        .select()
+        .from(documentTags)
+        .where(eq(documentTags.sessionId, taggingSession.id));
+
+      if (!sourceTags || sourceTags.length === 0) {
+        return;
+      }
+
+      // Copy tags to the live session. Preserve geometry and assignment, reset completion state.
+      const now = new Date();
+      const tagsToInsert = sourceTags.map((t: any) => ({
+        sessionId: session.id,
+        documentId: t.documentId,
+        tagType: t.tagType,
+        assignedUserId: t.assignedUserId,
+        pageNumber: t.pageNumber,
+        xPosition: t.xPosition,
+        yPosition: t.yPosition,
+        width: t.width,
+        height: t.height,
+        // Preserve any placeholder text or styling, but mark as not completed for live fill
+        content: t.content || null,
+        contentType: t.contentType || null,
+        contentData: t.contentData || null,
+        isCompleted: false,
+        completedBy: null,
+        completedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      await db.insert(documentTags).values(tagsToInsert);
+
+      console.log(
+        `✅ Copied ${tagsToInsert.length} tag(s) from tagging session ${taggingSession.sessionId} to live session ${session.sessionId}`
+      );
+    } catch (copyError) {
+      console.warn('⚠️ Failed to ensure tags for live session:', copyError);
+      // Non-fatal: proceed without tags if copying fails
+    }
+  }
   
   /**
    * Start a live signing session
@@ -101,10 +183,13 @@ export class LiveSigningSessionService {
               console.log(`📄 Found existing session ${session.sessionId} for job ${jobIdNum}`);
               
               // Check if session is already in progress
-              if (session.signingState === 'active' || session.signingState === 'paused') {
+            if (session.signingState === 'active' || session.signingState === 'paused') {
                 console.log(`⚠️ Session ${session.sessionId} is already in progress (${session.signingState})`);
                 
-                // Return existing session state without modification
+              // Ensure tags are available on the live session before returning
+              await LiveSigningSessionService.ensureTagsForLiveSession(session);
+
+              // Return existing session state without modification
                 return {
                   success: true,
                   newState: session.signingState === 'active' ? SigningSessionState.ACTIVE : SigningSessionState.PAUSED,
@@ -200,6 +285,9 @@ export class LiveSigningSessionService {
           ]);
           console.log(`🧹 Cleared session cache for ${session.sessionId}`);
         }
+
+        // Ensure the live session has tags by copying from the latest tagging session if needed
+        await LiveSigningSessionService.ensureTagsForLiveSession(session);
         
         console.log(`✅ Live signing session started: ${session.sessionId}`);
         

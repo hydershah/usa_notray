@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { db } from '../db';
 import { documentTags, jobDocuments, documentVersions } from '../../shared/schema';
-import { eq } from 'drizzle-orm';
+import { eq, desc, sql } from 'drizzle-orm';
 import { TAG_TYPES } from '../../shared/schema';
 import { DigitalSignatureService } from './digital-signature-service';
 
@@ -938,8 +938,40 @@ export class PDFProcessorService {
     // Get all tags for this session and group by document
     const allTags = await this.getSessionTagsWithDocumentId(sessionId);
     const tagsByDocument = new Map<number, (TagPosition & { documentId: number })[]>();
+    const tagsByFileName = new Map<string, (TagPosition & { documentId: number })[]>();
     
-    // Group tags by document ID
+    console.log(`🔍 DEBUG: Found ${allTags.length} total tags to process`);
+    allTags.forEach(tag => {
+      console.log(`  Tag ${tag.tagType} for document ID ${tag.documentId}`);
+    });
+    
+    // Get document info for the tag documents to match by filename
+    if (allTags.length > 0) {
+      const tagDocumentIds = [...new Set(allTags.map(tag => tag.documentId))];
+      console.log(`🔍 DEBUG: Looking up document names for IDs: ${tagDocumentIds.join(', ')}`);
+      
+      const tagDocuments = await db
+        .select()
+        .from(jobDocuments)
+        .where(sql`${jobDocuments.id} IN (${tagDocumentIds.join(',')})`);
+      
+      console.log(`🔍 DEBUG: Found ${tagDocuments.length} tag documents:`);
+      tagDocuments.forEach(doc => {
+        console.log(`  Tag document ID ${doc.id}: ${doc.fileName}`);
+      });
+      
+      // Group tags by filename instead of document ID
+      for (const tag of allTags) {
+        const tagDoc = tagDocuments.find(doc => doc.id === tag.documentId);
+        if (tagDoc) {
+          const fileNameTags = tagsByFileName.get(tagDoc.fileName) || [];
+          fileNameTags.push(tag);
+          tagsByFileName.set(tagDoc.fileName, fileNameTags);
+        }
+      }
+    }
+    
+    // Group tags by document ID (fallback)
     for (const tag of allTags) {
       const documentTags = tagsByDocument.get(tag.documentId) || [];
       documentTags.push(tag);
@@ -947,10 +979,18 @@ export class PDFProcessorService {
     }
     
     console.log(`📄 Processing ${documents.length} documents separately`);
+    documents.forEach(doc => {
+      console.log(`  Document ID ${doc.id}: ${doc.fileName}`);
+    });
     
     for (const document of documents) {
-      const documentTags = tagsByDocument.get(document.id) || [];
-      console.log(`📄 Processing document ${document.fileName} with ${documentTags.length} tags`);
+      // Try filename matching first, then fall back to document ID
+      let documentTags = tagsByFileName.get(document.fileName) || [];
+      if (documentTags.length === 0) {
+        documentTags = tagsByDocument.get(document.id) || [];
+      }
+      
+      console.log(`📄 Processing document ${document.fileName} with ${documentTags.length} tags (filename match: ${tagsByFileName.has(document.fileName)})`);
       
       if (documentTags.length === 0) {
         console.log(`⚠️ No tags found for document ${document.fileName}, skipping`);
@@ -1055,10 +1095,56 @@ export class PDFProcessorService {
         throw new Error('Session not found');
       }
       
+      console.log(`🔍 DEBUG: Getting tags for session ${sessionId} (DB ID: ${session.id}, type: ${session.sessionType}, jobId: ${session.jobId})`);
+      
       const tags = await db
         .select()
         .from(documentTags)
         .where(eq(documentTags.sessionId, session.id));
+
+      console.log(`🔍 DEBUG: Found ${tags.length} tags directly in session ${sessionId}`);
+      
+      // If this is a video/live session with no tags, try to get tags from the latest tagging session for the same job
+      if (tags.length === 0 && session.jobId && session.sessionType !== 'tagging') {
+        console.log(`🔍 DEBUG: No tags in current session, looking for tagging session for job ${session.jobId}`);
+        
+        const [taggingSession] = await db
+          .select()
+          .from(editorSessions)
+          .where(eq(editorSessions.jobId, session.jobId))
+          .where(eq(editorSessions.sessionType, 'tagging' as any))
+          .orderBy(desc(editorSessions.createdAt))
+          .limit(1);
+          
+        if (taggingSession) {
+          console.log(`🔍 DEBUG: Found tagging session ${taggingSession.sessionId} for job ${session.jobId}`);
+          
+          const taggingTags = await db
+            .select()
+            .from(documentTags)
+            .where(eq(documentTags.sessionId, taggingSession.id));
+            
+          console.log(`🔍 DEBUG: Found ${taggingTags.length} tags in tagging session ${taggingSession.sessionId}`);
+          
+          if (taggingTags.length > 0) {
+            return taggingTags.map(tag => ({
+              x: tag.xPosition,
+              y: tag.yPosition,
+              width: tag.width,
+              height: tag.height,
+              pageNumber: tag.pageNumber,
+              content: tag.content || undefined,
+              contentData: tag.contentData || undefined,
+              contentType: tag.contentType || undefined,
+              tagType: tag.tagType,
+              isCompleted: tag.isCompleted || false,
+              documentId: tag.documentId
+            }));
+          }
+        } else {
+          console.log(`⚠️ DEBUG: No tagging session found for job ${session.jobId}`);
+        }
+      }
 
       return tags.map(tag => ({
         x: tag.xPosition,

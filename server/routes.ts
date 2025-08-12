@@ -6098,28 +6098,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Get signed documents directly from jobDocuments table
-      const signedDocuments = await db
+      // Get completed documents from documentVersions table (preferred)
+      const documentVersions = await db
         .select()
-        .from(jobDocuments)
-        .where(and(
-          eq(jobDocuments.jobId, jobId),
-          eq(jobDocuments.documentType, 'signed_document')
-        ))
-        .orderBy(desc(jobDocuments.createdAt));
+        .from(documentVersions)
+        .where(eq(documentVersions.originalDocumentId, jobId))
+        .orderBy(desc(documentVersions.createdAt));
 
-      // Add download URLs to each signed document
-      const documentsWithUrls = signedDocuments.map(doc => ({
-        id: doc.id,
-        fileName: doc.fileName,
-        originalName: doc.originalName,
-        fileSize: doc.fileSize,
-        status: 'completed',
-        digitalCertificateApplied: false, // TODO: Track this properly
-        createdAt: doc.createdAt,
-        completedAt: doc.createdAt, // For signed docs, created = completed
-        downloadUrl: `/api/documents/signed/${encodeURIComponent(doc.fileName)}`
-      }));
+      let documentsWithUrls = [];
+
+      if (documentVersions.length > 0) {
+        // Use document versions data (from our enhanced completion flow)
+        documentsWithUrls = documentVersions.map(doc => ({
+          id: doc.id,
+          fileName: doc.fileName,
+          originalName: doc.fileName,
+          fileSize: doc.fileSize,
+          status: doc.status || 'completed',
+          digitalCertificateApplied: doc.digitalCertificateApplied || false,
+          createdAt: doc.createdAt,
+          completedAt: doc.createdAt,
+          downloadUrl: `/api/documents/signed/${encodeURIComponent(doc.fileName)}`
+        }));
+      } else {
+        // Fallback: Check jobDocuments table for legacy signed documents
+        const signedDocuments = await db
+          .select()
+          .from(jobDocuments)
+          .where(and(
+            eq(jobDocuments.jobId, jobId),
+            eq(jobDocuments.documentType, 'signed_document')
+          ))
+          .orderBy(desc(jobDocuments.createdAt));
+
+        documentsWithUrls = signedDocuments.map(doc => ({
+          id: doc.id,
+          fileName: doc.fileName,
+          originalName: doc.originalName,
+          fileSize: doc.fileSize,
+          status: 'completed',
+          digitalCertificateApplied: false,
+          createdAt: doc.createdAt,
+          completedAt: doc.createdAt,
+          downloadUrl: `/api/documents/signed/${encodeURIComponent(doc.fileName)}`
+        }));
+      }
 
       res.json(documentsWithUrls);
     } catch (error) {
@@ -11657,7 +11680,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           const pdfProcessor = PDFProcessorService.getInstance();
           
           // Process the document and apply real content (not placeholder tags)
-          const processedDoc = await pdfProcessor.processCompletedDocument(sessionId);
+          const processedDocs = await pdfProcessor.processCompletedDocument(sessionId);
           
           // Save to uploads directory
           const fs = await import('fs/promises');
@@ -11671,43 +11694,71 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
             console.log('Uploads directory already exists or created');
           }
           
-          const signedFileName = `job_${session.jobId}_signed_${Date.now()}.pdf`;
-          const signedFilePath = path.join(uploadsDir, signedFileName);
+          // Handle multiple processed documents
+          let documentInfo = [];
+          let primaryDocumentVersionId = null;
           
-          // Write the signed PDF
-          await fs.writeFile(signedFilePath, processedDoc.buffer);
-          
-          // Create document version record
-          const [documentVersion] = await db.insert(documentVersions).values({
-            originalDocumentId: session.jobId,
-            sessionId: parseInt(sessionId),
-            versionNumber: 1,
-            fileName: signedFileName,
-            filePath: signedFilePath,
-            fileSize: processedDoc.fileSize,
-            status: 'completed',
-            digitalCertificateApplied: false
-          }).returning();
-          
-          // Update job status to indicate signed documents are available
-          await db
-            .update(jobs)
-            .set({
-              status: 'completed',
-              completedAt: new Date(),
-              signedDocumentId: documentVersion.id
-            })
-            .where(eq(jobs.id, session.jobId));
-          
-          documentInfo = {
-            documentVersionId: documentVersion.id,
-            fileName: signedFileName,
-            fileSize: processedDoc.fileSize,
-            downloadUrl: `/api/documents/signed/${encodeURIComponent(signedFileName)}`,
-            message: 'Final signed PDF generated successfully'
-          };
-          
-          console.log(`✅ Generated signed PDF: ${signedFileName} (${processedDoc.fileSize} bytes)`);
+          if (processedDocs.length > 0) {
+            console.log(`📄 Processing ${processedDocs.length} completed documents...`);
+            
+            for (let i = 0; i < processedDocs.length; i++) {
+              const processedDoc = processedDocs[i];
+              
+              // Generate unique filename for each document
+              const timestamp = Date.now();
+              const docIndex = processedDocs.length > 1 ? `_doc${i + 1}` : '';
+              const signedFileName = `job_${session.jobId}_signed_${timestamp}${docIndex}.pdf`;
+              const signedFilePath = path.join(uploadsDir, signedFileName);
+              
+              // Write the signed PDF
+              await fs.writeFile(signedFilePath, processedDoc.buffer);
+            
+              // Create document version record
+              const [documentVersion] = await db.insert(documentVersions).values({
+                originalDocumentId: processedDoc.originalDocumentId || session.jobId,
+                sessionId: parseInt(sessionId),
+                versionNumber: 1,
+                fileName: signedFileName,
+                filePath: signedFilePath,
+                fileSize: processedDoc.fileSize,
+                status: 'completed',
+                digitalCertificateApplied: processedDoc.isDigitallySigned || false
+              }).returning();
+              
+              // Keep track of the first document as primary
+              if (i === 0) {
+                primaryDocumentVersionId = documentVersion.id;
+              }
+              
+              const docInfo = {
+                documentVersionId: documentVersion.id,
+                fileName: signedFileName,
+                originalFileName: processedDoc.originalFileName,
+                fileSize: processedDoc.fileSize,
+                downloadUrl: `/api/documents/signed/${encodeURIComponent(signedFileName)}`,
+                digitalSignatures: processedDoc.digitalSignatures?.length || 0,
+                isDigitallySigned: processedDoc.isDigitallySigned
+              };
+              
+              documentInfo.push(docInfo);
+              
+              console.log(`✅ Generated signed PDF ${i + 1}/${processedDocs.length}: ${signedFileName} (${processedDoc.fileSize} bytes, ${processedDoc.digitalSignatures?.length || 0} signatures)`);
+            }
+            
+            // Update job status to indicate signed documents are available
+            await db
+              .update(jobs)
+              .set({
+                status: 'completed',
+                completedAt: new Date(),
+                signedDocumentId: primaryDocumentVersionId // Primary document for backward compatibility
+              })
+              .where(eq(jobs.id, session.jobId));
+              
+            console.log(`✅ All ${processedDocs.length} documents processed and saved successfully`);
+          } else {
+            console.log(`⚠️ No documents were processed for session ${sessionId}`);
+          }
           
         } catch (pdfError) {
           console.error('❌ Failed to generate final signed PDF:', pdfError);
@@ -11725,13 +11776,15 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       
       res.json({
         success: true,
-        message: 'Tagging session completed successfully',
+        message: 'Session completed successfully',
         sessionId,
         completedAt: new Date(),
-        document: documentInfo,
+        documents: documentInfo, // Array of document info for multiple docs
+        document: Array.isArray(documentInfo) && documentInfo.length > 0 ? documentInfo[0] : documentInfo, // Backward compatibility 
         stats: {
           totalTags: tags.length,
           completedTags: tags.filter(tag => tag.isCompleted).length,
+          documentsGenerated: Array.isArray(documentInfo) ? documentInfo.length : (documentInfo ? 1 : 0),
           participantCount
         }
       });
