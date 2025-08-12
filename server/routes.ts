@@ -4642,6 +4642,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'Job not found' });
       }
 
+      // If the job/session is completed, block access for non-admin users
+      const isAdminUser = (user.role === 'admin') || user.isAdmin || (Array.isArray(user.privileges) && user.privileges.includes('admin'));
+      if (job.jobStatus === 'completed' && !isAdminUser) {
+        return res.json({
+          hasAccess: false,
+          message: 'This signing session has been completed. You cannot join again.',
+          errorType: 'session_completed'
+        });
+      }
+
       let hasAccess = false;
       let accessReason = '';
 
@@ -10318,6 +10328,18 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         completedAt: new Date()
       });
 
+      // Also update all related signers' signing_status to completed
+      try {
+        if (session.jobId) {
+          await db
+            .update(signers)
+            .set({ signingStatus: 'completed' })
+            .where(eq(signers.jobId, session.jobId));
+        }
+      } catch (signerUpdateError) {
+        console.warn('Failed to update signers signing_status on completion:', signerUpdateError);
+      }
+
       // 🆕 GENERATE JOB COMPLETION REPORT
       if (session.jobId) {
         try {
@@ -10907,7 +10929,8 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         const syncMessage = {
           type: 'tag_updated',
           payload: {
-            tagId: tag.id,
+            tagId: tag.id.toString(),
+            tagType: tag.tagType,
             updates: {
               coordinates: tag.coordinates,
               ...updates

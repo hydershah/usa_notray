@@ -239,6 +239,8 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     if (!readOnly && !isEditing) {
       setIsEditing(true);
       onSelect?.();
+      // Clear any selected non-text tag so toolbar routes to this input
+      try { (useEditorStore.getState() as any).selectTag?.(null); } catch {}
     }
   }, [readOnly, isEditing, onSelect]);
 

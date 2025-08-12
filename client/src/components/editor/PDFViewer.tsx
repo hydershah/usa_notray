@@ -607,6 +607,13 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
              y: d.y / scaleFactor
            });
          }
+          // Persist and broadcast final position after drag ends
+          if (onSave && canEdit) {
+            onSave({
+              x: d.x / scaleFactor,
+              y: d.y / scaleFactor
+            });
+          }
        }}
        onResize={handleResize}
        onResizeStop={handleResizeStop}
@@ -994,6 +1001,14 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
   // Memoize current font size to prevent excessive re-renders
   const currentFontSize = useMemo(() => {
+    // Prefer active text input over a selected tag so the toolbar always
+    // targets inline typing first
+    if (selectedTextInputId) {
+      const selectedTextInput = textInputs?.find((ti) => ti.id === selectedTextInputId);
+      console.log('🎯 Selected text input for font size:', selectedTextInputId, 'fontSize:', selectedTextInput?.fontSize);
+      return selectedTextInput?.fontSize || lastUsedFontSize;
+    }
+
     if (selectedTag) {
       console.log('🎯 Selected tag for font size:', selectedTag.tagType, selectedTag.id, 'contentData:', selectedTag.contentData);
       // Check local font sizes first, then contentData, then fallback
@@ -1009,20 +1024,16 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       }
       // For text tags, try to get font size from the actual rendered content
       if (selectedTag.tagType === 'T' && selectedTag.content) {
-        // Try to extract font size from the content or use a reasonable default
         const defaultTextFontSize = 16; // Default text size
         console.log('🎯 Using default text font size:', defaultTextFontSize);
         return defaultTextFontSize;
       }
       console.log('🎯 Using lastUsedFontSize:', lastUsedFontSize);
       return lastUsedFontSize;
-    } else if (selectedTextInputId) {
-      const selectedTextInput = textInputs?.find(ti => ti.id === selectedTextInputId);
-      console.log('🎯 Selected text input for font size:', selectedTextInputId, 'fontSize:', selectedTextInput?.fontSize);
-      return selectedTextInput?.fontSize || lastUsedFontSize;
     }
+
     return lastUsedFontSize;
-  }, [selectedTag?.id, selectedTag?.contentData?.fontSize, selectedTag?.tagType, selectedTag?.content, selectedTextInputId, textInputs, lastUsedFontSize, localFontSizes]);
+  }, [selectedTextInputId, textInputs, lastUsedFontSize, selectedTag?.id, selectedTag?.contentData?.fontSize, selectedTag?.tagType, selectedTag?.content, localFontSizes]);
   
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1750,34 +1761,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     // Update local state immediately for responsive UI
     onTagUpdate?.(tagId, coordinates);
     
-    // 🚀 REAL-TIME SYNC: Broadcast tag update via WebSocket
-    if (webSocket && webSocket.isConnected && webSocket.isReady) {
-      if ((window as any).__DEBUG_EDITOR__) {
-        console.log('📡 Broadcasting tag update via WebSocket:', {
-          tagId,
-          coordinates
-        });
-      }
-      
-      try {
-        webSocket.sendMessage({
-          type: 'tag_updated',
-          payload: {
-            tagId,
-            // Use a consistent shape expected by receivers
-            updates: { coordinates },
-            page: (coordinates as any).pageNumber || 1
-          }
-        });
-      } catch (error) {
-        console.error('❌ Failed to send tag update via WebSocket:', error);
-      }
-    } else {
-      if ((window as any).__DEBUG_EDITOR__) {
-        console.warn('⚠️ WebSocket not available for tag update broadcast, state:', webSocket?.readyState);
-      }
-    }
-  }, [onTagUpdate, webSocket, sessionId]);
+    // 🚀 REAL-TIME SYNC: Server will broadcast when it processes the API call
+    // No need for client-side WebSocket broadcast as it can cause conflicts
+  }, [onTagUpdate]);
 
   // ✅ ENHANCED: Save tag changes locally and broadcast via WebSocket
   const broadcastTagSave = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {
@@ -1883,7 +1869,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
           case 'tag_updated':
           case 'tag_saved': {
             // Update tag position/size from other users (including whiteout tags)
-            const tagId = message.payload?.tagId;
+            const tagId = message.payload?.tagId != null ? String(message.payload.tagId) : undefined;
             // Accept both shapes: payload.updates.coordinates or payload.coordinates
             const coords = message.payload?.updates?.coordinates
               ?? message.payload?.coordinates

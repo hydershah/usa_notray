@@ -398,6 +398,29 @@ export function registerTextTagRoutes(app: Express) {
 
       console.log(`✅ Font size updated for tag ${tagId}: ${numericFontSize}px`);
 
+      // 🚀 REAL-TIME SYNC: Broadcast font size update to all session participants
+      try {
+        const { WebSocketService } = await import('../services/editor/WebSocketService');
+
+        const syncMessage = {
+          type: 'tag_font_size_updated',
+          payload: {
+            tagId: updatedTag.id.toString(),
+            fontSize: numericFontSize,
+            contentData: contentData
+          },
+          userId: req.user.id.toString(),
+          sessionId,
+          timestamp: Date.now()
+        };
+
+        WebSocketService.broadcastToSession(sessionId, syncMessage);
+        console.log(`🔄 Font size update broadcasted for tag ${tagId} in session ${sessionId}`);
+      } catch (wsError) {
+        console.warn('Failed to broadcast font size update via WebSocket:', wsError);
+        // Don't fail the request if WebSocket broadcast fails
+      }
+
       res.json({
         success: true,
         tag: {

@@ -213,7 +213,16 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
 
         case 'tag_updated':
           console.log('✏️ Tag updated');
-          updateTag(message.payload.tagId, message.payload.updates);
+          try {
+            const tagIdStr = message.payload?.tagId != null ? message.payload.tagId.toString() : undefined;
+            if (!tagIdStr) {
+              console.warn('⚠️ tag_updated missing tagId');
+              break;
+            }
+            updateTag(tagIdStr, message.payload.updates);
+          } catch (e) {
+            console.warn('⚠️ Failed to process tag_updated message:', e);
+          }
           
           // 🔧 SYNC TEXT INPUTS: If it's a text tag, also update text inputs state
           if (message.payload.tagType === 'T' || message.payload.updates?.tagType === 'T') {
@@ -232,7 +241,8 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
           console.log('💾 Tag saved (coordinates updated)');
           // Handle tag_saved for both legacy and new payload shapes
           {
-            const tagId = message.payload.tagId;
+            const rawId = message.payload.tagId;
+            const tagId = rawId != null ? rawId.toString() : undefined;
             const coordinates = message.payload.coordinates || message.payload?.updates?.coordinates;
             if (tagId && coordinates) {
               updateTag(tagId, { coordinates });
@@ -341,14 +351,22 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
 
         case 'tag_deleted':
           console.log('🗑️ Tag deleted by another user');
-          deleteTag(message.payload.tagId);
-          
-          // 🔧 SYNC TEXT INPUTS: If it's a text tag, also remove from text inputs state
-          console.log('📝 Syncing text tag deletion to text inputs:', message.payload.tagId);
-          if (typeof window !== 'undefined' && (window as any).textInputSyncCallback) {
-            (window as any).textInputSyncCallback('tag_deleted', {
-              id: message.payload.tagId
-            });
+          try {
+            const tagIdStr = message.payload?.tagId != null ? message.payload.tagId.toString() : undefined;
+            if (tagIdStr) {
+              deleteTag(tagIdStr);
+              // 🔧 SYNC TEXT INPUTS: If it's a text tag, also remove from text inputs state
+              console.log('📝 Syncing text tag deletion to text inputs:', tagIdStr);
+              if (typeof window !== 'undefined' && (window as any).textInputSyncCallback) {
+                (window as any).textInputSyncCallback('tag_deleted', {
+                  id: tagIdStr
+                });
+              }
+            } else {
+              console.warn('⚠️ tag_deleted missing tagId');
+            }
+          } catch (e) {
+            console.warn('⚠️ Failed to process tag_deleted message:', e);
           }
           break;
 

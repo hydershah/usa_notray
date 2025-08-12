@@ -103,8 +103,8 @@ export const NotaryVideoSession: React.FC<NotaryVideoSessionProps> = ({
     onSessionError?.(error);
   }, [onSessionError]);
 
-  // Loading state
-  if (isLoading) {
+  // Loading state (only show when we don't yet have a session)
+  if (isLoading && !sessionData) {
     return (
       <div className={cn("h-full flex items-center justify-center bg-gray-50", className)}>
         <Card className="w-96">

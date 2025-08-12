@@ -84,6 +84,10 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
   const isMountedRef = useRef(true);
   const hasJoinedRef = useRef(false);
 
+  // Track latest daily instance to ignore stale async handlers
+  const latestDailyRef = useRef(daily);
+  useEffect(() => { latestDailyRef.current = daily; }, [daily]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -202,7 +206,7 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
     console.log('  - meetingState:', daily?.meetingState());
     
     // Only join if we have daily instance, are not currently joining, haven't joined, and component is mounted
-    if (daily && !isJoining && !hasJoined && isMountedRef.current) {
+    if (daily && !isJoining && !hasJoinedRef.current && isMountedRef.current) {
       console.log('🎥 Joining Daily.co session for video feeds...');
       setIsJoining(true);
       
@@ -216,7 +220,8 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
         return;
       }
       
-      daily.join({
+      const usedDaily = daily;
+      usedDaily.join({
         userName: currentUser.name,
         userData: {
           role: currentUser.role,
@@ -224,16 +229,16 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
         }
       }).then(() => {
         // Only set media state if component is still mounted
-        if (isMountedRef.current) {
+        if (isMountedRef.current && latestDailyRef.current === usedDaily) {
           console.log('🎤 Setting initial media state:', { hasLocalVideo, hasLocalAudio });
-          daily.setLocalVideo(hasLocalVideo);
-          daily.setLocalAudio(hasLocalAudio);
+          usedDaily.setLocalVideo(hasLocalVideo);
+          usedDaily.setLocalAudio(hasLocalAudio);
           setHasJoined(true);
           hasJoinedRef.current = true;
         }
       }).catch((error) => {
         console.error('❌ Failed to join session:', error);
-        if (isMountedRef.current) {
+        if (isMountedRef.current && latestDailyRef.current === usedDaily) {
           setIsJoining(false);
           toast({
             title: "Join Failed", 
@@ -243,17 +248,18 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
         }
       });
     }
-  }, [daily, currentUser.id, currentUser.name, currentUser.role, isJoining, hasJoined]);
+  }, [daily, currentUser.id, currentUser.name, currentUser.role, isJoining]);
 
   // Cleanup effect - leave session when component unmounts only
+  const hasSetUnmountCleanupRef = useRef(false);
   useEffect(() => {
-    // Don't setup cleanup based on daily changes - this causes cycling
-    // Only setup cleanup once and let the unmount effect handle leaving
+    if (hasSetUnmountCleanupRef.current) return;
+    hasSetUnmountCleanupRef.current = true;
     return () => {
-      // This cleanup should not run on daily changes, only on unmount
-      console.log('🔄 Daily effect cleanup triggered');
+      console.log('🔄 Daily effect cleanup (component unmounted)');
+      // Intentionally do not call daily.leave() here; parent unmount should manage lifecycle
     };
-  }, []); // No dependencies - only setup once
+  }, []);
 
   // Media control handlers
   const handleToggleVideo = useCallback(async () => {
@@ -365,7 +371,8 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
     }
   }, [daily]);
 
-  // Auto-start/stop cloud recording based on signing session state
+  // Recording control based on signing session lifecycle
+  // Only auto-stop when completing/completed. Do NOT auto-start on 'active'.
   useEffect(() => {
     console.log('🎬 Recording effect - State check:', {
       signingSessionState,
@@ -374,14 +381,15 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
       hasJoined
     });
     
-    if (signingSessionState === 'active' && !isRecording && canRecord && hasJoined) {
-      console.log('🎬 Auto-starting cloud recording (server API)');
-      handleStartRecording();
-    } else if ((signingSessionState === 'completing' || signingSessionState === 'completed') && isRecording) {
+    // Guard: don't do anything if not connected yet
+    if (!hasJoined) return;
+
+    // Only auto-stop recording when session is completing/completed
+    if ((signingSessionState === 'completing' || signingSessionState === 'completed') && isRecording) {
       console.log('🛑 Auto-stopping cloud recording (server API)');
       handleStopRecording();
     }
-  }, [signingSessionState, isRecording, canRecord, hasJoined, handleStartRecording, handleStopRecording]);
+  }, [signingSessionState, isRecording, hasJoined, handleStopRecording]);
 
   const totalParticipants = participantIds.length + (localParticipant ? 1 : 0);
 

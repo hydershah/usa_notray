@@ -94,6 +94,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   const [videoSessionData, setVideoSessionData] = useState<VideoSessionData | null>(null);
   const [videoSessionError, setVideoSessionError] = useState<string | null>(null);
   const [hasInitializedVideoSession, setHasInitializedVideoSession] = useState(false);
+  const completionHandledRef = useRef(false);
 
   const [unfilledTagsError, setUnfilledTagsError] = useState<{
     unfilledTags: any[];
@@ -256,7 +257,17 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
           participants: sessionState?.participants || []
         };
         
-        setLiveSession(validSessionState);
+        setLiveSession(prev => {
+          const next = {
+            ...prev,
+            ...validSessionState
+          } as typeof prev;
+          // Preserve optimistic activeUserId if server hasn't propagated yet
+          if (typeof validSessionState.activeUserId !== 'number') {
+            next.activeUserId = prev.activeUserId;
+          }
+          return next;
+        });
       } else if (response.status === 304) {
         // Keep optimistic state on 304; no-op
       }
@@ -353,8 +364,9 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
       const response = await authenticatedFetch(`/api/session/${targetSessionId.replace('live_', '')}/state`);
       if (response.ok) {
         const data = await response.json();
-        const isCompleted = data?.data?.status === 'completed';
-        console.log('📊 Session status check:', { status: data?.data?.status, isCompleted });
+        const status = data?.data?.state ?? data?.data?.status ?? data?.state ?? data?.status;
+        const isCompleted = status === 'completed';
+        console.log('📊 Session status check:', { status, isCompleted });
         return isCompleted;
       }
     } catch (error) {
@@ -552,10 +564,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         body: JSON.stringify({ userId: nextActiveUserId })
       });
 
-      if (response.ok) {
-        // Force-refresh to ensure we have the latest from server (bypass cache)
-        await loadLiveSessionState(true);
-      } else {
+      if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || 'Failed to set active user');
       }
@@ -736,6 +745,14 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     );
   };
 
+  // Redirect participants when the session is completed (e.g., signers auto-redirect)
+  useEffect(() => {
+    if (liveSession.state === 'completed' && !completionHandledRef.current) {
+      completionHandledRef.current = true;
+      if (onSessionComplete) onSessionComplete();
+    }
+  }, [liveSession.state, onSessionComplete]);
+
   const memoizedCurrentUser = useMemo(() => {
     const user = participants.find(p => p.userId === currentUserId);
     return {
@@ -897,7 +914,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
           <div className="flex-1 overflow-hidden min-w-0">
             <PDFTaggingEditor
               ref={editorRef}
-              sessionId={sessionId}
+              sessionId={liveSessionId || sessionId}
               mode="signing"
               documents={documents}
               participants={participants}
@@ -942,7 +959,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
           <div className="flex-1 overflow-hidden min-w-0">
             <PDFTaggingEditor
               ref={editorRef}
-              sessionId={sessionId}
+              sessionId={liveSessionId || sessionId}
               mode="signing"
               documents={documents}
               participants={participants}

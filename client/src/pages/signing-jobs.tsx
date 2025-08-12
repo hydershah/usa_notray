@@ -109,7 +109,11 @@ export default function SigningJobs() {
       
       if (!accessData.hasAccess) {
         if (newWindow) newWindow.close();
-        alert(accessData.message || 'Access denied to this session');
+        // Show a clearer message if the session has been completed
+        const message = accessData.errorType === 'session_completed'
+          ? 'This signing session has been completed. You can download your documents from the job details.'
+          : (accessData.message || 'Access denied to this session');
+        alert(message);
         return;
       }
 
@@ -393,7 +397,7 @@ export default function SigningJobs() {
                     </div>
                     
                     <div className="flex gap-2">
-                      {job.signingStatus === 'pending' && user?.isVerified && (
+                      {job.signingStatus === 'pending' && job.jobStatus !== 'completed' && user?.isVerified && (
                         <Button 
                           size="sm" 
                           onClick={() => handleJoinSession(job)}

@@ -319,6 +319,17 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      {/* Redirect old signing URLs to proper format */}
+      <Route path="/jobs/:id/sign">
+        <ProtectedRoute>
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/job-sign-redirect")))}
+            </React.Suspense>
+          </ErrorBoundary>
+        </ProtectedRoute>
+      </Route>
+
       {/* Job Request Routes */}
       <Route path="/job-request">
         <ProtectedRoute allowedRoles={['signer', 'client']}>

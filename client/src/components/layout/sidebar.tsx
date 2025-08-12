@@ -103,14 +103,6 @@ const menuItems: MenuItem[] = [
     description: 'Profile, signatures & stamps'
   },
   {
-    id: 'my-documents',
-    label: 'My Documents',
-    icon: Download,
-    path: '/my-documents',
-    roles: ['signer', 'witness', 'client', 'notary'],
-    description: 'Your signed documents and downloads'
-  },
-  {
     id: 'id-verification',
     label: 'ID Verification',
     icon: UserCheck,

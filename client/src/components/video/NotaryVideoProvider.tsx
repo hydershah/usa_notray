@@ -36,6 +36,9 @@ export const NotaryVideoProvider: React.FC<NotaryVideoProviderProps> = ({
       : { url: roomUrl };
   }, [token, roomUrl]);
 
+  // Stable key to prevent unnecessary unmount/mount cycles
+  const providerKey = useMemo(() => `${roomUrl || ''}|${token || ''}` , [roomUrl, token]);
+
   useEffect(() => {
     // Validate that we have either token or roomUrl
     if (!token && !roomUrl) {
@@ -54,7 +57,8 @@ export const NotaryVideoProvider: React.FC<NotaryVideoProviderProps> = ({
       console.log('✅ Daily React Provider initialized with room URL');
     }
 
-    setIsInitialized(true);
+    // Only set initialized once; don't flip back to loading when token/URL changes
+    setIsInitialized((prev) => prev || true);
   }, [token, roomUrl]);
 
   if (!isInitialized) {
@@ -69,7 +73,7 @@ export const NotaryVideoProvider: React.FC<NotaryVideoProviderProps> = ({
   }
 
   return (
-    <DailyProvider {...providerProps}>
+    <DailyProvider key={providerKey} {...providerProps}>
       {children}
     </DailyProvider>
   );

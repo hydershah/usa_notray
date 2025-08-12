@@ -399,6 +399,11 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
     setTextInputs(prev => [...prev, optimisticTextInput]);
     // Select the new tag for positioning (not editing initially)
     setSelectedTextInputId(tempId);
+    // Ensure any previously selected non-text tag is cleared so font controls
+    // target this newly placed text input immediately
+    try {
+      useEditorStore.getState().selectTag(null);
+    } catch {}
     pendingCreations.current.add(tempId);
     
     // 🔧 Save to localStorage for recovery on refresh
@@ -453,13 +458,21 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
             id: tag.id,
             // Keep editing state to avoid re-mount flicker and data loss
             isNew: input.isNew,
-            content: keepContent
+            content: keepContent,
+            // Preserve any locally adjusted styling made before the server responded
+            fontSize: input.fontSize,
+            fontFamily: input.fontFamily,
+            textColor: input.textColor
           };
         }
         return input;
       }));
 
       setSelectedTextInputId(tag.id);
+      // Re-clear any lingering selected tag to keep font-size routing correct
+      try {
+        useEditorStore.getState().selectTag(null);
+      } catch {}
       pendingCreations.current.delete(tempId);
       
       // 🔧 Remove from temporary storage since it's now persisted on server
@@ -886,12 +899,31 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       // Overwrite/insert server-derived inputs
       for (const input of convertedInputs) {
         const existing = byId.get(input.id);
-        byId.set(input.id, {
-          ...(existing || {}),
-          ...input,
-          // Preserve original creation time if present to keep stable keys
-          createdAt: existing?.createdAt || input.createdAt
-        });
+        // If we have a recent local coordinate update, avoid overwriting with potentially stale server coords
+        const lastLocalAt = existing ? (lastLocalCoordinateUpdateAt.current.get(existing.id) || 0) : 0;
+        const recentlyMovedLocally = Date.now() - lastLocalAt < 1200; // 1.2s protection window
+
+        if (existing && recentlyMovedLocally) {
+          // Merge everything except coordinates to prevent snapping back
+          byId.set(input.id, {
+            ...existing,
+            content: input.content,
+            fontSize: input.fontSize,
+            fontFamily: input.fontFamily,
+            textColor: input.textColor,
+            assignedUserId: input.assignedUserId,
+            userColor: input.userColor,
+            isNew: input.isNew,
+            createdAt: existing.createdAt || input.createdAt
+          });
+        } else {
+          byId.set(input.id, {
+            ...(existing || {}),
+            ...input,
+            // Preserve original creation time if present to keep stable keys
+            createdAt: existing?.createdAt || input.createdAt
+          });
+        }
       }
 
       // Preserve recent optimistic temp inputs that haven't been persisted yet
@@ -922,6 +954,9 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       // When selecting a text input, clear any active tool to prevent dual selection
       if (textInputId) {
         useEditorStore.getState().setSelectedTagType(null);
+        // Also clear any selected non-text tag so font-size dropdown targets the
+        // active text input immediately without requiring a reselect
+        try { useEditorStore.getState().selectTag(null); } catch {}
       }
     } catch {}
   }, []);

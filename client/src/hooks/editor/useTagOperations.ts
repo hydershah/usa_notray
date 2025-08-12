@@ -507,25 +507,8 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       timestamp: Date.now()
     };
 
-    // 🚀 REAL-TIME SYNC: Broadcast tag update to all participants
-    if (webSocket && webSocket.tagUpdated) {
-      try {
-        if (typeof window !== 'undefined' && (window as any).__DEBUG_EDITOR__) {
-          console.log('📡 Broadcasting tag update via WebSocket:', {
-            tagId,
-            coordinates: sanitizedCoordinates
-          });
-        }
-        
-        webSocket.tagUpdated(tagId, { coordinates: sanitizedCoordinates });
-        
-        if (typeof window !== 'undefined' && (window as any).__DEBUG_EDITOR__) {
-          console.log('✅ Tag update broadcasted successfully');
-        }
-      } catch (wsError) {
-        console.warn('⚠️ Failed to broadcast tag update via WebSocket:', wsError);
-      }
-    }
+    // 🚀 REAL-TIME SYNC: Server will broadcast when it processes the API call
+    // No need for client-side WebSocket broadcast as it can cause conflicts
 
     // Save to server with debounce
     debouncedSave(operation);
