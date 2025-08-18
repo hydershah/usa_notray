@@ -114,6 +114,16 @@ export const useDebouncedTagOperations = (sessionId: string) => {
     coordinates: { x?: number; y?: number; width?: number; height?: number }
   ) => {
     const operation = async () => {
+      // Import store dynamically to avoid circular dependencies
+      const { useEditorStore } = await import('./useEditorStore');
+      const { isTagBeingDragged } = useEditorStore.getState();
+      
+      // Skip API call if tag is being actively dragged
+      if (isTagBeingDragged(tagId)) {
+        console.log('⏭️ Skipping position update for actively dragged tag:', tagId);
+        return;
+      }
+      
       const response = await fetch(`/api/editor/session/${sessionId}/tag/${tagId}`, {
         method: 'PUT',
         headers: {

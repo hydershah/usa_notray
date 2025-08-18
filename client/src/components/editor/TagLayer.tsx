@@ -3,7 +3,7 @@ import { Rnd } from 'react-rnd';
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
 import { DocumentTag, TagCoordinates } from '../../types/editor';
 import { useToast } from '../../hooks/use-toast';
-import DraggableTag from './DraggableTag';
+// DraggableTag not used - using Rnd directly
 import { useDebouncedTagOperations } from '../../hooks/editor/useDebounced';
 import { 
   getTagDimensions, 
@@ -49,7 +49,9 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   onDelete,
   onTagClick
 }) => {
-  const { mode, selectedUser, currentUser, session } = useEditorStore();
+  const { mode, selectedUser, currentUser, session, setActiveOperation } = useEditorStore();
+  const [isDragging, setIsDragging] = useState(false);
+  const lastPositionRef = useRef({ x: 0, y: 0 });
   
   // Use debounced operations hook
   const { debouncedPositionUpdate } = useDebouncedTagOperations(session?.id || '');
@@ -109,11 +111,32 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   }, [displayCoords.x, displayCoords.y, displayCoords.height, tag.tagType]);
 
 
-  // Handle drag stop with snap-to-grid - DocuSign style
+  // Handle drag start
+  const handleDragStart = useCallback(() => {
+    setIsDragging(true);
+    // Mark tag as being actively dragged to prevent server overrides
+    setActiveOperation(tag.id, { type: 'drag', timestamp: Date.now() });
+    console.log('🎯 Drag started for tag:', tag.id);
+  }, [tag.id, setActiveOperation]);
+
+  // Handle drag move
+  const handleDrag = useCallback((e: any, data: any) => {
+    if (!canModifyTag) return;
+    
+    // Update active operation timestamp to keep it fresh
+    setActiveOperation(tag.id, { type: 'drag', timestamp: Date.now() });
+    
+    // Store last position for drag stop
+    lastPositionRef.current = { x: data.x, y: data.y };
+  }, [canModifyTag, tag.id, setActiveOperation]);
+
+  // Handle drag stop with snap-to-grid
   const handleDragStop = useCallback((e: any, data: any) => {
     if (!canModifyTag || !session) return;
     
-    // Snap to grid for professional alignment
+    setIsDragging(false);
+    
+    // Snap to grid for alignment
     const snappedX = snapToGrid(data.x / scaleFactor);
     const snappedY = snapToGrid(data.y / scaleFactor);
     
@@ -122,23 +145,28 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       y: snappedY
     };
     
-    console.log('🔄 Tag drag update (debounced):', {
-      canvas: { x: data.x, y: data.y },
-      pdf: newPdfCoordinates,
-      scaleFactor
+    console.log('✅ Tag drag completed:', {
+      tagId: tag.id,
+      newPosition: newPdfCoordinates
     });
     
     try {
-      // Update local state immediately (optimistic update)
+      // Update local state immediately
       onUpdate(newPdfCoordinates);
       
-      // Use debounced position update for server sync
+      // Clear active operation after a delay to allow final updates
+      setTimeout(() => {
+        setActiveOperation(tag.id, null);
+      }, 500);
+      
+      // Save to server after drag completes
       debouncedPositionUpdate(tag.id, newPdfCoordinates);
       
     } catch (error) {
       console.error('❌ Failed to update tag position:', error);
+      setActiveOperation(tag.id, null);
     }
-  }, [canModifyTag, scaleFactor, onUpdate, session, tag, debouncedPositionUpdate]);
+  }, [canModifyTag, scaleFactor, onUpdate, session, tag.id, debouncedPositionUpdate, setActiveOperation]);
 
   // Handle keyboard events for tag deletion
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -161,6 +189,8 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         x: displayCoords.x,
         y: displayCoords.y
       }}
+      onDragStart={handleDragStart}
+      onDrag={handleDrag}
       onDragStop={handleDragStop}
       disableDragging={!canModifyTag}
       enableResizing={canModifyTag && Boolean(TAG_TYPE_CONFIG[tag.tagType]?.allowResize)}

@@ -72,6 +72,9 @@ interface EditorStore {
   isConnected: boolean;
   webSocket: any | null; // WebSocket instance for real-time collaboration
   
+  // Active operations tracking (prevents server override during drag)
+  activeOperations: Map<string, { type: 'drag' | 'resize' | 'update'; timestamp: number }>;
+  
   // Actions - Session Management
   setSession: (session: EditorSession | null) => void;
   setDocuments: (documents: SessionDocument[]) => void;
@@ -93,6 +96,8 @@ interface EditorStore {
   selectTag: (tag: DocumentTag | null) => void;
   setSelectedTagType: (tagType: TagType | null) => void;
   setDraggedTag: (tag: DocumentTag | null) => void;
+  setActiveOperation: (tagId: string, operation: { type: 'drag' | 'resize' | 'update'; timestamp: number } | null) => void;
+  isTagBeingDragged: (tagId: string) => boolean;
   
   // Document-specific tag management
   getCurrentDocumentTags: () => DocumentTag[];
@@ -229,6 +234,7 @@ export const useEditorStore = create<EditorStore>()(
       lastSyncTime: null,
       isConnected: false,
       webSocket: null,
+      activeOperations: new Map(),
       
       // Session Management Actions
       setSession: (session) => {
@@ -318,6 +324,14 @@ export const useEditorStore = create<EditorStore>()(
             return state;
           }
           
+          // Check if tag is being actively dragged/manipulated
+          const activeOp = state.activeOperations.get(tagId);
+          if (activeOp && (Date.now() - activeOp.timestamp) < 2000) {
+            // Skip server updates for tags being actively manipulated
+            console.log('🚫 Skipping update for actively manipulated tag:', tagId);
+            return state;
+          }
+          
           return {
             tags: state.tags.map(tag =>
               tag.id === tagId 
@@ -357,6 +371,23 @@ export const useEditorStore = create<EditorStore>()(
       },
       
       setDraggedTag: (tag) => set({ draggedTag: tag }),
+      
+      setActiveOperation: (tagId, operation) => 
+        set((state) => {
+          const newOperations = new Map(state.activeOperations);
+          if (operation) {
+            newOperations.set(tagId, operation);
+          } else {
+            newOperations.delete(tagId);
+          }
+          return { activeOperations: newOperations };
+        }),
+      
+      isTagBeingDragged: (tagId) => {
+        const state = get();
+        const activeOp = state.activeOperations.get(tagId);
+        return !!(activeOp && activeOp.type === 'drag' && (Date.now() - activeOp.timestamp) < 2000);
+      },
       
       // Document-specific tag management
       getCurrentDocumentTags: () => {

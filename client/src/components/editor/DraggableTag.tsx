@@ -11,10 +11,11 @@ interface DraggableTagProps {
 }
 
 const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, containerRef, onUpdate }) => {
-  const { setDraggedTag, selectTag, selectedTag, mode, currentUser } = useEditorStore();
+  const { setDraggedTag, selectTag, selectedTag, mode, currentUser, setActiveOperation } = useEditorStore();
   const [isDragging, setIsDragging] = useState(false);
   const offsetRef = useRef({ x: 0, y: 0 });
   const dragStartRef = useRef(false);
+  const lastUpdateTime = useRef(0);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -41,6 +42,8 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
       if (moveDistance > 5) {
         setIsDragging(true);
         setDraggedTag(tag);
+        // Mark tag as being actively dragged
+        setActiveOperation(tag.id, { type: 'drag', timestamp: Date.now() });
         window.removeEventListener('mousemove', startDrag);
       }
     };
@@ -88,10 +91,18 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
     e.preventDefault();
     e.stopPropagation();
 
+    // Throttle updates to prevent overwhelming the system
+    const now = Date.now();
+    if (now - lastUpdateTime.current < 16) return; // ~60fps
+    lastUpdateTime.current = now;
+
     const containerRect = containerRef.current.getBoundingClientRect();
 
     const newX = (e.clientX - containerRect.left - offsetRef.current.x) / scaleFactor;
     const newY = (e.clientY - containerRect.top - offsetRef.current.y) / scaleFactor;
+
+    // Update active operation timestamp to keep it fresh
+    setActiveOperation(tag.id, { type: 'drag', timestamp: Date.now() });
 
     onUpdate(tag.id, {
       ...tag.coordinates,
@@ -104,6 +115,10 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
     if (isDragging) {
       setIsDragging(false);
       setDraggedTag(null);
+      // Clear active operation after a short delay to allow final updates to process
+      setTimeout(() => {
+        setActiveOperation(tag.id, null);
+      }, 500);
     }
     dragStartRef.current = false;
   };

@@ -1923,7 +1923,15 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
             const coords = message.payload?.updates?.coordinates
               ?? message.payload?.coordinates
               ?? message.payload?.updates;
+            
             if (tagId && coords && onTagUpdate) {
+              // Check if this tag is being actively dragged
+              const { isTagBeingDragged } = useEditorStore.getState();
+              if (isTagBeingDragged(tagId)) {
+                console.log('🚫 Skipping WebSocket update for actively dragged tag:', tagId);
+                return;
+              }
+              
               console.log('📝 Updating tag from WebSocket:', { tagId, coords });
               onTagUpdate(tagId, coords);
             }

@@ -176,6 +176,7 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
           // 🔧 De-dupe: remove any recent optimistic temp tag that matches this server tag
           try {
             const existingTags = useEditorStore.getState().tags;
+            const { draggedTag, isTagBeingDragged } = useEditorStore.getState();
             const now = Date.now();
             const isClose = (a: number, b: number, tol = 8) => Math.abs(a - b) <= tol;
             const tempCandidate = existingTags.find(t =>
@@ -187,7 +188,13 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
               isClose((t.coordinates?.y as number) || 0, (serverTag.coordinates?.y as number) || 0) &&
               (now - new Date(t.createdAt as any).getTime() < 7000)
             );
+            
             if (tempCandidate) {
+              // If the temp tag is being dragged, preserve its current position
+              if (draggedTag?.id === tempCandidate.id || isTagBeingDragged(tempCandidate.id)) {
+                console.log('🎯 Preserving position for actively dragged tag:', tempCandidate.id);
+                serverTag.coordinates = tempCandidate.coordinates;
+              }
               console.log('🧹 Removing matching optimistic temp tag:', tempCandidate.id);
               deleteTag(tempCandidate.id);
             }
