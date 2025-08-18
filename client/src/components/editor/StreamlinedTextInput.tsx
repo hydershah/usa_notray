@@ -91,6 +91,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   const [isEditing, setIsEditing] = useState(isNew && !readOnly);
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
+  const [localPosition, setLocalPosition] = useState<{ x: number; y: number } | null>(null);
   
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -204,16 +205,16 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
 
   // Handle drag operations (live local updates to prevent snap-back)
   const handleDrag = useCallback((_: any, data: any) => {
-    const newX = Math.round(data.x / scaleFactor);
-    const newY = Math.round(data.y / scaleFactor);
-    onMove?.({ x: newX, y: newY });
-  }, [scaleFactor, onMove]);
+    // Use local position during drag to avoid global rerenders/bouncing
+    setLocalPosition({ x: data.x, y: data.y });
+  }, []);
 
   const handleDragStop = useCallback((_: any, data: any) => {
     setIsDragging(false);
     const newX = Math.round(data.x / scaleFactor);
     const newY = Math.round(data.y / scaleFactor);
     onMove?.({ x: newX, y: newY });
+    setLocalPosition(null);
   }, [scaleFactor, onMove]);
 
   // Handle resize operations
@@ -301,6 +302,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     boxSizing: 'border-box' as const,
     cursor: isEditing ? 'text' : 'move',
     transition: 'none',
+    willChange: 'transform',
     minWidth: 'fit-content',
     minHeight: 'fit-content',
   }), [isSelected, hasContent, isEditing]);
@@ -312,8 +314,8 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
         height: displayCoords.height
       }}
       position={{
-        x: displayCoords.x,
-        y: displayCoords.y
+        x: localPosition ? localPosition.x : displayCoords.x,
+        y: localPosition ? localPosition.y : displayCoords.y
       }}
       onDragStart={() => setIsDragging(true)}
       onDrag={handleDrag}
@@ -322,10 +324,8 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
       onResizeStop={handleResizeStop}
       enableResizing={enableResizing}
       disableDragging={isEditing || readOnly}
-      bounds="parent"
       cancel=".no-drag"
-      dragGrid={[1, 1]}
-      resizeGrid={[1, 1]}
+      // No bounds/grid for maximum responsiveness
       className={`professional-text-tag ${isSelected ? 'selected' : ''}`}
       style={containerStyle}
     >

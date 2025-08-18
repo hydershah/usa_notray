@@ -546,20 +546,25 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
   const moveTextInput = useCallback(async (textInputId: string, coordinates: { x: number; y: number; width?: number; height?: number }) => {
     try {
       // Update local state immediately for responsive UI
-      setTextInputs(prev => prev.map(input => 
-        input.id === textInputId
-          ? {
-              ...input,
-              coordinates: {
-                ...input.coordinates,
-                x: coordinates.x,
-                y: coordinates.y,
-                ...(coordinates.width !== undefined && { width: coordinates.width }),
-                ...(coordinates.height !== undefined && { height: coordinates.height })
-              }
-            }
-          : input
-      ));
+      setTextInputs(prev => prev.map(input => {
+        if (input.id !== textInputId) return input;
+        // Only accept monotonic moves forward in time to avoid applying stale echoes
+        const lastAt = lastLocalCoordinateUpdateAt.current.get(textInputId) || 0;
+        const now = Date.now();
+        if (now < lastAt) {
+          return input;
+        }
+        return {
+          ...input,
+          coordinates: {
+            ...input.coordinates,
+            x: coordinates.x,
+            y: coordinates.y,
+            ...(coordinates.width !== undefined && { width: coordinates.width }),
+            ...(coordinates.height !== undefined && { height: coordinates.height })
+          }
+        };
+      }));
 
       // Track this local update to prevent echo
       lastLocalCoordinateUpdateAt.current.set(textInputId, Date.now());
@@ -615,7 +620,8 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           }
 
           console.log(`✅ Text input ${textInputId} moved to coordinates:`, { x: xVal, y: yVal, width: widthVal, height: heightVal });
-          lastLocalCoordinateUpdateAt.current.set(textInputId, Date.now());
+          // Extend suppression window so late server echoes don't jitter
+          lastLocalCoordinateUpdateAt.current.set(textInputId, Date.now() + 2000);
           debouncedCoordinateUpdates.current.delete(textInputId);
           
           // Tag the update with our user id in a broadcast (if available) to help peers suppress echoes
