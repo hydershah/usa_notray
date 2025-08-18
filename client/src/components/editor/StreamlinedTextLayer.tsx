@@ -135,12 +135,10 @@ export const StreamlinedTextLayer: React.FC<StreamlinedTextLayerProps> = ({
       className="streamlined-text-layer"
     >
       {pageTextInputs.map((textInput) => {
-        // Always use coordinate-based stable key to prevent unmount/remount during ID transition
-        const stableKey = `text-stable-${textInput.coordinates.x}-${textInput.coordinates.y}-${textInput.coordinates.pageNumber}-${scaleFactor}`;
-        
+        // Use persistent ID as key to avoid remounting during drag (prevents jitter)
         return (
         <StreamlinedTextInput
-          key={stableKey}
+          key={textInput.id}
           id={textInput.id}
           coordinates={textInput.coordinates}
           sessionId={sessionId}

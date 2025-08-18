@@ -128,7 +128,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
       width: Math.round(width * scaleFactor),
       height: Math.round(height * scaleFactor)
     };
-  }, [coordinates, scaleFactor, optimalWidth, optimalHeight]);
+  }, [coordinates.x, coordinates.y, coordinates.width, coordinates.height, scaleFactor, optimalWidth, optimalHeight]);
 
   // Enable resizing
   const enableResizing = !isEditing && !readOnly ? {

@@ -230,7 +230,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
             const lastLocalUpdate = lastLocalCoordinateUpdateAt.current.get(data.id) || 0;
             const timeSinceLocal = Date.now() - lastLocalUpdate;
             
-            if (timeSinceLocal > 3000) {
+            if (timeSinceLocal > 5000) {
               // Only apply if enough time has passed since local update
               setTextInputs(prev => prev.map(input => 
                 input.id === data.id 
@@ -617,11 +617,26 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           console.log(`✅ Text input ${textInputId} moved to coordinates:`, { x: xVal, y: yVal, width: widthVal, height: heightVal });
           lastLocalCoordinateUpdateAt.current.set(textInputId, Date.now());
           debouncedCoordinateUpdates.current.delete(textInputId);
+          
+          // Tag the update with our user id in a broadcast (if available) to help peers suppress echoes
+          try {
+            const currentUserId = useEditorStore.getState().currentUser?.id;
+            if (currentUserId && typeof window !== 'undefined' && (window as any).__WEBSOCKET_SEND__) {
+              (window as any).__WEBSOCKET_SEND__({
+                type: 'text_input_position_updated',
+                payload: {
+                  textInputId,
+                  coordinates: { x: xVal, y: yVal, width: widthVal, height: heightVal },
+                  updatedBy: currentUserId
+                }
+              });
+            }
+          } catch {}
         } catch (error) {
           console.error('❌ Failed to update text input coordinates on server:', error);
           // Don't show toast for debounced server errors during drag
         }
-      }, 200); // 200ms debounce delay - smooth but not overwhelming server
+      }, 250); // slight increase to reduce flapping
 
       debouncedCoordinateUpdates.current.set(textInputId, timeout);
     } catch (error) {
