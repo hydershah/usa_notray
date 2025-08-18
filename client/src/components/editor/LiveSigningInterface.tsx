@@ -228,11 +228,11 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     };
   }, [liveSession.state, liveSession.startedAt]);
 
-  // Session state polling
+  // Session state polling - reduced frequency during active drag
   useEffect(() => {
     if (liveSessionId || sessionId) {
       loadLiveSessionState();
-      const pollInterval = setInterval(loadLiveSessionState, 10000);
+      const pollInterval = setInterval(loadLiveSessionState, 30000); // Reduced from 10s to 30s
       return () => clearInterval(pollInterval);
     }
   }, [liveSessionId, sessionId]);
@@ -922,7 +922,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
                     participants={memoizedParticipants}
                     autoJoin={true}
                     className="h-full"
-                    sessionData={videoSessionData}
+                    sessionData={useMemo(() => videoSessionData, [videoSessionData?.userToken, videoSessionData?.roomUrl])}
                     error={videoSessionError}
                     isLoading={isLoading}
                     onSessionComplete={handleVideoSessionComplete}
@@ -966,7 +966,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
                       participants={memoizedParticipants}
                       autoJoin={true}
                       className="h-full"
-                      sessionData={videoSessionData}
+                      sessionData={useMemo(() => videoSessionData, [videoSessionData?.userToken, videoSessionData?.roomUrl])}
                       error={videoSessionError}
                       isLoading={isLoading}
                       onSessionComplete={handleVideoSessionComplete}

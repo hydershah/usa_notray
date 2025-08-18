@@ -75,6 +75,9 @@ interface EditorStore {
   // Active operations tracking (prevents server override during drag)
   activeOperations: Map<string, { type: 'drag' | 'resize' | 'update'; timestamp: number }>;
   
+  // Global drag state to prevent re-renders during drag
+  isDragActive: boolean;
+  
   // Actions - Session Management
   setSession: (session: EditorSession | null) => void;
   setDocuments: (documents: SessionDocument[]) => void;
@@ -98,6 +101,7 @@ interface EditorStore {
   setDraggedTag: (tag: DocumentTag | null) => void;
   setActiveOperation: (tagId: string, operation: { type: 'drag' | 'resize' | 'update'; timestamp: number } | null) => void;
   isTagBeingDragged: (tagId: string) => boolean;
+  setDragActive: (active: boolean) => void;
   
   // Document-specific tag management
   getCurrentDocumentTags: () => DocumentTag[];
@@ -235,6 +239,7 @@ export const useEditorStore = create<EditorStore>()(
       isConnected: false,
       webSocket: null,
       activeOperations: new Map(),
+      isDragActive: false,
       
       // Session Management Actions
       setSession: (session) => {
@@ -380,6 +385,8 @@ export const useEditorStore = create<EditorStore>()(
         const activeOp = state.activeOperations.get(tagId);
         return !!(activeOp && activeOp.type === 'drag' && (Date.now() - activeOp.timestamp) < 2000);
       },
+      
+      setDragActive: (active) => set({ isDragActive: active }),
       
       // Document-specific tag management
       getCurrentDocumentTags: () => {

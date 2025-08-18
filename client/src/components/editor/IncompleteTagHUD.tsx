@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import type { DocumentTag, SessionParticipant } from '@/types/editor';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useEditorStore } from '@/hooks/editor/useEditorStore';
 
 interface IncompleteTagHUDProps {
   tags: DocumentTag[];
@@ -22,8 +23,15 @@ export const IncompleteTagHUD: React.FC<IncompleteTagHUDProps> = ({
   const [filter, setFilter] = useState<string>('all'); // all | me | user:<id>
   const [cursorIndex, setCursorIndex] = useState<number>(0);
 
-  // Index unfilled tags, sorted stably by pageNumber then id for consistent navigation
+  const { isDragActive } = useEditorStore();
+
+  // Index unfilled tags with deep comparison to prevent excessive recalculation
   const { unfilled, completedCount, totalCount } = useMemo(() => {
+    // Skip expensive processing during drag for performance
+    if (isDragActive) {
+      return { unfilled: [], completedCount: 0, totalCount: tags.length };
+    }
+    
     const total = tags.length;
     const unfilledTags = tags
       .filter(t => !t.isCompleted)
@@ -34,14 +42,8 @@ export const IncompleteTagHUD: React.FC<IncompleteTagHUDProps> = ({
         return String(a.id).localeCompare(String(b.id));
       });
     const completed = total - unfilledTags.length;
-    console.log('🎯 HUD: Processed unfilled tags:', { 
-      total, 
-      unfilled: unfilledTags.length, 
-      completed,
-      tagIds: unfilledTags.map(t => t.id)
-    });
     return { unfilled: unfilledTags, completedCount: completed, totalCount: total };
-  }, [tags]);
+  }, [isDragActive, tags.length, tags.map(t => `${t.id}-${t.isCompleted}`).join(',')]);
 
   const filteredUnfilled = useMemo(() => {
     if (filter === 'all') return unfilled;

@@ -203,18 +203,24 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isSelected, isEditing, content, readOnly, onDelete]);
 
-  // Handle drag operations (live local updates to prevent snap-back)
+  // Handle drag operations - COMPLETELY LOCAL until drop
   const handleDrag = useCallback((_: any, data: any) => {
-    // Use local position during drag to avoid global rerenders/bouncing
+    // Only update local position, no callbacks or state updates
     setLocalPosition({ x: data.x, y: data.y });
   }, []);
 
   const handleDragStop = useCallback((_: any, data: any) => {
     setIsDragging(false);
+    setLocalPosition(null);
+    
+    try {
+      useEditorStore.getState().setDragActive(false);
+    } catch {}
+    
+    // Only now update global state and call server
     const newX = Math.round(data.x / scaleFactor);
     const newY = Math.round(data.y / scaleFactor);
     onMove?.({ x: newX, y: newY });
-    setLocalPosition(null);
   }, [scaleFactor, onMove]);
 
   // Handle resize operations
@@ -317,7 +323,12 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
         x: localPosition ? localPosition.x : displayCoords.x,
         y: localPosition ? localPosition.y : displayCoords.y
       }}
-      onDragStart={() => setIsDragging(true)}
+      onDragStart={() => {
+        setIsDragging(true);
+        try {
+          useEditorStore.getState().setDragActive(true);
+        } catch {}
+      }}
       onDrag={handleDrag}
       onDragStop={handleDragStop}
       onResizeStart={() => setIsResizing(true)}

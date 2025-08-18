@@ -49,7 +49,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   onDelete,
   onTagClick
 }) => {
-  const { mode, selectedUser, currentUser, session, setActiveOperation } = useEditorStore();
+  const { mode, selectedUser, currentUser, session, setActiveOperation, setDragActive } = useEditorStore();
   const [isDragging, setIsDragging] = useState(false);
   const lastPositionRef = useRef({ x: 0, y: 0 });
   
@@ -114,34 +114,28 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   // Handle drag start
   const handleDragStart = useCallback(() => {
     setIsDragging(true);
+    setDragActive(true);
     // Mark tag as being actively dragged to prevent server overrides
     setActiveOperation(tag.id, { type: 'drag', timestamp: Date.now() });
     console.log('🎯 Drag started for tag:', tag.id);
-  }, [tag.id, setActiveOperation]);
+  }, [tag.id, setActiveOperation, setDragActive]);
 
-  // Handle drag move
+  // Handle drag move - NO STATE UPDATES during drag
   const handleDrag = useCallback((e: any, data: any) => {
     if (!canModifyTag) return;
     
-    // Update active operation timestamp to keep it fresh
-    setActiveOperation(tag.id, { type: 'drag', timestamp: Date.now() });
-    
-    // Live local update without snapping for smooth movement
-    const newPdfCoordinates = {
-      x: data.x / scaleFactor,
-      y: data.y / scaleFactor
-    };
-    onUpdate(newPdfCoordinates);
+    // Only store position locally, no global state updates
     lastPositionRef.current = { x: data.x, y: data.y };
-  }, [canModifyTag, tag.id, setActiveOperation]);
+  }, [canModifyTag]);
 
-  // Handle drag stop with snap-to-grid
+    // Handle drag stop - SINGLE UPDATE on drop
   const handleDragStop = useCallback((e: any, data: any) => {
     if (!canModifyTag || !session) return;
     
     setIsDragging(false);
-    
-    // No snap-to-grid; use exact position for precision
+    setDragActive(false);
+
+    // Use exact position for precision
     const newPdfCoordinates = {
       x: data.x / scaleFactor,
       y: data.y / scaleFactor
@@ -153,22 +147,17 @@ const TagRenderer: React.FC<TagRendererProps> = ({
     });
     
     try {
-      // Update local state immediately
+      // Single update to global state
       onUpdate(newPdfCoordinates);
       
-      // Clear active operation after a delay to allow final updates
-      setTimeout(() => {
-        setActiveOperation(tag.id, null);
-      }, 500);
-      
-      // Save to server after drag completes (debounced)
-      debouncedPositionUpdate(tag.id, newPdfCoordinates);
+      // Clear active operation immediately
+      setActiveOperation(tag.id, null);
       
     } catch (error) {
       console.error('❌ Failed to update tag position:', error);
       setActiveOperation(tag.id, null);
     }
-  }, [canModifyTag, scaleFactor, onUpdate, session, tag.id, debouncedPositionUpdate, setActiveOperation]);
+  }, [canModifyTag, scaleFactor, onUpdate, session, tag.id, setActiveOperation, setDragActive]);
 
   // Handle keyboard events for tag deletion
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
