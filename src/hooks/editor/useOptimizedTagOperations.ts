@@ -1,8 +1,10 @@
 import { useCallback, useRef } from 'react';
 import { debounce } from 'lodash';
-import { useEditorStore } from '../../../client/src/hooks/editor/useEditorStore';
+// Note: This optimized hook is not used in the current flow; keeping for future improvements.
+// Keeping imports local to client to avoid bundler path issues.
 import type { DocumentTag, TagCoordinates } from '../../../client/src/types/editor';
 import type { WebSocketConnection } from '../../../client/src/hooks/editor/useWebSocket';
+import { useEditorStore } from '../../../client/src/hooks/editor/useEditorStore';
 
 interface OptimizedTagOperationsConfig {
   sessionId: string;

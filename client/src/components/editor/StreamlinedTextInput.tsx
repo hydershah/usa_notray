@@ -202,7 +202,13 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isSelected, isEditing, content, readOnly, onDelete]);
 
-  // Handle drag operations
+  // Handle drag operations (live local updates to prevent snap-back)
+  const handleDrag = useCallback((_: any, data: any) => {
+    const newX = Math.round(data.x / scaleFactor);
+    const newY = Math.round(data.y / scaleFactor);
+    onMove?.({ x: newX, y: newY });
+  }, [scaleFactor, onMove]);
+
   const handleDragStop = useCallback((_: any, data: any) => {
     setIsDragging(false);
     const newX = Math.round(data.x / scaleFactor);
@@ -310,6 +316,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
         y: displayCoords.y
       }}
       onDragStart={() => setIsDragging(true)}
+      onDrag={handleDrag}
       onDragStop={handleDragStop}
       onResizeStart={() => setIsResizing(true)}
       onResizeStop={handleResizeStop}

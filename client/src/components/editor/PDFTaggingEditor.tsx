@@ -10,7 +10,6 @@ import { Badge } from '../ui/badge';
 import { TAG_TYPE_CONFIG } from '../../lib/constants/tagConstants';
 import { useToast } from '@/hooks/use-toast';
 import { useTagOperations } from '../../hooks/editor/useTagOperations';
-import { useOptimizedTagOperations } from '../../../../src/hooks/editor/useOptimizedTagOperations';
 import { useStreamlinedTextInputs } from '../../hooks/editor/useStreamlinedTextInputs';
 import { getTagDimensions } from '@/lib/constants/tagConstants';
 import { IncompleteTagHUD } from './IncompleteTagHUD';
@@ -95,15 +94,6 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
     batchSaveChanges,
     placeWhiteoutOverlay
   } = useTagOperations(sessionId, webSocket);
-  
-  // Use optimized operations for drag handling
-  const { handleDragUpdate } = useOptimizedTagOperations({
-    sessionId,
-    webSocket,
-    onLocalUpdate: (tagId: string, updates: any) => {
-      // Local update callback if needed
-    }
-  });
 
   // Streamlined text inputs for immediate editing
   const {
@@ -1713,7 +1703,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
             tags={tags.filter(tag => tag.documentId === currentDocument.id && tag.tagType !== 'T')}
             mode={mode === 'signing' ? 'signing' : 'tagging'}
             selectedUser={selectedUser}
-            onTagUpdate={handleDragUpdate}
+            onTagUpdate={updateTagPosition}
             onTagResize={saveTagUpdate}
             onTagDelete={deleteTag}
             liveSessionState={liveSessionState}

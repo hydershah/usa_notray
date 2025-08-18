@@ -217,17 +217,28 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           
         case 'tag_updated':
           if (data.updates.coordinates) {
-            // Skip updates that were recently made locally
+            // Ignore echoes of our own updates entirely
+            try {
+              const currentUserId = useEditorStore.getState().currentUser?.id?.toString();
+              if (data.updatedBy && currentUserId && String(data.updatedBy) === currentUserId) {
+                console.log('⏭️ Skipping self echo for tag_updated (text):', data.id);
+                break;
+              }
+            } catch {}
+
+            // Skip updates that were recently made locally (extend window)
             const lastLocalUpdate = lastLocalCoordinateUpdateAt.current.get(data.id) || 0;
             const timeSinceLocal = Date.now() - lastLocalUpdate;
             
-            if (timeSinceLocal > 1000) {
+            if (timeSinceLocal > 3000) {
               // Only apply if enough time has passed since local update
               setTextInputs(prev => prev.map(input => 
                 input.id === data.id 
                   ? { ...input, coordinates: { ...input.coordinates, ...data.updates.coordinates } }
                   : input
               ));
+            } else {
+              console.log('⏭️ Suppressing remote tag_updated due to recent local move:', { id: data.id, timeSinceLocal });
             }
           }
           break;
@@ -296,9 +307,18 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
             currentlySelected: selectedTextInputId === data.textInputId
           });
           
-          // Suppress echo of our own recent updates (within 700ms)
+          // Ignore self-broadcasted updates entirely
+          try {
+            const currentUserId = useEditorStore.getState().currentUser?.id?.toString();
+            if (data.updatedBy && currentUserId && String(data.updatedBy) === currentUserId) {
+              console.log('⏭️ Skipping self echo for text_input_position_updated:', data.textInputId);
+              break;
+            }
+          } catch {}
+
+          // Suppress echo shortly after local change (extend window)
           const lastAt = lastLocalCoordinateUpdateAt.current.get(data.textInputId) || 0;
-          if (Date.now() - lastAt < 700) {
+          if (Date.now() - lastAt < 2000) {
             console.log('⏭️ Skipping echo coordinate update shortly after local change:', data.textInputId);
             break;
           }
