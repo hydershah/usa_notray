@@ -1,8 +1,8 @@
 import { useCallback, useRef } from 'react';
 import { debounce } from 'lodash';
-import { useEditorStore } from './useEditorStore';
-import type { DocumentTag, TagCoordinates } from '@/types/editor';
-import type { WebSocketConnection } from './useWebSocket';
+import { useEditorStore } from '../../../client/src/hooks/editor/useEditorStore';
+import type { DocumentTag, TagCoordinates } from '../../../client/src/types/editor';
+import type { WebSocketConnection } from '../../../client/src/hooks/editor/useWebSocket';
 
 interface OptimizedTagOperationsConfig {
   sessionId: string;
