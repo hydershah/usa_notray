@@ -50,7 +50,7 @@ export class LiveSigningSessionService {
    * for the same job when needed. This preserves the separate video session while
    * carrying over all prepared tags to the live session for use during signing.
    */
-  private static async ensureTagsForLiveSession(session: any): Promise<void> {
+  private static async ensureTagsForLiveSession(session: any, createdByUserId?: number): Promise<void> {
     try {
       // Safety: require a valid session id and job id
       if (!session?.id || !session?.jobId) {
@@ -113,6 +113,7 @@ export class LiveSigningSessionService {
         isCompleted: false,
         completedBy: null,
         completedAt: null,
+        createdBy: createdByUserId || t.createdBy, // Use provided user ID or fallback to original creator
         createdAt: now,
         updatedAt: now,
       }));
@@ -187,7 +188,7 @@ export class LiveSigningSessionService {
                 console.log(`⚠️ Session ${session.sessionId} is already in progress (${session.signingState})`);
                 
               // Ensure tags are available on the live session before returning
-              await LiveSigningSessionService.ensureTagsForLiveSession(session);
+              await LiveSigningSessionService.ensureTagsForLiveSession(session, notaryUserId);
 
               // Return existing session state without modification
                 return {
@@ -251,11 +252,12 @@ export class LiveSigningSessionService {
           
           // Execute both updates in parallel for better performance
           await Promise.all([
-            // Update 1: Set signing state to active
+            // Update 1: Set signing state to active and transition to notary session type
             db.update(editorSessions)
               .set({
                 signingState: 'active',
                 isLiveSession: true,
+                sessionType: 'notary' as any, // CRITICAL: Change from 'tagging' to 'notary' for live signing
                 status: 'active',
                 updatedAt: new Date()
               })
@@ -287,7 +289,7 @@ export class LiveSigningSessionService {
         }
 
         // Ensure the live session has tags by copying from the latest tagging session if needed
-        await LiveSigningSessionService.ensureTagsForLiveSession(session);
+        await LiveSigningSessionService.ensureTagsForLiveSession(session, notaryUserId);
         
         console.log(`✅ Live signing session started: ${session.sessionId}`);
         

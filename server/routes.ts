@@ -6099,17 +6099,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get completed documents from documentVersions table (preferred)
-      const documentVersions = await db
+      // Note: avoid variable shadowing with the imported table name
+      const docVersions = await db
         .select()
         .from(documentVersions)
+        // originalDocumentId references jobDocuments.id; we still query and fall back if empty
         .where(eq(documentVersions.originalDocumentId, jobId))
         .orderBy(desc(documentVersions.createdAt));
 
-      let documentsWithUrls = [];
+      let documentsWithUrls: any[] = [];
 
-      if (documentVersions.length > 0) {
+      if (docVersions.length > 0) {
         // Use document versions data (from our enhanced completion flow)
-        documentsWithUrls = documentVersions.map(doc => ({
+        documentsWithUrls = docVersions.map((doc) => ({
           id: doc.id,
           fileName: doc.fileName,
           originalName: doc.fileName,
@@ -6118,20 +6120,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           digitalCertificateApplied: doc.digitalCertificateApplied || false,
           createdAt: doc.createdAt,
           completedAt: doc.createdAt,
-          downloadUrl: `/api/documents/signed/${encodeURIComponent(doc.fileName)}`
+          downloadUrl: `/api/documents/signed/${encodeURIComponent(doc.fileName)}`,
         }));
       } else {
         // Fallback: Check jobDocuments table for legacy signed documents
         const signedDocuments = await db
           .select()
           .from(jobDocuments)
-          .where(and(
-            eq(jobDocuments.jobId, jobId),
-            eq(jobDocuments.documentType, 'signed_document')
-          ))
+          .where(and(eq(jobDocuments.jobId, jobId), eq(jobDocuments.documentType, 'signed_document')))
           .orderBy(desc(jobDocuments.createdAt));
 
-        documentsWithUrls = signedDocuments.map(doc => ({
+        documentsWithUrls = signedDocuments.map((doc) => ({
           id: doc.id,
           fileName: doc.fileName,
           originalName: doc.originalName,
@@ -6140,7 +6139,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           digitalCertificateApplied: false,
           createdAt: doc.createdAt,
           completedAt: doc.createdAt,
-          downloadUrl: `/api/documents/signed/${encodeURIComponent(doc.fileName)}`
+          downloadUrl: `/api/documents/signed/${encodeURIComponent(doc.fileName)}`,
         }));
       }
 
@@ -10178,9 +10177,9 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       // For live signing sessions, handle completion
       if (session.sessionType === 'notary' || session.sessionType === 'tagging') {
         try {
-          // Get all tags for validation
+          // Get all tags for validation - use getJobTags to find tags across all sessions
           const { TagService } = await import('./services/editor/TagService');
-          const tags = await TagService.getSessionTags(actualSessionId);
+          const tags = await TagService.getJobTags(actualSessionId);
           
           console.log(`📊 Session completion validation - Total tags: ${tags.length}`);
           
@@ -10246,9 +10245,41 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           
           // For tagging sessions, no validation needed - tags are just markers
 
-          // Generate final PDF with real user content (only for live signing sessions)
-          if (session.sessionType === 'notary' && tags.length > 0 && tags.some(t => t.isCompleted)) {
+          // Generate final PDF with real user content
+          // Check if we should generate the signed PDF
+          const shouldGeneratePDF = 
+            // For notary/live sessions with completed tags
+            ((session.sessionType === 'notary' || session.isLiveSession === true) && tags.length > 0) ||
+            // For any session that has completed tags with content (even tagging sessions being completed after filling)
+            (tags.length > 0 && tags.some(t => t.isCompleted && t.content && t.content.trim().length > 0));
+          
+          const hasCompletedTags = tags.some(t => t.isCompleted);
+          const hasTagsWithContent = tags.some(t => t.content && t.content.trim().length > 0);
+          
+          console.log(`📋 PDF Processing Check: sessionType=${session.sessionType}, isLiveSession=${session.isLiveSession}, tags=${tags.length}, completed=${tags.filter(t => t.isCompleted).length}, withContent=${tags.filter(t => t.content && t.content.trim().length > 0).length}, shouldGenerate=${shouldGeneratePDF}`);
+          
+          // Process PDF if we should generate and have content
+          if (shouldGeneratePDF && (hasCompletedTags || hasTagsWithContent)) {
             try {
+              // Ensure tags with content are marked as completed before PDF processing
+              if (!hasCompletedTags && hasTagsWithContent) {
+                console.log(`🔧 Marking tags with content as completed before PDF processing`);
+                for (const tag of tags) {
+                  if (tag.content && tag.content.trim().length > 0 && !tag.isCompleted) {
+                    await db
+                      .update(documentTags)
+                      .set({
+                        isCompleted: true,
+                        completedBy: req.user.id,
+                        completedAt: new Date(),
+                        updatedAt: new Date()
+                      })
+                      .where(eq(documentTags.id, tag.id));
+                  }
+                }
+                console.log(`✅ Ensured tags with content are marked as completed`);
+              }
+
               const { PDFProcessorService } = await import('./services/pdf-processor.service');
               const pdfProcessor = PDFProcessorService.getInstance();
               
@@ -10328,6 +10359,15 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
                     completedAt: new Date()
                   })
                   .where(eq(jobs.id, session.jobId));
+                
+                // 🔥 CRITICAL: Invalidate job cache after status update
+                try {
+                  const { CacheManager } = await import('./services/cache-manager');
+                  await CacheManager.invalidateJobCaches(session.jobId);
+                  console.log(`🧹 Invalidated job caches for completed job ${session.jobId}`);
+                } catch (cacheError) {
+                  console.warn('Failed to invalidate job cache after completion:', cacheError);
+                }
               }
               
             } catch (pdfError) {
@@ -11595,8 +11635,8 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         return res.status(404).json({ message: 'Session not found' });
       }
       
-      // Get all tags for validation
-      const tags = await TagService.getSessionTags(sessionId);
+      // Get all tags for validation - use getJobTags to find tags across all sessions
+      const tags = await TagService.getJobTags(sessionId);
       
       if (session.status === 'completed') {
         return res.status(200).json({ 

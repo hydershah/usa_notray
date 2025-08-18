@@ -1,6 +1,6 @@
 import { db } from "../../db";
 import { documentTags, editorSessions, users } from "../../../shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 export interface PlaceTagRequest {
@@ -207,6 +207,130 @@ export class TagService {
     } catch (error) {
       console.error('Failed to get session tags:', error);
       throw new Error(`Failed to get tags: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Get all tags for a job across all sessions (tagging + signing)
+   * This is critical for live signing sessions that may not have tags directly
+   */
+  static async getJobTags(sessionId: string): Promise<DocumentTagData[]> {
+    try {
+      // Get session first to get the job ID
+      const [session] = await db
+        .select()
+        .from(editorSessions)
+        .where(eq(editorSessions.sessionId, sessionId))
+        .limit(1);
+
+      if (!session || !session.jobId) {
+        return [];
+      }
+
+      console.log(`🔍 Getting tags for job ${session.jobId} (current session: ${sessionId})`);
+
+      // First, try to get tags from the current session
+      let tags = await db
+        .select({
+          id: documentTags.id,
+          sessionId: documentTags.sessionId,
+          documentId: documentTags.documentId,
+          tagType: documentTags.tagType,
+          assignedUserId: documentTags.assignedUserId,
+          pageNumber: documentTags.pageNumber,
+          xPosition: documentTags.xPosition,
+          yPosition: documentTags.yPosition,
+          width: documentTags.width,
+          height: documentTags.height,
+          isCompleted: documentTags.isCompleted,
+          content: documentTags.content,
+          contentType: documentTags.contentType,
+          contentData: documentTags.contentData,
+          createdAt: documentTags.createdAt,
+          updatedAt: documentTags.updatedAt,
+          // User information
+          firstName: users.firstName,
+          lastName: users.lastName,
+          userRole: users.role
+        })
+        .from(documentTags)
+        .leftJoin(users, eq(documentTags.assignedUserId, users.id))
+        .where(eq(documentTags.sessionId, session.id));
+
+      console.log(`📋 Found ${tags.length} tags in current session ${sessionId}`);
+
+      // If no tags in current session and it's a live/notary session, look for tags from tagging sessions
+      if (tags.length === 0 && (session.sessionType === 'notary' || session.sessionType === 'video')) {
+        console.log(`🔍 No tags in live session, looking for tagging session tags for job ${session.jobId}`);
+        
+        // Get all sessions for this job
+        const allSessions = await db
+          .select()
+          .from(editorSessions)
+          .where(eq(editorSessions.jobId, session.jobId))
+          .orderBy(desc(editorSessions.createdAt));
+
+        console.log(`📊 Found ${allSessions.length} total sessions for job ${session.jobId}`);
+
+        // Look for tags in any session, prioritizing tagging sessions
+        for (const jobSession of allSessions) {
+          if (jobSession.id === session.id) continue; // Skip current session since we already checked
+
+          const sessionTags = await db
+            .select({
+              id: documentTags.id,
+              sessionId: documentTags.sessionId,
+              documentId: documentTags.documentId,
+              tagType: documentTags.tagType,
+              assignedUserId: documentTags.assignedUserId,
+              pageNumber: documentTags.pageNumber,
+              xPosition: documentTags.xPosition,
+              yPosition: documentTags.yPosition,
+              width: documentTags.width,
+              height: documentTags.height,
+              isCompleted: documentTags.isCompleted,
+              content: documentTags.content,
+              contentType: documentTags.contentType,
+              contentData: documentTags.contentData,
+              createdAt: documentTags.createdAt,
+              updatedAt: documentTags.updatedAt,
+              // User information
+              firstName: users.firstName,
+              lastName: users.lastName,
+              userRole: users.role
+            })
+            .from(documentTags)
+            .leftJoin(users, eq(documentTags.assignedUserId, users.id))
+            .where(eq(documentTags.sessionId, jobSession.id));
+
+          if (sessionTags.length > 0) {
+            console.log(`✅ Found ${sessionTags.length} tags in ${jobSession.sessionType} session ${jobSession.sessionId}`);
+            tags = sessionTags;
+            break; // Use the first session with tags (most recent due to orderBy)
+          }
+        }
+      }
+
+      // Convert to DocumentTagData format
+      const convertedTags = tags.map(tag => {
+        let displayLabel = 'Unknown User';
+        let colorCode = '#000000';
+        
+        if (tag.firstName && tag.lastName) {
+          const tagTypeInfo = this.getTagTypeInfo(tag.tagType);
+          displayLabel = `${tagTypeInfo.icon} ${tagTypeInfo.label} - ${tag.firstName} ${tag.lastName}`;
+          colorCode = this.getUserColor({ role: tag.userRole, id: tag.assignedUserId });
+        }
+        
+        return this.convertToDocumentTagData(tag, displayLabel, colorCode);
+      });
+
+      console.log(`📊 Total tags found for job ${session.jobId}: ${convertedTags.length}`);
+      return convertedTags;
+
+    } catch (error) {
+      console.error('Failed to get job tags:', error);
+      return [];
     }
   }
 
