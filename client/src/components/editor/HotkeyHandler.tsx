@@ -50,7 +50,7 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
     const centerY = viewer.zoomLevel * 300; // Approximate center Y
 
     // Get dimensions using store function (includes custom dimensions if set)
-    const dims = getTagDimensions(tagType) || { width: 120, height: 25 };
+    const dims = getTagDimensions(tagType) || { width: 60, height: 18 };
 
     try {
       await placeTag({

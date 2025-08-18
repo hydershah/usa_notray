@@ -249,6 +249,10 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         const data = await response.json();
         const sessionState = data.success ? data.data : data;
         
+        // Check if we recently made an optimistic update (within 3 seconds)
+        const timeSinceOptimisticUpdate = Date.now() - optimisticUpdateTimeRef.current;
+        const shouldPreserveOptimisticState = timeSinceOptimisticUpdate < 3000;
+        
         const validSessionState = {
           state: sessionState?.state || 'waiting',
           activeUserId: sessionState?.activeUserId,
@@ -258,6 +262,13 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         };
         
         setLiveSession(prev => {
+          // If we recently made an optimistic update and the server still shows 'waiting',
+          // preserve the optimistic state to avoid flicker
+          if (shouldPreserveOptimisticState && prev.state === 'active' && validSessionState.state === 'waiting') {
+            console.log('⏳ Preserving optimistic state (server not yet updated)');
+            return prev;
+          }
+          
           const next = {
             ...prev,
             ...validSessionState
@@ -379,6 +390,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   const activeRequestRef = useRef<AbortController | null>(null);
   const lastRequestTimeRef = useRef<number>(0);
   const requestDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const optimisticUpdateTimeRef = useRef<number>(0);
   const [sessionStarting, setSessionStarting] = useState(false);
   const editorRef = useRef<PDFTaggingEditorHandle | null>(null);
 
@@ -482,9 +494,11 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
           
           // Optimistic UI update for start action
           if (action === 'start') {
+            optimisticUpdateTimeRef.current = Date.now();
             setLiveSession(prev => ({
               ...prev,
-              state: 'active'
+              state: 'active',
+              startedAt: new Date()
             }));
           }
           
@@ -493,7 +507,15 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
             description: messages[action as keyof typeof messages]
           });
           
-          await loadLiveSessionState();
+          // For start action, delay the state refresh to allow server to process
+          // This prevents the race condition where the server hasn't updated yet
+          if (action === 'start') {
+            setTimeout(() => {
+              loadLiveSessionState();
+            }, 2000); // 2 second delay for server to update
+          } else {
+            await loadLiveSessionState();
+          }
         } else {
           const errorData = await response.json();
           throw new Error(errorData.message || `Failed to ${action} session`);

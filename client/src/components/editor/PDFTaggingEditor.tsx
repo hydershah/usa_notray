@@ -654,7 +654,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
         body: JSON.stringify({
-          content: 'WHITEOUT',
+          content: '',
           contentType: 'whiteout',
           completedBy: parseInt(currentUserId),
           completedAt: new Date().toISOString()
@@ -669,7 +669,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
       const result = await response.json();
       
       // Update local state for this tag only (atomic)
-      updateTag(tag.id, { isCompleted: true, content: 'WHITEOUT', contentType: 'whiteout', contentData: result?.contentStructure || tag.contentData });
+      updateTag(tag.id, { isCompleted: true, content: '', contentType: 'whiteout', contentData: result?.contentStructure || tag.contentData });
 
       console.log('✅ Tag instantly completed:', tag.id);
       
@@ -1425,8 +1425,8 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         const whiteoutDimensions = getTagDimensions('W');
         const whiteoutCoordinates = {
           ...coordinates,
-          width: whiteoutDimensions?.width || 120,
-          height: whiteoutDimensions?.height || 25
+          width: whiteoutDimensions?.width || 80,
+          height: whiteoutDimensions?.height || 30
         };
         
         await placeWhiteoutOverlay({
@@ -1462,8 +1462,8 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         
         const professionalCoordinates = {
           ...coordinates,
-          width: tagDimensions?.width || 120,
-          height: tagDimensions?.height || 25
+          width: tagDimensions?.width || 60,
+          height: tagDimensions?.height || 18
         };
         
         console.log('🔍 Final professionalCoordinates:', professionalCoordinates);

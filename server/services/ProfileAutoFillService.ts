@@ -739,16 +739,16 @@ export class ProfileAutoFillService {
       case 'W': // Whiteout - Instant completion with white background
         return {
           success: true,
-          content: 'WHITEOUT',
+          content: '',
           contentType: 'whiteout',
           contentData: {
             type: 'whiteout',
-            value: 'WHITEOUT',
+            value: '',
             backgroundColor: '#FFFFFF',
             isInstant: true,
             note: 'Solid white rectangle to cover content'
           },
-          source: 'instant_completion',
+          source: 'profile_auto_fill',
           message: 'Whiteout applied instantly'
         };
       

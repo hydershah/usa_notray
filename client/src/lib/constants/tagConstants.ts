@@ -134,8 +134,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Name',
     color: PROFESSIONAL_COLORS.primary,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 80,   // Changed to 20x80px format
-    defaultHeight: 20,  // Changed to 20x80px format
+    defaultWidth: 60,   // Shorter width for single line text
+    defaultHeight: 18,  // Single line height
     minWidth: 1,        // allow hugging content
     minHeight: 1,       // allow hugging content
     allowResize: true,
@@ -147,8 +147,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Sign',
     color: PROFESSIONAL_COLORS.signature,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 160,  // Reduced from 180 - slightly bigger for signatures
-    defaultHeight: 40,  // Reduced from 50 - slightly bigger for signatures
+    defaultWidth: 160,  // Keep larger for signatures
+    defaultHeight: 40,  // Keep larger for signatures
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -160,8 +160,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Initial',
     color: PROFESSIONAL_COLORS.accent,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 80,   // Changed to 20x80px format
-    defaultHeight: 20,  // Changed to 20x80px format
+    defaultWidth: 50,   // Shorter for initials
+    defaultHeight: 18,  // Single line height
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -173,8 +173,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Comm #',
     color: PROFESSIONAL_COLORS.success,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 80,   // Changed to 20x80px format
-    defaultHeight: 20,  // Changed to 20x80px format
+    defaultWidth: 70,   // Shorter for commission number
+    defaultHeight: 18,  // Single line height
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -186,8 +186,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Exp Date',
     color: '#fef3c7', // Light yellow background
     borderColor: '#d97706', // Darker orange border for better contrast
-    defaultWidth: 80,   // Changed to 20x80px format
-    defaultHeight: 20,  // Changed to 20x80px format
+    defaultWidth: 70,   // Shorter for expiration date
+    defaultHeight: 18,  // Single line height
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -199,8 +199,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Disclosure',
     color: '#fef3c7', // Light yellow background for high visibility
     borderColor: '#d97706', // Dark orange border for maximum contrast
-    defaultWidth: 80,   // Changed to 20x80px format
-    defaultHeight: 20,  // Changed to 20x80px format
+    defaultWidth: 80,   // Keep wider for disclosure text
+    defaultHeight: 18,  // Single line height
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -212,8 +212,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Seal',
     color: PROFESSIONAL_COLORS.primary,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 80,   // Reduced from 100 - slightly bigger for seals
-    defaultHeight: 80,  // Reduced from 100 - slightly bigger for seals (square shape)
+    defaultWidth: 80,   // Keep larger for seals
+    defaultHeight: 80,  // Keep larger square shape for seals
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -225,8 +225,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Whiteout',
     color: '#ffffff', // Pure white background for true whiteout
     borderColor: '#e5e7eb', // Light gray border
-    defaultWidth: 80,   // Changed to 20x80px format
-    defaultHeight: 20,  // Changed to 20x80px format
+    defaultWidth: 80,   // Keep larger for whiteout
+    defaultHeight: 30,  // Keep larger for whiteout
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -239,11 +239,11 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     color: '#f8fafc', // Slightly lighter background
     borderColor: '#475569', // Darker border for better contrast
     // Stable default size so the tag never flashes invisible or overly large
-    defaultWidth: 80,   // Changed to 20x80px format
-    defaultHeight: 20,  // Changed to 20x80px format
+    defaultWidth: 60,   // Shorter width for text
+    defaultHeight: 18,  // Single line height
     // Sensible minimums to prevent flicker while still allowing shrink-to-fit
     minWidth: 24,
-    minHeight: 20,
+    minHeight: 18,
     allowResize: true,
     allowTextInput: true
   },
@@ -253,8 +253,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Date',
     color: '#fef3c7', // Light yellow background
     borderColor: '#d97706', // Darker orange border for better contrast
-    defaultWidth: 80,   // Changed to 20x80px format
-    defaultHeight: 20,  // Changed to 20x80px format
+    defaultWidth: 70,   // Shorter width for dates
+    defaultHeight: 18,  // Single line height
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -317,6 +317,25 @@ export const getTagStyle = (tagType: TagType, isSelected = false, isCompleted = 
   // Use user's color if provided, otherwise fall back to config color
   const effectiveColor = userColor || config.color;
   
+  // Special-case: Whiteout should always render as a solid white rectangle with a light border,
+  // regardless of completion state, and with no text rendering handled elsewhere.
+  if (tagType === 'W') {
+    return {
+      backgroundColor: '#ffffff',
+      borderColor: isSelected ? PROFESSIONAL_COLORS.borderActive : (config.borderColor || '#e5e7eb'),
+      color: '#1f2937',
+      borderWidth: '1.5px',
+      borderStyle: 'solid',
+      borderRadius: LAYOUT.borderRadius.base,
+      padding: '0px',
+      fontFamily: TYPOGRAPHY.fontFamily,
+      fontSize: TYPOGRAPHY.fontSize.tag,
+      fontWeight: TYPOGRAPHY.fontWeight.normal,
+      boxShadow: isSelected ? LAYOUT.shadow.base : 'none',
+      textShadow: 'none'
+    };
+  }
+
   return {
     backgroundColor: isCompleted ? 'transparent' : hexToRgba(effectiveColor, 0.6), // 60% transparency
     borderColor: isSelected ? PROFESSIONAL_COLORS.borderActive : hexToRgba(effectiveColor, 0.9), // 90% transparency for border

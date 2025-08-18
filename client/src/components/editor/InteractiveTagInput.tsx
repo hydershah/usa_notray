@@ -8,6 +8,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { SignatureSelectionModal } from './SignatureSelectionModal';
+import { useEditorStore } from '@/hooks/editor/useEditorStore';
 import { 
   Check, 
   X, 
@@ -136,6 +137,7 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { getLastSelectedSignature, setLastSelectedSignature } = useEditorStore();
 
   const config = TAG_CONFIG[tag.tagType as keyof typeof TAG_CONFIG];
 
@@ -250,6 +252,13 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
     };
     
     setContent(newContent);
+    // Remember this signature choice for the user
+    try {
+      const targetUserId = tag.assignedUserId?.toString() || currentUserId || '0';
+      setLastSelectedSignature(targetUserId, signatureUrl);
+    } catch (e) {
+      console.warn('Failed to persist last selected signature:', e);
+    }
     
     // Close modal immediately
     setShowSignatureModal(false);
@@ -261,7 +270,7 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
       setIsEditing(false);
     }, 100);
     
-  }, [config?.required, onComplete]);
+  }, [config?.required, onComplete, currentUserId, setLastSelectedSignature, tag.assignedUserId]);
 
   // Handle tag interaction when clicked (manual interaction only)
   useEffect(() => {
@@ -276,15 +285,30 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
 
     if (isActive && canEdit && !isEditing) {
       if (tag.tagType === 'S') {
-        // ✅ SIGNATURE TAG: Open modal for selection when clicked
-        if (!showSignatureModal) {
-          console.log('🎯 Signature tag clicked, opening selection modal');
-          setTimeout(() => {
-            console.log('⏰ Opening signature modal after delay');
-            setShowSignatureModal(true);
-          }, 100);
-        } else {
-          console.log('⚠️ Signature modal already open, skipping');
+        // If content already exists, do nothing (preview or Change button handles updates)
+        const hasSignature = !!content.value;
+        if (!hasSignature) {
+          const targetUserId = tag.assignedUserId?.toString() || currentUserId || '0';
+          const lastSignatureUrl = getLastSelectedSignature(targetUserId);
+          if (lastSignatureUrl) {
+            console.log('✨ Auto-applying last selected signature for user', targetUserId);
+            const newContent = {
+              type: 'signature' as const,
+              value: lastSignatureUrl,
+              isRequired: config?.required || false
+            };
+            setContent(newContent);
+            // Immediately complete the tag so user doesn't need to confirm
+            setTimeout(() => {
+              onComplete(newContent);
+              setIsEditing(false);
+            }, 0);
+          } else if (!showSignatureModal) {
+            console.log('🎯 No saved signature found; opening selection modal');
+            setTimeout(() => {
+              setShowSignatureModal(true);
+            }, 100);
+          }
         }
       } else if (['T'].includes(tag.tagType)) {
         // Start editing for text fields when clicked
@@ -292,7 +316,7 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
       }
       // Note: Removed auto-completion logic - tags now wait for manual interaction
     }
-  }, [isActive, canEdit, tag.tagType, content.value, isEditing, showSignatureModal]);
+  }, [isActive, canEdit, tag.tagType, content.value, isEditing, showSignatureModal, currentUserId, getLastSelectedSignature, config?.required, onComplete, tag.assignedUserId]);
 
   // Render signature preview
   const renderSignaturePreview = () => {

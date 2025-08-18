@@ -62,7 +62,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   );
   
   // Check if tag has content (should be transparent)
-  const hasContent = !!(tag.content || tag.contentData || tag.isCompleted);
+  const hasContent = tag.tagType === 'W' ? true : !!(tag.content || tag.contentData || tag.isCompleted);
   
   // Professional fixed dimensions - DocuSign style
   const fixedDimensions = getTagDimensions(tag.tagType);
@@ -191,7 +191,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           paddingLeft: '2px'
         }}
       >
-        {hasContent ? (
+        {tag.tagType === 'W' ? null : hasContent ? (
           <span style={{ 
             fontFamily: TYPOGRAPHY.fontFamily,
             fontSize: TYPOGRAPHY.fontSize.content,
@@ -209,13 +209,13 @@ const TagRenderer: React.FC<TagRendererProps> = ({
             fontStyle: 'normal', // Remove italic for better readability
             textShadow: '0 1px 2px rgba(255, 255, 255, 0.8)' // Add text shadow for better readability
           }}>
-            {tag.displayLabel || TAG_TYPE_CONFIG[tag.tagType]?.placeholder || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Field'}
+            {TAG_TYPE_CONFIG[tag.tagType]?.placeholder || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Field'}
           </span>
         )}
       </div>
 
       {/* Professional selection indicator */}
-      {isSelected && (
+      {isSelected && tag.tagType !== 'W' && (
         <div
           style={{
             position: 'absolute',

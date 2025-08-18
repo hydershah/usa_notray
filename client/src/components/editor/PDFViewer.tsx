@@ -722,7 +722,7 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
         }}
       >
         {/* DocuSign style tag content */}
-        {hasContent ? (
+        {tag.tagType === 'W' ? null : hasContent ? (
           imageSource && !imageLoadError ? (
             <img
               src={imageSource}
@@ -970,23 +970,19 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [handleZoomIn, handleZoomOut, handleZoomReset]);
 
-  // Mouse wheel zoom functionality
+  // Mouse wheel zoom functionality (smooth/continuous)
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
-      // Only zoom if Ctrl/Cmd is held
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        
-        if (e.deltaY < 0) {
-          // Scrolling up = zoom in
-          console.log('🔍 Mouse wheel zoom in triggered');
-          handleZoomIn();
-        } else {
-          // Scrolling down = zoom out
-          console.log('🔍 Mouse wheel zoom out triggered');
-          handleZoomOut();
-        }
-      }
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+
+      const sensitivity = 0.002; // smaller => smoother
+      const factor = Math.exp(-e.deltaY * sensitivity);
+      let newZoom = viewer.zoomLevel * factor;
+      newZoom = Math.max(0.25, Math.min(3.0, newZoom));
+
+      if (Math.abs(newZoom - viewer.zoomLevel) < 0.001) return;
+      setZoomLevel(newZoom);
     };
 
     const container = containerRef.current;
@@ -994,7 +990,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       container.addEventListener('wheel', handleWheel, { passive: false });
       return () => container.removeEventListener('wheel', handleWheel);
     }
-  }, [handleZoomIn, handleZoomOut]);
+  }, [viewer.zoomLevel, setZoomLevel]);
 
   // Local state for immediate font size updates (for responsive UI)
   const [localFontSizes, setLocalFontSizes] = useState<Map<string, number>>(new Map());
@@ -1041,6 +1037,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const [renderedPages, setRenderedPages] = useState<Set<number>>(new Set());
   const [scaleFactors, setScaleFactors] = useState<Map<number, number>>(new Map());
   const isMountedRef = useRef<boolean>(true);
+  // Track last applied zoom to compute ratios for smooth, non-janky scaling
+  const lastZoomRef = useRef<number>(viewer.zoomLevel);
 
   // Prevent repeated re-centering while highlight is active
   const lastJumpedTagIdRef = useRef<string | null>(null);
@@ -1197,6 +1195,51 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       renderTasksRef.current.delete(pageNumber);
     }
   }, [pdfDoc, isMountedRef, containerRef, setScaleFactors, viewer.zoomLevel]);
+
+  // Soft-rescale pages instantly by zoom ratio without re-rendering bitmaps
+  // This updates CSS dimensions and tag scale factors so the UI feels smooth.
+  const softRescaleAllPages = useCallback((zoomRatio: number) => {
+    if (!pdfDoc || !isMountedRef.current || !isFinite(zoomRatio) || zoomRatio === 1) return;
+
+    try {
+      // Update stored scale factors immediately so overlays (tags/text inputs) track the zoom
+      setScaleFactors((prev) => {
+        const updated = new Map(prev);
+        for (let i = 1; i <= (pdfDoc?.numPages || 0); i++) {
+          const prevScale = updated.get(i);
+          if (prevScale && isFinite(prevScale)) {
+            updated.set(i, prevScale * zoomRatio);
+          }
+        }
+        return updated;
+      });
+
+      // Resize page containers and canvases via CSS for immediate visual scaling
+      for (let i = 0; i < pageContainerRefs.current.length; i++) {
+        const pageContainer = pageContainerRefs.current[i];
+        const canvas = canvasRefs.current[i];
+        if (!pageContainer || !canvas) continue;
+
+        // Scale CSS dimensions while keeping bitmap as-is; clarity will be refreshed by re-render
+        const currentWidth = parseFloat(pageContainer.style.width || '0');
+        const currentHeight = parseFloat(pageContainer.style.height || '0');
+        if (currentWidth > 0 && currentHeight > 0) {
+          pageContainer.style.width = `${currentWidth * zoomRatio}px`;
+          pageContainer.style.height = `${currentHeight * zoomRatio}px`;
+        }
+
+        const canvasStyleWidth = parseFloat((canvas.style.width || '0').toString());
+        const canvasStyleHeight = parseFloat((canvas.style.height || '0').toString());
+        if (canvasStyleWidth > 0 && canvasStyleHeight > 0) {
+          canvas.style.width = `${canvasStyleWidth * zoomRatio}px`;
+          canvas.style.height = `${canvasStyleHeight * zoomRatio}px`;
+        }
+      }
+    } catch (e) {
+      // Non-fatal: soft rescale is best-effort
+      console.warn('Soft rescale failed (non-fatal):', e);
+    }
+  }, [pdfDoc]);
 
   // Scroll to tag functionality (placed after renderPage)
   const scrollToTag = useCallback(async (tagId: string, pageNumber: number) => {
@@ -1528,9 +1571,16 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   // Re-render pages on zoom change with debouncing
   useEffect(() => {
     if (!pdfDoc) return;
-    
-    console.log('🔄 Zoom changed to', viewer.zoomLevel, 're-rendering all pages...');
-    
+
+    // Compute zoom ratio and soft-rescale immediately for smooth UX
+    const zoomRatio = viewer.zoomLevel / (lastZoomRef.current || 1);
+    if (isFinite(zoomRatio) && zoomRatio !== 1) {
+      softRescaleAllPages(zoomRatio);
+      lastZoomRef.current = viewer.zoomLevel;
+    }
+
+    console.log('🔄 Zoom changed to', viewer.zoomLevel, 're-rendering all pages (debounced)...');
+
     // Debounce rapid zoom changes to prevent canvas conflicts
     const timeoutId = setTimeout(async () => {
       // Cancel all existing render tasks before starting new ones
@@ -1545,10 +1595,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         }
       });
       renderTasksRef.current.clear();
-      
+
       // Reset rendered pages state
       setRenderedPages(new Set());
-      setScaleFactors(new Map());
 
       // Small delay to ensure all cancellations are processed
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -1562,10 +1611,10 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         }
       }
       console.log('✅ All pages re-rendered after zoom change');
-    }, 150); // 150ms debounce
+    }, 180); // slightly longer debounce for smoother feel
 
     return () => clearTimeout(timeoutId);
-  }, [pdfDoc, viewer.zoomLevel]);
+  }, [pdfDoc, viewer.zoomLevel, softRescaleAllPages]);
 
   // Log component state changes (debounced to prevent spam)
   useEffect(() => {

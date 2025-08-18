@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { db } from '../db';
 import { documentTags, jobDocuments, documentVersions } from '../../shared/schema';
-import { eq, desc, sql } from 'drizzle-orm';
+import { eq, desc, sql, inArray } from 'drizzle-orm';
 import { TAG_TYPES } from '../../shared/schema';
 import { DigitalSignatureService } from './digital-signature-service';
 
@@ -953,7 +953,7 @@ export class PDFProcessorService {
       const tagDocuments = await db
         .select()
         .from(jobDocuments)
-        .where(sql`${jobDocuments.id} IN (${tagDocumentIds.join(',')})`);
+        .where(inArray(jobDocuments.id, tagDocumentIds));
       
       console.log(`🔍 DEBUG: Found ${tagDocuments.length} tag documents:`);
       tagDocuments.forEach(doc => {

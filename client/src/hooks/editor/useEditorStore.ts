@@ -114,6 +114,11 @@ interface EditorStore {
   // Actions - Last Used Font Size
   setLastUsedFontSize: (fontSize: number) => void;
   getLastUsedFontSize: () => number;
+
+  // Signature preferences
+  lastSelectedSignatureByUser: Record<string, string>;
+  getLastSelectedSignature: (userId: string) => string | null;
+  setLastSelectedSignature: (userId: string, signatureUrl: string) => void;
   
   // Actions - PDF Viewer
   setCurrentPage: (page: number) => void;
@@ -169,8 +174,16 @@ export const useEditorStore = create<EditorStore>()(
       
       whiteoutOverlays: [],
       
-      // Initialize empty custom tag dimensions (session-only, no localStorage)
-      customTagDimensions: {},
+      // Initialize custom tag dimensions from localStorage
+      customTagDimensions: (() => {
+        try {
+          const saved = localStorage.getItem('editorCustomTagDimensions');
+          return saved ? JSON.parse(saved) : {};
+        } catch (error) {
+          console.warn('Failed to load custom tag dimensions from localStorage:', error);
+          return {};
+        }
+      })(),
       
       lastUsedFontSize: (() => {
         // Load last used font size from localStorage, default to 16px (increased from 12px)
@@ -180,6 +193,17 @@ export const useEditorStore = create<EditorStore>()(
         } catch (error) {
           console.warn('Failed to load last used font size from localStorage:', error);
           return 16;
+        }
+      })(),
+
+      // Persist last selected signature per user (localStorage)
+      lastSelectedSignatureByUser: (() => {
+        try {
+          const saved = localStorage.getItem('editorLastSelectedSignatureByUser');
+          return saved ? JSON.parse(saved) as Record<string, string> : {};
+        } catch (error) {
+          console.warn('Failed to load last selected signatures from localStorage:', error);
+          return {} as Record<string, string>;
         }
       })(),
       
@@ -466,11 +490,21 @@ export const useEditorStore = create<EditorStore>()(
         console.log('🔧 Current customTagDimensions before update:', currentState.customTagDimensions);
         
         set(state => {
+          const newCustomDimensions = {
+            ...state.customTagDimensions,
+            [tagType]: dimensions
+          };
+          
+          // Save to localStorage for persistence
+          try {
+            localStorage.setItem('editorCustomTagDimensions', JSON.stringify(newCustomDimensions));
+            console.log(`✅ Saved custom dimensions to localStorage for ${tagType}:`, dimensions);
+          } catch (error) {
+            console.warn('Failed to save custom tag dimensions to localStorage:', error);
+          }
+          
           const newState = {
-            customTagDimensions: {
-              ...state.customTagDimensions,
-              [tagType]: dimensions
-            }
+            customTagDimensions: newCustomDimensions
           };
           console.log('🔧 New customTagDimensions after update:', newState.customTagDimensions);
           return newState;
@@ -501,7 +535,7 @@ export const useEditorStore = create<EditorStore>()(
         } catch (error) {
           console.error(`❌ Could not get dimensions for tag type: ${tagType}`, error);
           // Return a safe fallback
-          return { width: 120, height: 25 };
+          return { width: 60, height: 18 };
         }
       },
       
@@ -531,6 +565,26 @@ export const useEditorStore = create<EditorStore>()(
       
       getLastUsedFontSize: () => {
         return get().lastUsedFontSize;
+      },
+
+      // Signature preferences actions
+      getLastSelectedSignature: (userId) => {
+        const map = get().lastSelectedSignatureByUser;
+        return map[userId] || null;
+      },
+
+      setLastSelectedSignature: (userId, signatureUrl) => {
+        set((state) => {
+          const updated = { ...state.lastSelectedSignatureByUser, [userId]: signatureUrl };
+          // Persist to localStorage
+          try {
+            localStorage.setItem('editorLastSelectedSignatureByUser', JSON.stringify(updated));
+            console.log(`✅ Saved last selected signature for user ${userId}`);
+          } catch (error) {
+            console.warn('Failed to save last selected signatures to localStorage:', error);
+          }
+          return { lastSelectedSignatureByUser: updated };
+        });
       },
       
       // PDF Viewer Actions

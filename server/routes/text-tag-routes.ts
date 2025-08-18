@@ -686,11 +686,11 @@ export function registerTextTagRoutes(app: Express) {
         width: Math.round(coordinates.width),
         height: Math.round(coordinates.height),
         isCompleted: true, // Whiteout is immediately completed
-        content: 'WHITEOUT',
+        content: '',
         contentType: 'whiteout',
         contentData: JSON.stringify({
           type: 'whiteout',
-          value: 'WHITEOUT',
+          value: '',
           timestamp: new Date().toISOString()
         }),
         createdBy: req.user.id,

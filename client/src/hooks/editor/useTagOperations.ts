@@ -93,15 +93,15 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
     }
     
     const defaultDimensions = storeDimensions || {
-      width: 120, // Use updated standardized width as fallback
-      height: 25  // Use updated standardized height as fallback
+      width: 60, // Use smaller standardized width as fallback
+      height: 18  // Use smaller standardized height as fallback
     };
 
-    // Derive minimums if available; fall back to 25 for height and 40 for width
+    // Derive minimums if available; fall back to 18 for height and 24 for width
     // Special case: whiteout overlays ('W') should allow 1px height/width
     const isWhiteout = tagType === 'W';
-    const minWidth = isWhiteout ? 1 : (storeDimensions as any)?.minWidth ?? 40;
-    const minHeight = isWhiteout ? 1 : (storeDimensions as any)?.minHeight ?? 25;
+    const minWidth = isWhiteout ? 1 : (storeDimensions as any)?.minWidth ?? 24;
+    const minHeight = isWhiteout ? 1 : (storeDimensions as any)?.minHeight ?? 18;
     
     if (coordinates.x !== undefined) {
       sanitized.x = isFinite(coordinates.x) ? Math.round(coordinates.x) : 0;
@@ -581,12 +581,12 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
         tagType: 'W',
         assignedUserId: useEditorStore.getState().selectedUser?.userId,
         coordinates: sanitizedCoordinates as TagCoordinates,
-        displayLabel: `${getTagLabel('W')} - ${displayName}`,
+        displayLabel: '',
         colorCode,
         isCompleted: true,
-        content: 'WHITEOUT',
+        content: '',
         contentType: 'whiteout',
-        contentData: { type: 'whiteout', value: 'WHITEOUT' },
+        contentData: { type: 'whiteout', value: '' },
         createdAt: new Date(),
         updatedAt: new Date()
       };
@@ -636,12 +636,12 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
         tagType: 'W',
         assignedUserId: useEditorStore.getState().selectedUser?.userId,
         coordinates: overlay.coordinates as TagCoordinates,
-        displayLabel: `${getTagLabel('W')} - ${displayName}`,
+        displayLabel: '',
         colorCode,
         isCompleted: true,
-        content: 'WHITEOUT',
+        content: '',
         contentType: 'whiteout',
-        contentData: { type: 'whiteout', value: 'WHITEOUT' },
+        contentData: { type: 'whiteout', value: '' },
         createdAt: new Date(overlay.createdAt),
         updatedAt: new Date(overlay.createdAt)
       };
