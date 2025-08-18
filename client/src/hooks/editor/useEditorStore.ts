@@ -324,14 +324,6 @@ export const useEditorStore = create<EditorStore>()(
             return state;
           }
           
-          // Check if tag is being actively dragged/manipulated
-          const activeOp = state.activeOperations.get(tagId);
-          if (activeOp && (Date.now() - activeOp.timestamp) < 2000) {
-            // Skip server updates for tags being actively manipulated
-            console.log('🚫 Skipping update for actively manipulated tag:', tagId);
-            return state;
-          }
-          
           return {
             tags: state.tags.map(tag =>
               tag.id === tagId 

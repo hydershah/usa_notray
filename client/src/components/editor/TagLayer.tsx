@@ -126,7 +126,12 @@ const TagRenderer: React.FC<TagRendererProps> = ({
     // Update active operation timestamp to keep it fresh
     setActiveOperation(tag.id, { type: 'drag', timestamp: Date.now() });
     
-    // Store last position for drag stop
+    // Live local update without snapping for smooth movement
+    const newPdfCoordinates = {
+      x: data.x / scaleFactor,
+      y: data.y / scaleFactor
+    };
+    onUpdate(newPdfCoordinates);
     lastPositionRef.current = { x: data.x, y: data.y };
   }, [canModifyTag, tag.id, setActiveOperation]);
 
@@ -136,13 +141,10 @@ const TagRenderer: React.FC<TagRendererProps> = ({
     
     setIsDragging(false);
     
-    // Snap to grid for alignment
-    const snappedX = snapToGrid(data.x / scaleFactor);
-    const snappedY = snapToGrid(data.y / scaleFactor);
-    
+    // No snap-to-grid; use exact position for precision
     const newPdfCoordinates = {
-      x: snappedX,
-      y: snappedY
+      x: data.x / scaleFactor,
+      y: data.y / scaleFactor
     };
     
     console.log('✅ Tag drag completed:', {
@@ -159,7 +161,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         setActiveOperation(tag.id, null);
       }, 500);
       
-      // Save to server after drag completes
+      // Save to server after drag completes (debounced)
       debouncedPositionUpdate(tag.id, newPdfCoordinates);
       
     } catch (error) {
