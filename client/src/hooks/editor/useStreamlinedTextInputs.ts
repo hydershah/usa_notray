@@ -132,7 +132,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
         case 'tag_placed':
           if (data.tagType === 'T') {
             // Ignore our own placement broadcasts to prevent duplicates
-            const currentUserId = useEditorStore.getState().currentUser?.id?.toString();
+            const currentUserId = useEditorStore.getState().currentUser?.userId?.toString();
             if (data.updatedBy && currentUserId && data.updatedBy.toString() === currentUserId) {
               console.log('⏭️ Skipping self tag_placed echo for text tag:', data.id);
               return;
@@ -219,7 +219,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           if (data.updates.coordinates) {
             // Ignore echoes of our own updates entirely
             try {
-              const currentUserId = useEditorStore.getState().currentUser?.id?.toString();
+              const currentUserId = useEditorStore.getState().currentUser?.userId?.toString();
               if (data.updatedBy && currentUserId && String(data.updatedBy) === currentUserId) {
                 console.log('⏭️ Skipping self echo for tag_updated (text):', data.id);
                 break;
@@ -309,7 +309,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           
           // Ignore self-broadcasted updates entirely
           try {
-            const currentUserId = useEditorStore.getState().currentUser?.id?.toString();
+            const currentUserId = useEditorStore.getState().currentUser?.userId?.toString();
             if (data.updatedBy && currentUserId && String(data.updatedBy) === currentUserId) {
               console.log('⏭️ Skipping self echo for text_input_position_updated:', data.textInputId);
               break;
