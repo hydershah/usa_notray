@@ -77,7 +77,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
     currentUser?.userId === tag.assignedUserId ||
     currentUser?.role === 'notary' ||
     currentUser?.role === 'admin'
-  );
+  )
   
   // Check if tag has content (should be transparent)
   const hasContent = tag.tagType === 'W' ? true : !!(tag.content || tag.contentData || tag.isCompleted);
