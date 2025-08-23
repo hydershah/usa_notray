@@ -294,6 +294,17 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
             source: message.payload.source || 'manual'
           });
           
+          // 🔧 DEBUG: Add more detailed logging for seal tags
+          if (message.payload.tagType === 'E') {
+            console.log('🔖 SEAL TAG CONTENT UPDATE RECEIVED:', {
+              tagId: message.payload.tagId,
+              content: message.payload.content,
+              contentType: message.payload.contentType,
+              isCompleted: message.payload.isCompleted,
+              contentData: message.payload.contentData
+            });
+          }
+          
           // 🔧 FIX: Serialize contentData for client compatibility
           let processedContentData = message.payload.contentData;
           if (processedContentData && typeof processedContentData === 'object') {

@@ -11307,6 +11307,42 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         updatedBy: req.user.id
       });
       
+      // 🚀 REAL-TIME SYNC: Broadcast seal tag completion to all session participants
+      try {
+        const { WebSocketService } = await import('./services/editor/WebSocketService');
+        
+        const syncMessage = {
+          type: 'tag_content_updated',
+          payload: {
+            tagId: updatedTag.id,
+            tagType: 'E',
+            content: autoFillResult.content,
+            contentType: 'image',
+            contentData: sealConfigData,
+            isCompleted: true,
+            completedBy: req.user.id,
+            completedAt: new Date().toISOString(),
+            updatedBy: req.user.id
+          },
+          userId: req.user.id.toString(),
+          sessionId,
+          timestamp: Date.now()
+        };
+
+        WebSocketService.broadcastToSession(sessionId, syncMessage);
+        console.log(`🔄 Seal tag completion broadcasted for tag ${tagId} in session ${sessionId}`);
+        console.log('🔖 WebSocket broadcast details:', {
+          sessionId,
+          tagId,
+          messageType: syncMessage.type,
+          payload: syncMessage.payload
+        });
+        
+      } catch (wsError) {
+        console.warn('Failed to broadcast seal tag completion via WebSocket:', wsError);
+        // Don't fail the request if WebSocket broadcast fails
+      }
+      
       // TODO: Create notary log entries for each applicable signer
       // TODO: Create audit trail entries
       
@@ -11554,6 +11590,12 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
 
         WebSocketService.broadcastToSession(sessionId, syncMessage);
         console.log(`🔄 Tag content update broadcasted for tag ${tagId} in session ${sessionId}`);
+        console.log('🔖 WebSocket broadcast details:', {
+          sessionId,
+          tagId,
+          messageType: syncMessage.type,
+          payload: syncMessage.payload
+        });
         
       } catch (wsError) {
         console.warn('Failed to broadcast tag content update via WebSocket:', wsError);

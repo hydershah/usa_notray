@@ -179,6 +179,9 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     maxReconnectAttempts: 10
   }), [liveSessionId, sessionId, currentUserId]);
 
+  // Memoize video session data to prevent unnecessary re-renders
+  const memoizedVideoSessionData = useMemo(() => videoSessionData, [videoSessionData?.userToken, videoSessionData?.roomUrl]);
+
   // WebSocket connection for real-time sync
   const webSocket = useWebSocket(webSocketConfig);
   
@@ -922,7 +925,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
                     participants={memoizedParticipants}
                     autoJoin={true}
                     className="h-full"
-                    sessionData={useMemo(() => videoSessionData, [videoSessionData?.userToken, videoSessionData?.roomUrl])}
+                    sessionData={memoizedVideoSessionData}
                     error={videoSessionError}
                     isLoading={isLoading}
                     onSessionComplete={handleVideoSessionComplete}
@@ -966,7 +969,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
                       participants={memoizedParticipants}
                       autoJoin={true}
                       className="h-full"
-                      sessionData={useMemo(() => videoSessionData, [videoSessionData?.userToken, videoSessionData?.roomUrl])}
+                      sessionData={memoizedVideoSessionData}
                       error={videoSessionError}
                       isLoading={isLoading}
                       onSessionComplete={handleVideoSessionComplete}

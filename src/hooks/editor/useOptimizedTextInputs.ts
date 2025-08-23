@@ -50,7 +50,7 @@ export const useOptimizedTextInputs = (sessionId: string, webSocket?: any) => {
           ? { ...input, coordinates: { ...input.coordinates, ...coordinates } }
           : input
       ));
-    }, 16) // ~60fps for smooth movement
+    }, 8) // ~120fps for ultra-smooth movement
   );
 
   // ✅ POSITION PERSISTENCE: Debounced server save after movement stops
@@ -80,7 +80,7 @@ export const useOptimizedTextInputs = (sessionId: string, webSocket?: any) => {
       } catch (error) {
         console.error('❌ Failed to save text input position:', error);
       }
-    }, 1000) // Save 1 second after movement stops
+    }, 300) // Reduced from 1000ms to 300ms for faster persistence
   );
 
   // ✅ SMOOTH MOVEMENT: Handle drag updates with instant local feedback

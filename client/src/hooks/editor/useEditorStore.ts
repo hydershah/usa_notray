@@ -329,6 +329,25 @@ export const useEditorStore = create<EditorStore>()(
             return state;
           }
           
+          // 🔧 DEBUG: Add logging for seal tag updates
+          const existingTag = state.tags.find(t => t.id === tagId);
+          if (existingTag?.tagType === 'E') {
+            console.log('🔖 SEAL TAG UPDATE IN STORE:', {
+              tagId,
+              existingTag: {
+                isCompleted: existingTag.isCompleted,
+                content: existingTag.content,
+                contentType: existingTag.contentType
+              },
+              updates,
+              newState: {
+                isCompleted: updates.isCompleted,
+                content: updates.content,
+                contentType: updates.contentType
+              }
+            });
+          }
+          
           return {
             tags: state.tags.map(tag =>
               tag.id === tagId 

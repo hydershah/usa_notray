@@ -10,9 +10,11 @@ import {
   TYPOGRAPHY,
   LAYOUT,
   TAG_TYPE_CONFIG,
-  calculateOptimalWidth
+  calculateOptimalWidth,
+  ensureTagWithinViewport
 } from '@/lib/constants/tagConstants';
 import { useEditorStore } from '@/hooks/editor/useEditorStore';
+import './StreamlinedTextInput.css';
 
 // Simple debounce utility
 function debounce<T extends (...args: any[]) => any>(
@@ -112,7 +114,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   const optimalHeight = useMemo(() => {
     // Ensure height accommodates the font size with padding
     const lineHeight = fontSize * 1.5; // 1.5x line height for comfortable spacing
-    const padding = 8; // Vertical padding
+    const padding = 12; // Increased padding for better text visibility
     const heightPx = lineHeight + padding;
     return Math.max(fixedDimensions.height || 25, Math.round(heightPx / scaleFactor));
   }, [fontSize, scaleFactor, fixedDimensions.height]);
@@ -123,11 +125,20 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     const width = Math.max(coordinates.width || 0, optimalWidth);
     const height = Math.max(coordinates.height || 0, optimalHeight);
     
+    // Use the enhanced bounds checking utility
+    const constrainedCoords = ensureTagWithinViewport(
+      coordinates.x,
+      coordinates.y,
+      width,
+      height,
+      scaleFactor
+    );
+    
     return {
-      x: Math.round(coordinates.x * scaleFactor),
-      y: Math.round(coordinates.y * scaleFactor),
-      width: Math.round(width * scaleFactor),
-      height: Math.round(height * scaleFactor)
+      x: Math.round(constrainedCoords.x * scaleFactor),
+      y: Math.round(constrainedCoords.y * scaleFactor),
+      width: Math.round(constrainedCoords.width * scaleFactor),
+      height: Math.round(constrainedCoords.height * scaleFactor)
     };
   }, [coordinates.x, coordinates.y, coordinates.width, coordinates.height, scaleFactor, optimalWidth, optimalHeight]);
 
@@ -205,9 +216,21 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
 
   // Handle drag operations - COMPLETELY LOCAL until drop
   const handleDrag = useCallback((_: any, data: any) => {
-    // Only update local position, no callbacks or state updates
-    setLocalPosition({ x: data.x, y: data.y });
-  }, []);
+    // Use the enhanced bounds checking utility
+    const constrainedCoords = ensureTagWithinViewport(
+      data.x / scaleFactor,
+      data.y / scaleFactor,
+      coordinates.width || optimalWidth,
+      coordinates.height || optimalHeight,
+      scaleFactor
+    );
+    
+    // Update local position with constrained coordinates
+    setLocalPosition({ 
+      x: Math.round(constrainedCoords.x * scaleFactor), 
+      y: Math.round(constrainedCoords.y * scaleFactor) 
+    });
+  }, [scaleFactor, coordinates.width, coordinates.height, optimalWidth, optimalHeight]);
 
   const handleDragStop = useCallback((_: any, data: any) => {
     setIsDragging(false);
@@ -217,24 +240,45 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
       useEditorStore.getState().setDragActive(false);
     } catch {}
     
-    // Only now update global state and call server
-    const newX = Math.round(data.x / scaleFactor);
-    const newY = Math.round(data.y / scaleFactor);
-    onMove?.({ x: newX, y: newY });
-  }, [scaleFactor, onMove]);
+    // Use the enhanced bounds checking utility for final position
+    const constrainedCoords = ensureTagWithinViewport(
+      data.x / scaleFactor,
+      data.y / scaleFactor,
+      coordinates.width || optimalWidth,
+      coordinates.height || optimalHeight,
+      scaleFactor
+    );
+    
+    // Update global state and call server with constrained coordinates
+    onMove?.({ x: constrainedCoords.x, y: constrainedCoords.y });
+  }, [scaleFactor, onMove, coordinates.width, coordinates.height, optimalWidth, optimalHeight]);
 
   // Handle resize operations
   const handleResizeStop = useCallback((_: any, __: any, ref: any) => {
     setIsResizing(false);
-    // Ensure resized dimensions are at least as large as optimal dimensions
-    const newWidth = Math.max(optimalWidth, Math.round(ref.offsetWidth / scaleFactor));
-    const newHeight = Math.max(optimalHeight, Math.round(ref.offsetHeight / scaleFactor));
+    
+    // Calculate new dimensions with bounds checking
+    let newWidth = Math.max(optimalWidth, Math.round(ref.offsetWidth / scaleFactor));
+    let newHeight = Math.max(optimalHeight, Math.round(ref.offsetHeight / scaleFactor));
+    
+    // Ensure minimum dimensions for text visibility
+    newWidth = Math.max(newWidth, 24); // Minimum width for text
+    newHeight = Math.max(newHeight, 18); // Minimum height for text
+    
+    // Use the enhanced bounds checking utility
+    const constrainedCoords = ensureTagWithinViewport(
+      coordinates.x,
+      coordinates.y,
+      newWidth,
+      newHeight,
+      scaleFactor
+    );
     
     onResize?.({
-      x: coordinates.x,
-      y: coordinates.y,
-      width: newWidth,
-      height: newHeight
+      x: constrainedCoords.x,
+      y: constrainedCoords.y,
+      width: constrainedCoords.width,
+      height: constrainedCoords.height
     });
   }, [scaleFactor, coordinates.x, coordinates.y, optimalWidth, optimalHeight, onResize]);
 
@@ -311,9 +355,12 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     willChange: 'transform',
     minWidth: 'fit-content',
     minHeight: 'fit-content',
+    overflow: 'visible', // Ensure content is never clipped
+    position: 'relative' as const,
   }), [isSelected, hasContent, isEditing]);
 
-  return (
+  // Performance optimization: Memoize the component to prevent unnecessary re-renders
+  const memoizedComponent = useMemo(() => (
     <Rnd
       size={{
         width: displayCoords.width,
@@ -336,7 +383,8 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
       enableResizing={enableResizing}
       disableDragging={isEditing || readOnly}
       cancel=".no-drag"
-      // No bounds/grid for maximum responsiveness
+      // Add bounds to prevent dragging outside screen
+      bounds="parent"
       className={`professional-text-tag ${isSelected ? 'selected' : ''}`}
       style={containerStyle}
     >
@@ -351,9 +399,10 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'flex-start',
-          padding: '4px 8px',
+          padding: '6px 10px', // Increased padding for better text visibility
           userSelect: isEditing ? 'text' : 'none',
           overflow: 'visible',
+          minHeight: 'fit-content', // Ensure minimum height for content
         }}
       >
         {isEditing ? (
@@ -399,26 +448,49 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
       
       {/* Selection indicator */}
       {isSelected && (
-        <div 
+        <div
           style={{
             position: 'absolute',
-            top: '-24px',
-            left: '0',
-            backgroundColor: PROFESSIONAL_COLORS.text,
-            color: 'white',
-            padding: '2px 8px',
-            borderRadius: '2px',
-            fontSize: '11px',
-            fontWeight: TYPOGRAPHY.fontWeight.medium,
-            whiteSpace: 'nowrap',
-            zIndex: 1001
+            top: '-2px',
+            left: '-2px',
+            right: '-2px',
+            bottom: '-2px',
+            border: '2px solid #3b82f6',
+            borderRadius: '4px',
+            pointerEvents: 'none',
+            zIndex: 1001,
           }}
-        >
-          Text Field
-        </div>
+        />
       )}
     </Rnd>
-  );
+  ), [
+    displayCoords.width,
+    displayCoords.height,
+    displayCoords.x,
+    displayCoords.y,
+    localPosition,
+    isSelected,
+    containerStyle,
+    handleDrag,
+    handleDragStop,
+    handleContainerClick,
+    handleDoubleClick,
+    id,
+    inputValue,
+    hasContent,
+    fontSize,
+    fontFamily,
+    textColor,
+    handleInputChange,
+    handleInputBlur,
+    handleInputKeyDown,
+    enableResizing,
+    isEditing,
+    readOnly,
+    handleResizeStop
+  ]);
+
+  return memoizedComponent;
 };
 
 // Export memoized component for better performance

@@ -196,6 +196,132 @@ export const useDebouncedTagOperations = (sessionId: string) => {
     return debouncerRef.current.debounce(key, operation, 200); // 200ms for text position
   }, [sessionId]);
 
+  // Name tag position updates - ULTRA HIGH SPEED PERFORMANCE for smooth fast movement
+  const debouncedNamePositionUpdate = useCallback((
+    tagId: string,
+    position: { x: number; y: number; width: number; height: number; pageNumber: number }
+  ) => {
+    const operation = async () => {
+      const startTime = performance.now();
+      try {
+        const response = await fetch(`/api/editor/session/${sessionId}/name-tag/${tagId}/position`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify(position)
+        });
+
+        if (!response.ok && response.status !== 404) {
+          throw new Error(`Failed to update name tag position: ${response.statusText}`);
+        }
+
+        const duration = performance.now() - startTime;
+        console.log(`✅ Name tag position synced to server: ${tagId} in ${duration.toFixed(2)}ms`);
+        
+        // 🚀 HIGH SPEED: Performance monitoring for fast movement
+        if (duration > 100) {
+          console.warn(`⚠️ Slow name tag sync: ${duration.toFixed(2)}ms - may affect fast movement`);
+        } else if (duration < 50) {
+          console.log(`🚀 High-speed name tag sync: ${duration.toFixed(2)}ms - optimal for fast movement`);
+        }
+      } catch (error) {
+        console.error('❌ Failed to sync name tag position:', error);
+        // Don't throw - allow local updates to continue
+      }
+    };
+
+    const key = `name_position_${sessionId}_${tagId}`;
+    // 🚀 HIGH SPEED: Adaptive debouncing - faster for high-speed movement
+    const adaptiveDelay = 50; // 50ms for ultra-responsive high-speed movement
+    return debouncerRef.current.debounce(key, operation, adaptiveDelay);
+  }, [sessionId]);
+
+  // 🚀 HIGH SPEED: Initials tag position updates - ULTRA HIGH SPEED PERFORMANCE for smooth fast movement
+  const debouncedInitialsPositionUpdate = useCallback((
+    tagId: string,
+    position: { x: number; y: number; width: number; height: number; pageNumber: number }
+  ) => {
+    const operation = async () => {
+      const startTime = performance.now();
+      try {
+        const response = await fetch(`/api/editor/session/${sessionId}/initials-tag/${tagId}/position`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify(position)
+        });
+
+        if (!response.ok && response.status !== 404) {
+          throw new Error(`Failed to update initials tag position: ${response.statusText}`);
+        }
+
+        const duration = performance.now() - startTime;
+        console.log(`✅ Initials tag position synced to server: ${tagId} in ${duration.toFixed(2)}ms`);
+        
+        // 🚀 HIGH SPEED: Performance monitoring for fast movement
+        if (duration > 100) {
+          console.warn(`⚠️ Slow initials tag sync: ${duration.toFixed(2)}ms - may affect fast movement`);
+        } else if (duration < 50) {
+          console.log(`🚀 High-speed initials tag sync: ${duration.toFixed(2)}ms - optimal for fast movement`);
+        }
+      } catch (error) {
+        console.error('❌ Failed to sync initials tag position:', error);
+        // Don't throw - allow local updates to continue
+      }
+    };
+
+    const key = `initials_position_${sessionId}_${tagId}`;
+    // 🚀 HIGH SPEED: Adaptive debouncing - faster for high-speed movement
+    const adaptiveDelay = 50; // 50ms for ultra-responsive high-speed movement
+    return debouncerRef.current.debounce(key, operation, adaptiveDelay);
+  }, [sessionId]);
+
+  // 🚀 HIGH SPEED: Date tag position updates - ULTRA HIGH SPEED PERFORMANCE for smooth fast movement
+  const debouncedDatePositionUpdate = useCallback((
+    tagId: string,
+    position: { x: number; y: number; width: number; height: number; pageNumber: number }
+  ) => {
+    const operation = async () => {
+      const startTime = performance.now();
+      try {
+        const response = await fetch(`/api/editor/session/${sessionId}/date-tag/${tagId}/position`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify(position)
+        });
+
+        if (!response.ok && response.status !== 404) {
+          throw new Error(`Failed to update date tag position: ${response.statusText}`);
+        }
+
+        const duration = performance.now() - startTime;
+        console.log(`✅ Date tag position synced to server: ${tagId} in ${duration.toFixed(2)}ms`);
+        
+        // 🚀 HIGH SPEED: Performance monitoring for fast movement
+        if (duration > 100) {
+          console.warn(`⚠️ Slow date tag sync: ${duration.toFixed(2)}ms - may affect fast movement`);
+        } else if (duration < 50) {
+          console.log(`🚀 High-speed date tag sync: ${duration.toFixed(2)}ms - optimal for fast movement`);
+        }
+      } catch (error) {
+        console.error('❌ Failed to sync date tag position:', error);
+        // Don't throw - allow local updates to continue
+      }
+    };
+
+    const key = `date_position_${sessionId}_${tagId}`;
+    // 🚀 HIGH SPEED: Adaptive debouncing - faster for high-speed movement
+    const adaptiveDelay = 50; // 50ms for ultra-responsive high-speed movement
+    return debouncerRef.current.debounce(key, operation, adaptiveDelay);
+  }, [sessionId]);
+
   // Auto-fill operations - longer delay, less frequent
   const debouncedAutoFill = useCallback((tagId: string) => {
     const operation = async () => {
@@ -242,6 +368,9 @@ export const useDebouncedTagOperations = (sessionId: string) => {
     debouncedPositionUpdate,
     debouncedContentUpdate, 
     debouncedTextPositionUpdate,
+    debouncedNamePositionUpdate,
+    debouncedInitialsPositionUpdate,
+    debouncedDatePositionUpdate,
     debouncedAutoFill,
     cancelOperation,
     flushOperation,

@@ -127,6 +127,10 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
   minHeight: number;
   allowResize: boolean;
   allowTextInput: boolean;
+  // 🚀 HIGH SPEED: Performance optimization flags
+  highPerformance?: boolean;
+  smoothMovement?: boolean;
+  momentumDrag?: boolean;
 }> = {
   'A': {
     label: 'Name',
@@ -139,7 +143,11 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     minWidth: 1,        // allow hugging content
     minHeight: 1,       // allow hugging content
     allowResize: true,
-    allowTextInput: true
+    allowTextInput: true,
+    // 🚀 HIGH SPEED: Performance optimization flags
+    highPerformance: true,
+    smoothMovement: true,
+    momentumDrag: true
   },
   'S': {
     label: 'Signature',
@@ -160,12 +168,17 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Initial',
     color: PROFESSIONAL_COLORS.accent,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 50,   // Shorter for initials
-    defaultHeight: 18,  // Single line height
+    // 🚀 HIGH SPEED: Optimized dimensions for smooth fast movement
+    defaultWidth: 45,   // Slightly shorter for better performance during fast movement
+    defaultHeight: 16,  // Slightly shorter for better performance during fast movement
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
-    allowTextInput: false
+    allowTextInput: false,
+    // 🚀 HIGH SPEED: Performance optimization flags
+    highPerformance: true, // Enable high-performance optimizations
+    smoothMovement: true,  // Enable smooth movement features
+    momentumDrag: true     // Enable momentum-based dragging
   },
   'N': {
     label: 'Commission Number',
@@ -245,7 +258,11 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     minWidth: 24,
     minHeight: 18,
     allowResize: true,
-    allowTextInput: true
+    allowTextInput: true,
+    // 🚀 HIGH SPEED: Performance optimization flags
+    highPerformance: true,
+    smoothMovement: true,
+    momentumDrag: true
   },
   'D': {
     label: 'Date',
@@ -258,7 +275,11 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
-    allowTextInput: true
+    allowTextInput: true,
+    // 🚀 HIGH SPEED: Performance optimization flags for smooth fast movement
+    highPerformance: true,
+    smoothMovement: true,
+    momentumDrag: true
   }
 };
 
@@ -448,6 +469,45 @@ export const calculateOptimalHeight = (text: string, fontSize: number = 12): num
   const actualLines = Math.max(1, estimatedLines);
   const totalHeight = Math.ceil(lineHeight * actualLines) + padding;
   return Math.max(totalHeight, 1);
+};
+
+// Enhanced bounds checking for text input tags
+export const ensureTagWithinViewport = (
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  scaleFactor: number = 1
+): { x: number; y: number; width: number; height: number } => {
+  // Get viewport dimensions
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
+  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+  
+  // Calculate scaled dimensions
+  const scaledWidth = Math.round(width * scaleFactor);
+  const scaledHeight = Math.round(height * scaleFactor);
+  
+  // Ensure minimum dimensions
+  const minWidth = Math.max(width, 24);
+  const minHeight = Math.max(height, 18);
+  
+  // Constrain position to viewport bounds
+  let constrainedX = Math.max(0, Math.min(x, (viewportWidth / scaleFactor) - minWidth));
+  let constrainedY = Math.max(0, Math.min(y, (viewportHeight / scaleFactor) - minHeight));
+  
+  // Ensure dimensions don't exceed viewport
+  const maxWidth = Math.floor(viewportWidth / scaleFactor) - constrainedX;
+  const maxHeight = Math.floor(viewportHeight / scaleFactor) - constrainedY;
+  
+  const constrainedWidth = Math.max(minWidth, Math.min(width, maxWidth));
+  const constrainedHeight = Math.max(minHeight, Math.min(height, maxHeight));
+  
+  return {
+    x: constrainedX,
+    y: constrainedY,
+    width: constrainedWidth,
+    height: constrainedHeight
+  };
 };
 
 // Animation constants

@@ -1,0 +1,62 @@
+/* Text Input Tag Styling */
+.professional-text-tag {
+  /* Ensure proper positioning and overflow handling */
+  position: relative !important;
+  overflow: visible !important;
+  z-index: 100;
+}
+
+.professional-text-tag.selected {
+  z-index: 1000;
+}
+
+.professional-text-tag .streamlined-text-input {
+  /* Ensure text is never clipped */
+  overflow: visible !important;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: normal;
+}
+
+/* Ensure text input content is always visible */
+.professional-text-tag input,
+.professional-text-tag div {
+  overflow: visible !important;
+  text-overflow: unset;
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* Smooth transitions for better UX */
+.professional-text-tag {
+  transition: transform 0.05s ease-out;
+}
+
+/* Ensure proper bounds during dragging */
+.professional-text-tag.rnd-dragging {
+  z-index: 1001;
+}
+
+/* Ensure proper bounds during resizing */
+.professional-text-tag.rnd-resizing {
+  z-index: 1001;
+}
+
+/* Responsive text sizing */
+@media (max-width: 768px) {
+  .professional-text-tag .streamlined-text-input {
+    font-size: 14px !important;
+    padding: 4px 6px !important;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .professional-text-tag {
+    border-width: 2px !important;
+  }
+  
+  .professional-text-tag.selected {
+    border-color: #000000 !important;
+  }
+}
