@@ -52,6 +52,15 @@ interface ConnectionState {
 }
 
 export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
+  // 🔍 DEBUG: Log session ID to identify incorrect usage
+  useEffect(() => {
+    console.log('🔍 useWebSocket initialized with sessionId:', config.sessionId);
+    if (/^\d+$/.test(config.sessionId)) {
+      console.error('❌ useWebSocket received job ID instead of session ID!', config.sessionId);
+      console.trace('❌ WebSocket hook instantiation stack trace');
+    }
+  }, [config.sessionId]);
+  
   const { toast } = useToast();
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -167,6 +176,12 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
 
   // Create WebSocket URL
   const createWebSocketUrl = useCallback(() => {
+    // 🔒 GUARD: Prevent WebSocket connection with job ID instead of session ID
+    if (/^\d+$/.test(sessionId)) {
+      console.error('❌ Attempting to create WebSocket with job ID instead of session ID:', sessionId);
+      throw new Error(`Invalid session ID for WebSocket: ${sessionId}. This appears to be a job ID, not a session ID.`);
+    }
+    
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
     const token = getAuthToken();
@@ -622,6 +637,23 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
       ws.onclose = (event) => {
         console.log('🔌 WebSocket disconnected:', event.code, event.reason);
         
+        // Handle specific close codes
+        if (event.code === 1008) {
+          console.error('❌ Session not found or not active:', event.reason);
+          toast({
+            title: 'Session Error',
+            description: event.reason || 'Session not found. Please refresh the page.',
+            variant: 'destructive'
+          });
+        } else if (event.code === 1011) {
+          console.error('❌ Server error during connection setup:', event.reason);
+          toast({
+            title: 'Server Error',
+            description: 'Server error during connection. Please try again.',
+            variant: 'destructive'
+          });
+        }
+        
         setConnectionState(prev => ({
           ...prev,
           isConnected: false,
@@ -635,8 +667,10 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
           heartbeatIntervalRef.current = null;
         }
 
-        // Attempt reconnection if enabled
-        if (autoReconnect && connectionState.reconnectAttempts < maxReconnectAttempts) {
+        // Attempt reconnection if enabled and not a session error
+        if (autoReconnect && 
+            connectionState.reconnectAttempts < maxReconnectAttempts && 
+            event.code !== 1008) { // Don't reconnect for session errors
           setConnectionState(prev => ({
             ...prev,
             reconnectAttempts: prev.reconnectAttempts + 1
@@ -658,10 +692,21 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
         console.error('🔍 WebSocket readyState:', ws.readyState);
         console.error('🔍 Token available:', !!getAuthToken());
         console.error('🔍 Session ID:', sessionId);
+        console.error('🔍 Environment:', process.env.NODE_ENV);
+        console.error('🔍 Protocol:', window.location.protocol);
+        console.error('🔍 Host:', window.location.host);
+        
         setConnectionState(prev => ({
           ...prev,
           lastError: 'WebSocket connection error'
         }));
+        
+        // Show user-friendly error message
+        toast({
+          title: 'Connection Error',
+          description: 'Failed to connect to real-time collaboration. Please refresh the page.',
+          variant: 'destructive'
+        });
       };
 
     } catch (error) {

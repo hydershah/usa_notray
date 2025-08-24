@@ -3,12 +3,16 @@ const fs = require('fs');
 const path = require('path');
 
 // Database configuration
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres.ueoqbwsigpowzbdlqezz:Xymax@123@aws-0-us-east-2.pooler.supabase.com:6543/postgres';
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  console.error('❌ DATABASE_URL environment variable is required');
+  process.exit(1);
+}
 
 async function runMigration() {
   const pool = new Pool({
     connectionString: DATABASE_URL,
-    ssl: false // Supabase handles SSL automatically
+    ssl: DATABASE_URL.includes('supabase.co') ? { rejectUnauthorized: false } : false
   });
 
   try {

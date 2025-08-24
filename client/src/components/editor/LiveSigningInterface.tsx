@@ -170,14 +170,21 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     }
   }, [jobData?.id, hasInitializedVideoSession, memoizedParticipants.length]);
 
+  // Compute the correct editor session ID for editor/WebSocket usage
+  // Prefer non-numeric session IDs (e.g., video_..., live_...). If numeric (jobId), fall back to real sessionId prop
+  const editorSessionId = useMemo(() => {
+    const candidate = (liveSessionId || sessionId) as string;
+    return /^\d+$/.test(candidate || '') ? (sessionId as string) : candidate;
+  }, [liveSessionId, sessionId]);
+
   // Memoize WebSocket configuration to prevent reconnections
   const webSocketConfig = useMemo(() => ({
-    sessionId: liveSessionId || sessionId,
+    sessionId: editorSessionId,
     userId: currentUserId,
     autoReconnect: true,
     reconnectInterval: 3000,
     maxReconnectAttempts: 10
-  }), [liveSessionId, sessionId, currentUserId]);
+  }), [editorSessionId, currentUserId]);
 
   // WebSocket connection for real-time sync
   const webSocket = useWebSocket(webSocketConfig);
@@ -936,7 +943,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
           <div className="flex-1 overflow-hidden min-w-0">
             <PDFTaggingEditor
               ref={editorRef}
-              sessionId={liveSessionId || sessionId}
+              sessionId={editorSessionId}
               mode="signing"
               documents={documents}
               participants={participants}
@@ -981,7 +988,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
           <div className="flex-1 overflow-hidden min-w-0">
             <PDFTaggingEditor
               ref={editorRef}
-              sessionId={liveSessionId || sessionId}
+              sessionId={editorSessionId}
               mode="signing"
               documents={documents}
               participants={participants}

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
 import { useEditorStore } from './useEditorStore';
 import type { PlaceTagCommand, DocumentTag, TagCoordinates } from '../../types/editor';
 import { getTagLabel } from '../../lib/utils/tagUtils';
@@ -62,6 +62,15 @@ const validateCoordinates = (coordinates: Partial<TagCoordinates>): boolean => {
 };
 
 export const useTagOperations = (sessionId: string, webSocket?: any) => {
+  // 🔍 DEBUG: Log session ID to identify incorrect usage
+  useEffect(() => {
+    console.log('🔍 useTagOperations initialized with sessionId:', sessionId);
+    if (/^\d+$/.test(sessionId)) {
+      console.error('❌ useTagOperations received job ID instead of session ID!', sessionId);
+      console.trace('❌ Hook instantiation stack trace');
+    }
+  }, [sessionId]);
+  
   const [isProcessing, setIsProcessing] = useState(false);
   const pendingOperations = useRef<TagOperation[]>([]);
   
@@ -169,6 +178,12 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
 
   // Single tag place API call with better error handling
   const savePlaceTag = async (operation: TagOperation) => {
+    // 🔒 GUARD: Prevent API calls with job ID instead of session ID
+    if (/^\d+$/.test(sessionId)) {
+      console.error('❌ Attempting to use job ID as session ID in API call:', sessionId);
+      throw new Error(`Invalid session ID: ${sessionId}. This appears to be a job ID, not a session ID.`);
+    }
+    
     const response = await fetch(`/api/editor/session/${sessionId}/place-tag`, {
       method: 'POST',
       headers: {
@@ -210,6 +225,12 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       return;
     }
 
+    // 🔒 GUARD: Prevent API calls with job ID instead of session ID
+    if (/^\d+$/.test(sessionId)) {
+      console.error('❌ Attempting to use job ID as session ID in saveUpdateTag:', sessionId);
+      throw new Error(`Invalid session ID: ${sessionId}. This appears to be a job ID, not a session ID.`);
+    }
+
     const response = await fetch(`/api/editor/session/${sessionId}/tag/${operation.tagId}`, {
       method: 'PUT',
       headers: {
@@ -234,6 +255,12 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
     if (operation.tagId && operation.tagId.startsWith('temp_')) {
       console.warn('Skipping delete for temporary tag:', operation.tagId);
       return;
+    }
+
+    // 🔒 GUARD: Prevent API calls with job ID instead of session ID
+    if (/^\d+$/.test(sessionId)) {
+      console.error('❌ Attempting to use job ID as session ID in saveDeleteTag:', sessionId);
+      throw new Error(`Invalid session ID: ${sessionId}. This appears to be a job ID, not a session ID.`);
     }
 
     const response = await fetch(`/api/editor/session/${sessionId}/tag/${operation.tagId}`, {
@@ -277,6 +304,12 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
             
             const sanitizedPlaceCoordinates = sanitizeCoordinates(coordinates, tagType);
             
+            // 🔒 GUARD: Prevent API calls with job ID instead of session ID
+            if (/^\d+$/.test(sessionId)) {
+              console.error('❌ Attempting to use job ID as session ID in processPendingOperations place:', sessionId);
+              throw new Error(`Invalid session ID: ${sessionId}. This appears to be a job ID, not a session ID.`);
+            }
+            
             const response = await fetch(`/api/editor/session/${sessionId}/place-tag`, {
               method: 'POST',
               headers: {
@@ -314,6 +347,12 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
             const tagForUpdate = useEditorStore.getState().tags.find(t => t.id === updateTagId);
             const sanitizedUpdateCoordinates = sanitizeCoordinates(updateCoordinates, tagForUpdate?.tagType);
             
+            // 🔒 GUARD: Prevent API calls with job ID instead of session ID
+            if (/^\d+$/.test(sessionId)) {
+              console.error('❌ Attempting to use job ID as session ID in processPendingOperations update:', sessionId);
+              throw new Error(`Invalid session ID: ${sessionId}. This appears to be a job ID, not a session ID.`);
+            }
+            
             const updateResponse = await fetch(`/api/editor/session/${sessionId}/tag/${updateTagId}`, {
               method: 'PUT',
               headers: {
@@ -332,6 +371,12 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
 
           case 'delete':
             if (!operation.tagId) continue;
+            
+            // 🔒 GUARD: Prevent API calls with job ID instead of session ID
+            if (/^\d+$/.test(sessionId)) {
+              console.error('❌ Attempting to use job ID as session ID in processPendingOperations delete:', sessionId);
+              throw new Error(`Invalid session ID: ${sessionId}. This appears to be a job ID, not a session ID.`);
+            }
             
             const deleteResponse = await fetch(`/api/editor/session/${sessionId}/tag/${operation.tagId}`, {
               method: 'DELETE',
@@ -603,6 +648,12 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
         }
       }
 
+      // 🔒 GUARD: Prevent API calls with job ID instead of session ID
+      if (/^\d+$/.test(sessionId)) {
+        console.error('❌ Attempting to use job ID as session ID in placeWhiteoutOverlay:', sessionId);
+        throw new Error(`Invalid session ID: ${sessionId}. This appears to be a job ID, not a session ID.`);
+      }
+      
       // Save to backend
       const response = await fetch(`/api/editor/session/${sessionId}/whiteout-overlay`, {
         method: 'POST',

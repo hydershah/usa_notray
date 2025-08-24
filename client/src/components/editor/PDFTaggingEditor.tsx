@@ -59,6 +59,15 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
   isSyncLoading = false,
   webSocket
 }, ref) => {
+  
+  // 🔍 DEBUG: Log session ID to identify incorrect usage
+  useEffect(() => {
+    console.log('🔍 PDFTaggingEditor initialized with sessionId:', sessionId);
+    if (/^\d+$/.test(sessionId)) {
+      console.error('❌ PDFTaggingEditor received job ID instead of session ID!', sessionId);
+      console.trace('❌ Component instantiation stack trace');
+    }
+  }, [sessionId]);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

@@ -2,6 +2,9 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { IncomingMessage } from 'http';
 import { parse } from 'url';
 import jwt from 'jsonwebtoken';
+import { db } from '../../db';
+import { editorSessions } from '../../../shared/schema';
+import { eq, inArray } from 'drizzle-orm';
 
 interface WSMessage {
   type: string;
@@ -107,10 +110,19 @@ export class WebSocketService {
       verifyClient: this.verifyClient.bind(this)
     });
     
-    this.wss.on('connection', this.handleConnection.bind(this));
+    this.wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+      this.handleConnection(ws, req).catch(error => {
+        console.error('Failed to handle WebSocket connection:', error);
+        ws.close(1011, 'Connection setup failed');
+      });
+    });
     
     // Cleanup inactive sessions every 5 minutes
-    setInterval(this.cleanupInactiveSessions.bind(this), 5 * 60 * 1000);
+    setInterval(() => {
+      this.cleanupInactiveSessions().catch(error => {
+        console.error('Failed to cleanup sessions:', error);
+      });
+    }, 5 * 60 * 1000);
     
     // Set singleton instance
     WebSocketService.instance = this;
@@ -155,7 +167,7 @@ export class WebSocketService {
   /**
    * Handle new WebSocket connection
    */
-  private handleConnection(ws: WebSocket, req: IncomingMessage): void {
+  private async handleConnection(ws: WebSocket, req: IncomingMessage): Promise<void> {
     const url = parse(req.url || '', true);
     const token = url.query.token as string;
     const sessionId = url.query.sessionId as string;
@@ -169,6 +181,36 @@ export class WebSocketService {
         ws.close(1008, 'Session ID required');
         return;
       }
+      
+      // 🔧 FIX: Validate session exists in database before allowing connection
+      const [session] = await db
+        .select()
+        .from(editorSessions)
+        .where(eq(editorSessions.sessionId, sessionId))
+        .limit(1);
+      
+      if (!session) {
+        console.error(`❌ WebSocket connection rejected: Session ${sessionId} not found in database`);
+        ws.close(1008, 'Session not found');
+        return;
+      }
+      
+      // Check if session is active or preparing (allow connections to these states)
+      if (session.status === 'completed' && session.sessionType === 'tagging') {
+        // Reactivate completed tagging sessions for continued editing
+        await db
+          .update(editorSessions)
+          .set({ status: 'active', updatedAt: new Date() })
+          .where(eq(editorSessions.sessionId, sessionId));
+        
+        console.log(`🔄 Reactivated completed tagging session: ${sessionId} for WebSocket connection`);
+      } else if (session.status !== 'active' && session.status !== 'preparing') {
+        console.error(`❌ WebSocket connection rejected: Session ${sessionId} is in ${session.status} state`);
+        ws.close(1008, 'Session not active');
+        return;
+      }
+      
+      console.log(`✅ Session ${sessionId} validated for WebSocket connection (status: ${session.status})`);
       
       // Create connected user
       const connectedUser: ConnectedUser = {
@@ -712,12 +754,13 @@ export class WebSocketService {
   }
   
   /**
-   * Cleanup inactive sessions
+   * Cleanup inactive sessions and validate against database
    */
-  private cleanupInactiveSessions(): void {
+  private async cleanupInactiveSessions(): Promise<void> {
     const now = new Date();
     const timeout = 30 * 60 * 1000; // 30 minutes
     
+    // Clean up inactive sessions
     this.sessions.forEach((session, sessionId) => {
       if (now.getTime() - session.lastActivity.getTime() > timeout) {
         // Close all connections in inactive session
@@ -731,6 +774,50 @@ export class WebSocketService {
         console.log(`🧹 Cleaned up inactive session: ${sessionId}`);
       }
     });
+    
+          // 🔧 FIX: Validate sessions against database and clean up invalid ones
+      try {
+        const sessionIds = Array.from(this.sessions.keys());
+        if (sessionIds.length === 0) return;
+        
+        // Get all valid sessions from database in one query
+        const validSessions = await db
+          .select({ sessionId: editorSessions.sessionId, status: editorSessions.status })
+          .from(editorSessions)
+          .where(inArray(editorSessions.sessionId, sessionIds));
+        
+        const validSessionMap = new Map(validSessions.map(s => [s.sessionId, s]));
+        
+        // Remove sessions that don't exist in database or are in invalid states
+        for (const sessionId of sessionIds) {
+          const session = this.sessions.get(sessionId);
+          if (!session) continue;
+          
+          const dbSession = validSessionMap.get(sessionId);
+          
+          if (!dbSession) {
+            // Session doesn't exist in database - close all connections
+            console.log(`🗑️ Removing invalid session (not in DB): ${sessionId}`);
+            session.users.forEach(user => {
+              if (user.ws.readyState === WebSocket.OPEN) {
+                user.ws.close(1008, 'Session not found in database');
+              }
+            });
+            this.sessions.delete(sessionId);
+          } else if (dbSession.status !== 'active' && dbSession.status !== 'preparing') {
+            // Session exists but is in invalid state - close all connections
+            console.log(`🗑️ Removing session in invalid state (${dbSession.status}): ${sessionId}`);
+            session.users.forEach(user => {
+              if (user.ws.readyState === WebSocket.OPEN) {
+                user.ws.close(1008, `Session is ${dbSession.status}`);
+              }
+            });
+            this.sessions.delete(sessionId);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to validate sessions against database:', error);
+      }
   }
   
   /**

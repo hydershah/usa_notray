@@ -3,10 +3,16 @@
 import { Pool } from 'pg';
 
 async function addCreatedAtIndex() {
-  const DATABASE_URL = 'postgresql://postgres.ueoqbwsigpowzbdlqezz:Xymax@123@aws-0-us-east-2.pooler.supabase.com:6543/postgres';
+  const DATABASE_URL = process.env.DATABASE_URL;
+  
+  if (!DATABASE_URL) {
+    console.error('❌ DATABASE_URL environment variable is required');
+    process.exit(1);
+  }
+  
   const pool = new Pool({
     connectionString: DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+    ssl: DATABASE_URL.includes('supabase.co') ? { rejectUnauthorized: false } : false
   });
 
   try {

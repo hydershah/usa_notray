@@ -1,8 +1,14 @@
 import { Pool } from 'pg';
 
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  console.error('❌ DATABASE_URL environment variable is required');
+  process.exit(1);
+}
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres.ueoqbwsigpowzbdlqezz:Xymax%40123@aws-0-us-east-2.pooler.supabase.com:6543/postgres',
-  ssl: { rejectUnauthorized: false }
+  connectionString: DATABASE_URL,
+  ssl: DATABASE_URL.includes('supabase.co') ? { rejectUnauthorized: false } : false
 });
 
 try {
