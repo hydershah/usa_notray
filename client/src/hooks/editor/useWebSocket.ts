@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useToast } from '@/components/ui/use-toast';
 import { useEditorStore } from './useEditorStore';
-import { useToast } from '@/hooks/use-toast';
+import { getWebSocketConfig } from '@/lib/websocket-config';
 import type { CollaborationUpdate, UserCursor } from '../../types/editor';
 import type { DocumentTag } from '../../types/editor';
 
@@ -56,15 +57,85 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const messageQueueRef = useRef<WSMessage[]>([]);
-  
+  const lastSyncRef = useRef<number>(Date.now());
+  const [connectionStatus, setConnectionStatus] = useState(false);
   const [connectionState, setConnectionState] = useState<ConnectionState>({
     isConnected: false,
     isConnecting: false,
-    reconnectAttempts: 0
+    reconnectAttempts: 0,
+    lastConnectedAt: undefined,
+    lastError: undefined
   });
 
+  // 🔧 FIX: Use configuration for better control
+  const wsConfig = getWebSocketConfig();
+
+  // 🔧 FIX: Add message deduplication to prevent bouncing
+  const processedMessagesRef = useRef<Set<string>>(new Set());
+  const lastTagUpdatesRef = useRef<Map<string, { timestamp: number; userId: string; coordinates?: any }>>(new Map());
+  
+  const isDuplicateMessage = (message: WSMessage): boolean => {
+    const messageKey = `${message.type}_${message.payload?.tagId || message.payload?.textInputId || 'unknown'}_${message.userId}_${message.timestamp}`;
+    
+    // Check if we've processed this exact message
+    if (processedMessagesRef.current.has(messageKey)) {
+      if (wsConfig.logDuplicateMessages) {
+        console.log(`🔄 Skipping exact duplicate message: ${message.type}`);
+      }
+      return true;
+    }
+    
+    // Check for recent duplicate tag updates from same user
+    if (message.type === 'tag_updated' || message.type === 'tag_saved') {
+      const tagId = message.payload?.tagId;
+      if (tagId) {
+        const lastUpdate = lastTagUpdatesRef.current.get(tagId);
+        const now = Date.now();
+        
+        if (lastUpdate && 
+            lastUpdate.userId === message.userId && 
+            (now - lastUpdate.timestamp) < wsConfig.deduplicationWindow) {
+          
+          // Check if coordinates are very similar (within tolerance)
+          if (message.payload?.updates?.coordinates && lastUpdate.coordinates) {
+            const isClose = (a: number, b: number, tol = wsConfig.coordinateTolerance) => Math.abs(a - b) <= tol;
+            const newCoords = message.payload.updates.coordinates;
+            const oldCoords = lastUpdate.coordinates;
+            
+            if (isClose(newCoords.x, oldCoords.x) && 
+                isClose(newCoords.y, oldCoords.y) &&
+                isClose(newCoords.width || 0, oldCoords.width || 0) &&
+                isClose(newCoords.height || 0, oldCoords.height || 0)) {
+              if (wsConfig.logDuplicateMessages) {
+                console.log(`🔄 Skipping duplicate tag update for ${tagId} from ${message.userId}`);
+              }
+              return true;
+            }
+          }
+        }
+        
+        // Update tracking
+        lastTagUpdatesRef.current.set(tagId, {
+          timestamp: now,
+          userId: message.userId,
+          coordinates: message.payload?.updates?.coordinates
+        });
+      }
+    }
+    
+    // Mark as processed
+    processedMessagesRef.current.add(messageKey);
+    
+    // Clean up old processed messages (keep last 1000)
+    if (processedMessagesRef.current.size > 1000) {
+      const keys = Array.from(processedMessagesRef.current);
+      processedMessagesRef.current = new Set(keys.slice(-500));
+    }
+    
+    return false;
+  };
+
   const {
-    setConnectionStatus,
     updateLastSync,
     addTag,
     updateTag,
@@ -105,6 +176,12 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
       throw new Error('Authentication token required for WebSocket connection');
     }
     
+    // 🔧 FIX: Add development mode check for debugging
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    if (isDevelopment) {
+      console.log('🔧 Development mode: WebSocket sync enabled');
+    }
+    
     return `${protocol}//${host}/ws/editor?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}`;
   }, [sessionId, getAuthToken]);
 
@@ -141,6 +218,18 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
   const handleMessage = useCallback((event: MessageEvent) => {
     try {
       const message: WSMessage = JSON.parse(event.data);
+      
+      // 🔧 FIX: Check for duplicate messages to prevent bouncing
+      if (isDuplicateMessage(message)) {
+        console.log(`🔄 Skipping duplicate message: ${message.type} for ${message.payload?.tagId || 'unknown'}`);
+        return;
+      }
+      
+      // 🔧 FIX: Skip processing our own broadcasts to prevent loops
+      if (message.userId === userId) {
+        console.log(`🔄 Skipping own broadcast: ${message.type} for ${message.payload?.tagId || 'unknown'}`);
+        return;
+      }
       
       updateLastSync();
 
@@ -471,7 +560,7 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
   }, [
     addTag, updateTag, deleteTag, updateCursor, setCurrentPage, 
     setCurrentDocument, replaceAllTags, syncToPage, updateLastSync, 
-    setConnectionStatus, processMessageQueue, toast
+    setConnectionStatus, processMessageQueue, toast, userId
   ]);
 
   // Connect to WebSocket

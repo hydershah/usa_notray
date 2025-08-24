@@ -40,6 +40,10 @@ export class WebSocketService {
   private recentEvents = new Map();
   private readonly EVENT_THROTTLE_MS = 5000; // Only log once per 5 seconds per user
 
+  // 🔧 FIX: Add message deduplication to prevent bouncing
+  private recentMessages = new Map<string, { timestamp: number; userId: string; payload: any }>();
+  private readonly MESSAGE_DEDUP_WINDOW = 2000; // 2 seconds
+
   private shouldLogEvent(userId: string, event: 'join' | 'leave'): boolean {
     const key = `${userId}-${event}`;
     const lastTime = this.recentEvents.get(key);
@@ -49,6 +53,50 @@ export class WebSocketService {
       this.recentEvents.set(key, now);
       return true;
     }
+    return false;
+  }
+
+  // 🔧 FIX: Check for duplicate messages
+  private isDuplicateMessage(message: WSMessage): boolean {
+    const messageKey = `${message.type}_${message.payload?.tagId || message.payload?.textInputId || 'unknown'}_${message.userId}`;
+    const now = Date.now();
+    const lastMessage = this.recentMessages.get(messageKey);
+    
+    if (lastMessage && 
+        lastMessage.userId === message.userId && 
+        (now - lastMessage.timestamp) < this.MESSAGE_DEDUP_WINDOW) {
+      
+      // For tag updates, check if coordinates are very similar
+      if (message.type === 'tag_updated' || message.type === 'tag_saved') {
+        const newCoords = message.payload?.updates?.coordinates;
+        const oldCoords = lastMessage.payload?.updates?.coordinates;
+        
+        if (newCoords && oldCoords) {
+          const isClose = (a: number, b: number, tol = 2) => Math.abs(a - b) <= tol;
+          if (isClose(newCoords.x, oldCoords.x) && 
+              isClose(newCoords.y, oldCoords.y) &&
+              isClose(newCoords.width || 0, oldCoords.width || 0) &&
+              isClose(newCoords.height || 0, oldCoords.height || 0)) {
+            console.log(`🔄 Server: Skipping duplicate tag update for ${message.payload?.tagId} from ${message.userId}`);
+            return true;
+          }
+        }
+      }
+    }
+    
+    // Store this message
+    this.recentMessages.set(messageKey, {
+      timestamp: now,
+      userId: message.userId,
+      payload: message.payload
+    });
+    
+    // Clean up old messages
+    if (this.recentMessages.size > 1000) {
+      const keys = Array.from(this.recentMessages.keys());
+      keys.slice(0, 500).forEach(key => this.recentMessages.delete(key));
+    }
+    
     return false;
   }
   
@@ -205,6 +253,11 @@ export class WebSocketService {
       // Validate message
       if (!message.type || !message.sessionId) {
         this.sendError(user, 'Invalid message format');
+        return;
+      }
+
+      // 🔧 FIX: Check for duplicate messages
+      if (this.isDuplicateMessage(message)) {
         return;
       }
       

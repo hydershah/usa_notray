@@ -164,7 +164,7 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
       } finally {
         setIsProcessing(false);
       }
-    }, 100) // Optimized to 100ms for fast, responsive auto-fill experience
+    }, 300) // 🔧 FIX: Increased from 100ms to 300ms to prevent rapid-fire updates
   ).current;
 
   // Single tag place API call with better error handling
