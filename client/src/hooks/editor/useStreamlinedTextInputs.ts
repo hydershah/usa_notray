@@ -5,6 +5,7 @@ import { calculateOptimalWidth, getTagDimensions } from '@/lib/constants/tagCons
 
 interface StreamlinedTextInput {
   id: string;
+  documentId?: string;
   coordinates: {
     x: number;
     y: number;
@@ -140,6 +141,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
             // Convert tag to text input format
             const newTextInput: StreamlinedTextInput = {
               id: data.id.toString(),
+              documentId: (data.documentId != null ? data.documentId.toString() : undefined),
               coordinates: {
                 x: data.coordinates.x,
                 y: data.coordinates.y,
@@ -384,6 +386,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
     const fontSize = lastUsedFontSize || 16;
     const optimisticTextInput: StreamlinedTextInput = {
       id: tempId,
+      documentId: command.documentId?.toString(),
       coordinates: command.coordinates,
       content: '',
       fontSize: fontSize,
@@ -874,6 +877,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
 
       return {
         id: tag.id,
+        documentId: tag.documentId != null ? tag.documentId.toString() : undefined,
         coordinates: {
           x: tag.coordinates.x,
           y: tag.coordinates.y,

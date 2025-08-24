@@ -126,12 +126,16 @@ export class PDFProcessorService {
   ): Promise<void> {
     try {
       // Convert editor-stored coords (top-left origin) to PDF points (bottom-left origin)
+      // Using 1:1 conversion as coordinates are already in PDF point space
       const xPt = tag.x * PX_TO_PT;
       const widthPt = tag.width * PX_TO_PT;
       const heightPt = tag.height * PX_TO_PT;
       const yTopPt = tag.y * PX_TO_PT;
+      
       // PDF uses bottom-left origin; our stored coordinates are TOP-LEFT. Convert accordingly.
       const pdfY = pageHeight - yTopPt - heightPt;
+      
+      console.log(`🎯 Tag ${tag.tagType} positioning: editor(${tag.x}, ${tag.y}, ${tag.width}x${tag.height}) -> PDF(${xPt}, ${pdfY}, ${widthPt}x${heightPt})`);
 
       const tagInfo = TAG_TYPES[tag.tagType as keyof typeof TAG_TYPES];
       
@@ -149,9 +153,9 @@ export class PDFProcessorService {
       // Determine actual content to apply
       const content = contentData?.value || tag.content || `[${tagInfo?.name || tag.tagType}]`;
       
-      // Determine styling based on tag type
-      const isNotaryTag = ['N', 'X', 'O', 'E'].includes(tag.tagType);
-      const currentFont = isNotaryTag ? boldFont : font;
+      // Determine styling based on tag type and content
+      // Use regular font for better readability and consistency with editor
+      const currentFont = font; // Always use regular font for consistent appearance
       const fontSize = this.getFontSize(tag.tagType, widthPt, heightPt, contentData);
       const textColor = this.getTagColor(tag.tagType, contentData);
       
@@ -214,33 +218,48 @@ export class PDFProcessorService {
     fontSize: number,
     color: any
   ): void {
-    // Use the same 4pt left padding as the editor
-    const PADDING_LEFT = 4;
+    // Use minimal left padding to maximize text space
+    const PADDING_LEFT = 2;
+    const PADDING_RIGHT = 2;
+    const PADDING_VERTICAL = 1;
 
-    // Compute precise vertical centering using font metrics
-    const textHeight = font.heightAtSize(fontSize);
-    const centeredY = y + Math.max(0, (height - textHeight) / 2);
-
-    // Single-line render with clipping to stay within the tag width like the editor default
     // Compute available width after padding
-    const availableWidth = Math.max(0, width - PADDING_LEFT);
+    const availableWidth = Math.max(0, width - PADDING_LEFT - PADDING_RIGHT);
+    
+    // Improved vertical centering using font metrics
+    const textHeight = font.heightAtSize(fontSize);
+    const ascent = textHeight * 0.75; // Approximate ascent
+    const centeredY = y + (height - textHeight) / 2 + ascent - PADDING_VERTICAL;
 
     let toDraw = text || '';
 
-    // Render single line and clip visually at tag bounds. Avoid inserting ellipsis so final PDF shows only the typed text.
-    // Compute maximum substring that fits, without adding any extra characters.
-    const fits = (s: string) => font.widthOfTextAtSize(s, fontSize) <= availableWidth;
-    if (!fits(toDraw)) {
+    // Only clip text if it exceeds available width, but be more generous with width
+    const textWidth = font.widthOfTextAtSize(toDraw, fontSize);
+    
+    if (textWidth > availableWidth) {
+      // Use binary search to find maximum fitting text
       let lo = 0;
       let hi = toDraw.length;
+      
       while (lo < hi) {
         const mid = Math.floor((lo + hi + 1) / 2);
         const candidate = toDraw.slice(0, mid);
-        if (fits(candidate)) lo = mid; else hi = mid - 1;
+        const candidateWidth = font.widthOfTextAtSize(candidate, fontSize);
+        
+        if (candidateWidth <= availableWidth) {
+          lo = mid;
+        } else {
+          hi = mid - 1;
+        }
       }
+      
       toDraw = toDraw.slice(0, lo);
+      console.log(`📝 Text clipped from "${text}" to "${toDraw}" (width: ${textWidth} -> ${font.widthOfTextAtSize(toDraw, fontSize)}, available: ${availableWidth})`);
+    } else {
+      console.log(`📝 Text "${toDraw}" fits within available width (${textWidth} <= ${availableWidth})`);
     }
 
+    // Draw the text
     page.drawText(toDraw, {
       x: x + PADDING_LEFT,
       y: centeredY,
@@ -614,14 +633,23 @@ export class PDFProcessorService {
    * Get appropriate font size for tag
    */
   private getFontSize(tagType: string, width: number, height: number, contentData?: any): number {
-    // If user has set a custom fontSize in contentData, treat it as points directly
+    // If user has set a custom fontSize in contentData, use it directly
+    // This ensures consistency between editor preview and final PDF
     if (contentData?.fontSize && typeof contentData.fontSize === 'number') {
       const customFontSize = Math.max(6, Math.min(contentData.fontSize, 72));
       console.log(`🎨 Using custom font size ${customFontSize}pt for tag type ${tagType}`);
       return customFontSize;
     }
     
-    // Otherwise, calculate based on tag dimensions (width/height are in pt)
+    // For text tags, use a default font size that matches the editor (16px = 12pt in PDF)
+    // The editor uses 16px as default, which translates to approximately 12pt in PDF
+    if (['T', 'A', 'N', 'X', 'D'].includes(tagType)) {
+      const defaultTextSize = 12; // 12pt = ~16px
+      console.log(`📝 Using default text font size ${defaultTextSize}pt for tag type ${tagType}`);
+      return defaultTextSize;
+    }
+    
+    // For signature and seal tags, calculate based on dimensions
     const baseSize = Math.min(width / 8, height * 0.6);
     
     let calculatedFontSize: number;

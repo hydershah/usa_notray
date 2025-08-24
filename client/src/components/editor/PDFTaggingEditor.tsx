@@ -171,6 +171,16 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
     );
   }, [currentUser]);
 
+  // Only render text inputs that belong to the current document
+  const currentDocTextInputs = useMemo(() => {
+    if (!currentDocument) return [] as typeof textInputs;
+    const currentId = currentDocument.id?.toString();
+    return (textInputs || []).filter((ti: any) => {
+      const docId = ti.documentId != null ? ti.documentId.toString() : undefined;
+      return docId === currentId;
+    });
+  }, [textInputs, currentDocument?.id]);
+
   // Keep streamlined text inputs in sync with tag list for the current document
   useEffect(() => {
     try {
@@ -1718,7 +1728,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
             liveSessionState={liveSessionState}
             onSetActiveUser={onSetActiveUser}
             onPageLoad={handlePageLoad}
-            textInputs={textInputs}
+            textInputs={currentDocTextInputs}
             selectedTextInputId={selectedTextInputId}
             onTextInputSelect={selectTextInput}
             onSaveTextContent={saveTextContent}
