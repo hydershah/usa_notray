@@ -54,6 +54,7 @@ export default function SigningJobs() {
   const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
+  const [downloadingPackage, setDownloadingPackage] = useState(false);
 
   // Fetch invited jobs
   const { 
@@ -131,6 +132,42 @@ export default function SigningJobs() {
       alert('Failed to join session. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDownloadPackage = async (jobId: number) => {
+    setDownloadingPackage(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/jobs/${jobId}/download-package`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to download package');
+      }
+
+      // Create a blob from the response
+      const blob = await response.blob();
+      
+      // Create a download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `job-${jobId}-completion-package.zip`;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+    } catch (error) {
+      console.error('Error downloading package:', error);
+      alert('Failed to download package. Please try again.');
+    } finally {
+      setDownloadingPackage(false);
     }
   };
 
@@ -413,14 +450,19 @@ export default function SigningJobs() {
                         </Button>
                       )}
                       
-                      {job.signingStatus === 'completed' && (
+                      {job.jobStatus === 'completed' && (
                         <Button 
                           size="sm" 
                           variant="outline"
-                          onClick={() => setLocation(`/jobs/${job.id}/download`)}
+                          onClick={() => handleDownloadPackage(job.id)}
+                          disabled={downloadingPackage}
                         >
-                          <Download className="h-4 w-4 mr-2" />
-                          Download
+                          {downloadingPackage ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Download className="h-4 w-4 mr-2" />
+                          )}
+                          Download Package
                         </Button>
                       )}
                       

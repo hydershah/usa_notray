@@ -13,13 +13,10 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/hooks/use-auth';
 import { useLocation } from 'wouter';
 import { 
-  IdCard, 
-  Bell, 
   ChevronDown, 
   User, 
   LogOut, 
   Settings,
-  HelpCircle,
   Sparkles,
   Calendar,
   Clock
@@ -121,47 +118,6 @@ export function Header() {
               <span className="text-xs font-medium text-green-700">Online</span>
             </div>
 
-            {/* Notifications */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="relative hover:bg-gray-100 hover:scale-105 transition-all duration-200 rounded-xl"
-                >
-                  <Bell className="h-5 w-5" />
-                  <span className="absolute -top-1 -right-1 h-4 w-4 bg-red-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                    3
-                  </span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-80 sm:w-96">
-                <DropdownMenuLabel className="flex items-center justify-between">
-                  <span>Notifications</span>
-                  <Badge variant="secondary">3 New</Badge>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <div className="p-2 space-y-2">
-                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <p className="text-sm font-medium">New job assigned</p>
-                    <p className="text-xs text-gray-600">Job #123 requires your attention</p>
-                  </div>
-                  <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                    <p className="text-sm font-medium">Document completed</p>
-                    <p className="text-xs text-gray-600">Job #121 successfully processed</p>
-                  </div>
-                  <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
-                    <p className="text-sm font-medium">Verification needed</p>
-                    <p className="text-xs text-gray-600">Please verify documents for Job #124</p>
-                  </div>
-                </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="justify-center text-blue-600 hover:text-blue-700">
-                  View all notifications
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
             {/* User Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -223,8 +179,6 @@ export function Header() {
                   <Settings className="mr-2 h-4 w-4" />
                   Preferences
                 </DropdownMenuItem>
-                
-
                 
                 <DropdownMenuSeparator />
                 

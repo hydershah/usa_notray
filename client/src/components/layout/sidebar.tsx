@@ -18,7 +18,6 @@ import {
   ChevronDown,
   Activity,
   Star,
-  Bell,
   Download,
   UserCheck,
   PenTool,
@@ -39,7 +38,7 @@ interface MenuItem {
   subsections?: MenuItem[];
 }
 
-// Simplified, flat menu with a single cascading Admin item
+// Simplified, clean navigation menu
 const menuItems: MenuItem[] = [
   // Primary actions
   {
@@ -50,7 +49,6 @@ const menuItems: MenuItem[] = [
     roles: ['admin', 'title_company', 'notary'],
     description: 'Start a new notarization'
   },
-  // Removed Job Details direct link; details are accessible from Jobs list
 
   // Workflows
   {
@@ -119,24 +117,8 @@ const menuItems: MenuItem[] = [
     roles: ['admin', 'title_company', 'notary'],
     description: 'Billing & financials'
   },
-  {
-    id: 'my-logs',
-    label: 'My Records',
-    icon: FileText,
-    path: '/my-logs',
-    roles: ['admin', 'title_company', 'notary', 'client', 'signer', 'witness'],
-    description: 'Your notarization history'
-  },
-  {
-    id: 'notifications',
-    label: 'Notifications',
-    icon: Bell,
-    path: '/notifications',
-    roles: ['signer', 'witness', 'client', 'notary', 'admin'],
-    description: 'Job updates and alerts'
-  },
 
-  // Admin (Management + System)
+  // Admin (Simplified)
   {
     id: 'admin',
     label: 'Admin',
@@ -145,7 +127,7 @@ const menuItems: MenuItem[] = [
     roles: ['admin', 'title_company'],
     description: 'Administration and settings',
     subsections: [
-      // Management subset (admin + title company)
+      // Core Management
       {
         id: 'admin-overview',
         label: 'Overview',
@@ -155,36 +137,12 @@ const menuItems: MenuItem[] = [
         description: 'System overview and statistics'
       },
       {
-        id: 'approvals',
-        label: 'Approvals',
-        icon: CheckCircle,
-        path: '/admin/approvals',
-        roles: ['admin'],
-        description: 'User and company approvals'
-      },
-      {
         id: 'approvals-hub',
-        label: 'Approvals Hub',
+        label: 'Approvals',
         icon: Activity,
         path: '/admin/approvals-hub',
         roles: ['admin'],
         description: 'Centralized approvals dashboard'
-      },
-      {
-        id: 'admin-job-requests',
-        label: 'Job Requests',
-        icon: FileText,
-        path: '/admin/job-requests',
-        roles: ['admin'],
-        description: 'Review signer job requests'
-      },
-      {
-        id: 'verification',
-        label: 'KYC/KBA',
-        icon: Shield,
-        path: '/admin/verification',
-        roles: ['admin'],
-        description: 'Identity verification management'
       },
       {
         id: 'user-management',
@@ -211,12 +169,20 @@ const menuItems: MenuItem[] = [
         description: 'Title company management'
       },
       {
-        id: 'title-company-assignments',
-        label: 'Company Assignments',
-        icon: Star,
-        path: '/title-company-assignments',
+        id: 'admin-job-requests',
+        label: 'Job Requests',
+        icon: FileText,
+        path: '/admin/job-requests',
         roles: ['admin'],
-        description: 'Manage preferred notaries'
+        description: 'Review signer job requests'
+      },
+      {
+        id: 'verification',
+        label: 'KYC/KBA',
+        icon: Shield,
+        path: '/admin/verification',
+        roles: ['admin'],
+        description: 'Identity verification management'
       },
       {
         id: 'banned-users',
@@ -234,8 +200,6 @@ const menuItems: MenuItem[] = [
         roles: ['admin'],
         description: 'System audit logs'
       },
-
-      // System subset (admin only)
       {
         id: 'closing-types',
         label: 'Closing Types',
@@ -251,14 +215,6 @@ const menuItems: MenuItem[] = [
         path: '/email-settings',
         roles: ['admin'],
         description: 'Email configuration'
-      },
-      {
-        id: 'email-templates',
-        label: 'Email Templates',
-        icon: Mail,
-        path: '/email-templates',
-        roles: ['admin'],
-        description: 'Email templates'
       }
     ]
   }

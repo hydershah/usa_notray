@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRoute, useLocation } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '@/hooks/use-auth';
 import { MainLayout } from '@/components/layout/main-layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,7 +26,8 @@ import {
   CheckCircle,
   Edit3,
   Shield,
-  FileCheck
+  FileCheck,
+  Loader2
 } from 'lucide-react';
 import { getStatusColor, formatDate, isMobileDevice } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -40,8 +42,10 @@ export default function JobDetailsPage() {
   const [, params] = useRoute('/jobs/:id');
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { user } = useAuth();
   const jobId = params?.id ? parseInt(params.id) : null;
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [downloadingPackage, setDownloadingPackage] = useState(false);
 
   // Debug jobId (only log on changes)
   useEffect(() => {
@@ -281,6 +285,53 @@ export default function JobDetailsPage() {
     }
   };
 
+  const handleDownloadPackage = async () => {
+    if (!jobId) return;
+    
+    setDownloadingPackage(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/jobs/${jobId}/download-package`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to download package');
+      }
+
+      // Create a blob from the response
+      const blob = await response.blob();
+      
+      // Create a download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `job-${jobId}-completion-package.zip`;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast({
+        title: "Download Started",
+        description: "Your completion package is being downloaded.",
+      });
+      
+    } catch (error) {
+      console.error('Error downloading package:', error);
+      toast({
+        variant: "destructive",
+        title: "Download Failed",
+        description: error instanceof Error ? error.message : "Failed to download package. Please try again.",
+      });
+    } finally {
+      setDownloadingPackage(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <MainLayout>
@@ -329,55 +380,80 @@ export default function JobDetailsPage() {
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            <Button 
-              onClick={() => setIsEditModalOpen(true)}
-              variant="outline"
-              className="border-orange-600 text-orange-600 hover:bg-orange-50"
-              title="Edit job details, signers, and documents"
-              size="sm"
-            >
-              <Edit3 className="h-4 w-4 mr-2" />
-              Edit
-            </Button>
-            <Button 
-              onClick={handleStartTagging} 
-              variant="outline" 
-              disabled={
-                certificateVerification?.participantStatuses?.some((p: any) => p.userRole === 'notary' && !p.canProceed) || false
-              }
-              className={`transition-colors duration-150 ${
-                certificateVerification?.participantStatuses?.some((p: any) => p.userRole === 'notary' && !p.canProceed)
-                  ? 'border-gray-400 text-gray-400 cursor-not-allowed'
-                  : 'border-blue-600 text-blue-600 hover:bg-blue-50'
-              }`}
-              title={
-                certificateVerification?.participantStatuses?.some((p: any) => p.userRole === 'notary' && !p.canProceed)
-                  ? 'Notary needs a valid digital certificate to start tagging'
-                  : 'Start tagging documents'
-              }
-              size="sm"
-            >
-              <Edit3 className="h-4 w-4 mr-2" />
-              Tag
-            </Button>
-            <Button 
-              onClick={handleStartLiveSession} 
-              disabled={Boolean(certificateVerification && !certificateVerification.canStartJob)}
-              className={`transition-colors duration-150 ${
-                certificateVerification && !certificateVerification.canStartJob
-                  ? 'bg-gray-400 hover:bg-gray-500 cursor-not-allowed'
-                  : 'bg-green-600 hover:bg-green-700'
-              }`}
-              title={
-                certificateVerification && !certificateVerification.canStartJob
-                  ? 'All participants need valid digital certificates to start'
-                  : 'Start the live signing session'
-              }
-              size="sm"
-            >
-              <Video className="h-4 w-4 mr-2" />
-              Live Session
-            </Button>
+            {/* Hide Edit, Tag, and Live Session buttons for signers when job is completed */}
+            {!(user?.role === 'signer' && job.jobStatus === 'completed') && (
+              <>
+                <Button 
+                  onClick={() => setIsEditModalOpen(true)}
+                  variant="outline"
+                  className="border-orange-600 text-orange-600 hover:bg-orange-50"
+                  title="Edit job details, signers, and documents"
+                  size="sm"
+                >
+                  <Edit3 className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+                <Button 
+                  onClick={handleStartTagging} 
+                  variant="outline" 
+                  disabled={
+                    certificateVerification?.participantStatuses?.some((p: any) => p.userRole === 'notary' && !p.canProceed) || false
+                  }
+                  className={`transition-colors duration-150 ${
+                    certificateVerification?.participantStatuses?.some((p: any) => p.userRole === 'notary' && !p.canProceed)
+                      ? 'border-gray-400 text-gray-400 cursor-not-allowed'
+                      : 'border-blue-600 text-blue-600 hover:bg-blue-50'
+                  }`}
+                  title={
+                    certificateVerification?.participantStatuses?.some((p: any) => p.userRole === 'notary' && !p.canProceed)
+                      ? 'Notary needs a valid digital certificate to start tagging'
+                      : 'Start tagging documents'
+                  }
+                  size="sm"
+                >
+                  <Edit3 className="h-4 w-4 mr-2" />
+                  Tag
+                </Button>
+                <Button 
+                  onClick={handleStartLiveSession} 
+                  disabled={Boolean(certificateVerification && !certificateVerification.canStartJob)}
+                  className={`transition-colors duration-150 ${
+                    certificateVerification && !certificateVerification.canStartJob
+                      ? 'bg-gray-400 hover:bg-gray-500 cursor-not-allowed'
+                      : 'bg-green-600 hover:bg-green-700'
+                  }`}
+                  title={
+                    certificateVerification && !certificateVerification.canStartJob
+                      ? 'All participants need valid digital certificates to start'
+                      : 'Start the live signing session'
+                  }
+                  size="sm"
+                >
+                  <Video className="h-4 w-4 mr-2" />
+                  Live Session
+                </Button>
+              </>
+            )}
+            
+            {/* Show Download Package button for completed jobs */}
+            {job.jobStatus === 'completed' && (
+              <Button 
+                onClick={handleDownloadPackage}
+                variant="outline"
+                className="border-green-600 text-green-600 hover:bg-green-50"
+                title="Download completion report and completed documents"
+                size="sm"
+                disabled={downloadingPackage}
+              >
+                {downloadingPackage ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-2" />
+                )}
+                Download Package
+              </Button>
+            )}
+            
             <Badge className={getStatusColor(job.jobStatus)}>
               {job.jobStatus}
             </Badge>

@@ -94,6 +94,7 @@ import {
   jobNotifications,
   userSignatures,
   documentTags,
+  signers,
 } from "@shared/schema";
 
 // Import enhanced upload handlers
@@ -6094,7 +6095,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if user has access to this job
-      if (req.user.role !== 'admin' && job.userId !== req.user.id && job.selectedNotary !== req.user.id.toString()) {
+      let hasAccess = false;
+      
+      // Admin access
+      if (req.user.role === 'admin') {
+        hasAccess = true;
+        console.log(`✅ DOCUMENT VERSIONS: Admin user ${req.user.id}`);
+      }
+      // Job creator access
+      else if (job.userId === req.user.id) {
+        hasAccess = true;
+        console.log(`✅ DOCUMENT VERSIONS: Job creator user ${req.user.id}`);
+      }
+      // Assigned notary access
+      else if (job.selectedNotary === req.user.id.toString()) {
+        hasAccess = true;
+        console.log(`✅ DOCUMENT VERSIONS: Assigned notary user ${req.user.id}`);
+      }
+      // Signer access - check via signers table
+      else if (req.user.role === 'signer' || req.user.role === 'witness') {
+        const [signer] = await db
+          .select()
+          .from(signers)
+          .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, req.user.email)))
+          .limit(1);
+        
+        if (signer) {
+          hasAccess = true;
+          console.log(`✅ DOCUMENT VERSIONS: Invited signer user ${req.user.id} (${req.user.email}) on job ${jobId}`);
+        }
+      }
+      
+      if (!hasAccess) {
+        console.log(`❌ DOCUMENT VERSIONS DENIED: User ${req.user.id} (${req.user.email}, role: ${req.user.role}) not authorized for job ${jobId} document versions`);
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -12504,6 +12537,65 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     } catch (error) {
       console.error('Revoke certificate error:', error);
       res.status(500).json({ error: 'Failed to revoke certificate' });
+    }
+  });
+
+  // Download job package (completion report + completed documents)
+  app.get('/api/jobs/:id/download-package', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      const job = await storage.getJob(jobId);
+      
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      // Check if user has access to this job
+      if (req.user.role !== 'admin' && job.userId !== req.user.id && job.selectedNotary !== req.user.id.toString()) {
+        // Check if user is a signer for this job
+        const signerAccess = await db.query.signers.findFirst({
+          where: and(
+            eq(signers.jobId, jobId),
+            eq(signers.userId, req.user.id)
+          )
+        });
+        
+        if (!signerAccess) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      }
+
+      // Only allow download for completed jobs
+      if (job.jobStatus !== 'completed') {
+        return res.status(400).json({ message: 'Download package is only available for completed jobs' });
+      }
+
+      // Generate download package
+      const { DownloadPackageService } = await import('./services/download-package-service');
+      const result = await DownloadPackageService.generateDownloadPackage(jobId);
+
+      if (!result.success) {
+        return res.status(500).json({ message: result.error || 'Failed to generate download package' });
+      }
+
+      // Send the file
+      res.download(result.packagePath, `job-${jobId}-completion-package.zip`, (err) => {
+        if (err) {
+          console.error('Error sending download package:', err);
+        }
+        // Clean up the temporary file
+        try {
+          if (fs.existsSync(result.packagePath)) {
+            fs.unlinkSync(result.packagePath);
+          }
+        } catch (cleanupError) {
+          console.error('Error cleaning up download package:', cleanupError);
+        }
+      });
+
+    } catch (error) {
+      console.error('Error generating download package:', error);
+      res.status(500).json({ message: 'Internal server error' });
     }
   });
 

@@ -20,7 +20,6 @@ const breadcrumbMap: Record<string, { label: string; parent?: string }> = {
   '/calendar': { label: 'Calendar' },
   '/profile': { label: 'My Profile' },
   '/payments': { label: 'Payments' },
-  '/my-logs': { label: 'My Records' },
   '/job-request': { label: 'Job Requests' },
 
   '/admin/approvals': { label: 'Approvals', parent: 'Management' },
@@ -34,12 +33,10 @@ const breadcrumbMap: Record<string, { label: string; parent?: string }> = {
   '/admin/logs': { label: 'System Logs', parent: 'Management' },
   '/user-management': { label: 'Users', parent: 'Management' },
   '/notary-management': { label: 'Notaries', parent: 'Management' },
-  // '/title-companies' now redirects to '/admin/companies'
   '/title-company-assignments': { label: 'Title Company Assignments', parent: 'Management' },
   '/logs': { label: 'System Logs', parent: 'Management' },
   '/closing-types': { label: 'Closing Types', parent: 'System' },
   '/email-settings': { label: 'Email Settings', parent: 'System' },
-  '/email-templates': { label: 'Email Templates', parent: 'System' },
 };
 
 export function MainLayout({ children, hideSidebar = false }: MainLayoutProps) {

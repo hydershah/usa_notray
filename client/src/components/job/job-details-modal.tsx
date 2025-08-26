@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import { useLocation } from 'wouter';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
 import { 
   FileText, 
   User, 
@@ -65,11 +66,13 @@ interface JobDetailsModalProps {
 export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDetailsModalProps) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { user } = useAuth();
   const [jobDocuments, setJobDocuments] = useState<any[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [completedDocuments, setCompletedDocuments] = useState<any[]>([]);
   const [loadingCompleted, setLoadingCompleted] = useState(false);
   const [isStartingLiveSession, setIsStartingLiveSession] = useState(false);
+  const [downloadingPackage, setDownloadingPackage] = useState(false);
   
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<{
@@ -300,6 +303,51 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
         return 'bg-blue-100 text-blue-800';
       default:
         return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const handleDownloadPackage = async () => {
+    setDownloadingPackage(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/jobs/${job.id}/download-package`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to download package');
+      }
+
+      // Create a blob from the response
+      const blob = await response.blob();
+      
+      // Create a download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `job-${job.id}-completion-package.zip`;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast({
+        title: "Download Started",
+        description: "Your completion package is being downloaded.",
+      });
+      
+    } catch (error) {
+      console.error('Error downloading package:', error);
+      toast({
+        variant: "destructive",
+        title: "Download Failed",
+        description: error instanceof Error ? error.message : "Failed to download package. Please try again.",
+      });
+    } finally {
+      setDownloadingPackage(false);
     }
   };
 
@@ -1439,7 +1487,9 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
             Job #{job.id} • Last updated: {new Date().toLocaleDateString()}
           </div>
           <div className="flex items-center gap-3">
-            {(job.jobStatus === 'open' || job.jobStatus === 'pending') && (
+            {/* Hide Start Tagging and Live Session buttons for signers when job is completed */}
+            {(job.jobStatus === 'open' || job.jobStatus === 'pending') && 
+             !(user?.role === 'signer' && job.jobStatus === 'completed') && (
               <>
                 <Button
                   variant="outline"
@@ -1518,6 +1568,29 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                 </Button>
               </>
             )}
+            
+            {/* Show Download Package button for completed jobs */}
+            {job.jobStatus === 'completed' && (
+              <Button
+                variant="outline"
+                onClick={handleDownloadPackage}
+                className="bg-green-50 text-green-600 border-green-300 hover:bg-green-100 transition-colors duration-150"
+                disabled={downloadingPackage}
+              >
+                {downloadingPackage ? (
+                  <>
+                    <div className="animate-spin w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full mr-2" />
+                    Downloading...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4 mr-2" />
+                    Download Package
+                  </>
+                )}
+              </Button>
+            )}
+            
             {(job.jobStatus === 'open' || job.jobStatus === 'pending') && (
               <Button
                 variant="outline"
