@@ -65,7 +65,8 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   const hasContent = tag.tagType === 'W' ? true : !!(tag.content || tag.contentData || tag.isCompleted);
   
   // Professional fixed dimensions - DocuSign style
-  const fixedDimensions = getTagDimensions(tag.tagType);
+          const store = useEditorStore.getState();
+        const fixedDimensions = store.getTagDimensions(tag.tagType) || { width: 60, height: 18 };
   const displayCoords = {
     x: Math.round(tag.coordinates.x * scaleFactor),
     // Use TOP-LEFT origin consistently across viewer and PDF

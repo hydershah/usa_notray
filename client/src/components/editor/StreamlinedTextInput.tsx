@@ -217,6 +217,20 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     const newWidth = Math.max(optimalWidth, Math.round(ref.offsetWidth / scaleFactor));
     const newHeight = Math.max(optimalHeight, Math.round(ref.offsetHeight / scaleFactor));
     
+    // Update last used text tag dimensions in the store
+    try {
+      const store = useEditorStore.getState();
+      store.setLastUsedTextTagDimensions({
+        width: newWidth,
+        height: newHeight,
+        minWidth: 24,
+        minHeight: 18
+      });
+      console.log('🔧 Updated last used text tag dimensions from StreamlinedTextInput:', { width: newWidth, height: newHeight });
+    } catch (error) {
+      console.warn('Failed to update last used text tag dimensions:', error);
+    }
+    
     onResize?.({
       x: coordinates.x,
       y: coordinates.y,
@@ -280,15 +294,13 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     }
   }, [content, isEditing]);
 
-  // Professional styling with subtle grey outline
+  // Plain styling - no blue borders or backgrounds
   const containerStyle = useMemo(() => ({
     border: isSelected 
-      ? '0.5px solid rgba(107, 114, 128, 0.5)' // Grey with 0.5 opacity
-      : hasContent 
-        ? 'none' 
-        : '0.5px solid rgba(209, 213, 219, 0.5)', // Light grey for empty state
+      ? '1px solid #d1d5db' // Light grey border for selected state only
+      : 'none', // No border for non-selected state
     borderRadius: LAYOUT.borderRadius.base,
-    backgroundColor: hasContent ? 'transparent' : '#f3f4f6',
+    backgroundColor: 'transparent', // Always transparent background
     pointerEvents: 'auto' as const,
     zIndex: isSelected ? 1000 : 100,
     padding: '0',
@@ -297,6 +309,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     transition: 'none',
     minWidth: 'fit-content',
     minHeight: 'fit-content',
+    boxShadow: 'none', // No box shadows
   }), [isSelected, hasContent, isEditing]);
 
   return (
@@ -379,26 +392,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
         )}
       </div>
       
-      {/* Selection indicator */}
-      {isSelected && (
-        <div 
-          style={{
-            position: 'absolute',
-            top: '-24px',
-            left: '0',
-            backgroundColor: PROFESSIONAL_COLORS.text,
-            color: 'white',
-            padding: '2px 8px',
-            borderRadius: '2px',
-            fontSize: '11px',
-            fontWeight: TYPOGRAPHY.fontWeight.medium,
-            whiteSpace: 'nowrap',
-            zIndex: 1001
-          }}
-        >
-          Text Field
-        </div>
-      )}
+      {/* Selection indicator removed - no more "Text Field" heading */}
     </Rnd>
   );
 };
@@ -411,15 +405,43 @@ const professionalStyles = `
 .professional-text-tag {
   font-family: ${TYPOGRAPHY.fontFamily};
   transition: none !important;
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .professional-text-tag.selected {
-  /* Subtle grey outline instead of thick blue */
+  /* Plain grey outline instead of blue */
+  border: 1px solid #d1d5db !important;
   box-shadow: none !important;
+  background: transparent !important;
 }
 
 .professional-text-tag input {
   font-family: inherit;
+  border: none !important;
+  background: transparent !important;
+  outline: none !important;
+}
+
+.professional-text-tag input:focus {
+  border: none !important;
+  background: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Optimize for smooth dragging */
+.professional-text-tag.rnd-dragging {
+  will-change: transform !important;
+  transform: translateZ(0) !important;
+  backface-visibility: hidden !important;
+  border: 1px solid #d1d5db !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 `;
 

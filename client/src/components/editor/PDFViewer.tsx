@@ -487,6 +487,18 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     
     onSave(newCoordinates);
     
+          // For text tags, update the last used dimensions in the store
+      if (tag.tagType === 'T') {
+        const store = useEditorStore.getState();
+        store.setLastUsedTextTagDimensions({
+          width: newCoordinates.width,
+          height: newCoordinates.height,
+          minWidth: 24,
+          minHeight: 18
+        });
+        console.log('🔧 Updated last used text tag dimensions:', newCoordinates);
+      }
+    
     // Save rounded font size to server and update localFontSizes
     if (onFontSizeChange && liveFontSize !== undefined) {
       onFontSizeChange(tag.id, Math.round(liveFontSize));
@@ -1300,7 +1312,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       const finalScale = scaleFactors.get(pageNumber) || 1;
       const totalScale = finalScale;
 
-      const fallbackDims = getTagDimensions(tagObj ? (tagObj as any).tagType : 'T' as any);
+                const store = useEditorStore.getState();
+          const fallbackDims = store.getTagDimensions(tagObj ? (tagObj as any).tagType : 'T') || { width: 60, height: 18 };
       const tagX = coords.x * totalScale;
       const tagY = coords.y * totalScale;
       const tagWidth = ((coords.width ?? fallbackDims.width) * totalScale) || 0;
@@ -1702,14 +1715,15 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     }
     
     // Get appropriate dimensions based on selected tag type using store
-    const { selectedTagType, getTagDimensions } = useEditorStore.getState();
+    const { selectedTagType } = useEditorStore.getState();
       
     if (!selectedTagType) {
       console.error('No tag type selected for placement');
       return;
     }
     
-    const dimensions = getTagDimensions(selectedTagType);
+    const store = useEditorStore.getState();
+    const dimensions = store.getTagDimensions(selectedTagType) || { width: 60, height: 18 };
     
     if (!dimensions) {
       console.error('Could not get dimensions for tag type:', selectedTagType);

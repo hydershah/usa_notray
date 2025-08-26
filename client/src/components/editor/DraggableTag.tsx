@@ -175,7 +175,8 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
   const hasContent = !!(tag.content || tag.contentData || tag.isCompleted);
 
   // Get dimensions - use tag constants for consistent sizing across all tag types
-  const tagDimensions = getTagDimensions(tag.tagType);
+          const store = useEditorStore.getState();
+        const tagDimensions = store.getTagDimensions(tag.tagType) || { width: 60, height: 18 };
   const displayWidth = tagDimensions.width;
   const displayHeight = tagDimensions.height;
 
@@ -219,9 +220,9 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
           ...(tag.tagType !== 'W' && { border: 'none' }),
           boxShadow: 'none',
         }),
-        // Simple border styling
+        // Simple border styling - plain grey instead of blue
         border: isSelected || isDragging
-          ? '2px solid #3b82f6' // Blue border for selected/dragging tags
+          ? '2px solid #d1d5db' // Plain grey border for selected/dragging tags
           : tag.tagType === 'W'
           ? '1px solid #d1d5db' // Always show border for whiteout tags to keep them visible
           : hasContent

@@ -1394,7 +1394,8 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         console.log('Current text inputs before placement:', textInputs);
         
         // Use professional fixed dimensions for text tags
-        const dimensions = getTagDimensions('T');
+        const store = useEditorStore.getState();
+        const dimensions = store.getTagDimensions('T') || { width: 60, height: 18 };
         
         // Use the fixed dimensions instead of coordinates from click
         const textInputCoordinates = {
@@ -1476,7 +1477,8 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
         
         // Use professional fixed dimensions for all tag types
         console.log('🔍 About to get dimensions for tagType:', selectedTagType, 'type:', typeof selectedTagType);
-        const tagDimensions = getTagDimensions(selectedTagType);
+        const store = useEditorStore.getState();
+        const tagDimensions = store.getTagDimensions(selectedTagType) || { width: 60, height: 18 };
         console.log('🔍 Retrieved tagDimensions:', tagDimensions);
         
         const professionalCoordinates = {

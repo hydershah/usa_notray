@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useEditorStore } from './useEditorStore';
-import { calculateOptimalWidth, getTagDimensions } from '@/lib/constants/tagConstants';
+import { calculateOptimalWidth } from '@/lib/constants/tagConstants';
 
 interface StreamlinedTextInput {
   id: string;
@@ -564,7 +564,8 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           // Determine endpoint: use /position when only moving (x,y),
           // and /dimensions when resizing (width/height provided)
           const current = textInputs.find(i => i.id === textInputId);
-          const fallbackDims = getTagDimensions('T' as any);
+          const store = useEditorStore.getState();
+          const fallbackDims = store.getTagDimensions('T') || { width: 60, height: 18 };
 
           const xVal = Number.isFinite(coordinates.x) ? coordinates.x : current?.coordinates.x ?? 0;
           const yVal = Number.isFinite(coordinates.y) ? coordinates.y : current?.coordinates.y ?? 0;
@@ -604,7 +605,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           console.error('❌ Failed to update text input coordinates on server:', error);
           // Don't show toast for debounced server errors during drag
         }
-      }, 200); // 200ms debounce delay - smooth but not overwhelming server
+      }, 16); // 16ms debounce delay - ultra-smooth 60fps real-time movement
 
       debouncedCoordinateUpdates.current.set(textInputId, timeout);
     } catch (error) {
@@ -766,7 +767,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           console.error('❌ Failed to update font size on server:', serverError);
           // Don't show toast for debounced server errors during drag
         }
-      }, 300); // 300ms debounce delay - smooth but not overwhelming server
+      }, 16); // 16ms debounce delay - ultra-smooth 60fps updates
 
       debouncedFontSizeUpdates.current.set(textInputId, timeout);
 
@@ -873,7 +874,8 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       }
 
       // Use stored dimensions from database, only fallback to constants for new tags
-      const tagDimensions = getTagDimensions('T');
+      const store = useEditorStore.getState();
+      const tagDimensions = store.getTagDimensions('T') || { width: 60, height: 18 };
 
       return {
         id: tag.id,

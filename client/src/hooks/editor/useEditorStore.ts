@@ -48,7 +48,10 @@ interface EditorStore {
   }>;
   
   // Custom tag dimensions (remembers resized dimensions per tag type)
-  customTagDimensions: Partial<Record<TagType, { width: number; height: number }>>;
+  customTagDimensions: Partial<Record<TagType, { width: number; height: number; minWidth: number; minHeight: number }>>;
+  
+  // Last used text tag dimensions (for dynamic default sizing)
+  lastUsedTextTagDimensions: { width: number; height: number; minWidth: number; minHeight: number };
   
   // Last used font size for new text tags (individual sizing)
   lastUsedFontSize: number;
@@ -107,8 +110,9 @@ interface EditorStore {
   deleteWhiteoutOverlay: (overlayId: string) => void;
   
   // Actions - Custom Dimensions
-  setCustomTagDimensions: (tagType: TagType, dimensions: { width: number; height: number }) => void;
-  getTagDimensions: (tagType: TagType) => { width: number; height: number } | null;
+  setCustomTagDimensions: (tagType: TagType, dimensions: { width: number; height: number; minWidth?: number; minHeight?: number }) => void;
+  setLastUsedTextTagDimensions: (dimensions: { width: number; height: number; minWidth?: number; minHeight?: number }) => void;
+  getTagDimensions: (tagType: TagType) => { width: number; height: number; minWidth: number; minHeight: number } | null;
   clearCustomTagDimensions: () => void;
   
   // Actions - Last Used Font Size
@@ -182,6 +186,23 @@ export const useEditorStore = create<EditorStore>()(
         } catch (error) {
           console.warn('Failed to load custom tag dimensions from localStorage:', error);
           return {};
+        }
+      })(),
+      
+      // Initialize last used text tag dimensions from localStorage
+      lastUsedTextTagDimensions: (() => {
+        try {
+          const saved = localStorage.getItem('editorLastUsedTextTagDimensions');
+          const parsed = saved ? JSON.parse(saved) : { width: 60, height: 18 };
+          // Ensure minWidth and minHeight are present
+          return {
+            ...parsed,
+            minWidth: parsed.minWidth || 24,
+            minHeight: parsed.minHeight || 18
+          };
+        } catch (error) {
+          console.warn('Failed to load last used text tag dimensions from localStorage:', error);
+          return { width: 60, height: 18, minWidth: 24, minHeight: 18 };
         }
       })(),
       
@@ -490,15 +511,22 @@ export const useEditorStore = create<EditorStore>()(
         console.log('🔧 Current customTagDimensions before update:', currentState.customTagDimensions);
         
         set(state => {
+          // Ensure minWidth and minHeight are present
+          const completeDimensions = {
+            ...dimensions,
+            minWidth: dimensions.minWidth || 24,
+            minHeight: dimensions.minHeight || 18
+          };
+          
           const newCustomDimensions = {
             ...state.customTagDimensions,
-            [tagType]: dimensions
+            [tagType]: completeDimensions
           };
           
           // Save to localStorage for persistence
           try {
             localStorage.setItem('editorCustomTagDimensions', JSON.stringify(newCustomDimensions));
-            console.log(`✅ Saved custom dimensions to localStorage for ${tagType}:`, dimensions);
+            console.log(`✅ Saved custom dimensions to localStorage for ${tagType}:`, completeDimensions);
           } catch (error) {
             console.warn('Failed to save custom tag dimensions to localStorage:', error);
           }
@@ -517,6 +545,26 @@ export const useEditorStore = create<EditorStore>()(
         }, 0);
       },
       
+      // Update last used text tag dimensions (for dynamic default sizing)
+      setLastUsedTextTagDimensions: (dimensions) => {
+        console.log(`🔧 setLastUsedTextTagDimensions called with:`, dimensions);
+        // Ensure minWidth and minHeight are present
+        const completeDimensions = {
+          ...dimensions,
+          minWidth: dimensions.minWidth || 24,
+          minHeight: dimensions.minHeight || 18
+        };
+        set({ lastUsedTextTagDimensions: completeDimensions });
+        
+        // Save to localStorage for persistence
+        try {
+          localStorage.setItem('editorLastUsedTextTagDimensions', JSON.stringify(completeDimensions));
+          console.log(`✅ Saved last used text tag dimensions to localStorage:`, completeDimensions);
+        } catch (error) {
+          console.warn('Failed to save last used text tag dimensions to localStorage:', error);
+        }
+      },
+      
       getTagDimensions: (tagType) => {
         // First check for custom dimensions
         const customDimensions = get().customTagDimensions[tagType];
@@ -524,7 +572,24 @@ export const useEditorStore = create<EditorStore>()(
         
         if (customDimensions) {
           console.log(`✅ Using custom dimensions for ${tagType}:`, customDimensions);
-          return customDimensions;
+          // Ensure minWidth and minHeight are present
+          return {
+            ...customDimensions,
+            minWidth: customDimensions.minWidth || 24,
+            minHeight: customDimensions.minHeight || 18
+          };
+        }
+        
+        // For text tags, use last used dimensions if available
+        if (tagType === 'T') {
+          const lastUsedDimensions = get().lastUsedTextTagDimensions;
+          console.log(`🔧 Using last used dimensions for text tag:`, lastUsedDimensions);
+          // Add minWidth and minHeight for text tags
+          return {
+            ...lastUsedDimensions,
+            minWidth: 24,
+            minHeight: 18
+          };
         }
         
         // Fall back to default dimensions from tagConstants
@@ -534,8 +599,8 @@ export const useEditorStore = create<EditorStore>()(
           return defaultDimensions;
         } catch (error) {
           console.error(`❌ Could not get dimensions for tag type: ${tagType}`, error);
-          // Return a safe fallback
-          return { width: 60, height: 18 };
+          // Return a safe fallback with minWidth and minHeight
+          return { width: 60, height: 18, minWidth: 24, minHeight: 18 };
         }
       },
       
