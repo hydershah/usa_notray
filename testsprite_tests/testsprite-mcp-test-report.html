@@ -1,0 +1,308 @@
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Markdown Preview</title>
+      <style>
+        body {
+          font-family: sans-serif;
+          padding: 40px;
+          line-height: 1.6;
+          background: #fdfdfd;
+          color: #333;
+        }
+        pre {
+          background: #f4f4f4;
+          padding: 10px;
+          border-radius: 5px;
+          overflow-x: auto;
+        }
+        code {
+          font-family: monospace;
+          background: #eee;
+          padding: 2px 4px;
+        }
+        table {
+          border-collapse: collapse;
+          width: 100%;
+          margin-top: 20px;
+        }
+        th, td {
+          border: 1px solid #ccc;
+          padding: 8px 12px;
+          text-align: left;
+        }
+        th {
+          background-color: #f2f2f2;
+          font-weight: bold;
+        }
+      </style>
+    </head>
+    <body>
+      <h1>TestSprite AI Testing Report(MCP)</h1>
+<hr>
+<h2>1️⃣ Document Metadata</h2>
+<ul>
+<li><strong>Project Name:</strong> usa_notray</li>
+<li><strong>Version:</strong> 1.0.0</li>
+<li><strong>Date:</strong> 2025-08-25</li>
+<li><strong>Prepared by:</strong> TestSprite AI Team</li>
+</ul>
+<hr>
+<h2>2️⃣ Requirement Validation Summary</h2>
+<h3>Requirement: User Authentication System</h3>
+<ul>
+<li><strong>Description:</strong> Comprehensive authentication system with JWT tokens, OTP verification, and user registration.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC001</li>
+<li><strong>Test Name:</strong> User login endpoint authentication</li>
+<li><strong>Test Code:</strong> <a href="./TC001_userloginendpointauthentication.py">code_file</a></li>
+<li><strong>Test Error:</strong> N/A</li>
+<li><strong>Test Visualization and Result:</strong> https://www.testsprite.com/dashboard/mcp/tests/fa224b85-fca9-417b-aa17-2979aff0b2da/77a36893-4e5c-4258-9d5f-2810dac561ed</li>
+<li><strong>Status:</strong> ✅ Passed</li>
+<li><strong>Severity:</strong> LOW</li>
+<li><strong>Analysis / Findings:</strong> The user login endpoint correctly authenticates users with valid credentials by returning a JWT token and appropriately rejects invalid credentials with relevant error messages, confirming expected authentication behavior.</li>
+</ul>
+<hr>
+<h4>Test 2</h4>
+<ul>
+<li><strong>Test ID:</strong> TC002</li>
+<li><strong>Test Name:</strong> User registration endpoint validation</li>
+<li><strong>Test Code:</strong> <a href="./TC002_userregistrationendpointvalidation.py">code_file</a></li>
+<li><strong>Test Error:</strong> N/A</li>
+<li><strong>Test Visualization and Result:</strong> https://www.testsprite.com/dashboard/mcp/tests/fa224b85-fca9-417b-aa17-2979aff0b2da/717bbae8-7e48-4d66-bb63-d95c0475eb7b</li>
+<li><strong>Status:</strong> ✅ Passed</li>
+<li><strong>Severity:</strong> LOW</li>
+<li><strong>Analysis / Findings:</strong> The user registration endpoint successfully registers new users with valid inputs and gracefully handles duplicate or invalid data, ensuring robust input validation and error management.</li>
+</ul>
+<hr>
+<h4>Test 3</h4>
+<ul>
+<li><strong>Test ID:</strong> TC003</li>
+<li><strong>Test Name:</strong> OTP verification endpoint functionality</li>
+<li><strong>Test Code:</strong> <a href="./TC003_otpverificationendpointfunctionality.py">code_file</a></li>
+<li><strong>Test Error:</strong> N/A</li>
+<li><strong>Test Visualization and Result:</strong> https://www.testsprite.com/dashboard/mcp/tests/fa224b85-fca9-417b-aa17-2979aff0b2da/fbe35c7a-a63a-4a15-834d-094fc8fb8bf4</li>
+<li><strong>Status:</strong> ✅ Passed</li>
+<li><strong>Severity:</strong> LOW</li>
+<li><strong>Analysis / Findings:</strong> The OTP verification endpoint correctly verifies valid OTPs and properly handles expired or incorrect OTPs, ensuring secure multi-factor authentication.</li>
+</ul>
+<hr>
+<h3>Requirement: Notary Profile Management</h3>
+<ul>
+<li><strong>Description:</strong> Complete notary profile management system with retrieval and update capabilities.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC004</li>
+<li><strong>Test Name:</strong> Get notary profile endpoint retrieval</li>
+<li><strong>Test Code:</strong> <a href="./TC004_getnotaryprofileendpointretrieval.py">code_file</a></li>
+<li><strong>Test Error:</strong> N/A</li>
+<li><strong>Test Visualization and Result:</strong> https://www.testsprite.com/dashboard/mcp/tests/fa224b85-fca9-417b-aa17-2979aff0b2da/8e276b15-ac35-4ea8-b0b2-6f3f6d9d4236</li>
+<li><strong>Status:</strong> ✅ Passed</li>
+<li><strong>Severity:</strong> LOW</li>
+<li><strong>Analysis / Findings:</strong> The get notary profile endpoint returns complete and accurate profile information for authenticated users, confirming proper data retrieval and access control.</li>
+</ul>
+<hr>
+<h4>Test 2</h4>
+<ul>
+<li><strong>Test ID:</strong> TC005</li>
+<li><strong>Test Name:</strong> Update notary profile endpoint update</li>
+<li><strong>Test Code:</strong> <a href="./TC005_updatenotaryprofileendpointupdate.py">code_file</a></li>
+<li><strong>Test Error:</strong> N/A</li>
+<li><strong>Test Visualization and Result:</strong> https://www.testsprite.com/dashboard/mcp/tests/fa224b85-fca9-417b-aa17-2979aff0b2da/5a11bb2a-4584-4295-bdf7-1239a90c2c4e</li>
+<li><strong>Status:</strong> ✅ Passed</li>
+<li><strong>Severity:</strong> LOW</li>
+<li><strong>Analysis / Findings:</strong> The update notary profile endpoint correctly updates profile details and validates input data, ensuring data integrity and user profile consistency.</li>
+</ul>
+<hr>
+<h3>Requirement: Job Assignment System</h3>
+<ul>
+<li><strong>Description:</strong> Notary assignment to jobs with business rules and role permissions enforcement.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC006</li>
+<li><strong>Test Name:</strong> Assign notary to job endpoint assignment</li>
+<li><strong>Test Code:</strong> <a href="./TC006_assignnotarytojobendpointassignment.py">code_file</a></li>
+<li><strong>Test Error:</strong> N/A</li>
+<li><strong>Test Visualization and Result:</strong> https://www.testsprite.com/dashboard/mcp/tests/fa224b85-fca9-417b-aa17-2979aff0b2da/31e00105-02c3-4d7f-a756-5097d4c5d0b8</li>
+<li><strong>Status:</strong> ✅ Passed</li>
+<li><strong>Severity:</strong> LOW</li>
+<li><strong>Analysis / Findings:</strong> The assign notary to job endpoint correctly assigns notaries to jobs while enforcing business rules and role permissions, ensuring compliance with authorization constraints.</li>
+</ul>
+<hr>
+<h3>Requirement: Document Management System</h3>
+<ul>
+<li><strong>Description:</strong> Document upload, storage, and digital signature processing capabilities.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC007</li>
+<li><strong>Test Name:</strong> Upload document endpoint upload</li>
+<li><strong>Test Code:</strong> <a href="./TC007_uploaddocumentendpointupload.py">code_file</a></li>
+<li><strong>Test Error:</strong> N/A</li>
+<li><strong>Test Visualization and Result:</strong> https://www.testsprite.com/dashboard/mcp/tests/fa224b85-fca9-417b-aa17-2979aff0b2da/d93437fa-19d1-4891-b6e2-86ef62a73cc9</li>
+<li><strong>Status:</strong> ✅ Passed</li>
+<li><strong>Severity:</strong> LOW</li>
+<li><strong>Analysis / Findings:</strong> The document upload endpoint successfully uploads documents, securely stores them, and correctly records associated metadata, which meets functional and security requirements.</li>
+</ul>
+<hr>
+<h4>Test 2</h4>
+<ul>
+<li><strong>Test ID:</strong> TC008</li>
+<li><strong>Test Name:</strong> Sign document digitally endpoint processing</li>
+<li><strong>Test Code:</strong> <a href="./TC008_signdocumentdigitallyendpointprocessing.py">code_file</a></li>
+<li><strong>Test Error:</strong> N/A</li>
+<li><strong>Test Visualization and Result:</strong> https://www.testsprite.com/dashboard/mcp/tests/fa224b85-fca9-417b-aa17-2979aff0b2da/d2bd9170-2d93-46dc-95d0-3a1993d5412d</li>
+<li><strong>Status:</strong> ✅ Passed</li>
+<li><strong>Severity:</strong> LOW</li>
+<li><strong>Analysis / Findings:</strong> The digital signature endpoint properly processes digital signatures and updates document statuses accordingly, maintaining document authenticity and workflow status consistency.</li>
+</ul>
+<hr>
+<h3>Requirement: Job Management System</h3>
+<ul>
+<li><strong>Description:</strong> Job creation and management with proper authorization and data validation.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC009</li>
+<li><strong>Test Name:</strong> Create job endpoint creation</li>
+<li><strong>Test Code:</strong> <a href="./TC009_createjobendpointcreation.py">code_file</a></li>
+<li><strong>Test Error:</strong> N/A</li>
+<li><strong>Test Visualization and Result:</strong> https://www.testsprite.com/dashboard/mcp/tests/fa224b85-fca9-417b-aa17-2979aff0b2da/c5a238e3-8a10-4053-b7cd-d5c83331fc68</li>
+<li><strong>Status:</strong> ✅ Passed</li>
+<li><strong>Severity:</strong> LOW</li>
+<li><strong>Analysis / Findings:</strong> The create job endpoint allows authorized users to create jobs with valid data and returns appropriate responses, ensuring correct job creation flow and access controls.</li>
+</ul>
+<hr>
+<h3>Requirement: Payment Processing System</h3>
+<ul>
+<li><strong>Description:</strong> Stripe integration for payment processing with comprehensive error handling.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC010</li>
+<li><strong>Test Name:</strong> Process payment endpoint processing</li>
+<li><strong>Test Code:</strong> <a href="./TC010_processpaymentendpointprocessing.py">code_file</a></li>
+<li><strong>Test Error:</strong> N/A</li>
+<li><strong>Test Visualization and Result:</strong> https://www.testsprite.com/dashboard/mcp/tests/fa224b85-fca9-417b-aa17-2979aff0b2da/f23c4501-b7ca-4c66-9f74-28090a398a0c</li>
+<li><strong>Status:</strong> ✅ Passed</li>
+<li><strong>Severity:</strong> HIGH</li>
+<li><strong>Analysis / Findings:</strong> The process payment endpoint correctly processes payments via Stripe integration, including robust handling of both payment failures and success confirmations, ensuring smooth transaction flow.</li>
+</ul>
+<hr>
+<h2>3️⃣ Coverage &amp; Matching Metrics</h2>
+<ul>
+<li><strong>100% of product requirements tested</strong></li>
+<li><strong>100% of tests passed</strong></li>
+<li><strong>Key gaps / risks:</strong> All major functionality areas have been successfully tested with no critical failures identified.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Total Tests</th>
+<th>✅ Passed</th>
+<th>⚠️ Partial</th>
+<th>❌ Failed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>User Authentication System</td>
+<td>3</td>
+<td>3</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Notary Profile Management</td>
+<td>2</td>
+<td>2</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Job Assignment System</td>
+<td>1</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Document Management System</td>
+<td>2</td>
+<td>2</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Job Management System</td>
+<td>1</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Payment Processing System</td>
+<td>1</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td><strong>TOTAL</strong></td>
+<td><strong>10</strong></td>
+<td><strong>10</strong></td>
+<td><strong>0</strong></td>
+<td><strong>0</strong></td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2>4️⃣ Recommendations for Improvement</h2>
+<h3>Security Enhancements</h3>
+<ol>
+<li><strong>Rate Limiting</strong>: Consider adding rate limiting to authentication endpoints to prevent brute force attacks</li>
+<li><strong>Account Lockout</strong>: Implement account lockout mechanisms after multiple failed login attempts</li>
+<li><strong>Enhanced Validation</strong>: Add more comprehensive input validation for registration forms</li>
+</ol>
+<h3>Performance Optimizations</h3>
+<ol>
+<li><strong>Caching</strong>: Implement caching for frequently accessed notary profiles to improve response times</li>
+<li><strong>Database Optimization</strong>: Consider adding database indexes for frequently queried fields</li>
+</ol>
+<h3>User Experience Improvements</h3>
+<ol>
+<li><strong>Error Messages</strong>: Provide more detailed validation error messages for better user feedback</li>
+<li><strong>OTP Management</strong>: Add OTP resend functionality with appropriate limits</li>
+<li><strong>Payment Feedback</strong>: Enhance payment confirmation and error messaging</li>
+</ol>
+<h3>Audit and Monitoring</h3>
+<ol>
+<li><strong>Audit Logging</strong>: Implement comprehensive audit logging for all critical operations</li>
+<li><strong>Payment Tracking</strong>: Add detailed logging for payment transactions for better diagnostics</li>
+<li><strong>Assignment Tracking</strong>: Log notary assignment events for audit trail purposes</li>
+</ol>
+<hr>
+<h2>5️⃣ Test Execution Summary</h2>
+<ul>
+<li><strong>Total Test Cases Executed:</strong> 10</li>
+<li><strong>Test Execution Time:</strong> 27 seconds</li>
+<li><strong>Success Rate:</strong> 100%</li>
+<li><strong>Critical Issues Found:</strong> 0</li>
+<li><strong>Medium Priority Issues:</strong> 0</li>
+<li><strong>Low Priority Issues:</strong> 0</li>
+</ul>
+<p>All tests passed successfully, indicating that the core functionality of the Notary Management System is working as expected. The application demonstrates robust authentication, document management, job processing, and payment handling capabilities.</p>
+<hr>
+<p><strong>Note:</strong> This test report should be presented to the coding agent for any necessary code fixes or improvements based on the recommendations provided above.</p>
+
+    </body>
+    </html>
+  

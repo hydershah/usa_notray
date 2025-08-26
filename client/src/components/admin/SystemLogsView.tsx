@@ -187,6 +187,15 @@ export function SystemLogsView() {
     }
   };
 
+  const getCategoryLabel = (category: string) => {
+    switch (category) {
+      case 'company_management':
+        return 'Title Company Management';
+      default:
+        return category.replace('_', ' ');
+    }
+  };
+
   const getCategoryIcon = (category: string) => {
     switch (category) {
       case 'authentication':
@@ -347,7 +356,7 @@ export function SystemLogsView() {
                       <SelectItem value="authentication">Authentication</SelectItem>
                       <SelectItem value="job_management">Job Management</SelectItem>
                       <SelectItem value="user_management">User Management</SelectItem>
-                      <SelectItem value="company_management">Company Management</SelectItem>
+                      <SelectItem value="company_management">Title Company Management</SelectItem>
                       <SelectItem value="document_management">Document Management</SelectItem>
                       <SelectItem value="payment">Payment</SelectItem>
                       <SelectItem value="system_admin">System Admin</SelectItem>
@@ -435,8 +444,8 @@ export function SystemLogsView() {
                           <TableCell>
                             <div className="flex items-center gap-2">
                               {getCategoryIcon(log.actionCategory)}
-                              <span className="text-sm capitalize">
-                                {log.actionCategory.replace('_', ' ')}
+                              <span className="text-sm">
+                                {getCategoryLabel(log.actionCategory)}
                               </span>
                             </div>
                           </TableCell>
@@ -495,7 +504,7 @@ export function SystemLogsView() {
                                       </div>
                                       <div>
                                         <label className="text-sm font-medium text-gray-600">Category</label>
-                                        <p className="text-sm capitalize">{selectedLog.actionCategory.replace('_', ' ')}</p>
+                                        <p className="text-sm">{getCategoryLabel(selectedLog.actionCategory)}</p>
                                       </div>
                                     </div>
                                     

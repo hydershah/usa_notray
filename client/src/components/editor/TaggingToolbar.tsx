@@ -265,6 +265,37 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
         throw new Error('No session ID available');
       }
       
+      // Check if this is a live signing session by checking if we have a job ID
+      const jobIdMatch = sessionId.match(/^\d+$/) || window.location.pathname.match(/\/jobs\/(\d+)/);
+      const jobId = jobIdMatch ? (sessionId.match(/^\d+$/) ? sessionId : jobIdMatch[1]) : null;
+      
+      // For live signing sessions, check recording status
+      if (jobId) {
+        try {
+          const recordingResponse = await fetch(`/api/jobs/${jobId}/recording-details`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          });
+          
+          if (recordingResponse.ok) {
+            const recordingData = await recordingResponse.json();
+            if (!recordingData.fileUrl && !recordingData.metadata?.recordingId) {
+              const confirmCompletion = window.confirm(
+                '⚠️ Recording Warning\n\nNo session recording was detected for this job. For compliance purposes, live signing sessions should be recorded.\n\nDo you want to complete the session anyway?'
+              );
+              if (!confirmCompletion) {
+                setIsCompleting(false);
+                return;
+              }
+            }
+          }
+        } catch (recordingError) {
+          console.warn('Could not check recording status:', recordingError);
+          // Continue with completion - don't block for recording check failures
+        }
+      }
+      
       const response = await fetch(`/api/editor/session/${sessionId}/complete`, {
         method: 'POST',
         headers: {

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/main-layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -294,72 +294,15 @@ export default function EnhancedCompanyManagement() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Company Management</h1>
-            <p className="text-gray-600">Manage company accounts, users, and settings</p>
+            <h1 className="text-2xl font-bold text-gray-900">Title Company Management</h1>
+            <p className="text-gray-600">Manage title company accounts, users, and settings</p>
           </div>
           <div className="flex gap-2 mt-4 sm:mt-0">
             <Button onClick={() => setIsCreateOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />
-              Add Company
+              Add Title Company
             </Button>
           </div>
-        </div>
-
-        {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center">
-                <Building2 className="h-8 w-8 text-blue-500" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Total Companies</p>
-                  <p className="text-2xl font-bold text-gray-900">{companies.length}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center">
-                <CheckCircle className="h-8 w-8 text-green-500" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Active</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {companies.filter(c => c.status === 'active').length}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center">
-                <Clock className="h-8 w-8 text-yellow-500" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Inactive</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {companies.filter(c => c.status === 'inactive').length}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center">
-                <AlertCircle className="h-8 w-8 text-red-500" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Suspended</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {companies.filter(c => c.status === 'suspended').length}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </div>
 
         {/* Filters */}
@@ -368,7 +311,7 @@ export default function EnhancedCompanyManagement() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
               <Input
-                placeholder="Search companies..."
+                placeholder="Search title companies..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -392,32 +335,29 @@ export default function EnhancedCompanyManagement() {
         {/* Companies Table */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5" />
-              Companies
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Title Companies</CardTitle>
+                <CardDescription>
+                  {filteredCompanies.length === 0 ? (
+                    <span>No title companies found. Create your first title company.</span>
+                  ) : (
+                    <span>Showing {filteredCompanies.length} of {companies.length} title companies</span>
+                  )}
+                </CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              {filteredCompanies.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  No companies found. Create your first company.
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Company Name</TableHead>
-                      <TableHead>Contact</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Payment Method</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredCompanies.map((company) => (
+            {filteredCompanies.length === 0 ? (
+              <div className="text-center py-8">
+                <Building2 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No title companies found</h3>
+                <p className="text-gray-600">Create your first title company to get started.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredCompanies.map((company) => (
                       <TableRow key={company.id}>
                         <TableCell>
                           <div>

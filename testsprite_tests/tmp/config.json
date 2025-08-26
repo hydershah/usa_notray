@@ -1,0 +1,17 @@
+{
+  "status": "commited",
+  "type": "backend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:3000",
+  "backendAuthType": "public",
+  "executionArgs": {
+    "projectName": "usa_notray",
+    "projectPath": "/Users/hyder/usa_notray",
+    "testIds": [],
+    "additionalInstruction": "Please create specific tests for the tagging and signing functionality. Test these specific endpoints: POST /api/editor/session/:sessionId/place-text-tag, PUT /api/editor/session/:sessionId/text-tag/:tagId, GET /api/editor/session/:sessionId/text-tags, POST /api/document/sign, GET /api/digital-signatures/job/:jobId, POST /api/digital-signatures/verify, POST /api/text/process, GET /api/text/tags, POST /api/text/tags. Focus on testing text tag placement, coordinate validation, font management, digital signature creation, certificate verification, and the complete tagging-to-signing workflow.",
+    "envs": {
+      "API_KEY": "sk-user-1SM9IeXixrHeBZ9kJdsIQdnKx5P9lRvFErdXT55sdYQHbzF-wQnhYhgi6405-LdvD0QOyBezwYvETtSlt-dVUowgPPiEzJCd4-Wnmsohi928Dc6vlkTstcXLJttIqww-8yk"
+    }
+  },
+  "proxy": "http://8fa50b29-44fd-494f-89b4-32387af1b52a:I53LU4b6pY5a0vGrOBCwlPk6GoQzCnOk@tun.testsprite.com:8080"
+}

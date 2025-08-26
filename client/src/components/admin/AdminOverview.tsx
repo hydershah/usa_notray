@@ -327,7 +327,7 @@ export function AdminOverview() {
           color="green"
         />
         <StatCard
-          title="Total Companies"
+          title="Total Title Companies"
           value={stats.totalCompanies}
           icon={Building2}
           description="Registered title companies"
@@ -403,7 +403,7 @@ export function AdminOverview() {
                 { label: 'Job Request Management', icon: FileText, path: '/admin/job-requests', count: stats.pendingJobRequests },
                 { label: 'Manage Users', icon: Users, path: '/admin/users', count: stats.totalUsers },
                 { label: 'Notary Management', icon: Award, path: '/admin/notaries', count: stats.activeNotaries },
-                { label: 'Company Management', icon: Building2, path: '/admin/companies', count: stats.totalCompanies },
+                { label: 'Title Company Management', icon: Building2, path: '/admin/companies', count: stats.totalCompanies },
                 { label: 'System Logs', icon: Activity, path: '/admin/logs', count: null }
               ].map((action, index) => (
                 <Button

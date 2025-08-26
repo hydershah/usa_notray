@@ -192,7 +192,7 @@ export function NotificationBar({ className }: NotificationBarProps) {
                   priority: 'medium',
                   path: '/admin/companies?status=pending',
                   icon: Building,
-                  description: 'Companies waiting for approval'
+                  description: 'Title companies waiting for approval'
                 });
               }
             }

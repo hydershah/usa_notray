@@ -23,7 +23,8 @@ import {
   UserCheck,
   PenTool,
   CheckCircle,
-  Award
+  Award,
+  Building2
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -203,8 +204,8 @@ const menuItems: MenuItem[] = [
       },
       {
         id: 'title-companies',
-        label: 'Companies',
-        icon: Building,
+        label: 'Title Companies',
+        icon: Building2,
         path: '/admin/companies',
         roles: ['admin'],
         description: 'Title company management'

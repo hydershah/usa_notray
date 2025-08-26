@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MainLayout } from '@/components/layout/main-layout';
 import { Button } from '@/components/ui/button';
@@ -75,15 +75,27 @@ import {
   Eye,
   Download,
   FileText,
-  Users
+  Users,
+  UserCheck
 } from 'lucide-react';
-import { type Company } from '@shared/types';
+import { type Company as BaseCompany } from '@shared/types';
+type UICompany = BaseCompany & {
+  companyName?: string;
+  primaryUserName?: string;
+  email?: string;
+  phoneNumber?: string;
+  paymentMethod?: string;
+};
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { TitleCompanyNotaryAssignments } from '@/components/admin/title-company-notary-assignments';
 
 export default function TitleCompanies() {
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
+  const [selectedCompany, setSelectedCompany] = useState<UICompany | null>(null);
+  const [isAssignmentsOpen, setIsAssignmentsOpen] = useState(false);
+  const [assignCompany, setAssignCompany] = useState<UICompany | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [companyToDelete, setCompanyToDelete] = useState<Company | null>(null);
+  const [companyToDelete, setCompanyToDelete] = useState<UICompany | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [paymentFilter, setPaymentFilter] = useState('all');
@@ -98,7 +110,17 @@ export default function TitleCompanies() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: companies = [], isLoading } = useQuery<Company[]>({
+  // Open the create form directly when arriving with ?action=add
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if ((params.get('action') || '').toLowerCase() === 'add') {
+        setIsFormOpen(true);
+      }
+    } catch {}
+  }, []);
+
+  const { data: companies = [], isLoading } = useQuery<UICompany[]>({
     queryKey: ['/api/companies'],
     staleTime: 0, // Always refetch
     gcTime: 0, // Don't cache
@@ -282,14 +304,19 @@ export default function TitleCompanies() {
     setIsFormOpen(true);
   };
 
-  const handleEditCompany = (company: Company) => {
+  const handleEditCompany = (company: UICompany) => {
     setSelectedCompany(company);
     setIsFormOpen(true);
   };
 
-  const handleDeleteCompany = (company: Company) => {
+  const handleDeleteCompany = (company: UICompany) => {
     setCompanyToDelete(company);
     setIsDeleteDialogOpen(true);
+  };
+
+  const handleManageAssignments = (company: UICompany) => {
+    setAssignCompany(company);
+    setIsAssignmentsOpen(true);
   };
 
   const handleFormSubmit = (data: any) => {
@@ -356,7 +383,7 @@ export default function TitleCompanies() {
     );
   };
 
-  const getCompanyCompletion = (company: Company): number => {
+  const getCompanyCompletion = (company: UICompany): number => {
     let completion = 0;
     if (company.companyName) completion += 20;
     if (company.contactName) completion += 20;
@@ -657,11 +684,15 @@ export default function TitleCompanies() {
                                 <Edit className="h-4 w-4 mr-2" />
                                 Edit Company
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => navigator.clipboard.writeText(company.companyName)}>
+                              <DropdownMenuItem onClick={() => handleManageAssignments(company)}>
+                                <UserCheck className="h-4 w-4 mr-2" />
+                                Manage Assignments
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => navigator.clipboard.writeText(company.companyName ?? '')}>
                                 <Copy className="h-4 w-4 mr-2" />
                                 Copy Name
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => navigator.clipboard.writeText(company.email)}>
+                              <DropdownMenuItem onClick={() => navigator.clipboard.writeText(company.email ?? '')}>
                                 <Mail className="h-4 w-4 mr-2" />
                                 Copy Email
                               </DropdownMenuItem>
@@ -808,6 +839,22 @@ export default function TitleCompanies() {
           </AlertDialogContent>
         </AlertDialog>
       </TooltipProvider>
+      {/* Assignments Dialog */}
+      <Dialog open={isAssignmentsOpen} onOpenChange={setIsAssignmentsOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Manage Notary Assignments</DialogTitle>
+            <DialogDescription>
+              Assign or update preferred notaries for {assignCompany?.companyName ?? ''}.
+            </DialogDescription>
+          </DialogHeader>
+          {assignCompany && (
+            <div className="mt-2">
+              <TitleCompanyNotaryAssignments embedded company={{ id: assignCompany.id, companyName: assignCompany.companyName ?? '' }} />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 }

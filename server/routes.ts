@@ -10190,57 +10190,11 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           console.log(`  - Total tags: ${tags.length}`);
           console.log(`  - Completed tags: ${tags.filter(t => t.isCompleted).length}`);
           
-          // For tagging sessions: Allow completion regardless of tag completion status
-          // For live signing sessions: Only allow completion if users have filled their assigned tags
-          if (session.sessionType === 'notary') {
-            // Live signing session - check if tags have real content from users
-            const incompleteTags = tags.filter(tag => !tag.isCompleted);
-            
-            if (incompleteTags.length > 0 && !force) {
-              // Get user information for better error messaging
-              const userIds = [...new Set(incompleteTags.map(t => t.assignedUserId))];
-              const usersData = await db
-                .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
-                .from(users)
-                .where(inArray(users.id, userIds));
-              
-              const userMap = new Map(usersData.map(u => [u.id, `${u.firstName} ${u.lastName}`]));
-              
-              const detailedIncompleteTags = incompleteTags.map(t => ({
-                id: t.id,
-                type: t.tagType,
-                assignedUserId: t.assignedUserId,
-                assignedUserName: userMap.get(t.assignedUserId) || 'Unknown User',
-                hasContent: !!(t.content && t.content.trim()),
-                coordinates: t.coordinates,
-                note: 'User needs to click this tag to fill it with real content'
-              }));
-              
-              console.log(`❌ Live signing session completion blocked - users haven't filled all tags:`, detailedIncompleteTags);
-              
-              // Group tags by assigned user for clearer messaging
-              const tagsByUser = detailedIncompleteTags.reduce((acc, tag) => {
-                const userName = tag.assignedUserName;
-                if (!acc[userName]) acc[userName] = [];
-                acc[userName].push(tag);
-                return acc;
-              }, {} as Record<string, typeof detailedIncompleteTags>);
-              
-              const unfilledSummary = Object.entries(tagsByUser)
-                .map(([userName, userTags]) => 
-                  `${userName}: ${userTags.length} tag(s) - ${userTags.map(t => `${t.type} (#${t.id})`).join(', ')}`
-                ).join('; ');
-              
-              return res.status(400).json({
-                success: false,
-                message: `Cannot complete session: ${incompleteTags.length} tags haven't been filled by users. ${unfilledSummary}`,
-                error: 'incomplete_user_tags',
-                canForce: true,
-                incompleteTags: detailedIncompleteTags,
-                unfilledSummary,
-                instructions: 'Each user must click on their assigned unfilled tags to auto-fill them with profile data, or manually enter content for text tags.'
-              });
-            }
+          // Allow completion regardless of tag completion status for all session types
+          // Sessions can now complete even if tags are not filled
+          const incompleteTags = tags.filter(tag => !tag.isCompleted);
+          if (incompleteTags.length > 0) {
+            console.log(`ℹ️ Session completing with ${incompleteTags.length} unfilled tags - this is now allowed`);
           }
           
           // For tagging sessions, no validation needed - tags are just markers
@@ -11651,27 +11605,10 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         });
       }
       
-      // Check if there are any tags placed
-      if (tags.length === 0 && !force) {
-        return res.status(400).json({ 
-          message: 'Cannot complete session: No tags have been placed',
-          error: 'no_tags_placed',
-          canForce: true
-        });
-      }
-      
-      // Optional: Check for minimum required tags (can be customized based on business rules)
-      const participantCount = (await SessionService.getSessionParticipants(session.jobId)).length;
-      const minimumTags = Math.max(1, participantCount); // At least one tag per participant
-      
-      if (tags.length < minimumTags && !force) {
-        return res.status(400).json({
-          message: `Recommended minimum of ${minimumTags} tags not met (${tags.length} placed)`,
-          error: 'insufficient_tags',
-          canForce: true,
-          placed: tags.length,
-          recommended: minimumTags
-        });
+      // Allow completion regardless of tag count
+      console.log(`ℹ️ Session completing with ${tags.length} tags - validation checks removed`);
+      if (tags.length === 0) {
+        console.log(`⚠️ Session completing with no tags placed - this is now allowed`);
       }
       
       // For tagging sessions: Save tagged document configuration (NOT final PDF yet)
@@ -11701,19 +11638,10 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           console.log(`✍️ Generating final PDF for live signing session: ${sessionId}`);
           console.log(`📊 Tags status: ${tags.filter(t => t.isCompleted).length}/${tags.length} completed`);
           
-          // Check if all required tags are completed
-          const incompleteTags = tags.filter(tag => !tag.isCompleted && tag.isRequired !== false);
-          if (incompleteTags.length > 0 && !force) {
-            return res.status(400).json({
-              message: `Cannot complete session: ${incompleteTags.length} required tags are not completed`,
-              error: 'incomplete_required_tags',
-              canForce: true,
-              incompleteTags: incompleteTags.map(t => ({
-                id: t.id,
-                type: t.tagType,
-                assignedUser: t.assignedUserId
-              }))
-            });
+          // Allow completion even if required tags are incomplete
+          const incompleteTags = tags.filter(tag => !tag.isCompleted);
+          if (incompleteTags.length > 0) {
+            console.log(`ℹ️ Generating PDF with ${incompleteTags.length} unfilled tags - this is now allowed`);
           }
           
           const { PDFProcessorService } = await import('./services/pdf-processor.service');

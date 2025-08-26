@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TC001",
+    "title": "userloginendpointauthentication",
+    "description": "Verify that the user login endpoint correctly authenticates users with valid credentials and returns a JWT token, and rejects invalid credentials with appropriate error messages."
+  },
+  {
+    "id": "TC002",
+    "title": "userregistrationendpointvalidation",
+    "description": "Test the user registration endpoint to ensure it successfully registers new users with valid data and handles duplicate or invalid input gracefully."
+  },
+  {
+    "id": "TC003",
+    "title": "otpverificationendpointfunctionality",
+    "description": "Validate the OTP verification endpoint to confirm it correctly verifies one-time passwords for multi-factor authentication and handles expired or incorrect OTPs properly."
+  },
+  {
+    "id": "TC004",
+    "title": "getnotaryprofileendpointretrieval",
+    "description": "Check that the get notary profile endpoint returns accurate and complete notary profile information for authenticated users."
+  },
+  {
+    "id": "TC005",
+    "title": "updatenotaryprofileendpointupdate",
+    "description": "Test the update notary profile endpoint to ensure it correctly updates notary profile details and validates input data."
+  },
+  {
+    "id": "TC006",
+    "title": "assignnotarytojobendpointassignment",
+    "description": "Verify that the assign notary to job endpoint assigns a notary to a job correctly, respecting business rules and role permissions."
+  },
+  {
+    "id": "TC007",
+    "title": "uploaddocumentendpointupload",
+    "description": "Test the document upload endpoint to ensure documents are uploaded successfully, stored securely, and metadata is correctly recorded."
+  },
+  {
+    "id": "TC008",
+    "title": "signdocumentdigitallyendpointprocessing",
+    "description": "Validate the digital signature endpoint to confirm it processes digital signatures correctly and updates document status accordingly."
+  },
+  {
+    "id": "TC009",
+    "title": "createjobendpointcreation",
+    "description": "Verify that the create job endpoint allows authorized users to create new jobs with valid data and returns appropriate success responses."
+  },
+  {
+    "id": "TC010",
+    "title": "processpaymentendpointprocessing",
+    "description": "Test the process payment endpoint to ensure payments are processed correctly through Stripe integration, including handling of payment failures and success confirmations."
+  }
+]

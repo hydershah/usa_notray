@@ -82,10 +82,15 @@ export const VideoControlPanel: React.FC<VideoControlPanelProps> = ({
           </div>
           
           {/* Recording Status */}
-          {isRecording && (
-            <div className="flex items-center space-x-1 text-red-400">
-              <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-              <span className="font-medium text-xs hidden sm:inline">REC</span>
+          {isRecording ? (
+            <div className="flex items-center space-x-1 bg-red-600 px-2 py-1 rounded text-white">
+              <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+              <span className="font-bold text-xs">RECORDING</span>
+            </div>
+          ) : canRecord && (
+            <div className="flex items-center space-x-1 bg-gray-600 px-2 py-1 rounded text-gray-300">
+              <div className="w-2 h-2 bg-gray-400 rounded-full" />
+              <span className="text-xs">NOT RECORDING</span>
             </div>
           )}
           

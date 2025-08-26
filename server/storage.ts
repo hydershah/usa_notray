@@ -20,7 +20,6 @@ import {
   signers,
   auditTrail,
   notaryLogEntries,
-  documentTags,
   documentVersions,
   passwordResetTokens,
   jobNotifications,
@@ -33,6 +32,8 @@ import {
   titleCompanyNotaryAssignments,
   legacyTitleCompanyNotaryAssignments,
   userSignatures,
+  documentTags,
+  editorSessions,
   InsertUser,
   InsertTitleCompany,
   InsertJob,
@@ -309,6 +310,13 @@ export class DatabaseStorage implements IStorage {
         // For jobs, we'll set userId to NULL to preserve job history
         // In production, you might want to transfer to an admin user instead
         await tx.update(jobs).set({ userId: null }).where(eq(jobs.userId, id));
+
+        // Get the admin user to reassign jobs to avoid constraint violations
+        const [adminUser] = await tx.select().from(users).where(eq(users.role, 'admin')).limit(1);
+        const adminUserId = adminUser?.id || 1; // fallback to user ID 1
+
+        // Reassign jobs where this user is assigned as notary to admin user
+        await tx.update(jobs).set({ notaryId: adminUserId }).where(eq(jobs.notaryId, id));
         
         // 2. Handle account transactions - preserve for audit, set user_id to NULL
         await tx.update(accountTransactions).set({ userId: null }).where(eq(accountTransactions.userId, id));
@@ -334,6 +342,9 @@ export class DatabaseStorage implements IStorage {
         
         // 8. Handle signers table
         await tx.delete(signers).where(eq(signers.userId, id));
+
+        // 8.a. Handle job participants (remove user from any job participation)
+        await tx.delete(jobParticipants).where(eq(jobParticipants.userId, id));
         
         // 9. Handle job notifications
         await tx.delete(jobNotifications).where(eq(jobNotifications.recipientId, id));
@@ -346,6 +357,19 @@ export class DatabaseStorage implements IStorage {
         await tx.delete(calendarEvents).where(eq(calendarEvents.notaryId, id));
         await tx.delete(notaryAssignmentLog).where(eq(notaryAssignmentLog.notaryId, id));
         await tx.delete(notaryApprovalQueue).where(eq(notaryApprovalQueue.notaryId, id));
+
+        // 10.a. Remove any notary log entries for this user
+        await tx.delete(notaryLogEntries).where(eq(notaryLogEntries.notaryId, id));
+
+        // 10.b. Remove saved user signatures
+        await tx.delete(userSignatures).where(eq(userSignatures.userId, id));
+
+        // 10.c. Handle document tags - this table exists and needs cleanup
+        await tx.delete(documentTags).where(eq(documentTags.assignedUserId, id));
+        await tx.delete(documentTags).where(eq(documentTags.createdBy, id));
+
+        // 10.d. Handle editor sessions - this table exists and needs cleanup
+        await tx.delete(editorSessions).where(eq(editorSessions.activeUserId, id));
         
         // 11. Handle verification attempts
         await tx.delete(userVerificationAttempts).where(eq(userVerificationAttempts.userId, id));
@@ -374,7 +398,15 @@ export class DatabaseStorage implements IStorage {
       return true;
     } catch (error) {
       console.error('Error deleting user:', error);
-      throw new Error(`Failed to delete user: ${error.message}`);
+      console.error('Error details:', {
+        message: (error as any)?.message,
+        stack: (error as any)?.stack,
+        code: (error as any)?.code,
+        constraint: (error as any)?.constraint,
+        table: (error as any)?.table,
+        column: (error as any)?.column
+      });
+      throw new Error(`Failed to delete user: ${(error as any)?.message || 'Unknown error'}`);
     }
   }
 

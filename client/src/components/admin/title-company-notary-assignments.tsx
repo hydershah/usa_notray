@@ -92,7 +92,7 @@ interface NotaryAssignment {
   notaryIsActive: boolean;
 }
 
-export function TitleCompanyNotaryAssignments() {
+export function TitleCompanyNotaryAssignments({ embedded = false, company }: { embedded?: boolean; company?: { id: number; companyName: string } }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -114,6 +114,7 @@ export function TitleCompanyNotaryAssignments() {
   // Fetch title companies
   const { data: companies = [], isLoading: companiesLoading } = useQuery<TitleCompany[]>({
     queryKey: ['/api/companies'],
+    enabled: !embedded,
   });
 
   // Fetch available notaries
@@ -126,16 +127,31 @@ export function TitleCompanyNotaryAssignments() {
   });
 
   // Fetch assignments for selected company
+  const currentCompanyId = embedded && company ? company.id : selectedCompany?.id;
   const { data: assignments = [], isLoading: assignmentsLoading, refetch: refetchAssignments } = useQuery<NotaryAssignment[]>({
-    queryKey: ['/api/title-companies', selectedCompany?.id, 'notary-assignments'],
+    queryKey: ['/api/title-companies', currentCompanyId, 'notary-assignments'],
     queryFn: async () => {
-      if (!selectedCompany) return [];
-      const response = await apiRequest('GET', `/api/title-companies/${selectedCompany.id}/notary-assignments`);
+      if (!currentCompanyId) return [];
+      const response = await apiRequest('GET', `/api/title-companies/${currentCompanyId}/notary-assignments`);
       const result = await response.json();
       return result.data || [];
     },
-    enabled: !!selectedCompany
+    enabled: !!currentCompanyId
   });
+
+  // Sync selected company when embedded
+  useEffect(() => {
+    if (embedded && company) {
+      setSelectedCompany({
+        id: company.id,
+        companyName: company.companyName,
+        email: '',
+        city: '',
+        state: '',
+        status: 'active'
+      } as TitleCompany);
+    }
+  }, [embedded, company]);
 
   // Filter companies based on search
   const filteredCompanies = companies.filter(company => {
@@ -154,6 +170,17 @@ export function TitleCompanyNotaryAssignments() {
     notary.notaryType === 'contractor' &&
     !assignments.some(assignment => assignment.notaryId === notary.id)
   );
+
+  // Debug information - remove in production
+  console.log('Debug notary assignment:', {
+    totalNotaries: notaries.length,
+    activeNotaries: notaries.filter(n => n.isActive).length,
+    contractorNotaries: notaries.filter(n => n.notaryType === 'contractor').length,
+    activeContractors: notaries.filter(n => n.isActive && n.notaryType === 'contractor').length,
+    availableNotaries: availableNotaries.length,
+    currentAssignments: assignments.length,
+    notaryTypes: notaries.map(n => ({ id: n.id, name: `${n.firstName} ${n.lastName}`, type: n.notaryType, active: n.isActive }))
+  });
 
   // Mutations
   const assignNotaryMutation = useMutation({
@@ -208,10 +235,15 @@ export function TitleCompanyNotaryAssignments() {
 
   const removeAssignmentMutation = useMutation({
     mutationFn: async (data: { companyId: number; assignmentId: number }) => {
+      console.log('🚀 Making DELETE request:', `/api/title-companies/${data.companyId}/notary-assignments/${data.assignmentId}`);
       const response = await apiRequest('DELETE', `/api/title-companies/${data.companyId}/notary-assignments/${data.assignmentId}`);
-      return response.json();
+      console.log('📡 DELETE response status:', response.status);
+      const result = await response.json();
+      console.log('📡 DELETE response data:', result);
+      return result;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log('✅ Delete successful:', data);
       toast({
         title: "Success",
         description: "Notary assignment removed successfully",
@@ -221,6 +253,7 @@ export function TitleCompanyNotaryAssignments() {
       setAssignmentToDelete(null);
     },
     onError: (error: any) => {
+      console.log('❌ Delete failed:', error);
       toast({
         variant: "destructive",
         title: "Error",
@@ -238,7 +271,8 @@ export function TitleCompanyNotaryAssignments() {
   };
 
   const handleAssignNotary = () => {
-    if (!selectedCompany || !assignmentForm.notaryId) {
+    const companyId = embedded && company ? company.id : selectedCompany?.id;
+    if (!companyId || !assignmentForm.notaryId) {
       toast({
         variant: "destructive",
         title: "Error",
@@ -248,7 +282,7 @@ export function TitleCompanyNotaryAssignments() {
     }
 
     assignNotaryMutation.mutate({
-      companyId: selectedCompany.id,
+      companyId: companyId,
       notaryId: parseInt(assignmentForm.notaryId),
       isDefault: assignmentForm.isDefault,
       notes: assignmentForm.notes
@@ -256,10 +290,11 @@ export function TitleCompanyNotaryAssignments() {
   };
 
   const handleToggleDefault = (assignment: NotaryAssignment) => {
-    if (!selectedCompany) return;
+    const companyId = embedded && company ? company.id : selectedCompany?.id;
+    if (!companyId) return;
     
     updateDefaultMutation.mutate({
-      companyId: selectedCompany.id,
+      companyId: companyId,
       assignmentId: assignment.id,
       isDefault: !assignment.isDefault
     });
@@ -271,99 +306,114 @@ export function TitleCompanyNotaryAssignments() {
   };
 
   const confirmRemoveAssignment = () => {
-    if (!selectedCompany || !assignmentToDelete) return;
+    if (!assignmentToDelete) {
+      console.log('❌ No assignment to delete');
+      return;
+    }
+    
+    const companyId = embedded && company ? company.id : selectedCompany?.id;
+    if (!companyId) {
+      console.log('❌ No company ID found', { embedded, company, selectedCompany });
+      return;
+    }
+    
+    console.log('🗑️ Deleting assignment:', { companyId, assignmentId: assignmentToDelete.id });
     
     removeAssignmentMutation.mutate({
-      companyId: selectedCompany.id,
+      companyId: companyId,
       assignmentId: assignmentToDelete.id
     });
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Title Company Notary Assignments</h2>
-          <p className="text-gray-600 mt-1">Manage preferred notary assignments for title companies</p>
+      {!embedded && (
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">Title Company Notary Assignments</h2>
+            <p className="text-gray-600 mt-1">Manage preferred notary assignments for title companies</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['/api/companies'] })}
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => queryClient.invalidateQueries({ queryKey: ['/api/companies'] })}
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
-        </div>
-      </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className={embedded ? 'grid grid-cols-1' : 'grid grid-cols-1 lg:grid-cols-2 gap-6'}>
         {/* Title Companies List */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building className="h-5 w-5" />
-              Title Companies
-            </CardTitle>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                <Input
-                  placeholder="Search companies..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-32">
-                  <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="max-h-96 overflow-y-auto">
-              {companiesLoading ? (
-                <div className="p-4 text-center text-gray-500">Loading companies...</div>
-              ) : filteredCompanies.length === 0 ? (
-                <div className="p-4 text-center text-gray-500">No companies found</div>
-              ) : (
-                <div className="space-y-1">
-                  {filteredCompanies.map((company) => (
-                    <div
-                      key={company.id}
-                      className={`p-4 cursor-pointer hover:bg-gray-50 border-l-4 transition-colors ${
-                        selectedCompany?.id === company.id 
-                          ? 'bg-blue-50 border-l-blue-500' 
-                          : 'border-l-transparent'
-                      }`}
-                      onClick={() => setSelectedCompany(company)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="font-medium text-gray-900">{company.companyName}</h4>
-                          <p className="text-sm text-gray-600">{company.email}</p>
-                          <p className="text-xs text-gray-500">{company.city}, {company.state}</p>
-                        </div>
-                        <Badge variant={company.status === 'active' ? 'default' : 'secondary'}>
-                          {company.status}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
+        {!embedded && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building className="h-5 w-5" />
+                Title Companies
+              </CardTitle>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Input
+                    placeholder="Search companies..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
                 </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-32">
+                    <Filter className="h-4 w-4 mr-2" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="max-h-96 overflow-y-auto">
+                {companiesLoading ? (
+                  <div className="p-4 text-center text-gray-500">Loading companies...</div>
+                ) : filteredCompanies.length === 0 ? (
+                  <div className="p-4 text-center text-gray-500">No companies found</div>
+                ) : (
+                  <div className="space-y-1">
+                    {filteredCompanies.map((company) => (
+                      <div
+                        key={company.id}
+                        className={`p-4 cursor-pointer hover:bg-gray-50 border-l-4 transition-colors ${
+                          selectedCompany?.id === company.id 
+                            ? 'bg-blue-50 border-l-blue-500' 
+                            : 'border-l-transparent'
+                        }`}
+                        onClick={() => setSelectedCompany(company)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="font-medium text-gray-900">{company.companyName}</h4>
+                            <p className="text-sm text-gray-600">{company.email}</p>
+                            <p className="text-xs text-gray-500">{company.city}, {company.state}</p>
+                          </div>
+                          <Badge variant={company.status === 'active' ? 'default' : 'secondary'}>
+                            {company.status}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Notary Assignments */}
         <Card>
@@ -403,6 +453,17 @@ export function TitleCompanyNotaryAssignments() {
                 <UserCheck className="h-12 w-12 mx-auto text-gray-300 mb-3" />
                 <p>No notaries assigned to this company</p>
                 <p className="text-sm">Click "Assign Notary" to get started</p>
+                {availableNotaries.length === 0 && (
+                  <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-800">
+                    <p className="text-sm font-medium">No Available Notaries</p>
+                    <p className="text-xs mt-1">
+                      Total notaries: {notaries.length} | 
+                      Active: {notaries.filter(n => n.isActive).length} | 
+                      Contractors: {notaries.filter(n => n.notaryType === 'contractor').length}
+                    </p>
+                    <p className="text-xs">Check browser console for detailed debug info</p>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
@@ -455,6 +516,7 @@ export function TitleCompanyNotaryAssignments() {
                         onClick={() => handleRemoveAssignment(assignment)}
                         disabled={removeAssignmentMutation.isPending}
                         className="text-red-600 hover:text-red-700"
+                        aria-label="Delete assignment"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>

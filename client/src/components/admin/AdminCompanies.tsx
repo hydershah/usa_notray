@@ -12,6 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TitleCompanyNotaryAssignments } from '@/components/admin/title-company-notary-assignments';
 import { 
   Building2, 
   Settings,
@@ -47,7 +48,8 @@ import {
   BarChart3,
   PieChart,
   Zap,
-  Shield
+  Shield,
+  X
 } from 'lucide-react';
 
 interface CompanyData {
@@ -115,6 +117,18 @@ export function AdminCompanies() {
     fetchCompaniesData();
     fetchStats();
   }, []);
+
+  // Handle Escape key to close modal
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && selectedCompany) {
+        setSelectedCompany(null);
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [selectedCompany]);
 
   const fetchCompaniesData = async () => {
     try {
@@ -339,7 +353,7 @@ export function AdminCompanies() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
             <Building2 className="h-8 w-8 text-blue-600" />
-            Company Management
+            Title Company Management
           </h1>
           <p className="text-gray-600 mt-2">
             Manage title companies, track performance, and oversee operations
@@ -355,83 +369,14 @@ export function AdminCompanies() {
             Export
           </Button>
           <Button 
-            onClick={() => setLocation('/title-companies')}
+            onClick={() => setLocation('/admin/companies?action=add')}
             className="bg-blue-600 hover:bg-blue-700 text-white"
           >
             <Plus className="h-4 w-4 mr-2" />
-            Add Company
+            Add Title Company
           </Button>
         </div>
       </div>
-
-      {/* Stats Dashboard */}
-      {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="border-blue-200 bg-blue-50">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-blue-600">Total Companies</p>
-                  <p className="text-2xl font-bold text-blue-900">{stats.totalCompanies}</p>
-                  <p className="text-xs text-blue-600 mt-1">
-                    +{stats.recentSignups} this month
-                  </p>
-                </div>
-                <Building2 className="h-8 w-8 text-blue-600" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="border-green-200 bg-green-50">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-green-600">Active Companies</p>
-                  <p className="text-2xl font-bold text-green-900">{stats.activeCompanies}</p>
-                  <p className="text-xs text-green-600 mt-1">
-                    {((stats.activeCompanies / stats.totalCompanies) * 100).toFixed(1)}% active rate
-                  </p>
-                </div>
-                <CheckCircle className="h-8 w-8 text-green-600" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="border-purple-200 bg-purple-50">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-purple-600">Total Revenue</p>
-                  <p className="text-2xl font-bold text-purple-900">
-                    ${stats.totalRevenue.toLocaleString()}
-                  </p>
-                  <p className="text-xs text-purple-600 mt-1">
-                    <TrendingUp className="h-3 w-3 inline mr-1" />
-                    +12.5% this quarter
-                  </p>
-                </div>
-                <DollarSign className="h-8 w-8 text-purple-600" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="border-orange-200 bg-orange-50">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-orange-600">Avg Jobs/Company</p>
-                  <p className="text-2xl font-bold text-orange-900">{stats.avgJobsPerCompany}</p>
-                  <p className="text-xs text-orange-600 mt-1">
-                    <Activity className="h-3 w-3 inline mr-1" />
-                    Performance metric
-                  </p>
-                </div>
-                <BarChart3 className="h-8 w-8 text-orange-600" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
       {/* Filters and Search */}
       <Card>
@@ -440,7 +385,7 @@ export function AdminCompanies() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
-                placeholder="Search companies by name, email, contact, or location..."
+                placeholder="Search title companies by name, email, contact, or location..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -482,7 +427,7 @@ export function AdminCompanies() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-blue-900">
-                  {selectedCompanies.length} companies selected
+                  {selectedCompanies.length} title companies selected
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -542,7 +487,7 @@ export function AdminCompanies() {
                       onClick={() => handleSort('companyName')}
                       className="h-auto p-0 font-semibold"
                     >
-                      Company
+                      Title Company
                       <ArrowUpDown className="ml-2 h-4 w-4" />
                     </Button>
                   </TableHead>
@@ -567,7 +512,7 @@ export function AdminCompanies() {
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-12">
                       <Building2 className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                      <p className="text-gray-500 text-lg">No companies found</p>
+                      <p className="text-gray-500 text-lg">No title companies found</p>
                       <p className="text-gray-400 text-sm">
                         Try adjusting your search or filter criteria
                       </p>
@@ -660,9 +605,9 @@ export function AdminCompanies() {
                               <Eye className="h-4 w-4 mr-2" />
                               View Details
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setLocation(`/title-companies/${company.id}`)}>
+                            <DropdownMenuItem onClick={() => setLocation(`/admin/companies?edit=${company.id}`)}>
                               <Edit className="h-4 w-4 mr-2" />
-                              Edit Company
+                              Edit Title Company
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => setLocation(`/title-company-assignments`)}>
                               <Award className="h-4 w-4 mr-2" />
@@ -671,7 +616,7 @@ export function AdminCompanies() {
                             <DropdownMenuSeparator />
                             <DropdownMenuItem className="text-red-600">
                               <Trash2 className="h-4 w-4 mr-2" />
-                              Delete Company
+                              Delete Title Company
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -687,7 +632,7 @@ export function AdminCompanies() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between mt-4">
               <div className="text-sm text-gray-500">
-                Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredAndSortedCompanies.length)} of {filteredAndSortedCompanies.length} companies
+                Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredAndSortedCompanies.length)} of {filteredAndSortedCompanies.length} title companies
               </div>
               <div className="flex items-center space-x-2">
                 <Button
@@ -738,12 +683,22 @@ export function AdminCompanies() {
 
       {/* Company Details Sheet */}
       {selectedCompany && (
-        <Sheet open={!!selectedCompany} onOpenChange={() => setSelectedCompany(null)}>
+        <Sheet open={!!selectedCompany} onOpenChange={(open) => !open && setSelectedCompany(null)}>
           <SheetContent className="w-full sm:max-w-2xl">
             <SheetHeader>
-              <SheetTitle className="flex items-center gap-2">
-                <Building2 className="h-5 w-5 text-blue-600" />
-                {selectedCompany.companyName}
+              <SheetTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5 text-blue-600" />
+                  {selectedCompany.companyName}
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => setSelectedCompany(null)}
+                  className="h-8 w-8 p-0"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
               </SheetTitle>
               <SheetDescription>
                 Comprehensive company information and performance metrics
@@ -752,9 +707,10 @@ export function AdminCompanies() {
             
             <div className="mt-6 space-y-6">
               <Tabs defaultValue="overview" className="w-full">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-4">
                   <TabsTrigger value="overview">Overview</TabsTrigger>
                   <TabsTrigger value="performance">Performance</TabsTrigger>
+                  <TabsTrigger value="assignments">Assignments</TabsTrigger>
                   <TabsTrigger value="settings">Settings</TabsTrigger>
                 </TabsList>
                 
@@ -845,6 +801,9 @@ export function AdminCompanies() {
                     </CardContent>
                   </Card>
                 </TabsContent>
+                <TabsContent value="assignments" className="space-y-4">
+                  <TitleCompanyNotaryAssignments embedded company={{ id: selectedCompany.id, companyName: selectedCompany.companyName }} />
+                </TabsContent>
                 
                 <TabsContent value="performance" className="space-y-4">
                   {/* Performance Metrics */}
@@ -928,10 +887,10 @@ export function AdminCompanies() {
                       <Button
                         variant="outline"
                         className="w-full justify-start"
-                        onClick={() => setLocation(`/title-companies/${selectedCompany.id}`)}
+                        onClick={() => setLocation(`/admin/companies?edit=${selectedCompany.id}`)}
                       >
                         <Edit className="h-4 w-4 mr-2" />
-                        Edit Company Details
+                        Edit Title Company Details
                       </Button>
                       
                       <Button

@@ -14,7 +14,6 @@ import Jobs from "@/pages/jobs";
 import CreateJob from "@/pages/create-job";
 import TitleCompanies from "@/pages/title-companies";
 import UserManagement from "@/pages/user-management";
-import NotaryManagement from "@/pages/notary-management";
 
 // PDF Editor Demo
 const EditorDemo = React.lazy(() => import("@/pages/EditorDemo"));
@@ -402,7 +401,7 @@ function Router() {
 
       <Route path="/title-companies">
         <ProtectedRoute allowedRoles={['admin']}>
-          <TitleCompanies />
+          <Redirect to="/admin/companies" />
         </ProtectedRoute>
       </Route>
 
@@ -462,11 +461,7 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
-      <Route path="/notary-management">
-        <ProtectedRoute allowedRoles={['admin']}>
-          <NotaryManagement />
-        </ProtectedRoute>
-      </Route>
+
 
       {/* New Admin Routes */}
       <Route path="/admin/overview">
@@ -561,13 +556,11 @@ function Router() {
 
       <Route path="/admin/companies">
         <ProtectedRoute allowedRoles={['admin']}>
-          <MainLayout>
-            <ErrorBoundary fallback={<LoadingFallback />}>
-              <React.Suspense fallback={<LoadingFallback />}>
-                {React.createElement(React.lazy(() => import("@/components/admin/AdminCompanies").then(m => ({ default: m.AdminCompanies }))))}
-              </React.Suspense>
-            </ErrorBoundary>
-          </MainLayout>
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}> 
+              <TitleCompanies />
+            </React.Suspense>
+          </ErrorBoundary>
         </ProtectedRoute>
       </Route>
 

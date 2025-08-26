@@ -68,7 +68,7 @@ export const Dialog: React.FC<DialogProps> = ({ open, onOpenChange, children }) 
 export const DialogContent: React.FC<DialogContentProps> = ({ className = '', children }) => {
   return (
     <div
-      className={`bg-white rounded-xl shadow-2xl border border-gray-100 w-full max-w-4xl max-h-[90vh] overflow-hidden ${className}`}
+      className={`bg-white rounded-xl shadow-2xl border border-gray-100 w-full max-w-4xl max-h-[90vh] overflow-hidden p-2 ${className}`}
       onClick={(e) => e.stopPropagation()}
     >
       {children}
@@ -78,11 +78,11 @@ export const DialogContent: React.FC<DialogContentProps> = ({ className = '', ch
 
 export const DialogHeader: React.FC<DialogHeaderProps> = ({ children, onClose, showCloseButton = true, className = '' }) => {
   return (
-    <div className={`px-6 py-5 border-b border-gray-100 bg-gray-50/50 relative ${className}`}>
+    <div className={`px-8 py-6 border-b border-gray-100 bg-gray-50/50 relative ${className}`}>
       {showCloseButton && onClose && (
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200 text-gray-500 hover:text-gray-700"
+          className="absolute top-5 right-5 p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200 text-gray-500 hover:text-gray-700"
           aria-label="Close dialog"
         >
           <X className="h-5 w-5" />
@@ -119,7 +119,7 @@ export const DialogTrigger: React.FC<DialogTriggerProps> = ({ children, onClick 
 
 export const DialogFooter: React.FC<DialogFooterProps> = ({ children, className = '' }) => {
   return (
-    <div className={`px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex justify-end space-x-3 ${className}`}>
+    <div className={`px-8 py-5 border-t border-gray-100 bg-gray-50/50 flex justify-end space-x-3 ${className}`}>
       {children}
     </div>
   );

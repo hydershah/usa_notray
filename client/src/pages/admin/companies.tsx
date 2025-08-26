@@ -61,49 +61,8 @@ interface CompanyStats {
 
 // Stats Cards Component
 const CompanyStatsCards: React.FC<{ stats: CompanyStats; loading: boolean }> = ({ stats, loading }) => {
-  if (loading) {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Card key={i} className="animate-pulse">
-            <CardContent className="p-6">
-              <div className="h-4 bg-gray-200 rounded w-16 mb-2"></div>
-              <div className="h-8 bg-gray-200 rounded w-12"></div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    );
-  }
-
-  const statCards = [
-    { label: 'Total Companies', value: stats.total, icon: Building, color: 'text-blue-600', bg: 'bg-blue-100' },
-    { label: 'Pending', value: stats.pending, icon: Clock, color: 'text-yellow-600', bg: 'bg-yellow-100' },
-    { label: 'Approved', value: stats.approved, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100' },
-    { label: 'Rejected', value: stats.rejected, icon: XCircle, color: 'text-red-600', bg: 'bg-red-100' },
-    { label: 'Active', value: stats.active, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-100' },
-    { label: 'Inactive', value: stats.inactive, icon: AlertTriangle, color: 'text-gray-600', bg: 'bg-gray-100' }
-  ];
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
-      {statCards.map((stat, index) => (
-        <Card key={index} className="hover:shadow-md transition-shadow">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">{stat.label}</p>
-                <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-              </div>
-              <div className={`p-3 rounded-lg ${stat.bg}`}>
-                <stat.icon className={`h-6 w-6 ${stat.color}`} />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
+  // This component is now removed - returning null
+  return null;
 };
 
 // Company Filters Component
@@ -485,12 +444,10 @@ export default function AdminCompanies() {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Company Management</h1>
-        <p className="text-gray-600">Review and manage company registrations and approvals</p>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Title Company Management</h1>
+        <p className="text-gray-600">Review and manage title company registrations and approvals</p>
       </div>
 
-      <CompanyStatsCards stats={stats} loading={loading} />
-      
       <CompanyFilters
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
@@ -516,8 +473,8 @@ export default function AdminCompanies() {
         <Card>
           <CardContent className="p-8 text-center">
             <Building className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No companies found</h3>
-            <p className="text-gray-600">There are no companies matching your current filters.</p>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No title companies found</h3>
+            <p className="text-gray-600">There are no title companies matching your current filters.</p>
           </CardContent>
         </Card>
       )}

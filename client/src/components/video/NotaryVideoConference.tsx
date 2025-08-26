@@ -372,7 +372,7 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
   }, [daily]);
 
   // Recording control based on signing session lifecycle
-  // Only auto-stop when completing/completed. Do NOT auto-start on 'active'.
+  // Auto-start recording when session becomes active, auto-stop when completing/completed
   useEffect(() => {
     console.log('🎬 Recording effect - State check:', {
       signingSessionState,
@@ -384,12 +384,22 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
     // Guard: don't do anything if not connected yet
     if (!hasJoined) return;
 
-    // Only auto-stop recording when session is completing/completed
+    // Auto-start recording when live signing session becomes active
+    if (signingSessionState === 'active' && !isRecording && canRecord) {
+      console.log('🎬 Auto-starting recording for live signing session');
+      toast({
+        title: 'Recording Started',
+        description: 'Automatically started recording for compliance purposes',
+      });
+      handleStartRecording();
+    }
+
+    // Auto-stop recording when session is completing/completed
     if ((signingSessionState === 'completing' || signingSessionState === 'completed') && isRecording) {
       console.log('🛑 Auto-stopping cloud recording (server API)');
       handleStopRecording();
     }
-  }, [signingSessionState, isRecording, hasJoined, handleStopRecording]);
+  }, [signingSessionState, isRecording, hasJoined, canRecord, handleStartRecording, handleStopRecording, toast]);
 
   const totalParticipants = participantIds.length + (localParticipant ? 1 : 0);
 
