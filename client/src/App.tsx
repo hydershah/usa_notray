@@ -212,6 +212,11 @@ function AccountCompletionWrapper({ children }: { children: React.ReactNode }) {
       // Reset the refresh flag
       hasRefreshedRef.current = false;
       
+      // Dispatch custom event to notify other components about profile completion
+      window.dispatchEvent(new CustomEvent('notaryProfileCompleted', {
+        detail: { userId: user?.id }
+      }));
+      
       console.log('🔄 Notary profile completion data refreshed');
     }, 500);
   };

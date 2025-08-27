@@ -230,172 +230,99 @@ export function NotaryStampManager({ notaryId, onStampSelect }: NotaryStampManag
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Notary Stamps</h2>
-          <p className="text-gray-600">Manage your official notary stamps for document signing</p>
-        </div>
-        <Button onClick={() => setShowUploadForm(true)} className="bg-blue-600 hover:bg-blue-700">
-          <Plus className="w-4 h-4 mr-2" />
-          Upload Stamp
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-medium">Notary Stamps</h3>
+        <Button onClick={() => setShowUploadForm(true)} size="sm">
+          <Upload className="w-4 h-4 mr-2" />
+          Upload
         </Button>
       </div>
 
-      {/* Upload Form - Simplified */}
       {showUploadForm && (
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              Upload New Notary Stamp
-              <Button variant="ghost" size="sm" onClick={() => setShowUploadForm(false)}>
-                <X className="w-4 h-4" />
-              </Button>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="pt-6 space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">
-                Stamp Image *
-              </label>
               <input
                 type="file"
                 accept="image/*"
                 onChange={handleImageUpload}
-                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-gray-100"
               />
-              <p className="text-xs text-gray-500 mt-1">
-                Upload a clear image of your official notary stamp (PNG, JPG - max 10MB)
-              </p>
             </div>
 
             {newStamp.imagePreview && (
-              <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                <p className="text-sm font-medium mb-2">Preview:</p>
+              <div className="border rounded p-4">
                 <img
                   src={newStamp.imagePreview}
-                  alt="Stamp preview"
-                  className="max-w-full h-32 object-contain mx-auto border rounded"
+                  alt="Preview"
+                  className="h-20 mx-auto object-contain"
                 />
               </div>
             )}
 
-            <div className="flex gap-2 pt-4 border-t">
+            <div className="flex gap-2">
               <Button variant="outline" onClick={() => setShowUploadForm(false)}>
                 Cancel
               </Button>
               <Button 
                 onClick={handleUploadStamp}
                 disabled={!newStamp.imageFile || uploading}
-                className="bg-blue-600 hover:bg-blue-700"
               >
-                {uploading ? 'Uploading...' : 'Upload Stamp'}
+                {uploading ? 'Uploading...' : 'Save'}
               </Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Stamps Grid - Simplified */}
       {stamps.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid gap-4">
           {stamps.map((stamp) => (
-            <Card key={stamp.id} className={`${stamp.isActive ? 'ring-2 ring-blue-500 bg-blue-50' : ''}`}>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">Notary Stamp</CardTitle>
-                  {stamp.isActive && (
-                    <Badge className="bg-blue-100 text-blue-800">Active</Badge>
-                  )}
-                </div>
-              </CardHeader>
-              
-              <CardContent className="space-y-4">
-                {/* Stamp Image */}
-                <div className="border border-gray-200 rounded-lg p-4 bg-white">
+            <Card key={stamp.id} className={stamp.isActive ? 'ring-2 ring-blue-500' : ''}>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-4">
                   <img
                     src={stamp.imageUrl}
-                    alt="Notary Stamp"
-                    className="w-full h-32 object-contain"
+                    alt="Stamp"
+                    className="w-16 h-16 object-contain border rounded"
                   />
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-2">
-                  {!stamp.isActive && (
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">Notary Stamp</span>
+                      {stamp.isActive && <Badge variant="secondary">Active</Badge>}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    {!stamp.isActive && (
+                      <Button size="sm" variant="outline" onClick={() => handleSetActive(stamp.id)}>
+                        Set Active
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => handleSetActive(stamp.id)}
-                      className="flex-1"
+                      onClick={() => handleDeleteStamp(stamp.id)}
                     >
-                      Set Active
+                      <Trash2 className="w-4 h-4" />
                     </Button>
-                  )}
-                  
-                  {onStampSelect && (
-                    <Button
-                      size="sm"
-                      onClick={() => onStampSelect(stamp)}
-                      className="flex-1 bg-blue-600 hover:bg-blue-700"
-                    >
-                      <Eye className="w-4 h-4 mr-1" />
-                      Use
-                    </Button>
-                  )}
-                  
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleDeleteStamp(stamp.id)}
-                    className="hover:bg-red-50 hover:border-red-300 hover:text-red-700"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
       ) : (
-        <div className="text-center py-16">
-          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-12 border border-blue-100">
-            <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
-              <Image className="w-12 h-12 text-white" />
-            </div>
-            <h3 className="text-2xl font-bold text-gray-900 mb-4">Upload Your First Notary Stamp</h3>
-            <p className="text-gray-600 text-lg mb-8 max-w-md mx-auto">
-              Upload a clear image of your official notary stamp to use in document signing sessions
-            </p>
-            
-            <Button 
-              onClick={() => setShowUploadForm(true)}
-              size="lg"
-              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-8 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
-            >
-              <Plus className="w-5 h-5 mr-2" />
-              Upload Your First Stamp
-            </Button>
-          </div>
+        <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded">
+          <Image className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+          <h3 className="font-medium mb-2">No stamps uploaded</h3>
+          <p className="text-sm text-gray-600 mb-4">Upload your notary stamp to use in documents</p>
+          <Button onClick={() => setShowUploadForm(true)}>
+            <Upload className="w-4 h-4 mr-2" />
+            Upload Stamp
+          </Button>
         </div>
       )}
-
-      {/* Usage Notice */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
-        <div className="flex items-start gap-4">
-          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-            <FileText className="w-5 h-5 text-blue-600" />
-          </div>
-          <div className="space-y-2">
-            <h4 className="font-semibold text-gray-900">Official Notary Stamp</h4>
-            <p className="text-gray-600 leading-relaxed">
-              Your notary stamp images are securely stored and ready for use in document signing sessions. 
-              Your active stamp will be automatically applied when notarizing documents.
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 } 

@@ -93,6 +93,18 @@ export default function Profile() {
 
   useEffect(() => {
     loadUserProfile();
+    
+    // Listen for notary profile completion events to refresh data
+    const handleNotaryProfileCompleted = (event: CustomEvent) => {
+      console.log('🔄 Notary profile completed event received, refreshing profile data...');
+      loadUserProfile();
+    };
+    
+    window.addEventListener('notaryProfileCompleted', handleNotaryProfileCompleted as EventListener);
+    
+    return () => {
+      window.removeEventListener('notaryProfileCompleted', handleNotaryProfileCompleted as EventListener);
+    };
   }, []);
 
   // Helper function to format date for HTML date input
@@ -118,7 +130,8 @@ export default function Profile() {
         let profileData = null;
         if (user.role === 'notary' || user.role === 'admin') {
           try {
-            const notaryResponse = await fetch(`/api/notary/profile/comprehensive`, {
+            // Add cache-busting parameter to ensure fresh data
+            const notaryResponse = await fetch(`/api/notary/profile/comprehensive?_t=${Date.now()}`, {
               headers: {
                 'Authorization': `Bearer ${token}`
               }
@@ -133,7 +146,8 @@ export default function Profile() {
         
         // Fall back to basic profile if notary profile not available
         if (!profileData) {
-          const response = await fetch(`/api/users/${user.id}/profile`, {
+          // Add cache-busting parameter to ensure fresh data
+          const response = await fetch(`/api/users/${user.id}/profile?_t=${Date.now()}`, {
             headers: {
               'Authorization': `Bearer ${token}`
             }
@@ -734,24 +748,10 @@ export default function Profile() {
                 return showAssets ? (
                   <TabsContent value="assets" className="space-y-6">
                     {canSeeStamps && (
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-base">Notary Stamps</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <NotaryStampManager notaryId={currentUser.id} />
-                        </CardContent>
-                      </Card>
+                      <NotaryStampManager notaryId={currentUser.id} />
                     )}
                     {canSeeSignatures && (
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-base">Signatures</CardTitle>
-                        </CardHeader>
-                        <CardContent>
                       <SignatureManager userId={currentUser.id} />
-                        </CardContent>
-                      </Card>
                     )}
                   </TabsContent>
                 ) : null;

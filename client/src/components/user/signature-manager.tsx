@@ -515,596 +515,268 @@ export function SignatureManager({ userId, onSignatureSelect }: SignatureManager
   }
 
   return (
-    <div className="space-y-8">
-      {/* Enhanced Header */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-              Signature Manager
-            </h2>
-            <p className="text-gray-600 text-lg">Create and manage your digital signatures for document signing</p>
-            <div className="flex items-center gap-4 mt-3 text-sm text-gray-500">
-              <div className="flex items-center gap-1">
-                <Upload className="w-4 h-4" />
-                <span>Upload Images</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Pencil className="w-4 h-4" />
-                <span>Draw Signatures</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Type className="w-4 h-4" />
-                <span>Generate Text</span>
-              </div>
-            </div>
-          </div>
-          <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
-            <DialogTrigger asChild>
-              <Button 
-                onClick={() => setIsCreateModalOpen(true)}
-                size="lg"
-                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
-              >
-                <Plus className="w-5 h-5 mr-2" />
-                Create New Signature
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-5xl max-h-[95vh] overflow-y-auto bg-gradient-to-br from-white to-gray-50">
-              <DialogHeader className="pb-6">
-                <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                  Create New Signature
-                </DialogTitle>
-                <p className="text-gray-600 mt-2">Choose your preferred method to create a professional digital signature</p>
-              </DialogHeader>
-              
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                <TabsList className="grid w-full grid-cols-3 h-14 p-1 bg-gray-100 rounded-xl">
-                  <TabsTrigger 
-                    value="upload" 
-                    className="h-12 rounded-lg font-medium data-[state=active]:bg-white data-[state=active]:shadow-md transition-all duration-200"
-                  >
-                    <Upload className="w-5 h-5 mr-2" />
-                    Upload Image
-                  </TabsTrigger>
-                  <TabsTrigger 
-                    value="draw"
-                    className="h-12 rounded-lg font-medium data-[state=active]:bg-white data-[state=active]:shadow-md transition-all duration-200"
-                  >
-                    <Pencil className="w-5 h-5 mr-2" />
-                    Draw Signature
-                  </TabsTrigger>
-                  <TabsTrigger 
-                    value="generate"
-                    className="h-12 rounded-lg font-medium data-[state=active]:bg-white data-[state=active]:shadow-md transition-all duration-200"
-                  >
-                    <Type className="w-5 h-5 mr-2" />
-                    Generate Text
-                  </TabsTrigger>
-                </TabsList>
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-medium">Signatures</h3>
+        <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm">
+              <Plus className="w-4 h-4 mr-2" />
+              Create
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Create Signature</DialogTitle>
+            </DialogHeader>
+            
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="upload">
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload
+                </TabsTrigger>
+                <TabsTrigger value="draw">
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Draw
+                </TabsTrigger>
+                <TabsTrigger value="generate">
+                  <Type className="w-4 h-4 mr-2" />
+                  Generate
+                </TabsTrigger>
+              </TabsList>
 
-                {/* Enhanced Upload Tab */}
-                <TabsContent value="upload" className="space-y-6">
-                  <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-                    <div className="space-y-6">
-                      <div className="space-y-2">
-                        <Label htmlFor="upload-name" className="text-sm font-semibold text-gray-700">
-                          Signature Name *
-                        </Label>
-                        <Input
-                          id="upload-name"
-                          value={uploadName}
-                          onChange={(e) => setUploadName(e.target.value)}
-                          placeholder="e.g., Professional Signature, Formal Signature"
-                          className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500 rounded-lg"
-                        />
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <Label htmlFor="signature-file" className="text-sm font-semibold text-gray-700">
-                          Upload Signature Image *
-                        </Label>
-                        <div 
-                          className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-400 hover:bg-blue-50/50 transition-all duration-200 group"
-                          onDragOver={(e) => {
-                            e.preventDefault();
-                            e.currentTarget.classList.add('border-blue-500', 'bg-blue-50');
-                          }}
-                          onDragLeave={(e) => {
-                            e.preventDefault();
-                            e.currentTarget.classList.remove('border-blue-500', 'bg-blue-50');
-                          }}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            e.currentTarget.classList.remove('border-blue-500', 'bg-blue-50');
-                            const files = e.dataTransfer.files;
-                            if (files && files[0]) {
-                              const file = files[0];
-                              if (file.type.startsWith('image/')) {
-                                const fakeEvent = { target: { files: [file] } } as any;
-                                handleFileUpload(fakeEvent);
-                              }
-                            }
-                          }}
-                        >
-                          <Upload className="w-12 h-12 text-gray-400 group-hover:text-blue-500 mx-auto mb-4 transition-colors duration-200" />
-                          <Input
-                            id="signature-file"
-                            type="file"
-                            accept="image/*"
-                            onChange={handleFileUpload}
-                            className="hidden"
-                          />
-                          <label htmlFor="signature-file" className="cursor-pointer">
-                            <div className="text-lg font-medium text-gray-700 group-hover:text-blue-700 mb-2 transition-colors duration-200">
-                              Drop your signature image here
-                            </div>
-                            <div className="text-sm text-gray-500 mb-4">
-                              or click to browse files
-                            </div>
-                            <div className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-blue-400 hover:text-blue-600 transition-colors duration-200 shadow-sm">
-                              Choose File
-                            </div>
-                          </label>
-                          <p className="text-xs text-gray-400 mt-4">
-                            Supports PNG, JPG, GIF and other image formats • Maximum 5MB
-                          </p>
-                        </div>
-                      </div>
-
-                      {uploadPreview && (
-                        <div className="border border-gray-200 rounded-xl p-6 bg-gradient-to-br from-blue-50 to-indigo-50">
-                          <Label className="text-sm font-semibold text-gray-700 mb-3 block">
-                            Preview
-                          </Label>
-                          <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-                            <img
-                              src={uploadPreview}
-                              alt="Signature preview"
-                              className="max-w-full h-auto max-h-32 mx-auto"
-                            />
-                          </div>
-                          <div className="mt-3 text-center">
-                            <span className="text-sm text-gray-600">
-                              Your signature will appear like this in documents
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-                        <Button variant="outline" onClick={resetUploadForm} className="px-6">
-                          <X className="w-4 h-4 mr-2" />
-                          Clear
-                        </Button>
-                        <Button 
-                          onClick={saveUploadedSignature}
-                          disabled={!uploadFile || !uploadName.trim() || isProcessing}
-                          className="px-6 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
-                        >
-                          <Save className="w-4 h-4 mr-2" />
-                          {isProcessing ? 'Saving...' : 'Save Signature'}
-                        </Button>
-                      </div>
-                    </div>
+              <TabsContent value="upload" className="space-y-4">
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="upload-name">Name</Label>
+                    <Input
+                      id="upload-name"
+                      value={uploadName}
+                      onChange={(e) => setUploadName(e.target.value)}
+                      placeholder="My Signature"
+                    />
                   </div>
-                </TabsContent>
-
-                {/* Enhanced Draw Tab */}
-                <TabsContent value="draw" className="space-y-6">
-                  <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-                    <div className="space-y-6">
-                      <div className="space-y-2">
-                        <Label htmlFor="draw-name" className="text-sm font-semibold text-gray-700">
-                          Signature Name *
-                        </Label>
-                        <Input
-                          id="draw-name"
-                          value={drawName}
-                          onChange={(e) => setDrawName(e.target.value)}
-                          placeholder="e.g., Hand-drawn Signature, Personal Sign"
-                          className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500 rounded-lg"
-                        />
-                      </div>
-
-                      <div className="space-y-3">
-                        <Label className="text-sm font-semibold text-gray-700">
-                          Brush Settings
-                        </Label>
-                        <div className="bg-gray-50 rounded-lg p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm text-gray-600">Brush Size</span>
-                            <span className="text-sm font-medium text-blue-600">{brushSize}px</span>
-                          </div>
-                          <Slider
-                            value={[brushSize]}
-                            onValueChange={(value) => setBrushSize(value[0])}
-                            min={1}
-                            max={10}
-                            step={1}
-                            className="w-full"
-                          />
-                          <div className="flex justify-between text-xs text-gray-400 mt-1">
-                            <span>Fine</span>
-                            <span>Thick</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        <Label className="text-sm font-semibold text-gray-700">
-                          Drawing Canvas
-                        </Label>
-                        <div className="border-2 border-gray-300 rounded-xl p-6 bg-gradient-to-br from-blue-50 to-indigo-50">
-                          <div className="bg-white border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
-                            <canvas
-                              ref={canvasRef}
-                              className="border border-gray-200 rounded-lg cursor-crosshair mx-auto shadow-sm"
-                              onMouseDown={startDrawing}
-                              onMouseMove={draw}
-                              onMouseUp={stopDrawing}
-                              onMouseLeave={stopDrawing}
-                              style={{ width: '100%', maxWidth: '450px', height: '180px' }}
-                            />
-                          </div>
-                          <div className="mt-4 text-center">
-                            <p className="text-sm text-gray-600 mb-2">
-                              <Pencil className="w-4 h-4 inline mr-1" />
-                              Click and drag to draw your signature
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              Use your mouse or trackpad to create a natural-looking signature
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-                        <Button variant="outline" onClick={clearCanvas} className="px-6">
-                          <RotateCcw className="w-4 h-4 mr-2" />
-                          Clear Canvas
-                        </Button>
-                        <Button 
-                          onClick={saveDrawnSignature}
-                          disabled={!drawName.trim() || isProcessing}
-                          className="px-6 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
-                        >
-                          <Save className="w-4 h-4 mr-2" />
-                          {isProcessing ? 'Saving...' : 'Save Signature'}
-                        </Button>
-                      </div>
-                    </div>
+                  
+                  <div>
+                    <Label htmlFor="signature-file">Upload Image</Label>
+                    <Input
+                      id="signature-file"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileUpload}
+                    />
                   </div>
-                </TabsContent>
 
-                {/* Enhanced Generate Tab */}
-                <TabsContent value="generate" className="space-y-6">
-                  <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-                    <div className="space-y-6">
-                      <div className="space-y-2">
-                        <Label htmlFor="generate-name" className="text-sm font-semibold text-gray-700">
-                          Signature Name *
-                        </Label>
-                        <Input
-                          id="generate-name"
-                          value={generateName}
-                          onChange={(e) => setGenerateName(e.target.value)}
-                          placeholder="e.g., Elegant Signature, Script Style"
-                          className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500 rounded-lg"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="signature-text" className="text-sm font-semibold text-gray-700">
-                          Your Name *
-                        </Label>
-                        <Input
-                          id="signature-text"
-                          value={generatedText}
-                          onChange={(e) => setGeneratedText(e.target.value)}
-                          placeholder="Enter your full name"
-                          className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500 rounded-lg"
-                        />
-                      </div>
-
-                      <div className="space-y-3">
-                        <Label className="text-sm font-semibold text-gray-700">
-                          Font Style
-                        </Label>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {SIGNATURE_FONTS.map((font) => (
-                            <Button
-                              key={font.name}
-                              variant={selectedFont.name === font.name ? "default" : "outline"}
-                              onClick={() => setSelectedFont(font)}
-                              className={`h-12 justify-start text-left transition-all duration-200 ${
-                                selectedFont.name === font.name 
-                                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md' 
-                                  : 'hover:bg-blue-50 hover:border-blue-300'
-                              }`}
-                              style={{ fontFamily: font.value }}
-                            >
-                              <span className="text-lg">{font.name}</span>
-                            </Button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        <Label className="text-sm font-semibold text-gray-700">
-                          Font Size
-                        </Label>
-                        <div className="bg-gray-50 rounded-lg p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm text-gray-600">Size</span>
-                            <span className="text-sm font-medium text-blue-600">{fontSize}px</span>
-                          </div>
-                          <Slider
-                            value={[fontSize]}
-                            onValueChange={(value) => setFontSize(value[0])}
-                            min={24}
-                            max={72}
-                            step={4}
-                            className="w-full"
-                          />
-                          <div className="flex justify-between text-xs text-gray-400 mt-1">
-                            <span>Small (24px)</span>
-                            <span>Large (72px)</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {generatedText && (
-                        <div className="space-y-3">
-                          <Label className="text-sm font-semibold text-gray-700">
-                            Live Preview
-                          </Label>
-                          <div className="border-2 border-gray-300 rounded-xl p-6 bg-gradient-to-br from-blue-50 to-indigo-50">
-                            <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-                              {generateSignaturePreview()}
-                            </div>
-                            <div className="mt-4 text-center">
-                              <span className="text-sm text-gray-600">
-                                Your signature will appear like this in documents
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-                        <Button variant="outline" onClick={() => setGeneratedText('')} className="px-6">
-                          <X className="w-4 h-4 mr-2" />
-                          Clear Text
-                        </Button>
-                        <Button 
-                          onClick={saveGeneratedSignature}
-                          disabled={!generatedText.trim() || !generateName.trim() || isProcessing}
-                          className="px-6 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
-                        >
-                          <Save className="w-4 h-4 mr-2" />
-                          {isProcessing ? 'Saving...' : 'Save Signature'}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
-
-      {/* Enhanced Signatures Grid */}
-      {signatures.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xl font-semibold text-gray-900">Your Signatures</h3>
-            <span className="text-sm text-gray-500">{signatures.length} signature{signatures.length !== 1 ? 's' : ''} created</span>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {signatures.map((signature) => (
-              <Card 
-                key={signature.id} 
-                className={`group relative overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1 ${
-                  signature.isDefault 
-                    ? 'ring-2 ring-blue-500 shadow-lg bg-gradient-to-br from-blue-50 to-indigo-50' 
-                    : 'hover:shadow-lg bg-white'
-                }`}
-              >
-                {signature.isDefault && (
-                  <div className="absolute top-0 right-0 bg-gradient-to-l from-blue-600 to-indigo-600 text-white px-3 py-1 rounded-bl-lg">
-                    <Star className="w-3 h-3 inline mr-1" />
-                    <span className="text-xs font-medium">Default</span>
-                  </div>
-                )}
-                
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-1">
-                      <CardTitle className="text-lg font-semibold text-gray-900 pr-8">
-                        {signature.name}
-                      </CardTitle>
-                      <div className="flex items-center gap-2">
-                        <Badge 
-                          variant="outline" 
-                          className={`text-xs ${
-                            signature.type === 'uploaded' ? 'border-green-200 text-green-700 bg-green-50' :
-                            signature.type === 'drawn' ? 'border-purple-200 text-purple-700 bg-purple-50' :
-                            'border-orange-200 text-orange-700 bg-orange-50'
-                          }`}
-                        >
-                          {signature.type === 'uploaded' ? (
-                            <>
-                              <Upload className="w-3 h-3 mr-1" />
-                              Uploaded
-                            </>
-                          ) : signature.type === 'drawn' ? (
-                            <>
-                              <Pencil className="w-3 h-3 mr-1" />
-                              Hand-drawn
-                            </>
-                          ) : (
-                            <>
-                              <Type className="w-3 h-3 mr-1" />
-                              Generated
-                            </>
-                          )}
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-                </CardHeader>
-                
-                <CardContent className="space-y-4">
-                  {/* Enhanced Signature Preview */}
-                  <div className="relative group">
-                    <div className="border-2 border-gray-200 rounded-xl p-6 bg-white shadow-sm group-hover:shadow-md transition-shadow duration-200">
+                  {uploadPreview && (
+                    <div className="border rounded p-4">
                       <img
-                        src={signature.imageUrl}
-                        alt={signature.name}
-                        className="w-full h-16 object-contain"
+                        src={uploadPreview}
+                        alt="Preview"
+                        className="h-20 mx-auto object-contain"
                       />
                     </div>
-                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-5 rounded-xl transition-all duration-200"></div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={resetUploadForm}>
+                      Clear
+                    </Button>
+                    <Button 
+                      onClick={saveUploadedSignature}
+                      disabled={!uploadFile || !uploadName.trim() || isProcessing}
+                    >
+                      {isProcessing ? 'Saving...' : 'Save'}
+                    </Button>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="draw" className="space-y-4">
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="draw-name">Name</Label>
+                    <Input
+                      id="draw-name"
+                      value={drawName}
+                      onChange={(e) => setDrawName(e.target.value)}
+                      placeholder="My Signature"
+                    />
                   </div>
 
-                  {/* Enhanced Signature Details */}
-                  <div className="space-y-2 text-sm text-gray-600">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4" />
-                      <span>Created {new Date(signature.createdAt).toLocaleDateString()}</span>
+                  <div>
+                    <Label>Brush Size: {brushSize}px</Label>
+                    <Slider
+                      value={[brushSize]}
+                      onValueChange={(value) => setBrushSize(value[0])}
+                      min={1}
+                      max={10}
+                      step={1}
+                      className="w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Draw your signature</Label>
+                    <div className="border rounded p-4">
+                      <canvas
+                        ref={canvasRef}
+                        className="border rounded cursor-crosshair mx-auto"
+                        onMouseDown={startDrawing}
+                        onMouseMove={draw}
+                        onMouseUp={stopDrawing}
+                        onMouseLeave={stopDrawing}
+                        style={{ width: '100%', maxWidth: '400px', height: '150px' }}
+                      />
                     </div>
-                    {signature.metadata?.fontFamily && (
-                      <div className="flex items-center gap-2">
-                        <Type className="w-4 h-4" />
-                        <span style={{ fontFamily: signature.metadata.fontFamily }}>
-                          {signature.metadata.fontFamily.split(',')[0]}
-                        </span>
-                      </div>
-                    )}
                   </div>
 
-                  {/* Enhanced Actions */}
-                  <div className="flex gap-2 pt-2 border-t border-gray-100">
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={clearCanvas}>
+                      Clear
+                    </Button>
+                    <Button 
+                      onClick={saveDrawnSignature}
+                      disabled={!drawName.trim() || isProcessing}
+                    >
+                      {isProcessing ? 'Saving...' : 'Save'}
+                    </Button>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="generate" className="space-y-4">
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="generate-name">Name</Label>
+                    <Input
+                      id="generate-name"
+                      value={generateName}
+                      onChange={(e) => setGenerateName(e.target.value)}
+                      placeholder="My Signature"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="signature-text">Your Name</Label>
+                    <Input
+                      id="signature-text"
+                      value={generatedText}
+                      onChange={(e) => setGeneratedText(e.target.value)}
+                      placeholder="Enter your full name"
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Font</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {SIGNATURE_FONTS.map((font) => (
+                        <Button
+                          key={font.name}
+                          variant={selectedFont.name === font.name ? "default" : "outline"}
+                          onClick={() => setSelectedFont(font)}
+                          className="justify-start"
+                          style={{ fontFamily: font.value }}
+                        >
+                          {font.name}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label>Size: {fontSize}px</Label>
+                    <Slider
+                      value={[fontSize]}
+                      onValueChange={(value) => setFontSize(value[0])}
+                      min={24}
+                      max={72}
+                      step={4}
+                      className="w-full"
+                    />
+                  </div>
+
+                  {generatedText && (
+                    <div>
+                      <Label>Preview</Label>
+                      <div className="border rounded p-4 text-center">
+                        {generateSignaturePreview()}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setGeneratedText('')}>
+                      Clear
+                    </Button>
+                    <Button 
+                      onClick={saveGeneratedSignature}
+                      disabled={!generatedText.trim() || !generateName.trim() || isProcessing}
+                    >
+                      {isProcessing ? 'Saving...' : 'Save'}
+                    </Button>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {signatures.length > 0 ? (
+        <div className="grid gap-4">
+          {signatures.map((signature) => (
+            <Card key={signature.id} className={signature.isDefault ? 'ring-2 ring-blue-500' : ''}>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-4">
+                  <img
+                    src={signature.imageUrl}
+                    alt={signature.name}
+                    className="w-16 h-16 object-contain border rounded"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{signature.name}</span>
+                      {signature.isDefault && <Badge variant="secondary">Default</Badge>}
+                      <Badge variant="outline" className="text-xs">
+                        {signature.type}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      Created {new Date(signature.createdAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
                     {!signature.isDefault && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setDefaultSignature(signature.id)}
-                        className="flex-1 hover:bg-yellow-50 hover:border-yellow-300 hover:text-yellow-700 transition-colors duration-200"
-                      >
+                      <Button size="sm" variant="outline" onClick={() => setDefaultSignature(signature.id)}>
                         <Star className="w-4 h-4 mr-1" />
                         Set Default
                       </Button>
                     )}
-                    
-                    {onSignatureSelect && (
-                      <Button
-                        size="sm"
-                        onClick={() => onSignatureSelect(signature)}
-                        className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
-                      >
-                        <Eye className="w-4 h-4 mr-1" />
-                        Use
-                      </Button>
-                    )}
-                    
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => deleteSignature(signature.id)}
-                      className="hover:bg-red-50 hover:border-red-300 hover:text-red-700 transition-colors duration-200"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded">
+          <Pencil className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+          <h3 className="font-medium mb-2">No signatures created</h3>
+          <p className="text-sm text-gray-600 mb-4">Create your first signature to use in documents</p>
+          <Button onClick={() => setIsCreateModalOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Create Signature
+          </Button>
         </div>
       )}
-
-      {signatures.length === 0 && (
-        <div className="text-center py-16">
-          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-12 border border-blue-100">
-            <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
-              <Pencil className="w-12 h-12 text-white" />
-            </div>
-            <h3 className="text-2xl font-bold text-gray-900 mb-4">Create Your First Signature</h3>
-            <p className="text-gray-600 text-lg mb-8 max-w-md mx-auto">
-              Get started by creating a digital signature that you can use across all your document signing sessions
-            </p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 max-w-2xl mx-auto">
-              <div className="text-center p-4">
-                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-3">
-                  <Upload className="w-6 h-6 text-blue-600" />
-                </div>
-                <h4 className="font-semibold text-gray-900 mb-1">Upload</h4>
-                <p className="text-sm text-gray-600">Upload an existing signature image</p>
-              </div>
-              
-              <div className="text-center p-4">
-                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-3">
-                  <Pencil className="w-6 h-6 text-blue-600" />
-                </div>
-                <h4 className="font-semibold text-gray-900 mb-1">Draw</h4>
-                <p className="text-sm text-gray-600">Draw your signature using mouse or trackpad</p>
-              </div>
-              
-              <div className="text-center p-4">
-                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-3">
-                  <Type className="w-6 h-6 text-blue-600" />
-                </div>
-                <h4 className="font-semibold text-gray-900 mb-1">Generate</h4>
-                <p className="text-sm text-gray-600">Create a signature from text with elegant fonts</p>
-              </div>
-            </div>
-            
-            <Button 
-              onClick={() => setIsCreateModalOpen(true)}
-              size="lg"
-              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-8 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
-            >
-              <Plus className="w-5 h-5 mr-2" />
-              Create Your First Signature
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Enhanced Usage Notice */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
-        <div className="flex items-start gap-4">
-          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Shield className="w-5 h-5 text-blue-600" />
-          </div>
-          <div className="space-y-2">
-            <h4 className="font-semibold text-gray-900">Secure & Convenient</h4>
-            <p className="text-gray-600 leading-relaxed">
-              Your signatures are securely encrypted and stored, ready to use across all document signing sessions. 
-              Your default signature will be automatically selected when signing documents, saving you time and ensuring consistency.
-            </p>
-            <div className="flex items-center gap-6 text-sm text-gray-500 mt-3">
-              <div className="flex items-center gap-1">
-                <Shield className="w-4 h-4" />
-                <span>Encrypted Storage</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Check className="w-4 h-4" />
-                <span>Auto-Selection</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Star className="w-4 h-4" />
-                <span>Default Support</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
