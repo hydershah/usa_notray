@@ -265,6 +265,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const isAdmin = hasAdminPrivileges(user);
       const isNotary = hasNotaryPrivileges(user);
 
+      // Mirror /api/auth/me payload so client localStorage has complete data immediately
+      const loginHasBasicInfo = Boolean(user.firstName && user.lastName && user.phoneNumber);
+      const loginHasAddress = Boolean((user.address1 && user.city && user.state && user.zipCode) || user.address);
+      const loginIsProfileComplete = loginHasBasicInfo && loginHasAddress;
+      const loginIsVerified = Boolean(
+        user.isVerified || user.isVerificationBypassed || user.notaryVerificationBypassed || user.verificationStatus === 'approved'
+      );
+      const loginAccountSetupComplete = Boolean(user.accountSetupComplete) || (loginIsProfileComplete && loginIsVerified);
+
       res.json({
         token,
         user: {
@@ -275,7 +284,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
           privileges: user.privileges,
           // Include privilege flags for easy frontend checking
           isAdmin,
-          isNotary
+          isNotary,
+          // Profile fields needed by client
+          firstName: user.firstName || null,
+          lastName: user.lastName || null,
+          phoneNumber: user.phoneNumber || null,
+          phone: user.phoneNumber || null,
+          address: user.address || null,
+          address1: user.address1 || null,
+          address2: user.address2 || null,
+          city: user.city || null,
+          state: user.state || null,
+          zipCode: user.zipCode || null,
+          // Verification and completion
+          isVerified: user.isVerified || false,
+          isVerificationBypassed: user.isVerificationBypassed || false,
+          notaryVerificationBypassed: user.notaryVerificationBypassed || false,
+          verificationStatus: user.verificationStatus || 'pending',
+          accountSetupComplete: loginAccountSetupComplete
         }
       });
     } catch (error) {
@@ -330,6 +356,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/auth/me', verifyToken, async (req: any, res) => {
     try {
+      // Add cache-control headers to prevent caching of this endpoint
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+
       const user = await storage.getUser(req.user.id);
       if (!user) {
         return res.status(404).json({ message: 'User not found' });
@@ -349,6 +380,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Calculate account setup completion
+      // Drizzle returns camelCase field names; use those consistently
+      const hasBasicInfo = Boolean(
+        user.firstName &&
+        user.lastName &&
+        user.phoneNumber
+      );
+      const hasAddress = Boolean(
+        (user.address1 && user.city && user.state && user.zipCode) ||
+        user.address
+      );
+      const isProfileComplete = hasBasicInfo && hasAddress;
+      
+      const isVerified = Boolean(
+        user.isVerified || 
+        user.isVerificationBypassed || 
+        user.notaryVerificationBypassed || 
+        user.verificationStatus === 'approved'
+      );
+      
+      // Account is complete when both profile and verification are done
+      // Use the database value if available, otherwise calculate
+      const accountSetupComplete = Boolean(user.accountSetupComplete) || (isProfileComplete && isVerified);
+      
+      // Debug logging for /api/auth/me
+      console.log('🔍 /api/auth/me response debug:', {
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        hasBasicInfo,
+        hasAddress,
+        isProfileComplete,
+        isVerified,
+        dbAccountSetupComplete: user.accountSetupComplete,
+        calculatedComplete: isProfileComplete && isVerified,
+        finalAccountSetupComplete: accountSetupComplete,
+        // Values being returned to frontend
+        responseFields: {
+          firstName: user.firstName,
+          lastName: user.lastName,
+          phoneNumber: user.phoneNumber,
+          address1: user.address1,
+          city: user.city,
+          state: user.state,
+          zipCode: user.zipCode
+        }
+      });
+
       res.json({
         id: user.id,
         username: user.username,
@@ -362,8 +441,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Include company information for title company users
         companyId: user.companyId,
         companyName: companyInfo?.companyName || null,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        firstName: user.firstName || null,
+        lastName: user.lastName || null,
+        // Include contact fields needed for account completion checks
+        phoneNumber: user.phoneNumber || null,
+        phone: user.phoneNumber || null, // Legacy compatibility
+        // Include address fields (both legacy and normalized) for completion checks
+        address: user.address || null,
+        address1: user.address1 || null,
+        address2: user.address2 || null,
+        city: user.city || null,
+        state: user.state || null,
+        zipCode: user.zipCode || null,
         // CRITICAL: Add verification status for signers/witnesses to show proper UI
         isVerified: user.isVerified || false,
         isVerificationBypassed: user.isVerificationBypassed || false,
@@ -373,7 +462,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
                           !user.isVerified && 
                           !user.isVerificationBypassed && 
                           !user.notaryVerificationBypassed,
-        accountSetupComplete: user.accountSetupComplete || false
+        accountSetupComplete: accountSetupComplete,
+        // Also include the calculated values for debugging
+        _debug: {
+          hasBasicInfo,
+          hasAddress,
+          isProfileComplete,
+          isVerified,
+          accountSetupComplete
+        }
       });
     } catch (error) {
       console.error('Get user error:', error);
@@ -706,7 +803,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-
   app.put('/api/users/:id', verifyToken, async (req: any, res) => {
     try {
       if (!hasAdminPrivileges(req.user)) {
@@ -1216,12 +1312,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // 🔧 FIX: Automatically set accountSetupComplete if all required fields are present
-      const hasBasicInfo = updateData.firstName && updateData.lastName && updateData.phoneNumber;
-      const hasAddress = (updateData.address1 && updateData.city && updateData.state && updateData.zipCode) || updateData.address;
+      // Use the actual field names from profileData for validation
+      const hasBasicInfo = Boolean(profileData.firstName && profileData.lastName && profileData.phoneNumber);
+      const hasAddress = Boolean(
+        (profileData.address1 && profileData.city && profileData.state && profileData.zipCode) || 
+        profileData.address
+      );
+      
       if (hasBasicInfo && hasAddress) {
         updateData.accountSetupComplete = true;
         console.log(`✅ Account setup marked complete for user ${userId}`);
       }
+      
+      // Debug logging
+      console.log('📝 Profile update data:', {
+        userId,
+        hasBasicInfo,
+        hasAddress,
+        accountSetupComplete: updateData.accountSetupComplete,
+        fields: {
+          firstName: profileData.firstName,
+          lastName: profileData.lastName,
+          phoneNumber: profileData.phoneNumber,
+          address1: profileData.address1,
+          city: profileData.city,
+          state: profileData.state,
+          zipCode: profileData.zipCode
+        }
+      });
 
       const updatedUser = await storage.updateUser(userId, updateData);
 
@@ -1254,6 +1372,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Update user profile error:', error);
       res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Debug endpoint to check user data and completion status
+  app.get('/api/debug/user/:userId', verifyToken, async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      // Check if user can access this debug info
+      if (!req.user || (req.user.role !== 'admin' && req.user.id !== userId)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Calculate the same logic as /api/auth/me
+      const hasBasicInfo = Boolean(
+        (user as any).first_name && 
+        (user as any).last_name && 
+        (user as any).phone_number
+      );
+      const hasAddress = Boolean(
+        (user as any).address_1 && 
+        (user as any).city && 
+        (user as any).state && 
+        (user as any).zip_code || 
+        (user as any).address
+      );
+      const isProfileComplete = hasBasicInfo && hasAddress;
+      
+      const isVerified = Boolean(
+        user.isVerified || 
+        user.isVerificationBypassed || 
+        user.notaryVerificationBypassed || 
+        user.verificationStatus === 'approved'
+      );
+      
+      const accountSetupComplete = isProfileComplete && isVerified;
+
+      res.json({
+        debug: {
+          userId: user.id,
+          email: user.email,
+          role: user.role,
+          calculations: {
+            hasBasicInfo,
+            hasAddress,
+            isProfileComplete,
+            isVerified,
+            accountSetupComplete
+          },
+          rawDbData: {
+            first_name: (user as any).first_name,
+            last_name: (user as any).last_name,
+            phone_number: (user as any).phone_number,
+            address_1: (user as any).address_1,
+            address_2: (user as any).address_2,
+            city: (user as any).city,
+            state: (user as any).state,
+            zip_code: (user as any).zip_code,
+            address: (user as any).address,
+            isVerified: user.isVerified,
+            isVerificationBypassed: user.isVerificationBypassed,
+            notaryVerificationBypassed: user.notaryVerificationBypassed,
+            verificationStatus: user.verificationStatus,
+            accountSetupComplete: user.accountSetupComplete
+          },
+          allFields: Object.keys(user).sort()
+        }
+      });
+    } catch (error) {
+      console.error('Debug user error:', error);
+      res.status(500).json({ message: 'Internal server error', error: error.message });
     }
   });
 
@@ -1409,7 +1603,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-
   app.delete('/api/companies/:id', verifyToken, async (req: any, res) => {
     try {
       if (!req.user || !hasAdminPrivileges(req.user)) {
@@ -1516,14 +1709,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if user has access to this job
       // Admin, job creator, assigned notary, OR anyone with session access (includes signers)
-      const hasBasicAccess = req.user.role === 'admin' || 
-                           job.userId === req.user.id || 
-                           job.selectedNotary === req.user.id.toString();
+      let hasBasicAccess = req.user.role === 'admin' || 
+                          job.userId === req.user.id || 
+                          job.selectedNotary === req.user.id.toString();
+      
+      // For title company users, also check if job is assigned to their company
+      if (!hasBasicAccess && (req.user.role === 'title_company' || req.user.role === 'company_manager' || req.user.role === 'client')) {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasBasicAccess = true;
+            console.log(`✅ Title company user ${req.user.id} accessing job ${jobId} assigned to their company: ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for job details:', companyCheckError);
+        }
+      }
       
       if (!hasBasicAccess) {
         // Check if user has session access (includes signers)
         const hasSessionAccess = await storage.verifySessionAccess(jobId, req.user.id);
         if (!hasSessionAccess) {
+          console.log(`❌ Access denied for user ${req.user.id} (role: ${req.user.role}) to job ${jobId}`);
           return res.status(403).json({ message: 'Access denied' });
         }
       }
@@ -1585,6 +1801,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/jobs', verifyToken, upload.array('documents', 10), async (req: any, res) => {
     try {
+      // Set response timeout to handle longer job creation with multiple signers
+      req.setTimeout(60000); // 60 second timeout for job creation
+      res.setTimeout(60000);
+      
       // Define privilege checks once at the top using proper functions
       const hasAdminAccess = hasAdminPrivileges(req.user);
       const hasNotaryAccess = hasNotaryPrivileges(req.user);
@@ -2209,7 +2429,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-
   // Basic route handlers to prevent 404 errors
   // Only serve API response if we're not serving static files
   app.get('/', (req, res, next) => {
@@ -2372,58 +2591,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/auth/me', verifyToken, async (req: any, res) => {
-    try {
-      const user = await storage.getUser(req.user.id);
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-
-      // Check privileges for frontend
-      const isAdmin = hasAdminPrivileges(user);
-      const isNotary = hasNotaryPrivileges(user);
-
-      // Get company information for title company users
-      let companyInfo = null;
-      if (user.role === 'title_company' && user.companyId) {
-        try {
-          companyInfo = await storage.getCompany(user.companyId);
-        } catch (error) {
-          console.warn('Failed to fetch company info for user:', user.id, error);
-        }
-      }
-
-      res.json({
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        privileges: user.privileges,
-        // Include privilege flags for easy frontend checking
-        isAdmin,
-        isNotary,
-        notaryType: user.notaryType,
-        // Include company information for title company users
-        companyId: user.companyId,
-        companyName: companyInfo?.companyName || null,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        // CRITICAL: Add verification status for signers/witnesses to show proper UI
-        isVerified: user.isVerified || false,
-        isVerificationBypassed: user.isVerificationBypassed || false,
-        notaryVerificationBypassed: user.notaryVerificationBypassed || false,
-        verificationStatus: user.verificationStatus || 'pending',
-        needsVerification: (user.role === 'signer' || user.role === 'witness') && 
-                          !user.isVerified && 
-                          !user.isVerificationBypassed && 
-                          !user.notaryVerificationBypassed,
-        accountSetupComplete: user.accountSetupComplete || false
-      });
-    } catch (error) {
-      console.error('Get user error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  });
+  // REMOVED: Duplicate /api/auth/me endpoint - using the one with proper profile completion logic at line 331
 
   app.post('/api/auth/logout', verifyToken, async (req: any, res) => {
     try {
@@ -2880,7 +3048,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-
   // Create new signature endpoint
   app.post('/api/users/:id/signatures', verifyToken, 
     upload.single('signature'), async (req: any, res) => {
@@ -3262,12 +3429,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // 🔧 FIX: Automatically set accountSetupComplete if all required fields are present
-      const hasBasicInfo = updateData.firstName && updateData.lastName && updateData.phoneNumber;
-      const hasAddress = (updateData.address1 && updateData.city && updateData.state && updateData.zipCode) || updateData.address;
+      // Use the actual field names from profileData for validation
+      const hasBasicInfo = Boolean(profileData.firstName && profileData.lastName && profileData.phoneNumber);
+      const hasAddress = Boolean(
+        (profileData.address1 && profileData.city && profileData.state && profileData.zipCode) || 
+        profileData.address
+      );
+      
       if (hasBasicInfo && hasAddress) {
         updateData.accountSetupComplete = true;
         console.log(`✅ Account setup marked complete for user ${userId}`);
       }
+      
+      // Debug logging
+      console.log('📝 Profile update data:', {
+        userId,
+        hasBasicInfo,
+        hasAddress,
+        accountSetupComplete: updateData.accountSetupComplete,
+        fields: {
+          firstName: profileData.firstName,
+          lastName: profileData.lastName,
+          phoneNumber: profileData.phoneNumber,
+          address1: profileData.address1,
+          city: profileData.city,
+          state: profileData.state,
+          zipCode: profileData.zipCode
+        }
+      });
 
       const updatedUser = await storage.updateUser(userId, updateData);
 
@@ -3300,6 +3489,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Update user profile error:', error);
       res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Debug endpoint to check user data and completion status
+  app.get('/api/debug/user/:userId', verifyToken, async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      // Check if user can access this debug info
+      if (!req.user || (req.user.role !== 'admin' && req.user.id !== userId)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Calculate the same logic as /api/auth/me
+      const hasBasicInfo = Boolean(user.firstName && user.lastName && (user.phoneNumber || user.phone));
+      const hasAddress = Boolean(
+        ((user as any).address1 && (user as any).city && (user as any).state && (user as any).zipCode) || 
+        user.address
+      );
+      const isProfileComplete = hasBasicInfo && hasAddress;
+      
+      const isVerified = Boolean(
+        user.isVerified || 
+        user.isVerificationBypassed || 
+        user.notaryVerificationBypassed || 
+        user.verificationStatus === 'approved'
+      );
+      
+      const accountSetupComplete = isProfileComplete && isVerified;
+
+      res.json({
+        debug: {
+          userId: user.id,
+          email: user.email,
+          role: user.role,
+          calculations: {
+            hasBasicInfo,
+            hasAddress,
+            isProfileComplete,
+            isVerified,
+            accountSetupComplete
+          },
+          rawDbData: {
+            firstName: user.firstName,
+            lastName: user.lastName,
+            phoneNumber: user.phoneNumber,
+            phone: user.phone,
+            address1: (user as any).address1,
+            address2: (user as any).address2,
+            city: (user as any).city,
+            state: (user as any).state,
+            zipCode: (user as any).zipCode,
+            address: user.address,
+            isVerified: user.isVerified,
+            isVerificationBypassed: user.isVerificationBypassed,
+            notaryVerificationBypassed: user.notaryVerificationBypassed,
+            verificationStatus: user.verificationStatus,
+            accountSetupComplete: user.accountSetupComplete
+          },
+          allFields: Object.keys(user).sort()
+        }
+      });
+    } catch (error) {
+      console.error('Debug user error:', error);
+      res.status(500).json({ message: 'Internal server error', error: error.message });
     }
   });
 
@@ -3562,14 +3821,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if user has access to this job
       // Admin, job creator, assigned notary, OR anyone with session access (includes signers)
-      const hasBasicAccess = req.user.role === 'admin' || 
-                           job.userId === req.user.id || 
-                           job.selectedNotary === req.user.id.toString();
+      let hasBasicAccess = req.user.role === 'admin' || 
+                          job.userId === req.user.id || 
+                          job.selectedNotary === req.user.id.toString();
+      
+      // For title company users, also check if job is assigned to their company
+      if (!hasBasicAccess && (req.user.role === 'title_company' || req.user.role === 'company_manager' || req.user.role === 'client')) {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasBasicAccess = true;
+            console.log(`✅ Title company user ${req.user.id} accessing job ${jobId} assigned to their company: ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for job details:', companyCheckError);
+        }
+      }
       
       if (!hasBasicAccess) {
         // Check if user has session access (includes signers)
         const hasSessionAccess = await storage.verifySessionAccess(jobId, req.user.id);
         if (!hasSessionAccess) {
+          console.log(`❌ Access denied for user ${req.user.id} (role: ${req.user.role}) to job ${jobId}`);
           return res.status(403).json({ message: 'Access denied' });
         }
       }
@@ -3590,7 +3872,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-
   // 🚀 OPTIMIZATION: Helper function for parallel signer data preparation
   async function prepareSignerDataForParallel(signersJson: string) {
     const signers = JSON.parse(signersJson);
@@ -4336,7 +4617,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-
   // Update job schedule and handle auto assignment
   app.put('/api/jobs/:id/schedule', verifyToken, async (req: any, res) => {
     try {
@@ -4598,7 +4878,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Dashboard stats
   app.get('/api/dashboard/stats', verifyToken, cacheUserData(300), async (req: any, res) => {
     try {
-      const jobs = await storage.getRoleBasedJobs(req.user.id, req.user.role);
+      const jobsResult = await storage.getRoleBasedJobs(req.user.id, req.user.role);
+      
+      // Extract jobs array safely
+      const jobs = Array.isArray(jobsResult?.jobs) ? jobsResult.jobs : [];
       
       const stats: any = {
         totalJobs: jobs.length,
@@ -4610,14 +4893,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       if (hasAdminPrivileges(req.user)) {
-        const notaries = await storage.getNotaryUsers();
-        stats.activeNotaries = notaries.length;
+        try {
+          const notaries = await storage.getNotaryUsers();
+          stats.activeNotaries = Array.isArray(notaries) ? notaries.length : 0;
+        } catch (notaryError) {
+          console.error('Error fetching notaries for stats:', notaryError);
+          stats.activeNotaries = 0;
+        }
       }
 
       res.json(stats);
     } catch (error) {
       console.error('Get dashboard stats error:', error);
-      res.status(500).json({ message: 'Internal server error' });
+      res.status(500).json({ message: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -4696,7 +4984,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           // Check if account setup is complete using fresh data - be flexible with address formats
-          const hasBasicInfo = freshUser.firstName && freshUser.lastName && freshUser.phoneNumber;
+          const hasBasicInfo = freshUser.firstName && freshUser.lastName && (freshUser.phoneNumber || freshUser.phone);
           const hasAddress = (freshUser.address1 && freshUser.city && freshUser.state && freshUser.zipCode) || freshUser.address;
           const isAccountSetupComplete = hasBasicInfo && hasAddress;
           
@@ -5133,7 +5421,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   // Video conferencing routes are now handled by daily-video-routes.ts
-
   // ===== ENHANCED UPLOAD SYSTEM ROUTES (VULTR-ENABLED) =====
   
   // Professional signature upload with Vultr cloud storage
@@ -5884,7 +6171,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).send('Error generating placeholder');
     }
   });
-
   // Recording upload endpoint for enhanced video system  
   app.post('/api/recordings/upload', verifyToken, upload.single('recording'), async (req: any, res) => {
     try {
@@ -6057,6 +6343,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hasAccess = true;
         console.log(`✅ DOCUMENT LIST: Assigned notary user ${req.user.id}`);
       }
+      // Title company access - check if job is assigned to user's company
+      else if (req.user.role === 'title_company' || req.user.role === 'company_manager' || req.user.role === 'client') {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasAccess = true;
+            console.log(`✅ DOCUMENT LIST: Title company user ${req.user.id} accessing job for ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for document list:', companyCheckError);
+        }
+      }
       // Signer access - check via signers table
       else if (req.user.role === 'signer' || req.user.role === 'witness') {
         const [signer] = await db
@@ -6111,6 +6418,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       else if (job.selectedNotary === req.user.id.toString()) {
         hasAccess = true;
         console.log(`✅ DOCUMENT VERSIONS: Assigned notary user ${req.user.id}`);
+      }
+      // Title company access - check if job is assigned to user's company
+      else if (req.user.role === 'title_company' || req.user.role === 'company_manager' || req.user.role === 'client') {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasAccess = true;
+            console.log(`✅ DOCUMENT VERSIONS: Title company user ${req.user.id} accessing job for ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for document versions:', companyCheckError);
+        }
       }
       // Signer access - check via signers table
       else if (req.user.role === 'signer' || req.user.role === 'witness') {
@@ -6418,6 +6746,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hasAccess = true;
         console.log(`✅ DOCUMENT DOWNLOAD: Assigned notary user ${user.id}`);
       }
+      // Title company access - check if job is assigned to user's company
+      else if (user.role === 'title_company' || user.role === 'company_manager' || user.role === 'client') {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasAccess = true;
+            console.log(`✅ DOCUMENT DOWNLOAD: Title company user ${user.id} accessing job for ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for document download:', companyCheckError);
+        }
+      }
       // Signer access - check via signers table (THIS WAS MISSING!)
       else if (user.role === 'signer' || user.role === 'witness') {
         const [signer] = await db
@@ -6482,7 +6831,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-
   // Document signing route - generates signed PDF
   app.post('/api/jobs/:jobId/documents/:documentId/sign', verifyToken, async (req: any, res) => {
     // Ensure we always return JSON
@@ -6774,6 +7122,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       else if (job.selectedNotary === user.id.toString()) {
         hasAccess = true;
         console.log(`✅ DOCUMENT ACCESS: Assigned notary user ${user.id}`);
+      }
+      // Title company access - check if job is assigned to user's company
+      else if (user.role === 'title_company' || user.role === 'company_manager' || user.role === 'client') {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasAccess = true;
+            console.log(`✅ DOCUMENT ACCESS: Title company user ${user.id} accessing job for ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for document preview:', companyCheckError);
+        }
       }
       // Signer access - check via signers table (THIS WAS MISSING!)
       else if (user.role === 'signer' || user.role === 'witness') {
@@ -7650,7 +8019,6 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       res.status(500).json({ error: 'Failed to get qualified notaries' });
     }
   });
-
   // Select random notary for a specific time slot
   app.post('/api/random-notary/select', verifyToken, async (req: any, res) => {
     try {
@@ -7696,7 +8064,33 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       }
 
       // Check if user has access to this job
-      if (req.user.role !== 'admin' && job.userId !== req.user.id && job.selectedNotary !== req.user.id.toString()) {
+      let hasAccess = req.user.role === 'admin' || 
+                     job.userId === req.user.id || 
+                     job.selectedNotary === req.user.id.toString();
+      
+      // For title company users, also check if job is assigned to their company
+      if (!hasAccess && (req.user.role === 'title_company' || req.user.role === 'company_manager' || req.user.role === 'client')) {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasAccess = true;
+            console.log(`✅ COMPLETION REPORT: Title company user ${req.user.id} accessing job for ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for completion report:', companyCheckError);
+        }
+      }
+
+      if (!hasAccess) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -7726,7 +8120,33 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       }
 
       // Check if user has access to this job
-      if (req.user.role !== 'admin' && job.userId !== req.user.id && job.selectedNotary !== req.user.id.toString()) {
+      let hasAccess = req.user.role === 'admin' || 
+                     job.userId === req.user.id || 
+                     job.selectedNotary === req.user.id.toString();
+      
+      // For title company users, also check if job is assigned to their company
+      if (!hasAccess && (req.user.role === 'title_company' || req.user.role === 'company_manager' || req.user.role === 'client')) {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasAccess = true;
+            console.log(`✅ COMPLETION REPORT DOWNLOAD: Title company user ${req.user.id} accessing job for ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for completion report download:', companyCheckError);
+        }
+      }
+
+      if (!hasAccess) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -8430,7 +8850,6 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       res.status(500).json({ message: 'Failed to validate invitation' });
     }
   });
-
   // Get or create password reset token for signer - PUBLIC endpoint (no auth required)
   app.post('/api/signers/get-password-reset-token', async (req, res) => {
     try {
@@ -9071,7 +9490,6 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-
   // EVS Verification route with Vultr storage
   app.post('/api/verification/evs-verify', verifyToken, upload.fields([
     { name: 'frontImage', maxCount: 1 },
@@ -9816,7 +10234,6 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       });
     }
   });
-
   // Get session state and participants - ULTRA OPTIMIZED VERSION V3
   app.get('/api/session/:sessionId/state', verifyToken, responseCacheMiddleware, async (req: any, res) => {
     const startTime = Date.now();
@@ -10596,7 +11013,6 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       });
     }
   });
-
   // Update session status
   app.put('/api/editor/session/:sessionId/status', verifyToken, async (req: any, res) => {
     try {
@@ -11327,7 +11743,6 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       });
     }
   });
-
   // Update tag content (for manual content entry)
   app.put('/api/editor/session/:sessionId/tag/:tagId/content', verifyToken, async (req: any, res) => {
     try {
@@ -12110,7 +12525,6 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       res.status(500).json({ error: 'Failed to create sample log data' });
     }
   });
-
   // Download user logs as PDF
   app.get('/api/user/download-logs', verifyToken, async (req: any, res) => {
     try {
@@ -12551,7 +12965,45 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       }
 
       // Check if user has access to this job
-      if (req.user.role !== 'admin' && job.userId !== req.user.id && job.selectedNotary !== req.user.id.toString()) {
+      let hasAccess = false;
+      
+      // Admin access
+      if (req.user.role === 'admin') {
+        hasAccess = true;
+        console.log(`✅ DOWNLOAD PACKAGE: Admin user ${req.user.id}`);
+      }
+      // Job creator access
+      else if (job.userId === req.user.id) {
+        hasAccess = true;
+        console.log(`✅ DOWNLOAD PACKAGE: Job creator user ${req.user.id}`);
+      }
+      // Assigned notary access
+      else if (job.selectedNotary === req.user.id.toString()) {
+        hasAccess = true;
+        console.log(`✅ DOWNLOAD PACKAGE: Assigned notary user ${req.user.id}`);
+      }
+      // Title company access - check if job is assigned to user's company
+      else if (req.user.role === 'title_company' || req.user.role === 'company_manager' || req.user.role === 'client') {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+          
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasAccess = true;
+            console.log(`✅ DOWNLOAD PACKAGE: Title company user ${req.user.id} accessing job for ${userWithCompany.companyName}`);
+          }
+        } catch (error) {
+          console.error('Error checking title company access for download package:', error);
+        }
+      }
+      
+      if (!hasAccess) {
         // Check if user is a signer for this job
         const signerAccess = await db.query.signers.findFirst({
           where: and(
@@ -12561,8 +13013,10 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         });
         
         if (!signerAccess) {
+          console.log(`❌ DOWNLOAD PACKAGE DENIED: User ${req.user.id} (${req.user.email}, role: ${req.user.role}) not authorized for job ${jobId} package download`);
           return res.status(403).json({ message: 'Access denied' });
         }
+        console.log(`✅ DOWNLOAD PACKAGE: Signer user ${req.user.id}`);
       }
 
       // Only allow download for completed jobs

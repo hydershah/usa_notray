@@ -270,20 +270,41 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
   // MOVED: useMutation hook to top to prevent hooks order violation
   const createJobMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      const response = await fetch('/api/jobs', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: data,
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.text();
-        throw new Error(errorData || 'Failed to create job');
+      // Create AbortController for timeout handling (60 seconds for job creation with multiple signers)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        console.log('⏰ Job creation timeout reached (60 seconds)');
+        controller.abort();
+      }, 60000);
+
+      try {
+        const response = await fetch('/api/jobs', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: data,
+          signal: controller.signal,
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          const errorData = await response.text();
+          throw new Error(errorData || 'Failed to create job');
+        }
+        
+        return response.json();
+      } catch (error: any) {
+        clearTimeout(timeoutId);
+        
+        // Handle timeout errors specifically
+        if (error.name === 'AbortError') {
+          throw new Error('Job creation timed out after 60 seconds. The job may still be processing on our servers. Please check your jobs list to see if it was created successfully.');
+        }
+        
+        throw error;
       }
-      
-      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/jobs'] });

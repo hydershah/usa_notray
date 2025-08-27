@@ -1,35 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { MainLayout } from '@/components/layout/main-layout';
 import { useAuth } from '@/hooks/use-auth';
 import { useLocation } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AccountSetupModal } from '@/components/ui/account-setup-modal';
+import { useAccountCompletion } from '@/hooks/use-account-completion';
 import { 
   PenTool,
   FileText,
   Calendar,
-  Clock,
   MapPin,
-  Building2,
-  CheckCircle,
   AlertCircle,
   Eye,
   Download,
   Video,
   User,
-  Users,
-  Shield,
   Loader2,
-  RefreshCw,
-  Filter,
-  Search
+  RefreshCw
 } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { isMobileDevice } from '@/lib/utils';
 
 interface SigningJob {
@@ -50,11 +42,18 @@ interface SigningJob {
 
 export default function SigningJobs() {
   const { user } = useAuth();
+  const { showOverlay: hasAccountCompletionOverlay } = useAccountCompletion();
   const [, setLocation] = useLocation();
-  const [filter, setFilter] = useState('all');
-  const [searchTerm, setSearchTerm] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [downloadingPackage, setDownloadingPackage] = useState(false);
+  const [accountSetupModal, setAccountSetupModal] = useState<{
+    isOpen: boolean;
+    requirements: string[];
+  }>({
+    isOpen: false,
+    requirements: []
+  });
 
   // Fetch invited jobs
   const { 
@@ -67,24 +66,7 @@ export default function SigningJobs() {
     refetchInterval: 30000, // Refresh every 30 seconds
   });
 
-  // Filter jobs based on status and search
-  const filteredJobs = signingJobs.filter(job => {
-    const matchesFilter = filter === 'all' || job.signingStatus === filter;
-    const matchesSearch = !searchTerm || 
-      job.titleCompany.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.closingType.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.signerRole.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    return matchesFilter && matchesSearch;
-  });
 
-  // Group jobs by status
-  const jobsByStatus = {
-    pending: filteredJobs.filter(job => job.signingStatus === 'pending'),
-    in_progress: filteredJobs.filter(job => job.signingStatus === 'in_progress'), 
-    completed: filteredJobs.filter(job => job.signingStatus === 'completed'),
-    all: filteredJobs
-  };
 
   const handleJoinSession = async (job: SigningJob) => {
     setLoading(true);
@@ -110,6 +92,17 @@ export default function SigningJobs() {
       
       if (!accessData.hasAccess) {
         if (newWindow) newWindow.close();
+        
+        // Handle account setup required case with professional modal
+        // Only show the setup modal if the main overlay is not already shown
+        if (accessData.errorType === 'account_setup_required' && !hasAccountCompletionOverlay) {
+          setAccountSetupModal({
+            isOpen: true,
+            requirements: accessData.requirements || []
+          });
+          return;
+        }
+        
         // Show a clearer message if the session has been completed
         const message = accessData.errorType === 'session_completed'
           ? 'This signing session has been completed. You can download your documents from the job details.'
@@ -247,129 +240,26 @@ export default function SigningJobs() {
           </div>
         </div>
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-yellow-100 rounded-lg">
-                  <Clock className="h-5 w-5 text-yellow-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {jobsByStatus.pending.length}
-                  </p>
-                  <p className="text-sm text-gray-600">Pending</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <PenTool className="h-5 w-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {jobsByStatus.in_progress.length}
-                  </p>
-                  <p className="text-sm text-gray-600">In Progress</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-100 rounded-lg">
-                  <CheckCircle className="h-5 w-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {jobsByStatus.completed.length}
-                  </p>
-                  <p className="text-sm text-gray-600">Completed</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-gray-100 rounded-lg">
-                  <FileText className="h-5 w-5 text-gray-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {signingJobs.length}
-                  </p>
-                  <p className="text-sm text-gray-600">Total Jobs</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
 
-        {/* Filters and Search */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Search by title company, document type, or role..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-          </div>
-          <Select value={filter} onValueChange={setFilter}>
-            <SelectTrigger className="w-full sm:w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Jobs</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="in_progress">In Progress</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+
+
 
         {/* Jobs List */}
-        {filteredJobs.length === 0 ? (
+        {signingJobs.length === 0 ? (
           <Card>
             <CardContent className="p-12 text-center">
               <PenTool className="h-16 w-16 text-gray-400 mx-auto mb-4" />
               <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                {searchTerm || filter !== 'all' ? 'No matching jobs found' : 'No signing jobs yet'}
+                No signing jobs yet
               </h3>
               <p className="text-gray-600 mb-4">
-                {searchTerm || filter !== 'all' 
-                  ? 'Try adjusting your search or filter criteria.'
-                  : 'When you\'re invited to sign documents, they\'ll appear here.'
-                }
+                When you're invited to sign documents, they'll appear here.
               </p>
-              {(searchTerm || filter !== 'all') && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setSearchTerm('');
-                    setFilter('all');
-                  }}
-                >
-                  Clear Filters
-                </Button>
-              )}
             </CardContent>
           </Card>
         ) : (
           <div className="space-y-4">
-            {filteredJobs.map((job) => (
+            {signingJobs.map((job) => (
               <Card key={job.id} className={`border-l-4 ${getStatusColor(job.signingStatus)}`}>
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between mb-4">
@@ -482,6 +372,14 @@ export default function SigningJobs() {
           </div>
         )}
       </div>
+
+      {/* Account Setup Modal */}
+      <AccountSetupModal
+        isOpen={accountSetupModal.isOpen}
+        onClose={() => setAccountSetupModal({ isOpen: false, requirements: [] })}
+        requirements={accountSetupModal.requirements}
+        onSetupClick={() => setLocation('/profile')}
+      />
     </MainLayout>
   );
 } 

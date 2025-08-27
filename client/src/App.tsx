@@ -6,7 +6,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
+import { useAccountCompletion } from "@/hooks/use-account-completion";
 import { MainLayout } from "@/components/layout/main-layout";
+import { AccountCompletionOverlay } from "@/components/ui/account-completion-overlay";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
@@ -105,11 +107,11 @@ function RoleBasedRedirect() {
     return <Redirect to="/login" />;
   }
   
-  // Signers and witnesses go to dashboard, others go to jobs
+  // Signers and witnesses go to dashboard, others go to admin dashboard
   if (user.role === 'signer' || user.role === 'witness') {
     return <Redirect to="/dashboard" />;
   } else {
-    return <Redirect to="/jobs" />;
+    return <Redirect to="/admin-dashboard" />;
   }
 }
 
@@ -154,11 +156,56 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode;
     });
 
     if (!hasRequiredRole) {
-      return <Redirect to="/dashboard" />;
+      // Redirect based on user role
+      const defaultRoute = (user.role === 'signer' || user.role === 'witness') 
+        ? "/dashboard" 
+        : "/admin-dashboard";
+      return <Redirect to={defaultRoute} />;
     }
   }
 
   return <>{children}</>;
+}
+
+// Account Completion Wrapper Component
+function AccountCompletionWrapper({ children }: { children: React.ReactNode }) {
+  const { showOverlay } = useAccountCompletion();
+  const { refetch, user } = useAuth();
+
+  // Only refresh user data once when the overlay first appears
+  const hasRefreshedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (showOverlay && !hasRefreshedRef.current) {
+      hasRefreshedRef.current = true;
+      refetch?.();
+    }
+  }, [showOverlay, refetch]);
+
+  const handleCompletionComplete = async () => {
+    console.log('🏁 Account completion callback triggered');
+    
+    // Add a small delay to prevent racing condition
+    setTimeout(async () => {
+      // Ensure we have the latest verification state
+      await refetch?.();
+      
+      // Reset the refresh flag so the overlay can be reshown if needed
+      hasRefreshedRef.current = false;
+      
+      // The hook will recompute showOverlay from updated user data
+      console.log('🔄 User data refreshed, hook will recompute overlay state');
+    }, 500);
+  };
+
+  return (
+    <>
+      {children}
+      <AccountCompletionOverlay
+        isOpen={showOverlay}
+        onComplete={handleCompletionComplete}
+      />
+    </>
+  );
 }
 
 function Router() {
@@ -297,7 +344,17 @@ function Router() {
       </Route>
 
       <Route path="/dashboard">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={['signer', 'witness']}>
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/signing-jobs")))}
+            </React.Suspense>
+          </ErrorBoundary>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin-dashboard">
+        <ProtectedRoute allowedRoles={['admin', 'title_company', 'notary', 'client']}>
           <Dashboard />
         </ProtectedRoute>
       </Route>
@@ -592,15 +649,7 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
-      <Route path="/signing-jobs">
-        <ProtectedRoute allowedRoles={['signer', 'witness']}>
-          <ErrorBoundary fallback={<LoadingFallback />}>
-            <React.Suspense fallback={<LoadingFallback />}>
-              {React.createElement(React.lazy(() => import("@/pages/signing-jobs")))}
-            </React.Suspense>
-          </ErrorBoundary>
-        </ProtectedRoute>
-      </Route>
+
 
       <Route path="/my-documents">
         <ProtectedRoute allowedRoles={['signer', 'witness', 'client', 'notary']}>
@@ -650,7 +699,9 @@ function App() {
         <Toaster />
         <SonnerToaster />
         <ErrorBoundary fallback={<LoadingFallback />}>
-          <Router />
+          <AccountCompletionWrapper>
+            <Router />
+          </AccountCompletionWrapper>
         </ErrorBoundary>
       </TooltipProvider>
     </QueryClientProvider>

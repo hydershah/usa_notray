@@ -9,7 +9,13 @@ export interface User {
   firstName?: string;
   lastName?: string;
   phone?: string;
+  phoneNumber?: string;
   address?: string;
+  address1?: string;
+  address2?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
   twoFactorEnabled?: boolean;
   emailVerified?: boolean;
   lastLoginAt?: string;
@@ -181,7 +187,8 @@ export const authApi = {
   },
 
   getCurrentUser: async (): Promise<User> => {
-    const response = await apiRequest('GET', '/api/auth/me');
+    // Bypass any intermediary caching by appending a timestamp
+    const response = await apiRequest('GET', `/api/auth/me?t=${Date.now()}`);
     const userData = await response.json();
     return userData;
   },

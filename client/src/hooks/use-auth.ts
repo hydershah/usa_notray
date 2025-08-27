@@ -102,12 +102,19 @@ export function useAuth() {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []); // Remove user dependency to prevent loops
 
-  const login = async (email: string, password: string) => {
+  const login = async (credentials: any) => {
     try {
-      const response = await authApi.login({ email, password });
-      setUser(response.user);
+      const userData = await authApi.login(credentials);
+      setUser(userData);
       setIsAuthenticated(true);
-      return response;
+      
+      // 🚀 FIX: Invalidate queries to refetch data after login
+      // This ensures we get the latest user profile, including completion status
+      console.log('🚀 Invalidating queries and refetching after login...');
+      await queryClient.invalidateQueries(); // Invalidate all queries
+      await queryClient.refetchQueries();   // Refetch all active queries
+
+      return userData;
     } catch (error) {
       throw error;
     }

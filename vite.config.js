@@ -76,7 +76,7 @@ export default defineConfig({
         ws: true,
         secure: false,
         // Add retry logic for server startup delays
-        timeout: 10000, // 10 second timeout
+        timeout: 60000, // 60 second timeout (increased from 10s for job creation with multiple signers)
         configure: (proxy, options) => {
           proxy.on('proxyReq', (proxyReq, req, res) => {
             // Forward all original headers including Authorization

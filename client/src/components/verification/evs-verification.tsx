@@ -171,12 +171,12 @@ export function EVSVerification({
 
       const token = localStorage.getItem('token');
       
-      // Create AbortController for timeout handling
+      // Create AbortController for timeout handling (increase to 90s to avoid premature errors)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
-        console.log('⏰ Verification timeout reached (45 seconds)');
+        console.log('⏰ Verification timeout reached (90 seconds)');
         controller.abort();
-      }, 45000); // 45 second timeout to handle network delays
+      }, 90000);
 
       console.log('🔍 Starting ID verification request...');
       const startTime = Date.now();
@@ -347,7 +347,10 @@ export function EVSVerification({
       setLoading(true);
       console.log('🔄 Checking verification status for user', userId);
       const token = localStorage.getItem('token');
-      const response = await fetch(`/api/users/${userId}/profile`, {
+
+      // Use comprehensive profile (includes verification fields) and bypass cache with a timestamp
+      const statusUrl = `/api/users/${userId}/profile/comprehensive?t=${Date.now()}`;
+      const response = await fetch(statusUrl, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
@@ -361,7 +364,7 @@ export function EVSVerification({
           evsVerificationConfidence: userData.evsVerificationConfidence
         });
         
-        if (userData.isVerified && userData.verificationStatus === 'approved') {
+        if ((userData.isVerified === true) && (userData.verificationStatus === 'approved')) {
           // Verification completed in background!
           console.log('✅ Background verification detected - updating UI');
           setState(prev => ({ 
@@ -369,7 +372,7 @@ export function EVSVerification({
             step: 'complete',
             verificationResult: { 
               status: 'approved', 
-              confidence: userData.evsVerificationConfidence,
+              confidence: userData.evsVerificationConfidence ?? 100,
               message: 'Verification completed successfully' 
             }
           }));

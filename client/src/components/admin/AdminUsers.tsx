@@ -338,10 +338,15 @@ export function AdminUsers() {
   const fetchUsersData = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/users', {
+      const response = await fetch('/api/users?' + new URLSearchParams({
+        _t: Date.now().toString() // Cache busting parameter
+      }), {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
         }
       });
       
@@ -350,6 +355,7 @@ export function AdminUsers() {
       }
       
       const users = await response.json();
+      console.log('Fetched users data:', users); // Debug log
       
       const mappedUsers = Array.isArray(users) ? users.map((user: any) => ({
         id: user.id,
@@ -357,7 +363,7 @@ export function AdminUsers() {
         email: user.email || '',
         role: user.role || 'unknown',
         isActive: user.isActive !== false,
-        approvalStatus: user.approvalStatus || (user.isActive ? 'approved' : 'pending'),
+        approvalStatus: user.approvalStatus || 'pending', // Use actual approval status from DB
         phoneNumber: user.phoneNumber,
         state: user.state,
         city: user.city,
@@ -368,6 +374,7 @@ export function AdminUsers() {
         isNotary: user.isNotary
       })) : [];
       
+      console.log('Mapped users data:', mappedUsers); // Debug log
       setAllUsers(mappedUsers);
     } catch (error) {
       console.error('Error fetching users data:', error);
@@ -379,27 +386,65 @@ export function AdminUsers() {
 
   const handleApproveUser = async (user: UserData) => {
     try {
-      const response = await apiRequest("PATCH", `/api/users/${user.id}`, {
-        approvalStatus: 'approved',
-        isActive: true
+      console.log('Approving user:', user.id, user.fullName);
+      
+      // Optimistically update the UI
+      setAllUsers(prev => prev.map(u => 
+        u.id === user.id 
+          ? { ...u, approvalStatus: 'approved', isActive: true }
+          : u
+      ));
+      
+      const response = await fetch(`/api/admin/users/${user.id}/approve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        },
+        body: JSON.stringify({ notes: 'Approved by admin dashboard' })
       });
       
       if (response.ok) {
+        const result = await response.json();
+        console.log('User approval successful:', result);
+        
         toast({
           title: "User Approved",
           description: `${user.fullName} has been approved successfully.`,
         });
-        fetchUsersData(); // Refresh the list
+        
+        // Add a small delay to ensure backend processing is complete
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        fetchUsersData(); // Refresh the list to get the latest data
       } else {
         const errorData = await response.json();
+        console.error('User approval failed:', errorData);
+        
+        // Revert optimistic update
+        setAllUsers(prev => prev.map(u => 
+          u.id === user.id 
+            ? { ...u, approvalStatus: user.approvalStatus, isActive: user.isActive }
+            : u
+        ));
+        
         toast({
           title: "Error",
-          description: errorData.error || "Failed to approve user",
+          description: errorData.message || "Failed to approve user",
           variant: "destructive",
         });
       }
     } catch (error) {
       console.error('Error approving user:', error);
+      
+      // Revert optimistic update
+      setAllUsers(prev => prev.map(u => 
+        u.id === user.id 
+          ? { ...u, approvalStatus: user.approvalStatus, isActive: user.isActive }
+          : u
+      ));
+      
       toast({
         title: "Error",
         description: "Failed to approve user. Please try again.",
@@ -410,27 +455,65 @@ export function AdminUsers() {
 
   const handleRejectUser = async (user: UserData) => {
     try {
-      const response = await apiRequest("PATCH", `/api/users/${user.id}`, {
-        approvalStatus: 'rejected',
-        isActive: false
+      console.log('Rejecting user:', user.id, user.fullName);
+      
+      // Optimistically update the UI
+      setAllUsers(prev => prev.map(u => 
+        u.id === user.id 
+          ? { ...u, approvalStatus: 'rejected', isActive: false }
+          : u
+      ));
+      
+      const response = await fetch(`/api/admin/users/${user.id}/reject`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        },
+        body: JSON.stringify({ notes: 'Rejected by admin dashboard' })
       });
       
       if (response.ok) {
+        const result = await response.json();
+        console.log('User rejection successful:', result);
+        
         toast({
           title: "User Rejected",
           description: `${user.fullName} has been rejected.`,
         });
-        fetchUsersData(); // Refresh the list
+        
+        // Add a small delay to ensure backend processing is complete
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        fetchUsersData(); // Refresh the list to get the latest data
       } else {
         const errorData = await response.json();
+        console.error('User rejection failed:', errorData);
+        
+        // Revert optimistic update
+        setAllUsers(prev => prev.map(u => 
+          u.id === user.id 
+            ? { ...u, approvalStatus: user.approvalStatus, isActive: user.isActive }
+            : u
+        ));
+        
         toast({
           title: "Error",
-          description: errorData.error || "Failed to reject user",
+          description: errorData.message || "Failed to reject user",
           variant: "destructive",
         });
       }
     } catch (error) {
       console.error('Error rejecting user:', error);
+      
+      // Revert optimistic update
+      setAllUsers(prev => prev.map(u => 
+        u.id === user.id 
+          ? { ...u, approvalStatus: user.approvalStatus, isActive: user.isActive }
+          : u
+      ));
+      
       toast({
         title: "Error",
         description: "Failed to reject user. Please try again.",

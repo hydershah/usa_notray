@@ -1487,9 +1487,10 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
             Job #{job.id} • Last updated: {new Date().toLocaleDateString()}
           </div>
           <div className="flex items-center gap-3">
-            {/* Hide Start Tagging and Live Session buttons for signers when job is completed */}
+            {/* Hide Start Tagging and Live Session buttons for signers when job is completed and title companies */}
             {(job.jobStatus === 'open' || job.jobStatus === 'pending') && 
-             !(user?.role === 'signer' && job.jobStatus === 'completed') && (
+             !(user?.role === 'signer' && job.jobStatus === 'completed') && 
+             !(user?.role === 'title_company' || user?.role === 'company_manager' || user?.role === 'client') && (
               <>
                 <Button
                   variant="outline"

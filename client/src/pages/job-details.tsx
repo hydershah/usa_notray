@@ -380,8 +380,9 @@ export default function JobDetailsPage() {
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            {/* Hide Edit, Tag, and Live Session buttons for signers when job is completed */}
-            {!(user?.role === 'signer' && job.jobStatus === 'completed') && (
+            {/* Hide Edit, Tag, and Live Session buttons for signers when job is completed and title companies */}
+            {!(user?.role === 'signer' && job.jobStatus === 'completed') && 
+             !(user?.role === 'title_company' || user?.role === 'company_manager' || user?.role === 'client') && (
               <>
                 <Button 
                   onClick={() => setIsEditModalOpen(true)}

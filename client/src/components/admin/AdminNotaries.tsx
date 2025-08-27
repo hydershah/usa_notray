@@ -273,7 +273,7 @@ export function AdminNotaries() {
 
   const createUserMutation = useMutation({
     mutationFn: async (userData: any) => {
-      const response = await apiRequest('POST', '/api/auth/register', userData);
+      const response = await apiRequest('POST', '/api/auth/register-user', userData);
       return response.json();
     },
     onSuccess: () => {
@@ -392,10 +392,11 @@ export function AdminNotaries() {
   };
 
   const handleFormSubmit = (formData: any) => {
-    // Set role to notary and default notary type if not specified
+    // Set role and userType to notary and default notary type if not specified
     const userData = {
       ...formData,
       role: 'notary',
+      userType: 'notary', // Required for the register-user endpoint
       notaryType: formData.notaryType || 'contractor'
     };
 
