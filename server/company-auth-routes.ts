@@ -61,7 +61,7 @@ export function registerCompanyAuthRoutes(app: Express): void {
         lastName: validatedData.primaryUserName.split(' ').slice(1).join(' ') || '',
         fullName: validatedData.primaryUserName,
         phoneNumber: validatedData.phoneNumber,
-        role: 'company_manager',
+        role: 'title_company',
         companyRole: 'manager',
         isActive: true,
         approvalStatus: 'approved'

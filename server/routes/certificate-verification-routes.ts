@@ -2,7 +2,7 @@ import { Express } from 'express';
 import { verifyToken } from '../auth';
 import { CertificateVerificationService } from '../services/certificate-verification-service';
 import { db } from '../db';
-import { jobs, users, signers, jobParticipants } from '../../shared/schema';
+import { jobs, users, signers, jobParticipants, companies } from '../../shared/schema';
 import { eq, and, or } from 'drizzle-orm';
 
 export function registerCertificateVerificationRoutes(app: Express) {
@@ -29,6 +29,28 @@ export function registerCertificateVerificationRoutes(app: Express) {
 
     if (basicAccess) {
       return { hasAccess: true, job };
+    }
+
+    // Check title company access - if job is assigned to user's company
+    if (user.role === 'title_company' || user.role === 'company_manager' || user.role === 'client') {
+      try {
+        // Get user's company information
+        const [userWithCompany] = await db.select({
+          companyName: companies.companyName
+        })
+        .from(users)
+        .leftJoin(companies, eq(users.companyId, companies.id))
+        .where(eq(users.id, user.id))
+        .limit(1);
+        
+        // Check if job is assigned to their company
+        if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+          console.log(`✅ CERTIFICATE VERIFICATION: Title company user ${user.id} accessing job for ${userWithCompany.companyName}`);
+          return { hasAccess: true, job };
+        }
+      } catch (companyCheckError) {
+        console.error('Error checking company access for certificate verification:', companyCheckError);
+      }
     }
 
     // Check if user is a participant (signer) in this job

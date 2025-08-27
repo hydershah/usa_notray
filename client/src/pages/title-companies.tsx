@@ -842,7 +842,7 @@ export default function TitleCompanies() {
       {/* Assignments Dialog */}
       <Dialog open={isAssignmentsOpen} onOpenChange={setIsAssignmentsOpen}>
         <DialogContent className="max-w-4xl">
-          <DialogHeader>
+          <DialogHeader onClose={() => setIsAssignmentsOpen(false)}>
             <DialogTitle>Manage Notary Assignments</DialogTitle>
             <DialogDescription>
               Assign or update preferred notaries for {assignCompany?.companyName ?? ''}.

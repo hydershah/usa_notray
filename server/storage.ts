@@ -611,7 +611,8 @@ export class DatabaseStorage implements IStorage {
         ...managerData,
         password: await bcrypt.hash(managerData.password, 10),
         companyId: company.id,
-        role: 'manager',
+        // Use the role from managerData instead of hardcoding 'manager'
+        role: managerData.role || 'manager',
       })
       .returning();
     return { company, manager };
@@ -724,82 +725,149 @@ export class DatabaseStorage implements IStorage {
   async getRoleBasedJobs(userId: number, role: string, page: number = 1, limit: number = 100): Promise<{ jobs: Job[], totalCount: number, hasMore: boolean }> {
     const offset = (page - 1) * limit;
     
-    // For this method, we still need to check the role string since it's passed as a parameter
-    if (role === 'admin') {
-      // PERFORMANCE FIX: Use pagination instead of loading ALL jobs at once
-      const [jobsResult, countResult] = await Promise.all([
-        // Include first signer name via subquery
-        db.execute(sql`
-          SELECT 
-            j.*,
-            COALESCE(
-              (
-                SELECT s.signer_name 
-                FROM signers s 
-                WHERE s.job_id = j.id 
-                ORDER BY s.created_at ASC NULLS LAST, s.id ASC 
-                LIMIT 1
-              ),
-              ''
-            ) AS first_signer_name
-          FROM jobs j
-          ORDER BY j.created_at DESC
-          LIMIT ${limit}
-          OFFSET ${offset}
-        `),
-        db.select({ count: count() }).from(jobs)
-      ]);
-      
-      const totalCount = countResult[0].count;
-      const hasMore = offset + limit < totalCount;
-      
-      return {
-        jobs: (jobsResult.rows as unknown as Job[]),
-        totalCount,
-        hasMore
-      };
-    } else if (role === 'notary') {
-      // Include first signer name and filter by notary involvement
-      const [jobsResult, countResult] = await Promise.all([
-        db.execute(sql`
-          SELECT 
-            j.*,
-            COALESCE(
-              (
-                SELECT s.signer_name 
-                FROM signers s 
-                WHERE s.job_id = j.id 
-                ORDER BY s.created_at ASC NULLS LAST, s.id ASC 
-                LIMIT 1
-              ),
-              ''
-            ) AS first_signer_name
-          FROM jobs j
-          WHERE j.user_id = ${userId}
-             OR j.selected_notary = CAST(${userId} AS TEXT)
-             OR j.notary_id = ${userId}
-          ORDER BY j.created_at DESC
-          LIMIT ${limit}
-          OFFSET ${offset}
-        `),
-        db.select({ count: count() }).from(jobs).where(
-          or(
-            eq(jobs.userId, userId),
-            eq(jobs.selectedNotary, userId.toString()),
-            eq(jobs.notaryId, userId)
+    try {
+      // For this method, we still need to check the role string since it's passed as a parameter
+      if (role === 'admin') {
+        // PERFORMANCE FIX: Use pagination instead of loading ALL jobs at once
+        const [jobsResult, countResult] = await Promise.all([
+          // Include first signer name via subquery
+          db.execute(sql`
+            SELECT 
+              j.*,
+              COALESCE(
+                (
+                  SELECT s.signer_name 
+                  FROM signers s 
+                  WHERE s.job_id = j.id 
+                  ORDER BY s.created_at ASC NULLS LAST, s.id ASC 
+                  LIMIT 1
+                ),
+                ''
+              ) AS first_signer_name
+            FROM jobs j
+            ORDER BY j.created_at DESC
+            LIMIT ${limit}
+            OFFSET ${offset}
+          `),
+          db.select({ count: count() }).from(jobs)
+        ]);
+        
+        const totalCount = countResult[0].count;
+        const hasMore = offset + limit < totalCount;
+        
+        return {
+          jobs: (jobsResult.rows as unknown as Job[]),
+          totalCount,
+          hasMore
+        };
+      } else if (role === 'notary') {
+        // Include first signer name and filter by notary involvement
+        const [jobsResult, countResult] = await Promise.all([
+          db.execute(sql`
+            SELECT 
+              j.*,
+              COALESCE(
+                (
+                  SELECT s.signer_name 
+                  FROM signers s 
+                  WHERE s.job_id = j.id 
+                  ORDER BY s.created_at ASC NULLS LAST, s.id ASC 
+                  LIMIT 1
+                ),
+                ''
+              ) AS first_signer_name
+            FROM jobs j
+            WHERE j.user_id = ${userId}
+               OR j.selected_notary = CAST(${userId} AS TEXT)
+               OR j.notary_id = ${userId}
+            ORDER BY j.created_at DESC
+            LIMIT ${limit}
+            OFFSET ${offset}
+          `),
+          db.select({ count: count() }).from(jobs).where(
+            or(
+              eq(jobs.userId, userId),
+              eq(jobs.selectedNotary, userId.toString()),
+              eq(jobs.notaryId, userId)
+            )
           )
-        )
-      ]);
-      
-      const totalCount = countResult[0].count;
-      const hasMore = offset + limit < totalCount;
-      
-      return {
-        jobs: (jobsResult.rows as unknown as Job[]),
-        totalCount,
-        hasMore
-      };
-    } else if (role === 'signer' || role === 'witness') {
+        ]);
+        
+        const totalCount = countResult[0].count;
+        const hasMore = offset + limit < totalCount;
+        
+        return {
+          jobs: (jobsResult.rows as unknown as Job[]),
+          totalCount,
+          hasMore
+        };
+      } else if (role === 'title_company' || role === 'company_manager' || role === 'client') {
+        // Title company, company manager, and client users see jobs they created OR jobs assigned to their company
+        
+        // First, get the user's company information
+        const [user] = await db.select({
+          id: users.id,
+          companyId: users.companyId,
+          companyName: companies.companyName
+        })
+        .from(users)
+        .leftJoin(companies, eq(users.companyId, companies.id))
+        .where(eq(users.id, userId))
+        .limit(1);
+
+        if (!user) {
+          return {
+            jobs: [],
+            totalCount: 0,
+            hasMore: false
+          };
+        }
+
+        // Build the WHERE clause to include both user-created jobs AND jobs assigned to their company
+        const whereConditions: any[] = [eq(jobs.userId, userId)];
+        
+        // If user has a company, also include jobs where titleCompany matches their company name
+        if (user.companyName) {
+          whereConditions.push(eq(jobs.titleCompany, user.companyName));
+        }
+
+        const [jobsResult, countResult] = await Promise.all([
+          db.execute(sql`
+            SELECT 
+              j.*,
+              COALESCE(
+                (
+                  SELECT s.signer_name 
+                  FROM signers s 
+                  WHERE s.job_id = j.id 
+                  ORDER BY s.created_at ASC NULLS LAST, s.id ASC 
+                  LIMIT 1
+                ),
+                ''
+              ) AS first_signer_name
+            FROM jobs j
+            WHERE j.user_id = ${userId}
+               OR (${user.companyName ? sql`j.title_company = ${user.companyName}` : sql`FALSE`})
+            ORDER BY j.created_at DESC
+            LIMIT ${limit}
+            OFFSET ${offset}
+          `),
+          db.select({ count: count() })
+            .from(jobs)
+            .where(or(...whereConditions))
+        ]);
+        
+        const totalCount = countResult[0].count;
+        const hasMore = offset + limit < totalCount;
+        
+        console.log(`📋 Found ${jobsResult.rows.length} jobs for ${role} user ${userId} (company: ${user.companyName}, total: ${totalCount})`);
+        
+        return {
+          jobs: (jobsResult.rows as unknown as Job[]),
+          totalCount,
+          hasMore
+        };
+      } else if (role === 'signer' || role === 'witness') {
       // CRITICAL FIX: Include jobs where user is invited as signer/witness  
       // For signers/witnesses, we'll implement pagination on the combined result
       const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
@@ -889,9 +957,18 @@ export class DatabaseStorage implements IStorage {
     } else {
       // Fallback for other roles
       const fallbackJobs = await this.getJobsByUserId(userId);
+              return {
+          jobs: fallbackJobs,
+          totalCount: fallbackJobs.length,
+          hasMore: false
+        };
+      }
+    } catch (error) {
+      console.error('Error in getRoleBasedJobs:', error);
+      // Return empty result on error
       return {
-        jobs: fallbackJobs,
-        totalCount: fallbackJobs.length,
+        jobs: [],
+        totalCount: 0,
         hasMore: false
       };
     }

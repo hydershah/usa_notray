@@ -6,7 +6,11 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
+import { useAccountCompletion } from "@/hooks/use-account-completion";
+import { useNotaryProfileCompletion } from "@/hooks/use-notary-profile-completion";
 import { MainLayout } from "@/components/layout/main-layout";
+import { AccountCompletionOverlay } from "@/components/ui/account-completion-overlay";
+import { NotaryProfileCompletionOverlay } from "@/components/ui/notary-profile-completion-overlay";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
@@ -105,11 +109,11 @@ function RoleBasedRedirect() {
     return <Redirect to="/login" />;
   }
   
-  // Signers and witnesses go to dashboard, others go to jobs
+  // Signers and witnesses go to dashboard, others go to admin dashboard
   if (user.role === 'signer' || user.role === 'witness') {
     return <Redirect to="/dashboard" />;
   } else {
-    return <Redirect to="/jobs" />;
+    return <Redirect to="/admin-dashboard" />;
   }
 }
 
@@ -154,11 +158,84 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode;
     });
 
     if (!hasRequiredRole) {
-      return <Redirect to="/dashboard" />;
+      // Redirect based on user role
+      const defaultRoute = (user.role === 'signer' || user.role === 'witness') 
+        ? "/dashboard" 
+        : "/admin-dashboard";
+      return <Redirect to={defaultRoute} />;
     }
   }
 
   return <>{children}</>;
+}
+
+// Account Completion Wrapper Component
+function AccountCompletionWrapper({ children }: { children: React.ReactNode }) {
+  const { showOverlay: showSignerOverlay } = useAccountCompletion();
+  const { showOverlay: showNotaryOverlay, refresh: refreshNotaryStatus } = useNotaryProfileCompletion();
+  const { refetch, user } = useAuth();
+
+  // Only refresh user data once when either overlay first appears
+  const hasRefreshedRef = React.useRef(false);
+  React.useEffect(() => {
+    if ((showSignerOverlay || showNotaryOverlay) && !hasRefreshedRef.current) {
+      hasRefreshedRef.current = true;
+      refetch?.();
+    }
+  }, [showSignerOverlay, showNotaryOverlay, refetch]);
+
+  const handleCompletionComplete = async () => {
+    console.log('🏁 Account completion callback triggered');
+    
+    // Add a small delay to prevent racing condition
+    setTimeout(async () => {
+      // Ensure we have the latest verification state
+      await refetch?.();
+      
+      // Reset the refresh flag so the overlay can be reshown if needed
+      hasRefreshedRef.current = false;
+      
+      // The hook will recompute showOverlay from updated user data
+      console.log('🔄 User data refreshed, hook will recompute overlay state');
+    }, 500);
+  };
+
+  const handleNotaryCompletionComplete = async () => {
+    console.log('🏁 Notary profile completion callback triggered');
+    
+    // Add a small delay to prevent racing condition
+    setTimeout(async () => {
+      // Refresh both user data and notary status
+      await refetch?.();
+      await refreshNotaryStatus?.();
+      
+      // Reset the refresh flag
+      hasRefreshedRef.current = false;
+      
+      // Dispatch custom event to notify other components about profile completion
+      window.dispatchEvent(new CustomEvent('notaryProfileCompleted', {
+        detail: { userId: user?.id }
+      }));
+      
+      console.log('🔄 Notary profile completion data refreshed');
+    }, 500);
+  };
+
+  return (
+    <>
+      {children}
+      {/* Signer/Witness Profile Completion Overlay */}
+      <AccountCompletionOverlay
+        isOpen={showSignerOverlay}
+        onComplete={handleCompletionComplete}
+      />
+      {/* Notary Profile Completion Overlay */}
+      <NotaryProfileCompletionOverlay
+        isOpen={showNotaryOverlay}
+        onComplete={handleNotaryCompletionComplete}
+      />
+    </>
+  );
 }
 
 function Router() {
@@ -297,7 +374,17 @@ function Router() {
       </Route>
 
       <Route path="/dashboard">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={['signer', 'witness']}>
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/signing-jobs")))}
+            </React.Suspense>
+          </ErrorBoundary>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin-dashboard">
+        <ProtectedRoute allowedRoles={['admin', 'title_company', 'notary', 'client']}>
           <Dashboard />
         </ProtectedRoute>
       </Route>
@@ -592,15 +679,7 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
-      <Route path="/signing-jobs">
-        <ProtectedRoute allowedRoles={['signer', 'witness']}>
-          <ErrorBoundary fallback={<LoadingFallback />}>
-            <React.Suspense fallback={<LoadingFallback />}>
-              {React.createElement(React.lazy(() => import("@/pages/signing-jobs")))}
-            </React.Suspense>
-          </ErrorBoundary>
-        </ProtectedRoute>
-      </Route>
+
 
       <Route path="/my-documents">
         <ProtectedRoute allowedRoles={['signer', 'witness', 'client', 'notary']}>
@@ -650,7 +729,9 @@ function App() {
         <Toaster />
         <SonnerToaster />
         <ErrorBoundary fallback={<LoadingFallback />}>
-          <Router />
+          <AccountCompletionWrapper>
+            <Router />
+          </AccountCompletionWrapper>
         </ErrorBoundary>
       </TooltipProvider>
     </QueryClientProvider>

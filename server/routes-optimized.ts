@@ -20,6 +20,10 @@ export const optimizedJobCreationRoute = async (app: any) => {
     console.log('🚀 Starting optimized job creation...');
 
     try {
+      // Set response timeout to handle longer job creation with multiple signers
+      req.setTimeout(60000); // 60 second timeout for job creation
+      res.setTimeout(60000);
+      
       // ===== PHASE 1: VALIDATION & PREPARATION (Synchronous - ~10ms) =====
       const hasAdminAccess = hasAdminPrivileges(req.user);
       const hasNotaryAccess = hasNotaryPrivileges(req.user);

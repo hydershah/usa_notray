@@ -3,6 +3,7 @@ import { insertCompanySchema, insertUserSchema } from '../shared/schema.js';
 import { storage } from './storage';
 import bcrypt from 'bcrypt';
 import { verifyToken, hasAdminPrivileges } from './auth.js';
+import { emailService } from './lib/email-service';
 
 export function registerCompanyRoutes(app: Express) {
   
@@ -100,7 +101,7 @@ export function registerCompanyRoutes(app: Express) {
         lastName: primaryUserName.split(' ').slice(1).join(' ') || '',
         fullName: primaryUserName,
         phoneNumber: phoneNumber,
-        role: 'company_manager',
+        role: 'title_company',
         companyRole: 'manager',
         isActive: true,
         approvalStatus: 'approved' // Company managers are auto-approved
@@ -127,6 +128,21 @@ export function registerCompanyRoutes(app: Express) {
       } catch (cacheError) {
         console.error('Failed to invalidate cache after company registration:', cacheError);
         // Don't fail the request if cache invalidation fails
+      }
+
+      // Send welcome email to company manager
+      try {
+        await emailService.sendTitleCompanyWelcomeEmail({
+          userEmail: result.manager.email,
+          userName: result.manager.fullName || result.manager.firstName || 'Company Manager',
+          companyName: result.company.companyName,
+          // Note: We're not including the password in the email for security
+          // Users will need to use password reset if they don't know it
+        });
+        console.log(`📧 Welcome email sent to new company manager: ${result.manager.email}`);
+      } catch (emailError) {
+        // Log email error but don't fail the company registration
+        console.error(`❌ Failed to send welcome email to ${result.manager.email}:`, emailError);
       }
 
       res.status(201).json({
@@ -298,7 +314,26 @@ export function registerCompanyRoutes(app: Express) {
         return res.status(500).json({ message: 'Failed to approve company' });
       }
 
-      // TODO: Send email notification to company manager about approval
+      // Send welcome email to company manager upon approval
+      try {
+        // Get the company manager
+        const manager = await storage.getUserByEmail(updatedCompany.primaryUserEmail);
+        if (manager) {
+          await emailService.sendTitleCompanyWelcomeEmail({
+            userEmail: manager.email,
+            userName: manager.fullName || manager.firstName || 'Company Manager',
+            companyName: updatedCompany.companyName,
+            // Note: We're not including the password in the email for security
+            // Users will need to use password reset if they don't know it
+          });
+          console.log(`📧 Company approval welcome email sent to: ${manager.email}`);
+        } else {
+          console.warn(`⚠️ Could not find manager for approved company ${updatedCompany.id}`);
+        }
+      } catch (emailError) {
+        // Log email error but don't fail the approval
+        console.error(`❌ Failed to send approval welcome email for company ${updatedCompany.id}:`, emailError);
+      }
 
       res.json({
         message: 'Company approved successfully',

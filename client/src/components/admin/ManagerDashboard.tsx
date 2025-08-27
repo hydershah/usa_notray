@@ -45,17 +45,61 @@ interface ManagerStats {
 export function TitleCompanyDashboard() {
   const { user } = useAuth();
   
-  const { data: stats, isLoading: statsLoading } = useQuery<ManagerStats>({
+  const { data: stats, isLoading: statsLoading, error: statsError } = useQuery<ManagerStats>({
     queryKey: ['/api/dashboard/stats'],
+    retry: 3,
+    retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 
-  const { data: recentJobs = [], isLoading: jobsLoading } = useQuery<Job[]>({
+  const { data: jobsResponse, isLoading: jobsLoading, error: jobsError } = useQuery<{
+    jobs: Job[];
+    totalCount: number;
+    hasMore: boolean;
+    currentPage: number;
+    pageSize: number;
+    totalPages: number;
+  }>({
     queryKey: ['/api/jobs'],
+    retry: 3,
+    retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 
   const getJobStatus = (job: any): string => job?.jobStatus || job?.job_status || job?.status || 'open';
 
+  // Safely extract jobs array from response and ensure it's always an array
+  const recentJobs = Array.isArray(jobsResponse?.jobs) ? jobsResponse.jobs : [];
   const recentJobsSlice = recentJobs.slice(0, 5);
+
+  // Show error alerts if API calls fail
+  if (statsError || jobsError) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-3xl font-bold text-gray-900">Title Company Dashboard</h1>
+        {statsError && (
+          <Alert className="border-red-200 bg-red-50">
+            <AlertCircle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-800">
+              <strong>Stats Error:</strong> Unable to load dashboard statistics. Please refresh the page or contact support.
+            </AlertDescription>
+          </Alert>
+        )}
+        {jobsError && (
+          <Alert className="border-red-200 bg-red-50">
+            <AlertCircle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-800">
+              <strong>Jobs Error:</strong> Unable to load recent jobs. Please refresh the page or contact support.
+            </AlertDescription>
+          </Alert>
+        )}
+        <Button 
+          onClick={() => window.location.reload()} 
+          className="mt-4"
+        >
+          Refresh Page
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">

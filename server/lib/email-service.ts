@@ -1052,6 +1052,352 @@ class EmailService {
       `
     });
   }
+
+  async sendJobCompletionNotification(data: {
+    recipientName: string;
+    recipientEmail: string;
+    recipientRole: string;
+    jobId: number;
+    titleCompany: string;
+    closingType: string;
+    propertyAddress: string;
+    completedAt: Date | null;
+    notaryName: string;
+  }): Promise<void> {
+    
+    const completedDate = data.completedAt ? new Date(data.completedAt).toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    }) : 'Unknown';
+
+    const completedTime = data.completedAt ? new Date(data.completedAt).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZoneName: 'short'
+    }) : 'Unknown';
+
+    // Customize message based on recipient role
+    let roleSpecificMessage = '';
+    let actionSection = '';
+
+    switch (data.recipientRole) {
+      case 'notary':
+        roleSpecificMessage = 'The notarization you performed has been successfully completed.';
+        actionSection = `
+          <div style="background-color: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 8px; padding: 16px; margin: 20px 0;">
+            <h4 style="margin: 0 0 8px 0; color: #0369a1;">📋 Next Steps for Notary:</h4>
+            <ul style="margin: 8px 0; padding-left: 20px; color: #0369a1;">
+              <li>Final documents are being processed</li>
+              <li>Your notarial certificate has been recorded</li>
+              <li>You will receive a copy of the final signed documents</li>
+            </ul>
+          </div>
+        `;
+        break;
+      case 'title_company':
+        roleSpecificMessage = 'The notarization for your closing has been successfully completed.';
+        actionSection = `
+          <div style="background-color: #f0fdf4; border: 1px solid #22c55e; border-radius: 8px; padding: 16px; margin: 20px 0;">
+            <h4 style="margin: 0 0 8px 0; color: #15803d;">🏢 Next Steps for Title Company:</h4>
+            <ul style="margin: 8px 0; padding-left: 20px; color: #15803d;">
+              <li>Final signed documents are being prepared</li>
+              <li>All signatures and notarizations are complete</li>
+              <li>You can proceed with your closing process</li>
+            </ul>
+          </div>
+        `;
+        break;
+      default: // Signers (borrower, seller, buyer, etc.)
+        roleSpecificMessage = 'Your document signing session has been successfully completed.';
+        actionSection = `
+          <div style="background-color: #fefce8; border: 1px solid #eab308; border-radius: 8px; padding: 16px; margin: 20px 0;">
+            <h4 style="margin: 0 0 8px 0; color: #a16207;">✅ What Happens Next:</h4>
+            <ul style="margin: 8px 0; padding-left: 20px; color: #a16207;">
+              <li>Your signatures have been securely recorded</li>
+              <li>Final documents are being processed</li>
+              <li>You will receive copies of the signed documents</li>
+              <li>The title company will proceed with the closing</li>
+            </ul>
+          </div>
+        `;
+    }
+
+    const content = `
+        <div style="text-align: center; margin-bottom: 24px;">
+          <div style="background: linear-gradient(135deg, #22c55e, #16a34a); color: white; padding: 20px; border-radius: 12px; display: inline-block;">
+            <h1 style="margin: 0; font-size: 24px;">✅ Signing Complete!</h1>
+          </div>
+        </div>
+        
+        <h2 style="color: #374151; margin-bottom: 16px;">Hello ${data.recipientName},</h2>
+        
+        <p style="font-size: 16px; color: #4b5563; margin-bottom: 16px;">${roleSpecificMessage}</p>
+        
+        <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0;">
+          <h3 style="margin: 0 0 12px 0; color: #1f2937;">📄 Signing Session Details</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 6px 0; color: #6b7280; font-weight: 500;">Job ID:</td>
+              <td style="padding: 6px 0; color: #1f2937;">#${data.jobId}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #6b7280; font-weight: 500;">Title Company:</td>
+              <td style="padding: 6px 0; color: #1f2937; font-weight: 600;">${data.titleCompany}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #6b7280; font-weight: 500;">Document Type:</td>
+              <td style="padding: 6px 0; color: #1f2937;">${data.closingType}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #6b7280; font-weight: 500;">Property:</td>
+              <td style="padding: 6px 0; color: #1f2937;">${data.propertyAddress}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #6b7280; font-weight: 500;">Notary:</td>
+              <td style="padding: 6px 0; color: #1f2937;">${data.notaryName}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #6b7280; font-weight: 500;">Completed:</td>
+              <td style="padding: 6px 0; color: #1f2937;">${completedDate} at ${completedTime}</td>
+            </tr>
+          </table>
+        </div>
+
+        ${actionSection}
+
+        <div style="background-color: #f8fafc; border-left: 4px solid #3b82f6; padding: 16px; margin: 24px 0;">
+          <p style="margin: 0; color: #1e40af; font-style: italic;">
+            <strong>🔒 Security Note:</strong> All documents have been securely signed using advanced digital signature technology with full audit trail and tamper-evident sealing.
+          </p>
+        </div>
+
+        <div style="text-align: center; margin: 32px 0;">
+          <a href="${this.getClientUrl()}/dashboard" class="button">View Dashboard</a>
+        </div>
+
+        <div style="border-top: 1px solid #e5e7eb; padding-top: 20px; margin-top: 32px; color: #6b7280; font-size: 14px;">
+          <p>If you have any questions about this transaction, please contact us at <a href="mailto:support@usanotary.com" style="color: #3b82f6;">support@usanotary.com</a></p>
+          <p style="margin-top: 16px;">Thanks,<br/><strong>USA Notary Services</strong></p>
+        </div>
+    `;
+    
+    await this.sendEmail({
+      to: data.recipientEmail,
+      subject: `✅ Document Signing Complete - ${data.titleCompany}`,
+      html: this.getBaseTemplate(content),
+      text: `Hello ${data.recipientName}, 
+
+Your document signing session for ${data.titleCompany} has been successfully completed.
+
+Job Details:
+- Job ID: #${data.jobId}
+- Title Company: ${data.titleCompany}
+- Document Type: ${data.closingType}
+- Property: ${data.propertyAddress}
+- Notary: ${data.notaryName}
+- Completed: ${completedDate} at ${completedTime}
+
+${data.recipientRole === 'notary' ? 'The notarization you performed has been successfully completed.' :
+  data.recipientRole === 'title_company' ? 'The notarization for your closing has been successfully completed.' :
+  'Your document signing session has been successfully completed.'}
+
+View your dashboard: ${this.getClientUrl()}/dashboard
+
+If you have any questions, contact us at support@usanotary.com
+
+Thanks,
+USA Notary Services`,
+      tag: 'job-completion'
+    });
+  }
+
+  // Welcome Email Methods for Admin-Created Users
+  async sendNotaryWelcomeEmail(data: {
+    userEmail: string;
+    userName: string;
+    notaryIdCode?: string;
+    tempPassword?: string;
+  }): Promise<void> {
+    const loginUrl = `${this.getClientUrl()}/login`;
+    
+    const content = `
+        <h2 style="color: #1e40af; margin-bottom: 20px;">🎉 Welcome to Sharp Note - Notary Professional</h2>
+        
+        <p>Dear <strong>${data.userName}</strong>,</p>
+        
+        <p>Congratulations! An administrator has created your notary account on Sharp Note. You now have access to our professional digital notarization platform.</p>
+        
+        <div class="info-box">
+            <h3 style="margin-top: 0; color: #1e40af;">🏛️ Your Notary Account Details</h3>
+            <ul style="margin: 10px 0; padding-left: 20px;">
+                <li><strong>Email:</strong> ${data.userEmail}</li>
+                ${data.notaryIdCode ? `<li><strong>Notary ID:</strong> ${data.notaryIdCode}</li>` : ''}
+                <li><strong>Platform:</strong> Sharp Note Professional</li>
+                <li><strong>Account Type:</strong> Notary Professional</li>
+                ${data.tempPassword ? `<li><strong>Temporary Password:</strong> ${data.tempPassword}</li>` : ''}
+            </ul>
+        </div>
+        
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="${loginUrl}" 
+               style="display: inline-block; 
+                      background: #1e40af; 
+                      color: white; 
+                      padding: 15px 30px; 
+                      text-decoration: none; 
+                      border-radius: 8px; 
+                      font-weight: 600;
+                      font-size: 16px;
+                      margin: 20px 0;
+                      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+                🔐 Login to Your Account
+            </a>
+        </div>
+        
+        <div class="success-box">
+            <h4 style="margin-top: 0;">🚀 What's Next?</h4>
+            <ol style="margin: 10px 0;">
+                <li><strong>Login:</strong> Click the button above to access your account</li>
+                ${data.tempPassword ? '<li><strong>Change Password:</strong> Update your temporary password on first login</li>' : ''}
+                <li><strong>Complete Profile:</strong> Fill in any missing profile information</li>
+                <li><strong>Upload Documents:</strong> Submit required notary certifications</li>
+                <li><strong>Start Notarizing:</strong> Begin accepting notarization assignments</li>
+            </ol>
+        </div>
+        
+        <div class="warning-box">
+            <h4 style="margin-top: 0;">🔒 Security Information:</h4>
+            <ul style="margin: 10px 0;">
+                <li>Your account is ready to use immediately</li>
+                <li>Keep your login credentials secure</li>
+                <li>Enable two-factor authentication for enhanced security</li>
+                <li>Contact support if you didn't expect this account creation</li>
+            </ul>
+        </div>
+        
+        <div class="info-box">
+            <h4 style="margin-top: 0;">📋 Platform Features:</h4>
+            <ul style="margin: 10px 0;">
+                <li><strong>Digital Notarization:</strong> Perform remote online notarizations</li>
+                <li><strong>Document Management:</strong> Secure document storage and processing</li>
+                <li><strong>Client Communication:</strong> Built-in messaging and scheduling</li>
+                <li><strong>Compliance Tools:</strong> Audit trails and regulatory compliance</li>
+                <li><strong>Earnings Tracking:</strong> Monitor your notarization income</li>
+            </ul>
+        </div>
+        
+        <p>Need help getting started? Visit our support center or contact us at <a href="mailto:support@sharpnote.com">support@sharpnote.com</a>.</p>
+        
+        <p style="margin-top: 30px;">
+            Welcome to the team,<br>
+            <strong>The Sharp Note Team</strong><br>
+            <em>Professional Digital Notarization Platform</em>
+        </p>
+    `;
+
+    await this.sendEmail({
+      to: data.userEmail,
+      subject: `🏛️ Welcome to Sharp Note - Your Notary Account is Ready`,
+      html: this.getBaseTemplate(content),
+      text: `Welcome to Sharp Note! Your notary account has been created. Login at: ${loginUrl}`,
+      tag: 'notary-welcome'
+    });
+  }
+
+  async sendTitleCompanyWelcomeEmail(data: {
+    userEmail: string;
+    userName: string;
+    companyName?: string;
+    tempPassword?: string;
+  }): Promise<void> {
+    const loginUrl = `${this.getClientUrl()}/login`;
+    
+    const content = `
+        <h2 style="color: #1e40af; margin-bottom: 20px;">🎉 Welcome to Sharp Note - Title Company Professional</h2>
+        
+        <p>Dear <strong>${data.userName}</strong>,</p>
+        
+        <p>Congratulations! An administrator has created your title company account on Sharp Note. You now have access to our professional digital notarization platform.</p>
+        
+        <div class="info-box">
+            <h3 style="margin-top: 0; color: #1e40af;">🏢 Your Account Details</h3>
+            <ul style="margin: 10px 0; padding-left: 20px;">
+                <li><strong>Email:</strong> ${data.userEmail}</li>
+                ${data.companyName ? `<li><strong>Company:</strong> ${data.companyName}</li>` : ''}
+                <li><strong>Platform:</strong> Sharp Note Professional</li>
+                <li><strong>Account Type:</strong> Title Company Professional</li>
+                ${data.tempPassword ? `<li><strong>Temporary Password:</strong> ${data.tempPassword}</li>` : ''}
+            </ul>
+        </div>
+        
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="${loginUrl}" 
+               style="display: inline-block; 
+                      background: #1e40af; 
+                      color: white; 
+                      padding: 15px 30px; 
+                      text-decoration: none; 
+                      border-radius: 8px; 
+                      font-weight: 600;
+                      font-size: 16px;
+                      margin: 20px 0;
+                      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+                🔐 Login to Your Account
+            </a>
+        </div>
+        
+        <div class="success-box">
+            <h4 style="margin-top: 0;">🚀 What's Next?</h4>
+            <ol style="margin: 10px 0;">
+                <li><strong>Login:</strong> Click the button above to access your account</li>
+                ${data.tempPassword ? '<li><strong>Change Password:</strong> Update your temporary password on first login</li>' : ''}
+                <li><strong>Complete Profile:</strong> Fill in company and contact information</li>
+                <li><strong>Set Preferences:</strong> Configure default settings and preferred notaries</li>
+                <li><strong>Start Closing:</strong> Begin scheduling notarization sessions</li>
+            </ol>
+        </div>
+        
+        <div class="warning-box">
+            <h4 style="margin-top: 0;">🔒 Security Information:</h4>
+            <ul style="margin: 10px 0;">
+                <li>Your account is ready to use immediately</li>
+                <li>Keep your login credentials secure</li>
+                <li>Enable two-factor authentication for enhanced security</li>
+                <li>Contact support if you didn't expect this account creation</li>
+            </ul>
+        </div>
+        
+        <div class="info-box">
+            <h4 style="margin-top: 0;">📋 Platform Features:</h4>
+            <ul style="margin: 10px 0;">
+                <li><strong>Closing Management:</strong> Schedule and manage real estate closings</li>
+                <li><strong>Notary Assignment:</strong> Select preferred notaries for your transactions</li>
+                <li><strong>Document Processing:</strong> Secure document upload and management</li>
+                <li><strong>Client Communication:</strong> Coordinate with all parties in the transaction</li>
+                <li><strong>Compliance Tracking:</strong> Maintain detailed audit trails</li>
+                <li><strong>Reporting:</strong> Track transaction history and performance</li>
+            </ul>
+        </div>
+        
+        <p>Need help getting started? Visit our support center or contact us at <a href="mailto:support@sharpnote.com">support@sharpnote.com</a>.</p>
+        
+        <p style="margin-top: 30px;">
+            Welcome to the team,<br>
+            <strong>The Sharp Note Team</strong><br>
+            <em>Professional Digital Notarization Platform</em>
+        </p>
+    `;
+
+    await this.sendEmail({
+      to: data.userEmail,
+      subject: `🏢 Welcome to Sharp Note - Your Title Company Account is Ready`,
+      html: this.getBaseTemplate(content),
+      text: `Welcome to Sharp Note! Your title company account has been created. Login at: ${loginUrl}`,
+      tag: 'titlecompany-welcome'
+    });
+  }
 }
 
 export const emailService = new EmailService(); 

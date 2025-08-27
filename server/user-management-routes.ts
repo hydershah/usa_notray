@@ -21,6 +21,7 @@ import { responseCacheMiddleware } from './middleware/response-cache';
 import { eq } from 'drizzle-orm';
 import { signers } from '@shared/schema';
 import { db } from './db';
+import { emailService } from './lib/email-service';
 
 export function registerUserManagementRoutes(app: Express) {
   
@@ -146,6 +147,8 @@ export function registerUserManagementRoutes(app: Express) {
    * POST /api/auth/register-user
    * Universal user registration - supports all user types from requirements
    * User Types: admin, client, company_manager, notary, signer, witness, observer
+   * Note: This endpoint can be called with or without authentication
+   * When called by an admin, notaries are auto-approved
    */
   app.post('/api/auth/register-user', async (req, res) => {
     try {
@@ -205,6 +208,23 @@ export function registerUserManagementRoutes(app: Express) {
         });
       }
 
+      // Check if this request is made by an admin
+      let isCreatedByAdmin = false;
+      try {
+        // Try to extract and verify token if present
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+          const token = authHeader.substring(7);
+          const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
+          if (decoded && hasAdminPrivileges(decoded)) {
+            isCreatedByAdmin = true;
+          }
+        }
+      } catch (error) {
+        // Token verification failed - continue as non-admin
+        isCreatedByAdmin = false;
+      }
+
       // Set approval status based on user type and registration source
       let approvalStatus = 'pending';
       let isActive = false;
@@ -214,9 +234,15 @@ export function registerUserManagementRoutes(app: Express) {
         approvalStatus = 'pending';
         isActive = false;
       } else if (userType === 'notary') {
-        // Notaries require admin approval as per requirements
-        approvalStatus = 'pending';
-        isActive = false;
+        // Notaries require admin approval UNLESS created by an admin
+        if (isCreatedByAdmin) {
+          console.log(`🔐 Admin is creating notary - auto-approving: ${email}`);
+          approvalStatus = 'approved';
+          isActive = true;
+        } else {
+          approvalStatus = 'pending';
+          isActive = false;
+        }
       } else if (userType === 'company_user' && companyId) {
         // Company users may be auto-approved based on company settings
         const company = await storage.getCompany(companyId);
@@ -282,7 +308,50 @@ export function registerUserManagementRoutes(app: Express) {
       }
 
       // Log the registration
-      console.log(`New user registered: ${newUser.email} as ${userType}`);
+      if (userType === 'notary' && isCreatedByAdmin) {
+        console.log(`✅ New notary auto-approved by admin: ${newUser.email} (ID: ${newUser.id}) - Status: ${approvalStatus}`);
+      } else {
+        console.log(`New user registered: ${newUser.email} as ${userType} - Status: ${approvalStatus}`);
+      }
+
+      // Send welcome email if admin created notary or title company user
+      if (isCreatedByAdmin) {
+        try {
+          if (userType === 'notary') {
+            await emailService.sendNotaryWelcomeEmail({
+              userEmail: newUser.email,
+              userName: newUser.fullName || newUser.firstName || 'New Notary',
+              notaryIdCode: newUser.notaryIdCode || undefined,
+              // Note: We're not including the password in the email for security
+              // Users will need to use password reset if they don't know it
+            });
+            console.log(`📧 Welcome email sent to new notary: ${newUser.email}`);
+          } else if (userType === 'company_user' || userType === 'title_company') {
+            // Get company name if user is associated with a company
+            let companyName: string | undefined;
+            if (companyId) {
+              try {
+                const company = await storage.getCompany(companyId);
+                companyName = company?.companyName;
+              } catch (companyError) {
+                console.warn(`Failed to get company name for user ${newUser.id}:`, companyError);
+              }
+            }
+
+            await emailService.sendTitleCompanyWelcomeEmail({
+              userEmail: newUser.email,
+              userName: newUser.fullName || newUser.firstName || 'New User',
+              companyName: companyName,
+              // Note: We're not including the password in the email for security
+              // Users will need to use password reset if they don't know it
+            });
+            console.log(`📧 Welcome email sent to new title company user: ${newUser.email}`);
+          }
+        } catch (emailError) {
+          // Log email error but don't fail the user registration
+          console.error(`❌ Failed to send welcome email to ${newUser.email}:`, emailError);
+        }
+      }
 
       // Return response (exclude sensitive data)
       const response = {

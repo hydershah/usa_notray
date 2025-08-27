@@ -265,6 +265,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const isAdmin = hasAdminPrivileges(user);
       const isNotary = hasNotaryPrivileges(user);
 
+      // Mirror /api/auth/me payload so client localStorage has complete data immediately
+      const loginHasBasicInfo = Boolean(user.firstName && user.lastName && user.phoneNumber);
+      const loginHasAddress = Boolean((user.address1 && user.city && user.state && user.zipCode) || user.address);
+      const loginIsProfileComplete = loginHasBasicInfo && loginHasAddress;
+      const loginIsVerified = Boolean(
+        user.isVerified || user.isVerificationBypassed || user.notaryVerificationBypassed || user.verificationStatus === 'approved'
+      );
+      const loginAccountSetupComplete = Boolean(user.accountSetupComplete) || (loginIsProfileComplete && loginIsVerified);
+
       res.json({
         token,
         user: {
@@ -275,7 +284,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
           privileges: user.privileges,
           // Include privilege flags for easy frontend checking
           isAdmin,
-          isNotary
+          isNotary,
+          // Profile fields needed by client
+          firstName: user.firstName || null,
+          lastName: user.lastName || null,
+          phoneNumber: user.phoneNumber || null,
+          phone: user.phoneNumber || null,
+          address: user.address || null,
+          address1: user.address1 || null,
+          address2: user.address2 || null,
+          city: user.city || null,
+          state: user.state || null,
+          zipCode: user.zipCode || null,
+          // Verification and completion
+          isVerified: user.isVerified || false,
+          isVerificationBypassed: user.isVerificationBypassed || false,
+          notaryVerificationBypassed: user.notaryVerificationBypassed || false,
+          verificationStatus: user.verificationStatus || 'pending',
+          accountSetupComplete: loginAccountSetupComplete
         }
       });
     } catch (error) {
@@ -330,6 +356,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/auth/me', verifyToken, async (req: any, res) => {
     try {
+      // Add cache-control headers to prevent caching of this endpoint
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+
       const user = await storage.getUser(req.user.id);
       if (!user) {
         return res.status(404).json({ message: 'User not found' });
@@ -349,6 +380,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Calculate account setup completion
+      // Drizzle returns camelCase field names; use those consistently
+      const hasBasicInfo = Boolean(
+        user.firstName &&
+        user.lastName &&
+        user.phoneNumber
+      );
+      const hasAddress = Boolean(
+        (user.address1 && user.city && user.state && user.zipCode) ||
+        user.address
+      );
+      const isProfileComplete = hasBasicInfo && hasAddress;
+      
+      const isVerified = Boolean(
+        user.isVerified || 
+        user.isVerificationBypassed || 
+        user.notaryVerificationBypassed || 
+        user.verificationStatus === 'approved'
+      );
+      
+      // Account is complete when both profile and verification are done
+      // Use the database value if available, otherwise calculate
+      const accountSetupComplete = Boolean(user.accountSetupComplete) || (isProfileComplete && isVerified);
+      
+      // Debug logging for /api/auth/me
+      console.log('🔍 /api/auth/me response debug:', {
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        hasBasicInfo,
+        hasAddress,
+        isProfileComplete,
+        isVerified,
+        dbAccountSetupComplete: user.accountSetupComplete,
+        calculatedComplete: isProfileComplete && isVerified,
+        finalAccountSetupComplete: accountSetupComplete,
+        // Values being returned to frontend
+        responseFields: {
+          firstName: user.firstName,
+          lastName: user.lastName,
+          phoneNumber: user.phoneNumber,
+          address1: user.address1,
+          city: user.city,
+          state: user.state,
+          zipCode: user.zipCode
+        }
+      });
+
       res.json({
         id: user.id,
         username: user.username,
@@ -362,8 +441,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Include company information for title company users
         companyId: user.companyId,
         companyName: companyInfo?.companyName || null,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        firstName: user.firstName || null,
+        lastName: user.lastName || null,
+        // Include contact fields needed for account completion checks
+        phoneNumber: user.phoneNumber || null,
+        phone: user.phoneNumber || null, // Legacy compatibility
+        // Include address fields (both legacy and normalized) for completion checks
+        address: user.address || null,
+        address1: user.address1 || null,
+        address2: user.address2 || null,
+        city: user.city || null,
+        state: user.state || null,
+        zipCode: user.zipCode || null,
         // CRITICAL: Add verification status for signers/witnesses to show proper UI
         isVerified: user.isVerified || false,
         isVerificationBypassed: user.isVerificationBypassed || false,
@@ -373,7 +462,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
                           !user.isVerified && 
                           !user.isVerificationBypassed && 
                           !user.notaryVerificationBypassed,
-        accountSetupComplete: user.accountSetupComplete || false
+        accountSetupComplete: accountSetupComplete,
+        // Also include the calculated values for debugging
+        _debug: {
+          hasBasicInfo,
+          hasAddress,
+          isProfileComplete,
+          isVerified,
+          accountSetupComplete
+        }
       });
     } catch (error) {
       console.error('Get user error:', error);
@@ -706,7 +803,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-
   app.put('/api/users/:id', verifyToken, async (req: any, res) => {
     try {
       if (!hasAdminPrivileges(req.user)) {
@@ -1215,13 +1311,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // 🔧 FIX: Automatically set accountSetupComplete if all required fields are present
-      const hasBasicInfo = updateData.firstName && updateData.lastName && updateData.phoneNumber;
-      const hasAddress = (updateData.address1 && updateData.city && updateData.state && updateData.zipCode) || updateData.address;
-      if (hasBasicInfo && hasAddress) {
-        updateData.accountSetupComplete = true;
-        console.log(`✅ Account setup marked complete for user ${userId}`);
+      // 🔧 FIX: Automatically set accountSetupComplete based on user role and requirements
+      // Use the actual field names from profileData for validation
+      const hasBasicInfo = Boolean(profileData.firstName && profileData.lastName && profileData.phoneNumber);
+      const hasAddress = Boolean(
+        (profileData.address1 && profileData.city && profileData.state && profileData.zipCode) || 
+        profileData.address
+      );
+      
+      // Get current user to check role
+      const currentUser = await storage.getUser(userId);
+      
+      if (currentUser?.role === 'notary') {
+        // For notaries, require additional fields for profile completion
+        const hasNotaryCredentials = Boolean(
+          profileData.nameOnCommission && 
+          profileData.commissionNumber && 
+          profileData.commissionExpiration &&
+          profileData.commissionState
+        );
+        
+        // Notary profile is complete when they have basic info, address, and notary credentials
+        if (hasBasicInfo && hasAddress && hasNotaryCredentials) {
+          updateData.accountSetupComplete = true;
+          updateData.profileSubmitted = true; // Mark as submitted for notary flow
+          console.log(`✅ Notary account setup marked complete for user ${userId}`);
+        }
+      } else {
+        // For non-notaries (signers, witnesses, etc.), use existing logic
+        if (hasBasicInfo && hasAddress) {
+          updateData.accountSetupComplete = true;
+          console.log(`✅ Account setup marked complete for user ${userId}`);
+        }
       }
+      
+      // Debug logging
+      console.log('📝 Profile update data:', {
+        userId,
+        hasBasicInfo,
+        hasAddress,
+        accountSetupComplete: updateData.accountSetupComplete,
+        fields: {
+          firstName: profileData.firstName,
+          lastName: profileData.lastName,
+          phoneNumber: profileData.phoneNumber,
+          address1: profileData.address1,
+          city: profileData.city,
+          state: profileData.state,
+          zipCode: profileData.zipCode
+        }
+      });
 
       const updatedUser = await storage.updateUser(userId, updateData);
 
@@ -1254,6 +1393,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Update user profile error:', error);
       res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Debug endpoint to check user data and completion status
+  app.get('/api/debug/user/:userId', verifyToken, async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      // Check if user can access this debug info
+      if (!req.user || (req.user.role !== 'admin' && req.user.id !== userId)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Calculate the same logic as /api/auth/me
+      const hasBasicInfo = Boolean(
+        (user as any).first_name && 
+        (user as any).last_name && 
+        (user as any).phone_number
+      );
+      const hasAddress = Boolean(
+        (user as any).address_1 && 
+        (user as any).city && 
+        (user as any).state && 
+        (user as any).zip_code || 
+        (user as any).address
+      );
+      const isProfileComplete = hasBasicInfo && hasAddress;
+      
+      const isVerified = Boolean(
+        user.isVerified || 
+        user.isVerificationBypassed || 
+        user.notaryVerificationBypassed || 
+        user.verificationStatus === 'approved'
+      );
+      
+      const accountSetupComplete = isProfileComplete && isVerified;
+
+      res.json({
+        debug: {
+          userId: user.id,
+          email: user.email,
+          role: user.role,
+          calculations: {
+            hasBasicInfo,
+            hasAddress,
+            isProfileComplete,
+            isVerified,
+            accountSetupComplete
+          },
+          rawDbData: {
+            first_name: (user as any).first_name,
+            last_name: (user as any).last_name,
+            phone_number: (user as any).phone_number,
+            address_1: (user as any).address_1,
+            address_2: (user as any).address_2,
+            city: (user as any).city,
+            state: (user as any).state,
+            zip_code: (user as any).zip_code,
+            address: (user as any).address,
+            isVerified: user.isVerified,
+            isVerificationBypassed: user.isVerificationBypassed,
+            notaryVerificationBypassed: user.notaryVerificationBypassed,
+            verificationStatus: user.verificationStatus,
+            accountSetupComplete: user.accountSetupComplete
+          },
+          allFields: Object.keys(user).sort()
+        }
+      });
+    } catch (error) {
+      console.error('Debug user error:', error);
+      res.status(500).json({ message: 'Internal server error', error: error.message });
     }
   });
 
@@ -1360,6 +1575,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const companyData = insertCompanySchema.parse(req.body);
+      
+      // Check if this is a company registration with user data
+      if (companyData.primaryUserEmail && companyData.primaryUserName) {
+        // This is a full company registration - create company AND user
+        
+        // Generate temporary password if not provided (for admin-created companies)
+        const tempPassword = companyData.primaryUserPassword || `temp-${Date.now()}`;
+        const needsPasswordReset = !companyData.primaryUserPassword;
+        
+        const managerData = {
+          username: companyData.primaryUserEmail,
+          email: companyData.primaryUserEmail,
+          password: tempPassword,
+          firstName: companyData.primaryUserName?.split(' ')[0] || companyData.primaryUserName || '',
+          lastName: companyData.primaryUserName?.split(' ').slice(1).join(' ') || '',
+          fullName: companyData.primaryUserName || '',
+          phoneNumber: companyData.phoneNumber,
+          role: 'title_company',
+          companyRole: 'manager',
+          isActive: true,
+          approvalStatus: 'approved',
+          accountSetupComplete: !needsPasswordReset // Mark as incomplete if needs password reset
+        };
+
+        const result = await storage.registerCompany(companyData, managerData);
+        
+        console.log(`✅ Company registration completed: ${result.company.companyName} (ID: ${result.company.id}) with manager ${result.manager.email} (ID: ${result.manager.id})`);
+        
+        // If password was auto-generated, create password reset token and send email
+        if (needsPasswordReset) {
+          try {
+            const crypto = await import('crypto');
+            const resetToken = crypto.randomUUID();
+            const tokenExpiry = new Date();
+            tokenExpiry.setHours(tokenExpiry.getHours() + 24); // 24 hour expiry
+
+            // Create password reset token
+            await db.insert(passwordResetTokens).values({
+              userId: result.manager.id,
+              token: resetToken,
+              expiresAt: tokenExpiry,
+              used: false
+            });
+
+            // Send password setup email
+            const { emailService } = await import('./lib/email-service');
+            await emailService.sendPasswordReset({
+              userEmail: result.manager.email,
+              userName: result.manager.firstName || result.manager.username,
+              resetToken: resetToken
+            });
+            
+            console.log(`📧 Password setup email sent to: ${result.manager.email}`);
+          } catch (emailError) {
+            console.error('Failed to send password setup email:', emailError);
+            // Don't fail the company creation if email fails
+          }
+        }
+        
+        // Invalidate companies cache
+        try {
+          await redisCache.delPattern(`admin:*`);
+          await redisCache.delPattern(`api:*companies*`);
+          console.log(`🧹 Invalidated company caches after creating company ${result.company.id}`);
+        } catch (cacheError) {
+          console.error('Failed to invalidate cache after company creation:', cacheError);
+        }
+
+        return res.status(201).json({
+          company: result.company,
+          manager: {
+            id: result.manager.id,
+            email: result.manager.email,
+            role: result.manager.role,
+            needsPasswordSetup: needsPasswordReset
+          }
+        });
+      }
+      
+      // This is just a company record creation (no user)
       const company = await storage.createCompany(companyData);
       
       // Invalidate companies cache to ensure fresh data on next request
@@ -1409,7 +1704,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-
   app.delete('/api/companies/:id', verifyToken, async (req: any, res) => {
     try {
       if (!req.user || !hasAdminPrivileges(req.user)) {
@@ -1516,14 +1810,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if user has access to this job
       // Admin, job creator, assigned notary, OR anyone with session access (includes signers)
-      const hasBasicAccess = req.user.role === 'admin' || 
-                           job.userId === req.user.id || 
-                           job.selectedNotary === req.user.id.toString();
+      let hasBasicAccess = req.user.role === 'admin' || 
+                          job.userId === req.user.id || 
+                          job.selectedNotary === req.user.id.toString();
+      
+      // For title company users, also check if job is assigned to their company
+      if (!hasBasicAccess && (req.user.role === 'title_company' || req.user.role === 'company_manager' || req.user.role === 'client')) {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasBasicAccess = true;
+            console.log(`✅ Title company user ${req.user.id} accessing job ${jobId} assigned to their company: ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for job details:', companyCheckError);
+        }
+      }
       
       if (!hasBasicAccess) {
         // Check if user has session access (includes signers)
         const hasSessionAccess = await storage.verifySessionAccess(jobId, req.user.id);
         if (!hasSessionAccess) {
+          console.log(`❌ Access denied for user ${req.user.id} (role: ${req.user.role}) to job ${jobId}`);
           return res.status(403).json({ message: 'Access denied' });
         }
       }
@@ -1585,6 +1902,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/jobs', verifyToken, upload.array('documents', 10), async (req: any, res) => {
     try {
+      // Set response timeout to handle longer job creation with multiple signers
+      req.setTimeout(60000); // 60 second timeout for job creation
+      res.setTimeout(60000);
+      
       // Define privilege checks once at the top using proper functions
       const hasAdminAccess = hasAdminPrivileges(req.user);
       const hasNotaryAccess = hasNotaryPrivileges(req.user);
@@ -2209,7 +2530,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-
   // Basic route handlers to prevent 404 errors
   // Only serve API response if we're not serving static files
   app.get('/', (req, res, next) => {
@@ -2372,58 +2692,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/auth/me', verifyToken, async (req: any, res) => {
-    try {
-      const user = await storage.getUser(req.user.id);
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-
-      // Check privileges for frontend
-      const isAdmin = hasAdminPrivileges(user);
-      const isNotary = hasNotaryPrivileges(user);
-
-      // Get company information for title company users
-      let companyInfo = null;
-      if (user.role === 'title_company' && user.companyId) {
-        try {
-          companyInfo = await storage.getCompany(user.companyId);
-        } catch (error) {
-          console.warn('Failed to fetch company info for user:', user.id, error);
-        }
-      }
-
-      res.json({
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        privileges: user.privileges,
-        // Include privilege flags for easy frontend checking
-        isAdmin,
-        isNotary,
-        notaryType: user.notaryType,
-        // Include company information for title company users
-        companyId: user.companyId,
-        companyName: companyInfo?.companyName || null,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        // CRITICAL: Add verification status for signers/witnesses to show proper UI
-        isVerified: user.isVerified || false,
-        isVerificationBypassed: user.isVerificationBypassed || false,
-        notaryVerificationBypassed: user.notaryVerificationBypassed || false,
-        verificationStatus: user.verificationStatus || 'pending',
-        needsVerification: (user.role === 'signer' || user.role === 'witness') && 
-                          !user.isVerified && 
-                          !user.isVerificationBypassed && 
-                          !user.notaryVerificationBypassed,
-        accountSetupComplete: user.accountSetupComplete || false
-      });
-    } catch (error) {
-      console.error('Get user error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  });
+  // REMOVED: Duplicate /api/auth/me endpoint - using the one with proper profile completion logic at line 331
 
   app.post('/api/auth/logout', verifyToken, async (req: any, res) => {
     try {
@@ -2880,7 +3149,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-
   // Create new signature endpoint
   app.post('/api/users/:id/signatures', verifyToken, 
     upload.single('signature'), async (req: any, res) => {
@@ -3261,13 +3529,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // 🔧 FIX: Automatically set accountSetupComplete if all required fields are present
-      const hasBasicInfo = updateData.firstName && updateData.lastName && updateData.phoneNumber;
-      const hasAddress = (updateData.address1 && updateData.city && updateData.state && updateData.zipCode) || updateData.address;
-      if (hasBasicInfo && hasAddress) {
-        updateData.accountSetupComplete = true;
-        console.log(`✅ Account setup marked complete for user ${userId}`);
+      // 🔧 FIX: Automatically set accountSetupComplete based on user role and requirements
+      // Use the actual field names from profileData for validation
+      const hasBasicInfo = Boolean(profileData.firstName && profileData.lastName && profileData.phoneNumber);
+      const hasAddress = Boolean(
+        (profileData.address1 && profileData.city && profileData.state && profileData.zipCode) || 
+        profileData.address
+      );
+      
+      // Get current user to check role
+      const currentUser = await storage.getUser(userId);
+      
+      if (currentUser?.role === 'notary') {
+        // For notaries, require additional fields for profile completion
+        const hasNotaryCredentials = Boolean(
+          profileData.nameOnCommission && 
+          profileData.commissionNumber && 
+          profileData.commissionExpiration &&
+          profileData.commissionState
+        );
+        
+        // Notary profile is complete when they have basic info, address, and notary credentials
+        if (hasBasicInfo && hasAddress && hasNotaryCredentials) {
+          updateData.accountSetupComplete = true;
+          updateData.profileSubmitted = true; // Mark as submitted for notary flow
+          console.log(`✅ Notary account setup marked complete for user ${userId}`);
+        }
+      } else {
+        // For non-notaries (signers, witnesses, etc.), use existing logic
+        if (hasBasicInfo && hasAddress) {
+          updateData.accountSetupComplete = true;
+          console.log(`✅ Account setup marked complete for user ${userId}`);
+        }
       }
+      
+      // Debug logging
+      console.log('📝 Profile update data:', {
+        userId,
+        hasBasicInfo,
+        hasAddress,
+        accountSetupComplete: updateData.accountSetupComplete,
+        fields: {
+          firstName: profileData.firstName,
+          lastName: profileData.lastName,
+          phoneNumber: profileData.phoneNumber,
+          address1: profileData.address1,
+          city: profileData.city,
+          state: profileData.state,
+          zipCode: profileData.zipCode
+        }
+      });
 
       const updatedUser = await storage.updateUser(userId, updateData);
 
@@ -3300,6 +3611,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Update user profile error:', error);
       res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Debug endpoint to check user data and completion status
+  app.get('/api/debug/user/:userId', verifyToken, async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      // Check if user can access this debug info
+      if (!req.user || (req.user.role !== 'admin' && req.user.id !== userId)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Calculate the same logic as /api/auth/me
+      const hasBasicInfo = Boolean(user.firstName && user.lastName && (user.phoneNumber || user.phone));
+      const hasAddress = Boolean(
+        ((user as any).address1 && (user as any).city && (user as any).state && (user as any).zipCode) || 
+        user.address
+      );
+      const isProfileComplete = hasBasicInfo && hasAddress;
+      
+      const isVerified = Boolean(
+        user.isVerified || 
+        user.isVerificationBypassed || 
+        user.notaryVerificationBypassed || 
+        user.verificationStatus === 'approved'
+      );
+      
+      const accountSetupComplete = isProfileComplete && isVerified;
+
+      res.json({
+        debug: {
+          userId: user.id,
+          email: user.email,
+          role: user.role,
+          calculations: {
+            hasBasicInfo,
+            hasAddress,
+            isProfileComplete,
+            isVerified,
+            accountSetupComplete
+          },
+          rawDbData: {
+            firstName: user.firstName,
+            lastName: user.lastName,
+            phoneNumber: user.phoneNumber,
+            phone: user.phone,
+            address1: (user as any).address1,
+            address2: (user as any).address2,
+            city: (user as any).city,
+            state: (user as any).state,
+            zipCode: (user as any).zipCode,
+            address: user.address,
+            isVerified: user.isVerified,
+            isVerificationBypassed: user.isVerificationBypassed,
+            notaryVerificationBypassed: user.notaryVerificationBypassed,
+            verificationStatus: user.verificationStatus,
+            accountSetupComplete: user.accountSetupComplete
+          },
+          allFields: Object.keys(user).sort()
+        }
+      });
+    } catch (error) {
+      console.error('Debug user error:', error);
+      res.status(500).json({ message: 'Internal server error', error: error.message });
     }
   });
 
@@ -3406,6 +3787,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const companyData = insertCompanySchema.parse(req.body);
+      
+      // Check if this is a company registration with user data
+      if (companyData.primaryUserEmail && companyData.primaryUserName) {
+        // This is a full company registration - create company AND user
+        
+        // Generate temporary password if not provided (for admin-created companies)
+        const tempPassword = companyData.primaryUserPassword || `temp-${Date.now()}`;
+        const needsPasswordReset = !companyData.primaryUserPassword;
+        
+        const managerData = {
+          username: companyData.primaryUserEmail,
+          email: companyData.primaryUserEmail,
+          password: tempPassword,
+          firstName: companyData.primaryUserName?.split(' ')[0] || companyData.primaryUserName || '',
+          lastName: companyData.primaryUserName?.split(' ').slice(1).join(' ') || '',
+          fullName: companyData.primaryUserName || '',
+          phoneNumber: companyData.phoneNumber,
+          role: 'title_company',
+          companyRole: 'manager',
+          isActive: true,
+          approvalStatus: 'approved',
+          accountSetupComplete: !needsPasswordReset // Mark as incomplete if needs password reset
+        };
+
+        const result = await storage.registerCompany(companyData, managerData);
+        
+        console.log(`✅ Company registration completed: ${result.company.companyName} (ID: ${result.company.id}) with manager ${result.manager.email} (ID: ${result.manager.id})`);
+        
+        // If password was auto-generated, create password reset token and send email
+        if (needsPasswordReset) {
+          try {
+            const crypto = await import('crypto');
+            const resetToken = crypto.randomUUID();
+            const tokenExpiry = new Date();
+            tokenExpiry.setHours(tokenExpiry.getHours() + 24); // 24 hour expiry
+
+            // Create password reset token
+            await db.insert(passwordResetTokens).values({
+              userId: result.manager.id,
+              token: resetToken,
+              expiresAt: tokenExpiry,
+              used: false
+            });
+
+            // Send password setup email
+            const { emailService } = await import('./lib/email-service');
+            await emailService.sendPasswordReset({
+              userEmail: result.manager.email,
+              userName: result.manager.firstName || result.manager.username,
+              resetToken: resetToken
+            });
+            
+            console.log(`📧 Password setup email sent to: ${result.manager.email}`);
+          } catch (emailError) {
+            console.error('Failed to send password setup email:', emailError);
+            // Don't fail the company creation if email fails
+          }
+        }
+        
+        // Invalidate companies cache
+        try {
+          await redisCache.delPattern(`admin:*`);
+          await redisCache.delPattern(`api:*companies*`);
+          console.log(`🧹 Invalidated company caches after creating company ${result.company.id}`);
+        } catch (cacheError) {
+          console.error('Failed to invalidate cache after company creation:', cacheError);
+        }
+
+        return res.status(201).json({
+          company: result.company,
+          manager: {
+            id: result.manager.id,
+            email: result.manager.email,
+            role: result.manager.role,
+            needsPasswordSetup: needsPasswordReset
+          }
+        });
+      }
+      
+      // This is just a company record creation (no user)
       const company = await storage.createCompany(companyData);
       
       // Invalidate companies cache to ensure fresh data on next request
@@ -3562,14 +4023,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if user has access to this job
       // Admin, job creator, assigned notary, OR anyone with session access (includes signers)
-      const hasBasicAccess = req.user.role === 'admin' || 
-                           job.userId === req.user.id || 
-                           job.selectedNotary === req.user.id.toString();
+      let hasBasicAccess = req.user.role === 'admin' || 
+                          job.userId === req.user.id || 
+                          job.selectedNotary === req.user.id.toString();
+      
+      // For title company users, also check if job is assigned to their company
+      if (!hasBasicAccess && (req.user.role === 'title_company' || req.user.role === 'company_manager' || req.user.role === 'client')) {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasBasicAccess = true;
+            console.log(`✅ Title company user ${req.user.id} accessing job ${jobId} assigned to their company: ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for job details:', companyCheckError);
+        }
+      }
       
       if (!hasBasicAccess) {
         // Check if user has session access (includes signers)
         const hasSessionAccess = await storage.verifySessionAccess(jobId, req.user.id);
         if (!hasSessionAccess) {
+          console.log(`❌ Access denied for user ${req.user.id} (role: ${req.user.role}) to job ${jobId}`);
           return res.status(403).json({ message: 'Access denied' });
         }
       }
@@ -3590,7 +4074,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-
   // 🚀 OPTIMIZATION: Helper function for parallel signer data preparation
   async function prepareSignerDataForParallel(signersJson: string) {
     const signers = JSON.parse(signersJson);
@@ -4336,7 +4819,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-
   // Update job schedule and handle auto assignment
   app.put('/api/jobs/:id/schedule', verifyToken, async (req: any, res) => {
     try {
@@ -4598,7 +5080,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Dashboard stats
   app.get('/api/dashboard/stats', verifyToken, cacheUserData(300), async (req: any, res) => {
     try {
-      const jobs = await storage.getRoleBasedJobs(req.user.id, req.user.role);
+      const jobsResult = await storage.getRoleBasedJobs(req.user.id, req.user.role);
+      
+      // Extract jobs array safely
+      const jobs = Array.isArray(jobsResult?.jobs) ? jobsResult.jobs : [];
       
       const stats: any = {
         totalJobs: jobs.length,
@@ -4610,14 +5095,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       if (hasAdminPrivileges(req.user)) {
-        const notaries = await storage.getNotaryUsers();
-        stats.activeNotaries = notaries.length;
+        try {
+          const notaries = await storage.getNotaryUsers();
+          stats.activeNotaries = Array.isArray(notaries) ? notaries.length : 0;
+        } catch (notaryError) {
+          console.error('Error fetching notaries for stats:', notaryError);
+          stats.activeNotaries = 0;
+        }
       }
 
       res.json(stats);
     } catch (error) {
       console.error('Get dashboard stats error:', error);
-      res.status(500).json({ message: 'Internal server error' });
+      res.status(500).json({ message: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -4696,7 +5186,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           // Check if account setup is complete using fresh data - be flexible with address formats
-          const hasBasicInfo = freshUser.firstName && freshUser.lastName && freshUser.phoneNumber;
+          const hasBasicInfo = freshUser.firstName && freshUser.lastName && (freshUser.phoneNumber || freshUser.phone);
           const hasAddress = (freshUser.address1 && freshUser.city && freshUser.state && freshUser.zipCode) || freshUser.address;
           const isAccountSetupComplete = hasBasicInfo && hasAddress;
           
@@ -5133,7 +5623,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   // Video conferencing routes are now handled by daily-video-routes.ts
-
   // ===== ENHANCED UPLOAD SYSTEM ROUTES (VULTR-ENABLED) =====
   
   // Professional signature upload with Vultr cloud storage
@@ -5884,7 +6373,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).send('Error generating placeholder');
     }
   });
-
   // Recording upload endpoint for enhanced video system  
   app.post('/api/recordings/upload', verifyToken, upload.single('recording'), async (req: any, res) => {
     try {
@@ -6057,6 +6545,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hasAccess = true;
         console.log(`✅ DOCUMENT LIST: Assigned notary user ${req.user.id}`);
       }
+      // Title company access - check if job is assigned to user's company
+      else if (req.user.role === 'title_company' || req.user.role === 'company_manager' || req.user.role === 'client') {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasAccess = true;
+            console.log(`✅ DOCUMENT LIST: Title company user ${req.user.id} accessing job for ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for document list:', companyCheckError);
+        }
+      }
       // Signer access - check via signers table
       else if (req.user.role === 'signer' || req.user.role === 'witness') {
         const [signer] = await db
@@ -6111,6 +6620,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       else if (job.selectedNotary === req.user.id.toString()) {
         hasAccess = true;
         console.log(`✅ DOCUMENT VERSIONS: Assigned notary user ${req.user.id}`);
+      }
+      // Title company access - check if job is assigned to user's company
+      else if (req.user.role === 'title_company' || req.user.role === 'company_manager' || req.user.role === 'client') {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasAccess = true;
+            console.log(`✅ DOCUMENT VERSIONS: Title company user ${req.user.id} accessing job for ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for document versions:', companyCheckError);
+        }
       }
       // Signer access - check via signers table
       else if (req.user.role === 'signer' || req.user.role === 'witness') {
@@ -6418,6 +6948,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hasAccess = true;
         console.log(`✅ DOCUMENT DOWNLOAD: Assigned notary user ${user.id}`);
       }
+      // Title company access - check if job is assigned to user's company
+      else if (user.role === 'title_company' || user.role === 'company_manager' || user.role === 'client') {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasAccess = true;
+            console.log(`✅ DOCUMENT DOWNLOAD: Title company user ${user.id} accessing job for ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for document download:', companyCheckError);
+        }
+      }
       // Signer access - check via signers table (THIS WAS MISSING!)
       else if (user.role === 'signer' || user.role === 'witness') {
         const [signer] = await db
@@ -6482,7 +7033,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-
   // Document signing route - generates signed PDF
   app.post('/api/jobs/:jobId/documents/:documentId/sign', verifyToken, async (req: any, res) => {
     // Ensure we always return JSON
@@ -6774,6 +7324,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       else if (job.selectedNotary === user.id.toString()) {
         hasAccess = true;
         console.log(`✅ DOCUMENT ACCESS: Assigned notary user ${user.id}`);
+      }
+      // Title company access - check if job is assigned to user's company
+      else if (user.role === 'title_company' || user.role === 'company_manager' || user.role === 'client') {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasAccess = true;
+            console.log(`✅ DOCUMENT ACCESS: Title company user ${user.id} accessing job for ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for document preview:', companyCheckError);
+        }
       }
       // Signer access - check via signers table (THIS WAS MISSING!)
       else if (user.role === 'signer' || user.role === 'witness') {
@@ -7650,7 +8221,6 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       res.status(500).json({ error: 'Failed to get qualified notaries' });
     }
   });
-
   // Select random notary for a specific time slot
   app.post('/api/random-notary/select', verifyToken, async (req: any, res) => {
     try {
@@ -7696,7 +8266,33 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       }
 
       // Check if user has access to this job
-      if (req.user.role !== 'admin' && job.userId !== req.user.id && job.selectedNotary !== req.user.id.toString()) {
+      let hasAccess = req.user.role === 'admin' || 
+                     job.userId === req.user.id || 
+                     job.selectedNotary === req.user.id.toString();
+      
+      // For title company users, also check if job is assigned to their company
+      if (!hasAccess && (req.user.role === 'title_company' || req.user.role === 'company_manager' || req.user.role === 'client')) {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasAccess = true;
+            console.log(`✅ COMPLETION REPORT: Title company user ${req.user.id} accessing job for ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for completion report:', companyCheckError);
+        }
+      }
+
+      if (!hasAccess) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -7726,7 +8322,33 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       }
 
       // Check if user has access to this job
-      if (req.user.role !== 'admin' && job.userId !== req.user.id && job.selectedNotary !== req.user.id.toString()) {
+      let hasAccess = req.user.role === 'admin' || 
+                     job.userId === req.user.id || 
+                     job.selectedNotary === req.user.id.toString();
+      
+      // For title company users, also check if job is assigned to their company
+      if (!hasAccess && (req.user.role === 'title_company' || req.user.role === 'company_manager' || req.user.role === 'client')) {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasAccess = true;
+            console.log(`✅ COMPLETION REPORT DOWNLOAD: Title company user ${req.user.id} accessing job for ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for completion report download:', companyCheckError);
+        }
+      }
+
+      if (!hasAccess) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
@@ -8430,7 +9052,6 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       res.status(500).json({ message: 'Failed to validate invitation' });
     }
   });
-
   // Get or create password reset token for signer - PUBLIC endpoint (no auth required)
   app.post('/api/signers/get-password-reset-token', async (req, res) => {
     try {
@@ -9071,7 +9692,6 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-
   // EVS Verification route with Vultr storage
   app.post('/api/verification/evs-verify', verifyToken, upload.fields([
     { name: 'frontImage', maxCount: 1 },
@@ -9816,7 +10436,6 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       });
     }
   });
-
   // Get session state and participants - ULTRA OPTIMIZED VERSION V3
   app.get('/api/session/:sessionId/state', verifyToken, responseCacheMiddleware, async (req: any, res) => {
     const startTime = Date.now();
@@ -10425,6 +11044,19 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           console.error('Error generating completion report:', reportError);
           // Don't fail the session completion if report generation fails
         }
+
+        // 🆕 SEND JOB COMPLETION EMAIL NOTIFICATIONS
+        try {
+          console.log(`📧 Sending job completion notifications for job ${session.jobId}`);
+          
+          const { notificationService } = await import('./notification-service');
+          await notificationService.sendJobCompletionNotifications(session.jobId);
+          
+          console.log(`✅ Job completion notifications sent for job ${session.jobId}`);
+        } catch (emailError) {
+          console.error('Error sending job completion notifications:', emailError);
+          // Don't fail the session completion if email notifications fail
+        }
       }
       
         console.log(`✅ Session completed: ${actualSessionId} by user ${req.user.id}`);
@@ -10453,6 +11085,41 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       res.status(500).json({ 
         message: error instanceof Error ? error.message : 'Failed to complete session',
         error: 'complete_session_failed'
+      });
+    }
+  });
+
+  // ==========================================
+  // EMAIL TESTING ROUTES (DEVELOPMENT/ADMIN ONLY)
+  // ==========================================
+
+  // Test job completion email notifications (Admin only)
+  app.post('/api/admin/test-job-completion-email/:jobId', verifyToken, requireAdmin, async (req: any, res) => {
+    try {
+      const { jobId } = req.params;
+      
+      if (!jobId || isNaN(parseInt(jobId))) {
+        return res.status(400).json({
+          error: 'Valid job ID is required'
+        });
+      }
+
+      console.log(`🧪 Testing job completion email notifications for job ${jobId}`);
+      
+      const { notificationService } = await import('./notification-service');
+      await notificationService.sendJobCompletionNotifications(parseInt(jobId));
+      
+      res.json({
+        success: true,
+        message: `Job completion email notifications sent for job ${jobId}`,
+        jobId: parseInt(jobId)
+      });
+      
+    } catch (error) {
+      console.error('Test job completion email error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to send test emails',
+        details: 'Check server logs for more information'
       });
     }
   });
@@ -10596,7 +11263,6 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       });
     }
   });
-
   // Update session status
   app.put('/api/editor/session/:sessionId/status', verifyToken, async (req: any, res) => {
     try {
@@ -11327,7 +11993,6 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       });
     }
   });
-
   // Update tag content (for manual content entry)
   app.put('/api/editor/session/:sessionId/tag/:tagId/content', verifyToken, async (req: any, res) => {
     try {
@@ -11625,6 +12290,15 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       // Get all tags for validation - use getJobTags to find tags across all sessions
       const tags = await TagService.getJobTags(sessionId);
       
+      // Safely determine participant count for stats (don't fail completion if unavailable)
+      let participantCount = 0;
+      try {
+        const participants = await SessionService.getSessionParticipants(session.jobId);
+        participantCount = Array.isArray(participants) ? participants.length : 0;
+      } catch (pcErr) {
+        console.warn('⚠️ Could not determine participant count, defaulting to 0:', pcErr instanceof Error ? pcErr.message : pcErr);
+      }
+      
       if (session.status === 'completed') {
         return res.status(200).json({ 
           message: 'Session was already completed',
@@ -11696,7 +12370,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           }
           
           // Handle multiple processed documents
-          let documentInfo = [];
+          let generatedDocumentsInfo = [] as any[];
           let primaryDocumentVersionId = null;
           
           if (processedDocs.length > 0) {
@@ -11741,11 +12415,14 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
                 isDigitallySigned: processedDoc.isDigitallySigned
               };
               
-              documentInfo.push(docInfo);
+              generatedDocumentsInfo.push(docInfo);
               
               console.log(`✅ Generated signed PDF ${i + 1}/${processedDocs.length}: ${signedFileName} (${processedDoc.fileSize} bytes, ${processedDoc.digitalSignatures?.length || 0} signatures)`);
             }
             
+            // Make generated documents available to the outer scope
+            documentInfo = generatedDocumentsInfo;
+
             // Update job status to indicate signed documents are available
             await db
               .update(jobs)
@@ -12110,7 +12787,6 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       res.status(500).json({ error: 'Failed to create sample log data' });
     }
   });
-
   // Download user logs as PDF
   app.get('/api/user/download-logs', verifyToken, async (req: any, res) => {
     try {
@@ -12551,7 +13227,45 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       }
 
       // Check if user has access to this job
-      if (req.user.role !== 'admin' && job.userId !== req.user.id && job.selectedNotary !== req.user.id.toString()) {
+      let hasAccess = false;
+      
+      // Admin access
+      if (req.user.role === 'admin') {
+        hasAccess = true;
+        console.log(`✅ DOWNLOAD PACKAGE: Admin user ${req.user.id}`);
+      }
+      // Job creator access
+      else if (job.userId === req.user.id) {
+        hasAccess = true;
+        console.log(`✅ DOWNLOAD PACKAGE: Job creator user ${req.user.id}`);
+      }
+      // Assigned notary access
+      else if (job.selectedNotary === req.user.id.toString()) {
+        hasAccess = true;
+        console.log(`✅ DOWNLOAD PACKAGE: Assigned notary user ${req.user.id}`);
+      }
+      // Title company access - check if job is assigned to user's company
+      else if (req.user.role === 'title_company' || req.user.role === 'company_manager' || req.user.role === 'client') {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+          
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasAccess = true;
+            console.log(`✅ DOWNLOAD PACKAGE: Title company user ${req.user.id} accessing job for ${userWithCompany.companyName}`);
+          }
+        } catch (error) {
+          console.error('Error checking title company access for download package:', error);
+        }
+      }
+      
+      if (!hasAccess) {
         // Check if user is a signer for this job
         const signerAccess = await db.query.signers.findFirst({
           where: and(
@@ -12561,8 +13275,10 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         });
         
         if (!signerAccess) {
+          console.log(`❌ DOWNLOAD PACKAGE DENIED: User ${req.user.id} (${req.user.email}, role: ${req.user.role}) not authorized for job ${jobId} package download`);
           return res.status(403).json({ message: 'Access denied' });
         }
+        console.log(`✅ DOWNLOAD PACKAGE: Signer user ${req.user.id}`);
       }
 
       // Only allow download for completed jobs

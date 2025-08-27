@@ -114,13 +114,29 @@ export default function RegisterNotary() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/auth/register', {
+      const response = await fetch('/api/auth/register-notary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...formData,
-          userType: 'notary',
-          role: 'notary'
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          email: formData.email,
+          phoneNumber: formData.phone,
+          password: formData.password,
+          address1: formData.address,
+          address2: '',
+          city: formData.city,
+          state: formData.state,
+          zipCode: formData.zipCode,
+          dateOfBirth: formData.dateOfBirth,
+          commissionNumber: formData.commissionNumber,
+          commissionState: formData.commissionState,
+          commissionExpiration: formData.commissionExpiration,
+          yearsOfExperience: formData.yearsOfExperience,
+          specializations: formData.specializations,
+          workingHours: formData.workingHours,
+          bio: formData.bio,
+          notaryType: 'contractor'
         })
       });
 

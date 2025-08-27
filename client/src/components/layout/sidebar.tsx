@@ -61,9 +61,9 @@ const menuItems: MenuItem[] = [
   },
   {
     id: 'signing-jobs',
-    label: 'My Signing Jobs',
-    icon: PenTool,
-    path: '/signing-jobs',
+    label: 'Dashboard',
+    icon: Home,
+    path: '/dashboard',
     roles: ['signer', 'witness'],
     description: 'Your signing assignments'
   },
@@ -89,8 +89,8 @@ const menuItems: MenuItem[] = [
     id: 'dashboard',
     label: 'Dashboard',
     icon: Home,
-    path: '/dashboard',
-    roles: ['admin', 'title_company', 'notary', 'client', 'signer', 'witness'],
+    path: '/admin-dashboard',
+    roles: ['admin', 'title_company', 'notary', 'client'],
     description: 'Your main workspace'
   },
   {

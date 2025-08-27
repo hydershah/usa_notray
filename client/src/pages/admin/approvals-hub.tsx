@@ -79,42 +79,55 @@ export default function ApprovalsHub() {
     try {
       setLoading(true);
       
-      // Fetch all approval counts in parallel
+      // Fetch all approval counts in parallel using the same endpoints as the specific approval pages
       const [
         usersResponse,
         jobRequestsResponse,
         companiesResponse,
         notaryApprovalsResponse
       ] = await Promise.all([
-        fetch('/api/users', {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        fetch('/api/admin/users/pending-approval', {
+          headers: { 
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
         }),
-        fetch('/api/job-requests?status=pending', {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        fetch('/api/job-requests/pending', {
+          headers: { 
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
         }),
-        fetch('/api/companies?status=pending', {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        fetch('/api/admin/companies/pending', {
+          headers: { 
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
         }),
         fetch('/api/approval-workflow/admin-queue', {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+          headers: { 
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
         })
       ]);
 
-      const [users, jobRequests, companies, notaryApprovals] = await Promise.all([
+      const [users, jobRequestsData, companies, notaryApprovals] = await Promise.all([
         usersResponse.json(),
         jobRequestsResponse.json(),
         companiesResponse.json(),
         notaryApprovalsResponse.json()
       ]);
 
-      // Calculate stats
-      const pendingUsers = Array.isArray(users) ? users.filter((u: any) => 
-        u.approvalStatus === 'pending' ||
-        u.approvalStatus === 'requires_update' ||
-        (u.role === 'notary' && u.approvalStatus === 'pending')
-      ).length : 0;
+      // Calculate stats using the actual pending data from the specific endpoints
+      const pendingUsers = Array.isArray(users) ? users.length : 0;
 
-      const pendingJobRequests = Array.isArray(jobRequests) ? jobRequests.length : 0;
+      // Handle job requests response which has a different structure
+      const pendingJobRequests = jobRequestsData?.success && Array.isArray(jobRequestsData.data) ? jobRequestsData.data.length : 0;
       const pendingCompanies = Array.isArray(companies) ? companies.length : 0;
       const pendingNotaryApprovals = Array.isArray(notaryApprovals) ? notaryApprovals.length : 0;
 
