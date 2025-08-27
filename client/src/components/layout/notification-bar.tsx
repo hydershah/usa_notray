@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/use-auth';
 import { useLocation } from 'wouter';
+import { authenticatedFetch } from '@/lib/auth';
 import { 
   Bell, 
   Clock, 
@@ -79,9 +80,7 @@ export function NotificationBar({ className }: NotificationBarProps) {
       // Notary-specific notifications - ONLY pending job invitations that need approval
       if (user.role === 'notary' || (user as any).isNotary) {
         try {
-          const jobInvitationsResponse = await fetch('/api/notary/job-invitations', {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-          });
+          const jobInvitationsResponse = await authenticatedFetch('/api/notary/job-invitations');
           
           if (jobInvitationsResponse.ok) {
             const jobInvitations = await jobInvitationsResponse.json();
@@ -121,9 +120,7 @@ export function NotificationBar({ className }: NotificationBarProps) {
       if (user.role === 'admin' || (user as any).isAdmin) {
         try {
           // User Profile Approvals
-          const usersResponse = await fetch('/api/users', {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-          });
+          const usersResponse = await authenticatedFetch('/api/users');
           
           if (usersResponse.ok) {
             const users = await usersResponse.json();
@@ -152,9 +149,7 @@ export function NotificationBar({ className }: NotificationBarProps) {
 
           // Job Request Approvals
           try {
-            const jobRequestsResponse = await fetch('/api/job-requests?status=pending', {
-              headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-            });
+            const jobRequestsResponse = await authenticatedFetch('/api/job-requests?status=pending');
             
             if (jobRequestsResponse.ok) {
               const jobRequests = await jobRequestsResponse.json();
@@ -177,9 +172,7 @@ export function NotificationBar({ className }: NotificationBarProps) {
 
           // Company Approvals
           try {
-            const companiesResponse = await fetch('/api/companies?status=pending', {
-              headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-            });
+            const companiesResponse = await authenticatedFetch('/api/companies?status=pending');
             
             if (companiesResponse.ok) {
               const companies = await companiesResponse.json();
@@ -202,9 +195,7 @@ export function NotificationBar({ className }: NotificationBarProps) {
 
           // Notary Job Approvals (for admin oversight)
           try {
-            const notaryApprovalsResponse = await fetch('/api/approval-workflow/admin-queue', {
-              headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-            });
+            const notaryApprovalsResponse = await authenticatedFetch('/api/approval-workflow/admin-queue');
             
             if (notaryApprovalsResponse.ok) {
               const notaryApprovals = await notaryApprovalsResponse.json();

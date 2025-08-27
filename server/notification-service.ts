@@ -246,6 +246,248 @@ export class NotificationService {
       throw error;
     }
   }
+
+  /**
+   * Send job completion notifications to all participants
+   */
+  async sendJobCompletionNotifications(jobId: number): Promise<void> {
+    try {
+      console.log(`📧 Sending job completion notifications for job ${jobId}`);
+      
+      // Get job details
+      const [job] = await db
+        .select({
+          id: jobs.id,
+          titleCompany: jobs.titleCompany,
+          closingType: jobs.closingType,
+          propertyAddressOne: jobs.propertyAddressOne,
+          propertyCity: jobs.propertyCity,
+          propertyState: jobs.propertyState,
+          propertyZipCode: jobs.propertyZipCode,
+          completedAt: jobs.completedAt,
+          completedBy: jobs.completedBy,
+          selectedNotary: jobs.selectedNotary,
+          notaryId: jobs.notaryId,
+          userId: jobs.userId
+        })
+        .from(jobs)
+        .where(eq(jobs.id, jobId))
+        .limit(1);
+
+      if (!job) {
+        console.error(`❌ Job ${jobId} not found in database`);
+        throw new Error('Job not found');
+      }
+
+      console.log(`🔍 Job ${jobId} found - title company: ${job.titleCompany}`);
+
+      // Get all signers for this job
+      const jobSigners = await db
+        .select({
+          id: signers.id,
+          userId: signers.userId,
+          signerName: signers.signerName,
+          signerEmail: signers.signerEmail,
+          signerRole: signers.signerRole
+        })
+        .from(signers)
+        .where(eq(signers.jobId, jobId));
+
+      // Get notary information
+      let notary = null;
+      const notaryId = job.notaryId || (job.selectedNotary ? parseInt(job.selectedNotary) : null);
+      if (notaryId) {
+        const [notaryUser] = await db
+          .select({
+            id: users.id,
+            email: users.email,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            fullName: users.fullName
+          })
+          .from(users)
+          .where(eq(users.id, notaryId))
+          .limit(1);
+        notary = notaryUser;
+      }
+
+      console.log(`📋 Found ${jobSigners.length} signers and notary: ${notary ? notary.fullName || `${notary.firstName} ${notary.lastName}` : 'none'}`);
+
+      // Prepare job completion data
+      const completionData = {
+        jobId: job.id,
+        titleCompany: job.titleCompany,
+        closingType: job.closingType,
+        propertyAddress: job.propertyAddressOne ? 
+          `${job.propertyAddressOne}, ${job.propertyCity}, ${job.propertyState} ${job.propertyZipCode}` : 
+          'Address not specified',
+        completedAt: job.completedAt,
+        notaryName: notary ? (notary.fullName || `${notary.firstName} ${notary.lastName}`) : 'Unknown'
+      };
+
+      let successCount = 0;
+      let failureCount = 0;
+
+      // 1. Send notifications to all signers
+      for (const signer of jobSigners) {
+        try {
+          await emailService.sendJobCompletionNotification({
+            recipientName: signer.signerName,
+            recipientEmail: signer.signerEmail,
+            recipientRole: signer.signerRole,
+            ...completionData
+          });
+
+          // Create notification record
+          await db.insert(jobNotifications).values({
+            jobId,
+            recipientId: signer.userId || 0,
+            recipientEmail: signer.signerEmail,
+            notificationType: 'job_completed',
+            status: 'sent',
+            subject: `✅ Document Signing Complete - ${job.titleCompany}`,
+            message: `Job completion notification sent to ${signer.signerName} (${signer.signerRole})`,
+            metadata: { jobId, signerId: signer.id, recipientRole: signer.signerRole },
+            sentAt: new Date()
+          });
+
+          successCount++;
+          console.log(`✅ Job completion notification sent to ${signer.signerName} (${signer.signerEmail})`);
+          
+        } catch (signerError) {
+          console.error(`❌ Failed to send job completion notification to ${signer.signerEmail}:`, signerError);
+          
+          // Log failed notification
+          await db.insert(jobNotifications).values({
+            jobId,
+            recipientId: signer.userId || 0,
+            recipientEmail: signer.signerEmail,
+            notificationType: 'job_completed',
+            status: 'failed',
+            subject: `✅ Document Signing Complete - ${job.titleCompany}`,
+            message: `Failed to send job completion notification to ${signer.signerName}`,
+            metadata: { jobId, signerId: signer.id, recipientRole: signer.signerRole },
+            errorMessage: signerError instanceof Error ? signerError.message : 'Unknown error'
+          });
+          
+          failureCount++;
+        }
+      }
+
+      // 2. Send notification to notary
+      if (notary) {
+        try {
+          await emailService.sendJobCompletionNotification({
+            recipientName: notary.fullName || `${notary.firstName} ${notary.lastName}`,
+            recipientEmail: notary.email,
+            recipientRole: 'notary',
+            ...completionData
+          });
+
+          // Create notification record
+          await db.insert(jobNotifications).values({
+            jobId,
+            recipientId: notary.id,
+            recipientEmail: notary.email,
+            notificationType: 'job_completed',
+            status: 'sent',
+            subject: `✅ Document Signing Complete - ${job.titleCompany}`,
+            message: `Job completion notification sent to notary ${notary.fullName || `${notary.firstName} ${notary.lastName}`}`,
+            metadata: { jobId, notaryId: notary.id, recipientRole: 'notary' },
+            sentAt: new Date()
+          });
+
+          successCount++;
+          console.log(`✅ Job completion notification sent to notary ${notary.fullName || `${notary.firstName} ${notary.lastName}`} (${notary.email})`);
+          
+        } catch (notaryError) {
+          console.error(`❌ Failed to send job completion notification to notary ${notary.email}:`, notaryError);
+          
+          // Log failed notification
+          await db.insert(jobNotifications).values({
+            jobId,
+            recipientId: notary.id,
+            recipientEmail: notary.email,
+            notificationType: 'job_completed',
+            status: 'failed',
+            subject: `✅ Document Signing Complete - ${job.titleCompany}`,
+            message: `Failed to send job completion notification to notary ${notary.fullName || `${notary.firstName} ${notary.lastName}`}`,
+            metadata: { jobId, notaryId: notary.id, recipientRole: 'notary' },
+            errorMessage: notaryError instanceof Error ? notaryError.message : 'Unknown error'
+          });
+          
+          failureCount++;
+        }
+      }
+
+      // 3. Send notification to job creator (title company representative)
+      if (job.userId) {
+        try {
+          const [jobCreator] = await db
+            .select({
+              id: users.id,
+              email: users.email,
+              firstName: users.firstName,
+              lastName: users.lastName,
+              fullName: users.fullName,
+              companyId: users.companyId
+            })
+            .from(users)
+            .where(eq(users.id, job.userId))
+            .limit(1);
+
+          if (jobCreator && jobCreator.email) {
+            await emailService.sendJobCompletionNotification({
+              recipientName: jobCreator.fullName || `${jobCreator.firstName} ${jobCreator.lastName}` || 'Title Company Representative',
+              recipientEmail: jobCreator.email,
+              recipientRole: 'title_company',
+              ...completionData
+            });
+
+            // Create notification record
+            await db.insert(jobNotifications).values({
+              jobId,
+              recipientId: jobCreator.id,
+              recipientEmail: jobCreator.email,
+              notificationType: 'job_completed',
+              status: 'sent',
+              subject: `✅ Document Signing Complete - ${job.titleCompany}`,
+              message: `Job completion notification sent to title company representative ${jobCreator.fullName || `${jobCreator.firstName} ${jobCreator.lastName}`}`,
+              metadata: { jobId, recipientRole: 'title_company' },
+              sentAt: new Date()
+            });
+
+            successCount++;
+            console.log(`✅ Job completion notification sent to title company representative ${jobCreator.fullName || `${jobCreator.firstName} ${jobCreator.lastName}`} (${jobCreator.email})`);
+          }
+          
+        } catch (titleError) {
+          console.error(`❌ Failed to send job completion notification to title company representative:`, titleError);
+          
+          // Log failed notification
+          await db.insert(jobNotifications).values({
+            jobId,
+            recipientId: job.userId,
+            recipientEmail: 'unknown',
+            notificationType: 'job_completed',
+            status: 'failed',
+            subject: `✅ Document Signing Complete - ${job.titleCompany}`,
+            message: `Failed to send job completion notification to title company representative`,
+            metadata: { jobId, recipientRole: 'title_company' },
+            errorMessage: titleError instanceof Error ? titleError.message : 'Unknown error'
+          });
+          
+          failureCount++;
+        }
+      }
+
+      console.log(`✅ Job completion notifications processed for job ${jobId}: ${successCount} sent, ${failureCount} failed`);
+      
+    } catch (error) {
+      console.error('Failed to send job completion notifications:', error);
+      throw error;
+    }
+  }
 }
 
 // Create singleton instance

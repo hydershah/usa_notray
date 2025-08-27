@@ -7,8 +7,10 @@ import { Toaster as SonnerToaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
 import { useAccountCompletion } from "@/hooks/use-account-completion";
+import { useNotaryProfileCompletion } from "@/hooks/use-notary-profile-completion";
 import { MainLayout } from "@/components/layout/main-layout";
 import { AccountCompletionOverlay } from "@/components/ui/account-completion-overlay";
+import { NotaryProfileCompletionOverlay } from "@/components/ui/notary-profile-completion-overlay";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
@@ -169,17 +171,18 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode;
 
 // Account Completion Wrapper Component
 function AccountCompletionWrapper({ children }: { children: React.ReactNode }) {
-  const { showOverlay } = useAccountCompletion();
+  const { showOverlay: showSignerOverlay } = useAccountCompletion();
+  const { showOverlay: showNotaryOverlay, refresh: refreshNotaryStatus } = useNotaryProfileCompletion();
   const { refetch, user } = useAuth();
 
-  // Only refresh user data once when the overlay first appears
+  // Only refresh user data once when either overlay first appears
   const hasRefreshedRef = React.useRef(false);
   React.useEffect(() => {
-    if (showOverlay && !hasRefreshedRef.current) {
+    if ((showSignerOverlay || showNotaryOverlay) && !hasRefreshedRef.current) {
       hasRefreshedRef.current = true;
       refetch?.();
     }
-  }, [showOverlay, refetch]);
+  }, [showSignerOverlay, showNotaryOverlay, refetch]);
 
   const handleCompletionComplete = async () => {
     console.log('🏁 Account completion callback triggered');
@@ -197,12 +200,34 @@ function AccountCompletionWrapper({ children }: { children: React.ReactNode }) {
     }, 500);
   };
 
+  const handleNotaryCompletionComplete = async () => {
+    console.log('🏁 Notary profile completion callback triggered');
+    
+    // Add a small delay to prevent racing condition
+    setTimeout(async () => {
+      // Refresh both user data and notary status
+      await refetch?.();
+      await refreshNotaryStatus?.();
+      
+      // Reset the refresh flag
+      hasRefreshedRef.current = false;
+      
+      console.log('🔄 Notary profile completion data refreshed');
+    }, 500);
+  };
+
   return (
     <>
       {children}
+      {/* Signer/Witness Profile Completion Overlay */}
       <AccountCompletionOverlay
-        isOpen={showOverlay}
+        isOpen={showSignerOverlay}
         onComplete={handleCompletionComplete}
+      />
+      {/* Notary Profile Completion Overlay */}
+      <NotaryProfileCompletionOverlay
+        isOpen={showNotaryOverlay}
+        onComplete={handleNotaryCompletionComplete}
       />
     </>
   );

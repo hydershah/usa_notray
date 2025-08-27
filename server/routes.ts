@@ -1311,7 +1311,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // 🔧 FIX: Automatically set accountSetupComplete if all required fields are present
+      // 🔧 FIX: Automatically set accountSetupComplete based on user role and requirements
       // Use the actual field names from profileData for validation
       const hasBasicInfo = Boolean(profileData.firstName && profileData.lastName && profileData.phoneNumber);
       const hasAddress = Boolean(
@@ -1319,9 +1319,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         profileData.address
       );
       
-      if (hasBasicInfo && hasAddress) {
-        updateData.accountSetupComplete = true;
-        console.log(`✅ Account setup marked complete for user ${userId}`);
+      // Get current user to check role
+      const currentUser = await storage.getUser(userId);
+      
+      if (currentUser?.role === 'notary') {
+        // For notaries, require additional fields for profile completion
+        const hasNotaryCredentials = Boolean(
+          profileData.nameOnCommission && 
+          profileData.commissionNumber && 
+          profileData.commissionExpiration &&
+          profileData.commissionState
+        );
+        
+        // Notary profile is complete when they have basic info, address, and notary credentials
+        if (hasBasicInfo && hasAddress && hasNotaryCredentials) {
+          updateData.accountSetupComplete = true;
+          updateData.profileSubmitted = true; // Mark as submitted for notary flow
+          console.log(`✅ Notary account setup marked complete for user ${userId}`);
+        }
+      } else {
+        // For non-notaries (signers, witnesses, etc.), use existing logic
+        if (hasBasicInfo && hasAddress) {
+          updateData.accountSetupComplete = true;
+          console.log(`✅ Account setup marked complete for user ${userId}`);
+        }
       }
       
       // Debug logging
@@ -3428,7 +3449,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // 🔧 FIX: Automatically set accountSetupComplete if all required fields are present
+      // 🔧 FIX: Automatically set accountSetupComplete based on user role and requirements
       // Use the actual field names from profileData for validation
       const hasBasicInfo = Boolean(profileData.firstName && profileData.lastName && profileData.phoneNumber);
       const hasAddress = Boolean(
@@ -3436,9 +3457,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         profileData.address
       );
       
-      if (hasBasicInfo && hasAddress) {
-        updateData.accountSetupComplete = true;
-        console.log(`✅ Account setup marked complete for user ${userId}`);
+      // Get current user to check role
+      const currentUser = await storage.getUser(userId);
+      
+      if (currentUser?.role === 'notary') {
+        // For notaries, require additional fields for profile completion
+        const hasNotaryCredentials = Boolean(
+          profileData.nameOnCommission && 
+          profileData.commissionNumber && 
+          profileData.commissionExpiration &&
+          profileData.commissionState
+        );
+        
+        // Notary profile is complete when they have basic info, address, and notary credentials
+        if (hasBasicInfo && hasAddress && hasNotaryCredentials) {
+          updateData.accountSetupComplete = true;
+          updateData.profileSubmitted = true; // Mark as submitted for notary flow
+          console.log(`✅ Notary account setup marked complete for user ${userId}`);
+        }
+      } else {
+        // For non-notaries (signers, witnesses, etc.), use existing logic
+        if (hasBasicInfo && hasAddress) {
+          updateData.accountSetupComplete = true;
+          console.log(`✅ Account setup marked complete for user ${userId}`);
+        }
       }
       
       // Debug logging
@@ -10842,6 +10884,19 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           console.error('Error generating completion report:', reportError);
           // Don't fail the session completion if report generation fails
         }
+
+        // 🆕 SEND JOB COMPLETION EMAIL NOTIFICATIONS
+        try {
+          console.log(`📧 Sending job completion notifications for job ${session.jobId}`);
+          
+          const { notificationService } = await import('./notification-service');
+          await notificationService.sendJobCompletionNotifications(session.jobId);
+          
+          console.log(`✅ Job completion notifications sent for job ${session.jobId}`);
+        } catch (emailError) {
+          console.error('Error sending job completion notifications:', emailError);
+          // Don't fail the session completion if email notifications fail
+        }
       }
       
         console.log(`✅ Session completed: ${actualSessionId} by user ${req.user.id}`);
@@ -10870,6 +10925,41 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       res.status(500).json({ 
         message: error instanceof Error ? error.message : 'Failed to complete session',
         error: 'complete_session_failed'
+      });
+    }
+  });
+
+  // ==========================================
+  // EMAIL TESTING ROUTES (DEVELOPMENT/ADMIN ONLY)
+  // ==========================================
+
+  // Test job completion email notifications (Admin only)
+  app.post('/api/admin/test-job-completion-email/:jobId', verifyToken, requireAdmin, async (req: any, res) => {
+    try {
+      const { jobId } = req.params;
+      
+      if (!jobId || isNaN(parseInt(jobId))) {
+        return res.status(400).json({
+          error: 'Valid job ID is required'
+        });
+      }
+
+      console.log(`🧪 Testing job completion email notifications for job ${jobId}`);
+      
+      const { notificationService } = await import('./notification-service');
+      await notificationService.sendJobCompletionNotifications(parseInt(jobId));
+      
+      res.json({
+        success: true,
+        message: `Job completion email notifications sent for job ${jobId}`,
+        jobId: parseInt(jobId)
+      });
+      
+    } catch (error) {
+      console.error('Test job completion email error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to send test emails',
+        details: 'Check server logs for more information'
       });
     }
   });
@@ -12040,6 +12130,15 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       // Get all tags for validation - use getJobTags to find tags across all sessions
       const tags = await TagService.getJobTags(sessionId);
       
+      // Safely determine participant count for stats (don't fail completion if unavailable)
+      let participantCount = 0;
+      try {
+        const participants = await SessionService.getSessionParticipants(session.jobId);
+        participantCount = Array.isArray(participants) ? participants.length : 0;
+      } catch (pcErr) {
+        console.warn('⚠️ Could not determine participant count, defaulting to 0:', pcErr instanceof Error ? pcErr.message : pcErr);
+      }
+      
       if (session.status === 'completed') {
         return res.status(200).json({ 
           message: 'Session was already completed',
@@ -12111,7 +12210,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
           }
           
           // Handle multiple processed documents
-          let documentInfo = [];
+          let generatedDocumentsInfo = [] as any[];
           let primaryDocumentVersionId = null;
           
           if (processedDocs.length > 0) {
@@ -12156,11 +12255,14 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
                 isDigitallySigned: processedDoc.isDigitallySigned
               };
               
-              documentInfo.push(docInfo);
+              generatedDocumentsInfo.push(docInfo);
               
               console.log(`✅ Generated signed PDF ${i + 1}/${processedDocs.length}: ${signedFileName} (${processedDoc.fileSize} bytes, ${processedDoc.digitalSignatures?.length || 0} signatures)`);
             }
             
+            // Make generated documents available to the outer scope
+            documentInfo = generatedDocumentsInfo;
+
             // Update job status to indicate signed documents are available
             await db
               .update(jobs)
