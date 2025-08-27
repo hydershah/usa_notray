@@ -101,17 +101,17 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
   
   // Calculate optimal width based on content with padding
   const optimalWidth = useMemo(() => {
-    // Add extra padding to ensure text is never cut off
-    const padding = 16; // Extra padding in pixels
+    // Add minimal padding to ensure text is never cut off
+    const padding = 4; // Reduced padding from 16px to 4px for tighter fit
     const widthPx = calculateOptimalWidth(inputValue, fontSize, fontFamily) + padding;
     return Math.max(fixedDimensions.minWidth || 120, Math.round(widthPx / scaleFactor));
   }, [inputValue, fontSize, fontFamily, scaleFactor, fixedDimensions.minWidth]);
   
   // Calculate optimal height based on font size
   const optimalHeight = useMemo(() => {
-    // Ensure height accommodates the font size with padding
-    const lineHeight = fontSize * 1.5; // 1.5x line height for comfortable spacing
-    const padding = 8; // Vertical padding
+    // Ensure height accommodates the font size with minimal padding
+    const lineHeight = fontSize * 1.2; // Reduced from 1.5x to 1.2x line height for tighter spacing
+    const padding = 2; // Further reduced padding from 4px to 2px for even tighter fit
     const heightPx = lineHeight + padding;
     return Math.max(fixedDimensions.height || 25, Math.round(heightPx / scaleFactor));
   }, [fontSize, scaleFactor, fixedDimensions.height]);

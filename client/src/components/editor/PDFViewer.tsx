@@ -282,10 +282,10 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     return {
       backgroundColor,
       border: isWhiteout
-        ? `1.5px solid ${borderColor}`
+        ? `1px solid ${borderColor}`
         : (isSelected || (hasContent && tag.tagType === 'T'))
-            ? `1.5px solid ${borderColor}` // Show border when selected or when text tag has content
-            : `${isMissing && !hasContent ? '2px' : '1.5px'} solid ${borderColor}`,
+            ? `1px solid ${borderColor}` // Show border when selected or when text tag has content
+            : `${isMissing && !hasContent ? '2px' : '1px'} solid ${borderColor}`,
       borderRadius: LAYOUT.borderRadius.base,
       color: hasContent 
         ? PROFESSIONAL_COLORS.text 

@@ -239,10 +239,10 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     color: '#f8fafc', // Slightly lighter background
     borderColor: '#475569', // Darker border for better contrast
     // Stable default size so the tag never flashes invisible or overly large
-    defaultWidth: 60,   // Shorter width for text
+    defaultWidth: 40,   // Shorter width for text - reduced from 60
     defaultHeight: 18,  // Single line height
     // Sensible minimums to prevent flicker while still allowing shrink-to-fit
-    minWidth: 24,
+    minWidth: 16,       // Reduced from 24 for tighter fit
     minHeight: 18,
     allowResize: true,
     allowTextInput: true
@@ -302,7 +302,7 @@ export const getTagStyle = (tagType: TagType, isSelected = false, isCompleted = 
       backgroundColor: isCompleted ? 'transparent' : hexToRgba(userColor || '#4ECDC4', 0.6),
       borderColor: isSelected ? PROFESSIONAL_COLORS.borderActive : hexToRgba(userColor || '#4ECDC4', 0.9),
       color: '#1f2937', // Darker text for better readability
-      borderWidth: isCompleted ? '0px' : '1.5px',
+      borderWidth: isCompleted ? '0px' : '1px',
       borderStyle: 'solid',
       borderRadius: LAYOUT.borderRadius.base,
       padding: '0px',
@@ -324,7 +324,7 @@ export const getTagStyle = (tagType: TagType, isSelected = false, isCompleted = 
       backgroundColor: '#ffffff',
       borderColor: isSelected ? PROFESSIONAL_COLORS.borderActive : (config.borderColor || '#e5e7eb'),
       color: '#1f2937',
-      borderWidth: '1.5px',
+      borderWidth: '1px',
       borderStyle: 'solid',
       borderRadius: LAYOUT.borderRadius.base,
       padding: '0px',
@@ -404,8 +404,8 @@ export const calculateOptimalWidth = (text: string, fontSize: number = 12, fontF
   const textMetrics = context.measureText(safeText);
   const textWidth = textMetrics.width;
   
-  // Minimal padding so the blue box hugs the content
-  const padding = 2; // total (1px each side)
+  // Minimal padding so the border hugs the content tightly
+  const padding = 1; // total (0.5px each side) - reduced for tighter fit
   
   // Ensure we always have enough space for the text
   const requiredWidth = Math.max(textWidth + padding, 1);
@@ -433,7 +433,7 @@ export const calculateOptimalHeight = (text: string, fontSize: number = 12): num
 
   // Tight one-line height estimation to hug text content
   const lineHeight = fontSize * 1.0; // exact font size
-  const padding = 2; // total (1px top + 1px bottom)
+  const padding = 1; // total (0.5px top + 0.5px bottom) - reduced for tighter fit
   const singleLineHeight = Math.ceil(lineHeight) + padding;
 
   if (safeText.trim().length === 0) {

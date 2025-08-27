@@ -222,7 +222,7 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
         }),
         // Simple border styling - plain grey instead of blue
         border: isSelected || isDragging
-          ? '2px solid #d1d5db' // Plain grey border for selected/dragging tags
+          ? '1px solid #d1d5db' // Plain grey border for selected/dragging tags
           : tag.tagType === 'W'
           ? '1px solid #d1d5db' // Always show border for whiteout tags to keep them visible
           : hasContent
