@@ -4,7 +4,7 @@
  * Vultr Storage Migration Script
  * Migrates all existing files from local storage to Vultr Object Storage
  */
-
+ 
 import { cloudStorage } from './lib/cloud-storage-service';
 import { db } from './db';
 import { jobDocuments, users, notaryStamps } from '@shared/schema';
