@@ -1575,6 +1575,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const companyData = insertCompanySchema.parse(req.body);
+      
+      // Check if this is a company registration with user data
+      if (companyData.primaryUserEmail && companyData.primaryUserName) {
+        // This is a full company registration - create company AND user
+        
+        // Generate temporary password if not provided (for admin-created companies)
+        const tempPassword = companyData.primaryUserPassword || `temp-${Date.now()}`;
+        const needsPasswordReset = !companyData.primaryUserPassword;
+        
+        const managerData = {
+          username: companyData.primaryUserEmail,
+          email: companyData.primaryUserEmail,
+          password: tempPassword,
+          firstName: companyData.primaryUserName?.split(' ')[0] || companyData.primaryUserName || '',
+          lastName: companyData.primaryUserName?.split(' ').slice(1).join(' ') || '',
+          fullName: companyData.primaryUserName || '',
+          phoneNumber: companyData.phoneNumber,
+          role: 'title_company',
+          companyRole: 'manager',
+          isActive: true,
+          approvalStatus: 'approved',
+          accountSetupComplete: !needsPasswordReset // Mark as incomplete if needs password reset
+        };
+
+        const result = await storage.registerCompany(companyData, managerData);
+        
+        console.log(`✅ Company registration completed: ${result.company.companyName} (ID: ${result.company.id}) with manager ${result.manager.email} (ID: ${result.manager.id})`);
+        
+        // If password was auto-generated, create password reset token and send email
+        if (needsPasswordReset) {
+          try {
+            const crypto = await import('crypto');
+            const resetToken = crypto.randomUUID();
+            const tokenExpiry = new Date();
+            tokenExpiry.setHours(tokenExpiry.getHours() + 24); // 24 hour expiry
+
+            // Create password reset token
+            await db.insert(passwordResetTokens).values({
+              userId: result.manager.id,
+              token: resetToken,
+              expiresAt: tokenExpiry,
+              used: false
+            });
+
+            // Send password setup email
+            const { emailService } = await import('./lib/email-service');
+            await emailService.sendPasswordReset({
+              userEmail: result.manager.email,
+              userName: result.manager.firstName || result.manager.username,
+              resetToken: resetToken
+            });
+            
+            console.log(`📧 Password setup email sent to: ${result.manager.email}`);
+          } catch (emailError) {
+            console.error('Failed to send password setup email:', emailError);
+            // Don't fail the company creation if email fails
+          }
+        }
+        
+        // Invalidate companies cache
+        try {
+          await redisCache.delPattern(`admin:*`);
+          await redisCache.delPattern(`api:*companies*`);
+          console.log(`🧹 Invalidated company caches after creating company ${result.company.id}`);
+        } catch (cacheError) {
+          console.error('Failed to invalidate cache after company creation:', cacheError);
+        }
+
+        return res.status(201).json({
+          company: result.company,
+          manager: {
+            id: result.manager.id,
+            email: result.manager.email,
+            role: result.manager.role,
+            needsPasswordSetup: needsPasswordReset
+          }
+        });
+      }
+      
+      // This is just a company record creation (no user)
       const company = await storage.createCompany(companyData);
       
       // Invalidate companies cache to ensure fresh data on next request
@@ -3707,6 +3787,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const companyData = insertCompanySchema.parse(req.body);
+      
+      // Check if this is a company registration with user data
+      if (companyData.primaryUserEmail && companyData.primaryUserName) {
+        // This is a full company registration - create company AND user
+        
+        // Generate temporary password if not provided (for admin-created companies)
+        const tempPassword = companyData.primaryUserPassword || `temp-${Date.now()}`;
+        const needsPasswordReset = !companyData.primaryUserPassword;
+        
+        const managerData = {
+          username: companyData.primaryUserEmail,
+          email: companyData.primaryUserEmail,
+          password: tempPassword,
+          firstName: companyData.primaryUserName?.split(' ')[0] || companyData.primaryUserName || '',
+          lastName: companyData.primaryUserName?.split(' ').slice(1).join(' ') || '',
+          fullName: companyData.primaryUserName || '',
+          phoneNumber: companyData.phoneNumber,
+          role: 'title_company',
+          companyRole: 'manager',
+          isActive: true,
+          approvalStatus: 'approved',
+          accountSetupComplete: !needsPasswordReset // Mark as incomplete if needs password reset
+        };
+
+        const result = await storage.registerCompany(companyData, managerData);
+        
+        console.log(`✅ Company registration completed: ${result.company.companyName} (ID: ${result.company.id}) with manager ${result.manager.email} (ID: ${result.manager.id})`);
+        
+        // If password was auto-generated, create password reset token and send email
+        if (needsPasswordReset) {
+          try {
+            const crypto = await import('crypto');
+            const resetToken = crypto.randomUUID();
+            const tokenExpiry = new Date();
+            tokenExpiry.setHours(tokenExpiry.getHours() + 24); // 24 hour expiry
+
+            // Create password reset token
+            await db.insert(passwordResetTokens).values({
+              userId: result.manager.id,
+              token: resetToken,
+              expiresAt: tokenExpiry,
+              used: false
+            });
+
+            // Send password setup email
+            const { emailService } = await import('./lib/email-service');
+            await emailService.sendPasswordReset({
+              userEmail: result.manager.email,
+              userName: result.manager.firstName || result.manager.username,
+              resetToken: resetToken
+            });
+            
+            console.log(`📧 Password setup email sent to: ${result.manager.email}`);
+          } catch (emailError) {
+            console.error('Failed to send password setup email:', emailError);
+            // Don't fail the company creation if email fails
+          }
+        }
+        
+        // Invalidate companies cache
+        try {
+          await redisCache.delPattern(`admin:*`);
+          await redisCache.delPattern(`api:*companies*`);
+          console.log(`🧹 Invalidated company caches after creating company ${result.company.id}`);
+        } catch (cacheError) {
+          console.error('Failed to invalidate cache after company creation:', cacheError);
+        }
+
+        return res.status(201).json({
+          company: result.company,
+          manager: {
+            id: result.manager.id,
+            email: result.manager.email,
+            role: result.manager.role,
+            needsPasswordSetup: needsPasswordReset
+          }
+        });
+      }
+      
+      // This is just a company record creation (no user)
       const company = await storage.createCompany(companyData);
       
       // Invalidate companies cache to ensure fresh data on next request

@@ -101,7 +101,7 @@ export function registerCompanyRoutes(app: Express) {
         lastName: primaryUserName.split(' ').slice(1).join(' ') || '',
         fullName: primaryUserName,
         phoneNumber: phoneNumber,
-        role: 'company_manager',
+        role: 'title_company',
         companyRole: 'manager',
         isActive: true,
         approvalStatus: 'approved' // Company managers are auto-approved

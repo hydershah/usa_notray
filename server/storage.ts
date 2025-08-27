@@ -611,7 +611,8 @@ export class DatabaseStorage implements IStorage {
         ...managerData,
         password: await bcrypt.hash(managerData.password, 10),
         companyId: company.id,
-        role: 'manager',
+        // Use the role from managerData instead of hardcoding 'manager'
+        role: managerData.role || 'manager',
       })
       .returning();
     return { company, manager };
