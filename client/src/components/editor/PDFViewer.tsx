@@ -274,12 +274,6 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
         ? 'none' 
         : 'none';
 
-    // Apply missing tag styling
-    if (isMissing && !hasContent && !isWhiteout) {
-      // Whiteout should remain white; do not override
-      boxShadow = '0 0 0 2px #f59e0b, 0 0 8px rgba(245, 158, 11, 0.3)';
-    }
-    
     // Apply highlighted styling (takes precedence over missing)
     if (isHighlighted) {
       boxShadow = '0 0 0 3px #3b82f6, 0 0 12px rgba(59, 130, 246, 0.5)';
@@ -289,9 +283,9 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       backgroundColor,
       border: isWhiteout
         ? `1.5px solid ${borderColor}`
-        : (hasContent 
-            ? 'none' 
-            : `${isMissing && !hasContent ? '2px' : '1.5px'} solid ${borderColor}`),
+        : (isSelected || (hasContent && tag.tagType === 'T'))
+            ? `1.5px solid ${borderColor}` // Show border when selected or when text tag has content
+            : `${isMissing && !hasContent ? '2px' : '1.5px'} solid ${borderColor}`,
       borderRadius: LAYOUT.borderRadius.base,
       color: hasContent 
         ? PROFESSIONAL_COLORS.text 
@@ -792,21 +786,7 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
           </span>
         )}
         
-        {/* DocuSign style completion indicator */}
-        {hasContent && (
-          <div 
-            style={{
-              position: 'absolute',
-              top: '2px',
-              right: '4px',
-              width: '8px',
-              height: '8px',
-              backgroundColor: PROFESSIONAL_COLORS.success,
-              borderRadius: '50%',
-              border: '1px solid #ffffff'
-            }}
-          />
-        )}
+        {/* DocuSign style completion indicator - REMOVED as requested */}
         
         {/* Special indicator for disclosure tags */}
         {tag.tagType === 'O' && (
@@ -1750,25 +1730,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       note: 'Tag positioned with bottom-left corner at mouse click'
     });
     
-    // Add visual indicator at click position for debugging
-    const indicator = document.createElement('div');
-    indicator.style.position = 'absolute';
-    indicator.style.left = `${event.clientX - 5}px`;
-    indicator.style.top = `${event.clientY - 5}px`;
-    indicator.style.width = '10px';
-    indicator.style.height = '10px';
-    indicator.style.backgroundColor = 'red';
-    indicator.style.borderRadius = '50%';
-    indicator.style.zIndex = '9999';
-    indicator.style.pointerEvents = 'none';
-    document.body.appendChild(indicator);
-    
-    // Remove indicator after 3 seconds
-    setTimeout(() => {
-      if (document.body.contains(indicator)) {
-        document.body.removeChild(indicator);
-      }
-    }, 3000);
+    // Debug indicator removed as requested - no more red dot box
     
     const coordinates: TagCoordinates = {
       x: finalTagX,

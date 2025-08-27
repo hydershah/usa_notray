@@ -247,8 +247,8 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
         alignItems: 'center',
         justifyContent: 'center',
         pointerEvents: 'auto',
-        minWidth: tagDimensions.minWidth ? `${tagDimensions.minWidth}px` : '80px', // Use minimum dimensions from constants
-        minHeight: tagDimensions.minHeight ? `${tagDimensions.minHeight}px` : '25px' // Use minimum dimensions from constants
+        minWidth: '80px', // Use fallback minimum width
+        minHeight: '25px' // Use fallback minimum height
       }}
     >
       {/* Compact tag content layout */}
@@ -283,22 +283,7 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
               {tag.displayLabel?.split(' - ')[0] || tag.tagType}
             </span>
             
-            {/* User indicator - only show user color dot for non-completed tags */}
-            {!isCompleted && tag.displayLabel && tag.displayLabel.includes(' - ') && (tag.coordinates.width * scaleFactor) > 70 && (
-              <div 
-                style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  backgroundColor: tag.colorCode,
-                  border: '1px solid rgba(255, 255, 255, 0.8)',
-                  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
-                  marginLeft: '4px',
-                  flexShrink: 0
-                }}
-                title={tag.displayLabel.split(' - ')[1]?.split(' ')[0] || 'User'}
-              />
-            )}
+            {/* User indicator - REMOVED as requested - no more colored dots */}
           </div>
         )}
       </div>

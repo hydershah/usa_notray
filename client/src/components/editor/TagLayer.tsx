@@ -84,30 +84,30 @@ const TagRenderer: React.FC<TagRendererProps> = ({
     fixedDimensions
   });
   
-  // Add visual indicator for debugging tag position
-  React.useEffect(() => {
-    if (tag.tagType === 'T') {
-      const indicator = document.createElement('div');
-      indicator.style.position = 'absolute';
-      indicator.style.left = `${displayCoords.x}px`;
-      indicator.style.top = `${displayCoords.y + displayCoords.height}px`; // Show where bottom-left should be
-      indicator.style.width = '8px';
-      indicator.style.height = '8px';
-      indicator.style.backgroundColor = 'blue';
-      indicator.style.borderRadius = '50%';
-      indicator.style.zIndex = '9998';
-      indicator.style.pointerEvents = 'none';
-      indicator.style.border = '2px solid white';
-      document.body.appendChild(indicator);
-      
-      // Remove indicator after 2 seconds
-      setTimeout(() => {
-        if (document.body.contains(indicator)) {
-          document.body.removeChild(indicator);
-        }
-      }, 2000);
-    }
-  }, [displayCoords.x, displayCoords.y, displayCoords.height, tag.tagType]);
+  // Debug indicator removed as requested - no more colored dots
+  // React.useEffect(() => {
+  //   if (tag.tagType === 'T') {
+  //     const indicator = document.createElement('div');
+  //     indicator.style.position = 'absolute';
+  //     indicator.style.left = `${displayCoords.x}px`;
+  //     indicator.style.top = `${displayCoords.y + displayCoords.height}px`; // Show where bottom-left should be
+  //     indicator.style.width = '8px';
+  //     indicator.style.height = '8px';
+  //     indicator.style.backgroundColor = 'blue';
+  //     indicator.style.borderRadius = '50%';
+  //     indicator.style.zIndex = '9998';
+  //     indicator.style.pointerEvents = 'none';
+  //     indicator.style.border = '2px solid white';
+  //     document.body.appendChild(indicator);
+  //     
+  //     // Remove indicator after 2 seconds
+  //     setTimeout(() => {
+  //       if (document.body.contains(indicator)) {
+  //         document.body.removeChild(indicator);
+  //       }
+  //     }, 2000);
+  //   }
+  // }, [displayCoords.x, displayCoords.y, displayCoords.height, tag.tagType]);
 
 
   // Handle drag stop with snap-to-grid - DocuSign style

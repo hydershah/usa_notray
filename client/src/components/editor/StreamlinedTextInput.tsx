@@ -296,13 +296,13 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
 
   // Plain styling - no blue borders or backgrounds
   const containerStyle = useMemo(() => ({
-    border: isSelected 
-      ? '1px solid #d1d5db' // Light grey border for selected state only
-      : 'none', // No border for non-selected state
+    border: (isSelected || isEditing)
+      ? '1px solid #d1d5db' // Light grey border for selected or editing state
+      : 'none', // No border for non-selected, non-editing state
     borderRadius: LAYOUT.borderRadius.base,
     backgroundColor: 'transparent', // Always transparent background
     pointerEvents: 'auto' as const,
-    zIndex: isSelected ? 1000 : 100,
+    zIndex: (isSelected || isEditing) ? 1000 : 100,
     padding: '0',
     boxSizing: 'border-box' as const,
     cursor: isEditing ? 'text' : 'move',
@@ -310,7 +310,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
     minWidth: 'fit-content',
     minHeight: 'fit-content',
     boxShadow: 'none', // No box shadows
-  }), [isSelected, hasContent, isEditing]);
+  }), [isSelected, isEditing, hasContent]);
 
   return (
     <Rnd
@@ -332,7 +332,7 @@ const StreamlinedTextInputComponent: React.FC<StreamlinedTextInputProps> = ({
       cancel=".no-drag"
       dragGrid={[1, 1]}
       resizeGrid={[1, 1]}
-      className={`professional-text-tag ${isSelected ? 'selected' : ''}`}
+      className={`professional-text-tag ${isSelected ? 'selected' : ''} ${isEditing ? 'editing' : ''}`}
       style={containerStyle}
     >
       <div
@@ -415,6 +415,13 @@ const professionalStyles = `
 
 .professional-text-tag.selected {
   /* Plain grey outline instead of blue */
+  border: 1px solid #d1d5db !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.professional-text-tag.editing {
+  /* Consistent border during editing */
   border: 1px solid #d1d5db !important;
   box-shadow: none !important;
   background: transparent !important;
