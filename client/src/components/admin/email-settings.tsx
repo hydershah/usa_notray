@@ -312,10 +312,10 @@ export function EmailSettings() {
                 <Label htmlFor="smtp_user">SMTP Username</Label>
                 <Input
                   id="smtp_user"
-                  type="email"
+                  type="text"
                   value={settings.smtp_user}
                   onChange={(e) => setSettings({ ...settings, smtp_user: e.target.value })}
-                  placeholder="mail@digitalexpert.agency"
+                  placeholder="resend (for Resend) or your-email@domain.com"
                   required
                 />
               </div>

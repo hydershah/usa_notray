@@ -2,6 +2,7 @@ import { Express } from 'express';
 import { storage } from './storage.js';
 import { registrationLimiter } from './middleware/rate-limiter.js';
 import { sanitizeHtml, preventSqlInjection } from './middleware/sanitization.js';
+import { validateEmailUniqueness } from './middleware/email-validation.js';
 import { z } from 'zod';
 
 const companyRegistrationSchema = z.object({
@@ -27,7 +28,7 @@ export function registerCompanyAuthRoutes(app: Express): void {
    * Register a new title company with primary user
    * This is for the "Register Your Title Company" signup flow
    */
-  app.post('/api/auth/register-company', registrationLimiter, sanitizeHtml, preventSqlInjection, async (req, res) => {
+  app.post('/api/auth/register-company', registrationLimiter, sanitizeHtml, preventSqlInjection, validateEmailUniqueness, async (req, res) => {
     try {
       const validatedData = companyRegistrationSchema.parse(req.body);
       

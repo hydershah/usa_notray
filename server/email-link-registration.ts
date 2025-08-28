@@ -9,6 +9,7 @@ import { emailService } from './lib/email-service';
 import { eq, and, gt } from 'drizzle-orm';
 import { registrationLimiter } from './middleware/rate-limiter';
 import { sanitizeHtml, preventSqlInjection } from './middleware/sanitization';
+import { validateEmailUniqueness } from './middleware/email-validation';
 
 // Request interfaces
 interface RegistrationRequest {
@@ -40,7 +41,7 @@ export function registerEmailLinkAuth(app: Express): void {
    * POST /api/auth/register-email
    * Step 1: Store user data temporarily and send verification email with link
    */
-  app.post('/api/auth/register-email', registrationLimiter, sanitizeHtml, preventSqlInjection, async (req, res) => {
+  app.post('/api/auth/register-email', registrationLimiter, sanitizeHtml, preventSqlInjection, validateEmailUniqueness, async (req, res) => {
     try {
       const { email, password }: RegistrationRequest = registrationSchema.parse(req.body);
       const normalizedEmail = email.toLowerCase().trim();

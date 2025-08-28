@@ -4,6 +4,7 @@ import { storage } from './storage';
 import bcrypt from 'bcrypt';
 import { verifyToken, hasAdminPrivileges } from './auth.js';
 import { emailService } from './lib/email-service';
+import { validateEmailUniqueness } from './middleware/email-validation';
 
 export function registerCompanyRoutes(app: Express) {
   
@@ -16,7 +17,7 @@ export function registerCompanyRoutes(app: Express) {
    * Register a new company with a primary user (company manager)
    * This implements the "Sign-up Company" option from requirements
    */
-  app.post('/api/companies/register', async (req, res) => {
+  app.post('/api/companies/register', validateEmailUniqueness, async (req, res) => {
     try {
       const {
         // Company data
@@ -531,7 +532,7 @@ export function registerCompanyRoutes(app: Express) {
    * POST /api/companies/:id/users
    * Add a user to a company or invite a new user
    */
-  app.post('/api/companies/:id/users', verifyToken, async (req: any, res) => {
+  app.post('/api/companies/:id/users', verifyToken, validateEmailUniqueness, async (req: any, res) => {
     try {
       const companyId = parseInt(req.params.id);
       const { email, companyRole, sendInvite = true } = req.body;

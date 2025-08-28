@@ -54,7 +54,9 @@ const userUpdateSchema = z.object({
 
 // Use strict schema for creation, partial for updates
 const userSchema = insertUserSchema.extend({
-  password: z.string().min(6, 'Password must be at least 6 characters').optional(),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  fullName: z.string().min(1, 'Full name is required'),
+  phoneNumber: z.string().min(1, 'Phone number is required'),
 });
 
 type UserFormData = z.infer<typeof userSchema>;
@@ -250,26 +252,26 @@ export function UserForm({ user, isOpen, onClose, onSubmit, isLoading = false, d
                   />
                 </div>
 
-                <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-sm font-medium">
-                        Password 
-                        {user && <span className="text-sm text-muted-foreground ml-1">(leave blank to keep current)</span>}
-                      </FormLabel>
-                      <FormControl>
-                        <Input 
-                          type="password" 
-                          placeholder={user ? "Enter new password" : "Enter password"} 
-                          {...field} 
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                                  <FormField
+                    control={form.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-sm font-medium">
+                          Password {!isUpdate && '*'}
+                          {user && <span className="text-sm text-muted-foreground ml-1">(leave blank to keep current)</span>}
+                        </FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="password" 
+                            placeholder={user ? "Enter new password" : "Enter password"} 
+                            {...field} 
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <FormField
@@ -368,7 +370,9 @@ export function UserForm({ user, isOpen, onClose, onSubmit, isLoading = false, d
                   name="fullName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-sm font-medium">Full Name (Auto-generated)</FormLabel>
+                      <FormLabel className="text-sm font-medium">
+                        Full Name (Auto-generated) {!isUpdate && '*'}
+                      </FormLabel>
                       <FormControl>
                         <Input 
                           placeholder="Full name" 
@@ -387,7 +391,9 @@ export function UserForm({ user, isOpen, onClose, onSubmit, isLoading = false, d
                   name="phoneNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-sm font-medium">Phone Number</FormLabel>
+                      <FormLabel className="text-sm font-medium">
+                        Phone Number {!isUpdate && '*'}
+                      </FormLabel>
                       <FormControl>
                         <Input placeholder="Phone number" {...field} />
                       </FormControl>

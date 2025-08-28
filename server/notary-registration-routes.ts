@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import { storage } from './storage.js';
 import { registrationLimiter } from './middleware/rate-limiter.js';
 import { sanitizeHtml, preventSqlInjection } from './middleware/sanitization.js';
+import { validateEmailUniqueness } from './middleware/email-validation.js';
 import { insertUserSchema } from '../shared/schema.js';
 import { z } from 'zod';
 
@@ -35,7 +36,7 @@ export function registerNotaryRoutes(app: Express): void {
    * Register a new notary professional
    * This is for the "I'm a notary" signup flow
    */
-  app.post('/api/auth/register-notary', registrationLimiter, sanitizeHtml, preventSqlInjection, async (req, res) => {
+  app.post('/api/auth/register-notary', registrationLimiter, sanitizeHtml, preventSqlInjection, validateEmailUniqueness, async (req, res) => {
     try {
       const validatedData = notaryRegistrationSchema.parse(req.body);
       

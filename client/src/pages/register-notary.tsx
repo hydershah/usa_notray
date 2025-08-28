@@ -149,11 +149,23 @@ export default function RegisterNotary() {
         });
         setLocation('/login');
       } else {
-        toast({
-          variant: "destructive",
-          title: "Registration Failed",
-          description: data.message || "Unable to create account. Please try again.",
-        });
+        // Enhanced error handling for duplicate emails
+        if (response.status === 409 && data.error === 'EMAIL_ALREADY_EXISTS') {
+          setErrors({ 
+            email: data.message || 'An account with this email address already exists. Email addresses must be unique across all account types.'
+          });
+          toast({
+            variant: "destructive",
+            title: "Email Already Registered",
+            description: "This email is already associated with an account. Please use a different email or sign in to your existing account.",
+          });
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Registration Failed",
+            description: data.message || "Unable to create account. Please try again.",
+          });
+        }
       }
     } catch (error: any) {
       toast({

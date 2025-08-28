@@ -18,6 +18,7 @@ import {
 } from './middleware/sanitization';
 import { redisCache } from './services/redis-cache';
 import { responseCacheMiddleware } from './middleware/response-cache';
+import { validateEmailUniqueness } from './middleware/email-validation';
 import { eq } from 'drizzle-orm';
 import { signers } from '@shared/schema';
 import { db } from './db';
@@ -150,7 +151,7 @@ export function registerUserManagementRoutes(app: Express) {
    * Note: This endpoint can be called with or without authentication
    * When called by an admin, notaries are auto-approved
    */
-  app.post('/api/auth/register-user', async (req, res) => {
+  app.post('/api/auth/register-user', validateEmailUniqueness, async (req, res) => {
     try {
       const {
         // Universal required fields

@@ -140,6 +140,17 @@ export default function SignupCompany() {
         if (response.status === 409) {
           if (data.message.includes('Company')) {
             setErrors({ companyName: 'A company with this name already exists' });
+          } else if (data.error === 'EMAIL_ALREADY_EXISTS') {
+            // Enhanced security message for duplicate emails
+            setErrors({ 
+              primaryUserEmail: data.message || 'An account with this email address already exists. Email addresses must be unique across all account types.',
+              general: data.details?.suggestion || 'Please use a different email address or sign in to your existing account.'
+            });
+            toast({
+              variant: "destructive",
+              title: "Email Already Registered",
+              description: "This email is already associated with an account. Please use a different email or sign in to your existing account.",
+            });
           } else {
             setErrors({ primaryUserEmail: 'An account with this email already exists' });
           }

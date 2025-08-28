@@ -14,39 +14,98 @@ interface ApiRequestOptions {
 /**
  * Enhanced error handling for API requests
  */
-function handleApiError(response: Response, url: string): never {
+async function handleApiError(response: Response, url: string): Promise<never> {
   let errorMessage = `API request failed: ${response.status} ${response.statusText}`;
+  let errorObject: any = { message: errorMessage };
+
+  // Try to extract error details from response body
+  try {
+    const responseText = await response.text();
+    if (responseText) {
+      const responseData = JSON.parse(responseText);
+      if (responseData.message) {
+        errorMessage = responseData.message;
+      }
+      // Preserve the full error object for components to access
+      errorObject = {
+        ...responseData,
+        message: errorMessage,
+        status: response.status
+      };
+    }
+  } catch (parseError) {
+    // If JSON parsing fails, fall back to status-based messages
+    console.warn('Failed to parse error response:', parseError);
+  }
   
+  // Handle specific status codes with fallback messages
   switch (response.status) {
     case 401:
-      errorMessage = 'Authentication required. Please log in again.';
+      if (!errorObject.message || errorObject.message.includes('API request failed')) {
+        errorMessage = 'Authentication required. Please log in again.';
+        errorObject.message = errorMessage;
+      }
       // Auto-redirect to login
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login?reason=expired';
       break;
     case 403:
-      errorMessage = 'Access denied. You do not have permission to perform this action.';
+      if (!errorObject.message || errorObject.message.includes('API request failed')) {
+        errorMessage = 'Access denied. You do not have permission to perform this action.';
+        errorObject.message = errorMessage;
+      }
       break;
     case 404:
-      errorMessage = 'The requested resource was not found.';
+      if (!errorObject.message || errorObject.message.includes('API request failed')) {
+        errorMessage = 'The requested resource was not found.';
+        errorObject.message = errorMessage;
+      }
+      break;
+    case 409:
+      // 409 Conflict - let the backend message through (like email already exists)
+      if (!errorObject.message || errorObject.message.includes('API request failed')) {
+        errorMessage = 'Conflict with existing data. Please check your input.';
+        errorObject.message = errorMessage;
+      }
       break;
     case 503:
-      errorMessage = 'Service temporarily unavailable. Please try again in a few moments.';
+      if (!errorObject.message || errorObject.message.includes('API request failed')) {
+        errorMessage = 'Service temporarily unavailable. Please try again in a few moments.';
+        errorObject.message = errorMessage;
+      }
       break;
     case 500:
-      errorMessage = 'Internal server error. Please try again later.';
+      if (!errorObject.message || errorObject.message.includes('API request failed')) {
+        errorMessage = 'Internal server error. Please try again later.';
+        errorObject.message = errorMessage;
+      }
       break;
     default:
       if (response.status >= 500) {
-        errorMessage = 'Server error. Please try again later.';
+        if (!errorObject.message || errorObject.message.includes('API request failed')) {
+          errorMessage = 'Server error. Please try again later.';
+          errorObject.message = errorMessage;
+        }
       } else if (response.status >= 400) {
-        errorMessage = 'Request error. Please check your input and try again.';
+        if (!errorObject.message || errorObject.message.includes('API request failed')) {
+          errorMessage = 'Request error. Please check your input and try again.';
+          errorObject.message = errorMessage;
+        }
       }
   }
   
   console.error(`API Error (${response.status}): ${url} - ${errorMessage}`);
-  throw new Error(errorMessage);
+  
+  // Create an error object that preserves the backend response details
+  const error = new Error(errorMessage);
+  // Attach the full response data to the error for components to access
+  (error as any).response = errorObject;
+  (error as any).status = response.status;
+  (error as any).error = errorObject.error; // Preserve error codes like EMAIL_ALREADY_EXISTS
+  (error as any).details = errorObject.details; // Preserve additional details
+  
+  throw error;
 }
 
 /**
@@ -91,7 +150,7 @@ export async function apiRequest(method: string, url: string, data?: any, option
           continue;
         }
         
-        handleApiError(response, url);
+        await handleApiError(response, url);
       }
       
       return response;

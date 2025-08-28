@@ -160,6 +160,7 @@ import {
   getEmailLogs,
   getTemplateCategories
 } from './email-template-routes';
+import { validateEmailUniqueness } from './middleware/email-validation';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -1568,7 +1569,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/companies', verifyToken, async (req: any, res) => {
+  app.post('/api/companies', verifyToken, validateEmailUniqueness, async (req: any, res) => {
     try {
       if (!req.user || !hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Access denied' });
@@ -1621,15 +1622,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             // Send password setup email
             const { emailService } = await import('./lib/email-service');
-            await emailService.sendPasswordReset({
+            await emailService.sendTitleCompanyWelcomeEmail({
               userEmail: result.manager.email,
               userName: result.manager.firstName || result.manager.username,
-              resetToken: resetToken
+              companyName: result.company.companyName,
+              setupToken: resetToken
             });
             
-            console.log(`📧 Password setup email sent to: ${result.manager.email}`);
+            console.log(`📧 Title company welcome email sent to: ${result.manager.email}`);
           } catch (emailError) {
-            console.error('Failed to send password setup email:', emailError);
+            console.error('Failed to send title company welcome email:', emailError);
             // Don't fail the company creation if email fails
           }
         }
@@ -3788,7 +3790,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/companies', verifyToken, async (req: any, res) => {
+  app.post('/api/companies', verifyToken, validateEmailUniqueness, async (req: any, res) => {
     try {
       if (!req.user || !hasAdminPrivileges(req.user)) {
         return res.status(403).json({ message: 'Access denied' });
@@ -3841,15 +3843,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             // Send password setup email
             const { emailService } = await import('./lib/email-service');
-            await emailService.sendPasswordReset({
+            await emailService.sendTitleCompanyWelcomeEmail({
               userEmail: result.manager.email,
               userName: result.manager.firstName || result.manager.username,
-              resetToken: resetToken
+              companyName: result.company.companyName,
+              setupToken: resetToken
             });
             
-            console.log(`📧 Password setup email sent to: ${result.manager.email}`);
+            console.log(`📧 Title company welcome email sent to: ${result.manager.email}`);
           } catch (emailError) {
-            console.error('Failed to send password setup email:', emailError);
+            console.error('Failed to send title company welcome email:', emailError);
             // Don't fail the company creation if email fails
           }
         }
@@ -8722,21 +8725,44 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
 
       const emailSettings = [
         { key: 'email_provider', value: email_provider, description: 'Email provider preference' },
-        { key: 'postmark_from_email', value: postmark_from_email, description: 'Postmark from email address' },
-        { key: 'postmark_from_name', value: postmark_from_name, description: 'Postmark from display name' },
-        { key: 'postmark_track_opens', value: postmark_track_opens, description: 'Postmark track email opens' },
-        { key: 'postmark_track_links', value: postmark_track_links, description: 'Postmark track links' },
-        { key: 'postmark_message_stream', value: postmark_message_stream, description: 'Postmark message stream' },
-        { key: 'smtp_host', value: smtp_host, description: 'SMTP server hostname' },
-        { key: 'smtp_port', value: smtp_port, description: 'SMTP server port' },
-        { key: 'smtp_user', value: smtp_user, description: 'SMTP username/email' },
-        { key: 'smtp_secure', value: smtp_secure, description: 'Use SSL/TLS for SMTP' },
         { key: 'from_email', value: from_email, description: 'From email address' },
         { key: 'from_name', value: from_name, description: 'From display name' }
       ];
 
-      // Only update passwords/keys if they're not the masked values
-      if (postmark_api_key && postmark_api_key !== '••••••••') {
+      // Add provider-specific settings only if they have values
+      if (email_provider === 'postmark') {
+        if (postmark_from_email) {
+          emailSettings.push({ key: 'postmark_from_email', value: postmark_from_email, description: 'Postmark from email address' });
+        }
+        if (postmark_from_name) {
+          emailSettings.push({ key: 'postmark_from_name', value: postmark_from_name, description: 'Postmark from display name' });
+        }
+        if (postmark_track_opens) {
+          emailSettings.push({ key: 'postmark_track_opens', value: postmark_track_opens, description: 'Postmark track email opens' });
+        }
+        if (postmark_track_links) {
+          emailSettings.push({ key: 'postmark_track_links', value: postmark_track_links, description: 'Postmark track links' });
+        }
+        if (postmark_message_stream) {
+          emailSettings.push({ key: 'postmark_message_stream', value: postmark_message_stream, description: 'Postmark message stream' });
+        }
+      } else if (email_provider === 'smtp') {
+        if (smtp_host) {
+          emailSettings.push({ key: 'smtp_host', value: smtp_host, description: 'SMTP server hostname' });
+        }
+        if (smtp_port) {
+          emailSettings.push({ key: 'smtp_port', value: smtp_port, description: 'SMTP server port' });
+        }
+        if (smtp_user) {
+          emailSettings.push({ key: 'smtp_user', value: smtp_user, description: 'SMTP username/email' });
+        }
+        if (smtp_secure !== undefined) {
+          emailSettings.push({ key: 'smtp_secure', value: smtp_secure, description: 'Use SSL/TLS for SMTP' });
+        }
+      }
+
+      // Only update passwords/keys if they're not the masked values and relevant to the provider
+      if (email_provider === 'postmark' && postmark_api_key && postmark_api_key !== '••••••••') {
         emailSettings.push({ 
           key: 'postmark_api_key', 
           value: postmark_api_key, 
@@ -8744,7 +8770,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         });
       }
       
-      if (smtp_pass && smtp_pass !== '••••••••') {
+      if (email_provider === 'smtp' && smtp_pass && smtp_pass !== '••••••••') {
         emailSettings.push({ 
           key: 'smtp_pass', 
           value: smtp_pass, 

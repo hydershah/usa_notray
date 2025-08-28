@@ -291,10 +291,30 @@ export function AdminNotaries() {
       setSelectedUser(null);
     },
     onError: (error: any) => {
+      let title = "Error";
+      let description = error.message || "Failed to create notary.";
+      
+      // Handle email security errors specifically - check both error code and message
+      if (error.error === 'EMAIL_ALREADY_EXISTS' || 
+          error.response?.error === 'EMAIL_ALREADY_EXISTS' ||
+          error.message?.includes('EMAIL_ALREADY_EXISTS') || 
+          error.message?.includes('already exists') ||
+          error.message?.includes('already associated')) {
+        title = "Email Already Registered";
+        description = error.response?.message || error.message || "This email address is already associated with an account. Email addresses must be unique across all account types.";
+        
+        // Add helpful suggestion if available
+        if (error.details?.suggestion || error.response?.details?.suggestion) {
+          description += " " + (error.details?.suggestion || error.response?.details?.suggestion);
+        }
+      }
+      
+      console.log('Admin Notary Creation Error:', error); // Debug logging
+      
       toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message || "Failed to create notary.",
+        variant: "destructive", 
+        title,
+        description,
       });
     },
   });

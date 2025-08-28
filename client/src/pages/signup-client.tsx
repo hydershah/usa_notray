@@ -136,7 +136,20 @@ export default function SignupClient() {
 
       if (!response.ok) {
         if (response.status === 409) {
-          setErrors({ email: 'An account with this email already exists' });
+          // Enhanced security message for duplicate emails
+          if (data.error === 'EMAIL_ALREADY_EXISTS') {
+            setErrors({ 
+              email: data.message || 'An account with this email address already exists. Email addresses must be unique across all account types.',
+              general: data.details?.suggestion || 'Please use a different email address or sign in to your existing account.'
+            });
+            toast({
+              variant: "destructive",
+              title: "Email Already Registered",
+              description: "This email is already associated with an account. Please use a different email or sign in to your existing account.",
+            });
+          } else {
+            setErrors({ email: 'An account with this email already exists' });
+          }
         } else {
           setErrors({ general: data.message || 'Registration failed' });
         }

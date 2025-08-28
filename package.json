@@ -44,6 +44,8 @@
     "notary:assign": "npx tsx scripts/assign-missing-notaries.ts",
     "participants:add": "npx tsx scripts/add-default-participants.ts",
     "email:validate": "npx tsx scripts/validate-email-system.ts",
+    "email:security": "npx tsx scripts/test-email-security.ts",
+    "migrate:email-security": "npx tsx scripts/run-email-security-migration.ts",
     "system:validate": "npm run email:validate && npm run job:validate",
     "setup": "chmod +x scripts/setup-environment.sh && ./scripts/setup-environment.sh",
     "setup:env": "node -e \"console.log('Setting up environment...'); require('fs').writeFileSync('.env', require('fs').readFileSync('scripts/setup-environment.sh', 'utf8').split('cat > .env << EOF')[1].split('EOF')[0]);\"",

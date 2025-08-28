@@ -1311,15 +1311,24 @@ USA Notary Services`,
     userName: string;
     companyName?: string;
     tempPassword?: string;
+    setupToken?: string;
   }): Promise<void> {
-    const loginUrl = `${this.getClientUrl()}/login`;
+    // If setup token is provided, user needs to set up their password first
+    const actionUrl = data.setupToken 
+      ? `${this.getClientUrl()}/set-password?token=${data.setupToken}`
+      : `${this.getClientUrl()}/login`;
+    
+    const actionText = data.setupToken ? 'Set Up Your Password' : 'Login to Your Account';
+    const welcomeMessage = data.setupToken 
+      ? 'An administrator has created your title company account on Sharp Note. To get started, please set up your password.'
+      : 'An administrator has created your title company account on Sharp Note. You now have access to our professional digital notarization platform.';
     
     const content = `
         <h2 style="color: #1e40af; margin-bottom: 20px;">🎉 Welcome to Sharp Note - Title Company Professional</h2>
         
         <p>Dear <strong>${data.userName}</strong>,</p>
         
-        <p>Congratulations! An administrator has created your title company account on Sharp Note. You now have access to our professional digital notarization platform.</p>
+        <p>Congratulations! ${welcomeMessage}</p>
         
         <div class="info-box">
             <h3 style="margin-top: 0; color: #1e40af;">🏢 Your Account Details</h3>
@@ -1333,7 +1342,7 @@ USA Notary Services`,
         </div>
         
         <div style="text-align: center; margin: 30px 0;">
-            <a href="${loginUrl}" 
+            <a href="${actionUrl}" 
                style="display: inline-block; 
                       background: #1e40af; 
                       color: white; 
@@ -1344,15 +1353,18 @@ USA Notary Services`,
                       font-size: 16px;
                       margin: 20px 0;
                       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-                🔐 Login to Your Account
+                🔐 ${actionText}
             </a>
         </div>
         
         <div class="success-box">
             <h4 style="margin-top: 0;">🚀 What's Next?</h4>
             <ol style="margin: 10px 0;">
-                <li><strong>Login:</strong> Click the button above to access your account</li>
-                ${data.tempPassword ? '<li><strong>Change Password:</strong> Update your temporary password on first login</li>' : ''}
+                ${data.setupToken ? 
+                  '<li><strong>Set Password:</strong> Click the button above to create your secure password</li>' :
+                  '<li><strong>Login:</strong> Click the button above to access your account</li>'
+                }
+                ${data.tempPassword && !data.setupToken ? '<li><strong>Change Password:</strong> Update your temporary password on first login</li>' : ''}
                 <li><strong>Complete Profile:</strong> Fill in company and contact information</li>
                 <li><strong>Set Preferences:</strong> Configure default settings and preferred notaries</li>
                 <li><strong>Start Closing:</strong> Begin scheduling notarization sessions</li>
@@ -1392,9 +1404,13 @@ USA Notary Services`,
 
     await this.sendEmail({
       to: data.userEmail,
-      subject: `🏢 Welcome to Sharp Note - Your Title Company Account is Ready`,
+      subject: data.setupToken 
+        ? `🏢 Welcome to Sharp Note - Set Up Your Password` 
+        : `🏢 Welcome to Sharp Note - Your Title Company Account is Ready`,
       html: this.getBaseTemplate(content),
-      text: `Welcome to Sharp Note! Your title company account has been created. Login at: ${loginUrl}`,
+      text: data.setupToken 
+        ? `Welcome to Sharp Note! Your title company account has been created. Set up your password at: ${actionUrl}` 
+        : `Welcome to Sharp Note! Your title company account has been created. Login at: ${actionUrl}`,
       tag: 'titlecompany-welcome'
     });
   }

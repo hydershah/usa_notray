@@ -262,17 +262,36 @@ export class DatabaseStorage implements IStorage {
     // Normalize identity fields to avoid case-variant duplicates
     const normalizedEmail = String(insertUser.email).trim().toLowerCase();
     const normalizedUsername = String(insertUser.username ?? normalizedEmail).trim().toLowerCase();
+    
+    // SECURITY: Final check for email uniqueness before database insertion
+    const existingUser = await this.getUserByEmail(normalizedEmail);
+    if (existingUser) {
+      throw new Error(`SECURITY_VIOLATION: Cannot create user - email already exists: ${normalizedEmail}. Existing user role: ${existingUser.role}, ID: ${existingUser.id}`);
+    }
+    
     const hashedPassword = await bcrypt.hash(insertUser.password, 10);
-    const [user] = await db
-      .insert(users)
-      .values({
-        ...insertUser,
-        email: normalizedEmail,
-        username: normalizedUsername,
-        password: hashedPassword,
-      })
-      .returning();
-    return user;
+    
+    try {
+      const [user] = await db
+        .insert(users)
+        .values({
+          ...insertUser,
+          email: normalizedEmail,
+          username: normalizedUsername,
+          password: hashedPassword,
+        })
+        .returning();
+      return user;
+    } catch (dbError: any) {
+      // Handle database constraint violations
+      if (dbError.code === '23505' && dbError.constraint === 'users_email_unique') {
+        throw new Error(`EMAIL_CONSTRAINT_VIOLATION: Email address ${normalizedEmail} is already in use`);
+      }
+      if (dbError.code === '23505' && dbError.constraint === 'users_username_unique') {
+        throw new Error(`USERNAME_CONSTRAINT_VIOLATION: Username ${normalizedUsername} is already in use`);
+      }
+      throw dbError;
+    }
   }
 
   async updateUser(id: number, updateData: Partial<InsertUser>): Promise<User | undefined> {

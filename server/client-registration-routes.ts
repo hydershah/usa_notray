@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import { storage } from './storage.js';
 import { registrationLimiter } from './middleware/rate-limiter.js';
 import { sanitizeHtml, preventSqlInjection } from './middleware/sanitization.js';
+import { validateEmailUniqueness } from './middleware/email-validation.js';
 import { insertUserSchema } from '../shared/schema.js';
 import { z } from 'zod';
 
@@ -25,7 +26,7 @@ export function registerClientRoutes(app: Express): void {
    * Register a new client (regular user who needs documents notarized)
    * This is for the "I need documents notarized" signup flow
    */
-  app.post('/api/auth/register-client', registrationLimiter, sanitizeHtml, preventSqlInjection, async (req, res) => {
+  app.post('/api/auth/register-client', registrationLimiter, sanitizeHtml, preventSqlInjection, validateEmailUniqueness, async (req, res) => {
     try {
       const validatedData = clientRegistrationSchema.parse(req.body);
       
