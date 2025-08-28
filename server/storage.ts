@@ -530,8 +530,43 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteCompany(id: number): Promise<boolean> {
-    const result = await db.delete(companies).where(eq(companies.id, id));
-    return (result.rowCount || 0) > 0;
+    console.log(`🗑️ Storage: Attempting to delete company ${id}`);
+    
+    // Check if company exists first
+    const company = await db.select().from(companies).where(eq(companies.id, id)).limit(1);
+    if (company.length === 0) {
+      console.log(`❌ Storage: Company ${id} not found`);
+      return false;
+    }
+    
+    try {
+      // First, remove any user associations with this company
+      const usersWithCompany = await db.select().from(users).where(eq(users.companyId, id));
+      console.log(`📊 Storage: Found ${usersWithCompany.length} users associated with company ${id}`);
+      
+      if (usersWithCompany.length > 0) {
+        // Set companyId to null for users associated with this company
+        await db.update(users)
+          .set({ companyId: null, companyRole: null })
+          .where(eq(users.companyId, id));
+        console.log(`🔧 Storage: Removed company association for ${usersWithCompany.length} users`);
+      }
+      
+      // Delete from titleCompanyNotaryAssignments if any exist
+      const assignmentDeleteResult = await db.delete(titleCompanyNotaryAssignments)
+        .where(eq(titleCompanyNotaryAssignments.titleCompanyId, id));
+      console.log(`🔧 Storage: Deleted ${assignmentDeleteResult.rowCount || 0} notary assignments`);
+      
+      // Now delete the company
+      const result = await db.delete(companies).where(eq(companies.id, id));
+      const success = (result.rowCount || 0) > 0;
+      
+      console.log(`${success ? '✅' : '❌'} Storage: Company ${id} deletion ${success ? 'successful' : 'failed'}`);
+      return success;
+    } catch (error) {
+      console.error(`❌ Storage: Error deleting company ${id}:`, error);
+      throw error;
+    }
   }
 
   async getCompanies(): Promise<Company[]> {

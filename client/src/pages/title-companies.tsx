@@ -246,10 +246,20 @@ export default function TitleCompanies() {
 
   const deleteCompanyMutation = useMutation({
     mutationFn: async (id: number) => {
-      const response = await apiRequest('DELETE', `/api/companies/${id}`);
-      return response.json();
+      console.log('🗑️ Attempting to delete company with ID:', id);
+      try {
+        const response = await apiRequest('DELETE', `/api/companies/${id}`);
+        console.log('✅ Delete response status:', response.status);
+        const result = await response.json();
+        console.log('✅ Delete response data:', result);
+        return result;
+      } catch (error) {
+        console.error('❌ Delete request failed:', error);
+        throw error;
+      }
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      console.log('🎉 Delete mutation successful for company ID:', variables);
       queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
       toast({
         title: "Success",
@@ -258,7 +268,8 @@ export default function TitleCompanies() {
       setIsDeleteDialogOpen(false);
       setCompanyToDelete(null);
     },
-    onError: (error: any) => {
+    onError: (error: any, variables) => {
+      console.error('❌ Delete mutation failed for company ID:', variables, 'Error:', error);
       toast({
         variant: "destructive",
         title: "Error",
@@ -310,8 +321,10 @@ export default function TitleCompanies() {
   };
 
   const handleDeleteCompany = (company: UICompany) => {
+    console.log('🎯 handleDeleteCompany called with company:', company);
     setCompanyToDelete(company);
     setIsDeleteDialogOpen(true);
+    console.log('🎯 Dialog state set, isDeleteDialogOpen should be true');
   };
 
   const handleManageAssignments = (company: UICompany) => {
@@ -328,8 +341,12 @@ export default function TitleCompanies() {
   };
 
   const confirmDelete = () => {
+    console.log('🔄 confirmDelete called, companyToDelete:', companyToDelete);
     if (companyToDelete) {
+      console.log('🗑️ Calling deleteCompanyMutation.mutate with ID:', companyToDelete.id);
       deleteCompanyMutation.mutate(companyToDelete.id);
+    } else {
+      console.error('❌ No company to delete found');
     }
   };
 

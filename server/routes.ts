@@ -1706,14 +1706,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   app.delete('/api/companies/:id', verifyToken, async (req: any, res) => {
     try {
+      console.log(`🗑️ DELETE /api/companies/:id - User: ${req.user?.id}, Role: ${req.user?.role}, Company ID: ${req.params.id}`);
+      
       if (!req.user || !hasAdminPrivileges(req.user)) {
+        console.log(`❌ Access denied for user ${req.user?.id} - not admin`);
         return res.status(403).json({ message: 'Access denied' });
       }
 
       const companyId = parseInt(req.params.id);
+      console.log(`🔍 Attempting to delete company with ID: ${companyId}`);
+      
       const deleted = await storage.deleteCompany(companyId);
+      console.log(`📊 Delete operation result: ${deleted}`);
       
       if (!deleted) {
+        console.log(`❌ Company with ID ${companyId} not found or could not be deleted`);
         return res.status(404).json({ message: 'Company not found' });
       }
 
@@ -1727,6 +1734,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Don't fail the request if cache invalidation fails
       }
 
+      console.log(`✅ Company ${companyId} deleted successfully`);
       res.json({ message: 'Company deleted successfully' });
     } catch (error) {
       console.error('Delete company error:', error);
@@ -3913,36 +3921,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(company);
     } catch (error) {
       console.error('Update company error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  });
-
-  app.delete('/api/companies/:id', verifyToken, async (req: any, res) => {
-    try {
-      if (!req.user || !hasAdminPrivileges(req.user)) {
-        return res.status(403).json({ message: 'Access denied' });
-      }
-
-      const companyId = parseInt(req.params.id);
-      const deleted = await storage.deleteCompany(companyId);
-      
-      if (!deleted) {
-        return res.status(404).json({ message: 'Company not found' });
-      }
-
-      // Invalidate companies cache to ensure fresh data on next request
-      try {
-        await redisCache.delPattern(`admin:*`); // Clear admin caches
-        await redisCache.delPattern(`api:*companies*`); // Clear companies API cache
-        console.log(`🧹 Invalidated company caches after deleting company ${companyId}`);
-      } catch (cacheError) {
-        console.error('Failed to invalidate cache after company deletion:', cacheError);
-        // Don't fail the request if cache invalidation fails
-      }
-
-      res.json({ message: 'Company deleted successfully' });
-    } catch (error) {
-      console.error('Delete company error:', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   });
