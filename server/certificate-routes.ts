@@ -6,8 +6,7 @@ import { basename } from 'path';
 
 const router = Router();
 
-// Initialize certificate service on startup
-certificateService.initialize().catch(console.error);
+// Certificate service will be initialized lazily when needed
 
 /**
  * Generate certificate for a notary user

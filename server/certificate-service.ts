@@ -50,6 +50,15 @@ class CertificateService {
   }
 
   /**
+   * Ensure the service is initialized before any operation
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+  }
+
+  /**
    * Generate certificate for a notary user
    */
   async generateNotaryCertificate(userId: number): Promise<{
@@ -59,10 +68,8 @@ class CertificateService {
     p12Password?: string;
     error?: string;
   }> {
+    await this.ensureInitialized();
     try {
-      if (!this.initialized) {
-        await this.initialize();
-      }
 
       // Get user details from database
       const user = await storage.getUserById(userId);

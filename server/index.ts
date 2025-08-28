@@ -1,6 +1,12 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+// 🚨 CRITICAL: Set SSL bypass for Railway PostgreSQL BEFORE any imports that might create database connections
+if (process.env.DATABASE_URL?.includes('rlwy.net') || process.env.DATABASE_URL?.includes('railway')) {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  console.log('🚂 Railway detected: SSL certificate validation disabled for database connections');
+}
+
 import express, { type Request, Response, NextFunction } from "express";
 import { createServer } from 'http';
 import { registerRoutes } from "./routes";

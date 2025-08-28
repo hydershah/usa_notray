@@ -9199,6 +9199,14 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   const certificateRoutes = await import('./certificate-routes');
   app.use('/api/certificates', certificateRoutes.default);
   
+  // Initialize certificate service after all SSL configuration is complete
+  try {
+    const { certificateService } = await import('./certificate-service');
+    await certificateService.initialize();
+  } catch (error) {
+    console.error('⚠️ Certificate service initialization failed (continuing without it):', error);
+  }
+  
   // Register enhanced text tag routes
   const { registerTextTagRoutes } = await import('./routes/text-tag-routes');
   registerTextTagRoutes(app);
