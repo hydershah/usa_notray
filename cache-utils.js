@@ -13,7 +13,7 @@
  *   node cache-utils.js show-keys "*jobs*"           # Show keys matching pattern
  */
 
-const redis = require('redis');
+const redis = require('redis')
 
 async function main() {
   const command = process.argv[2];
