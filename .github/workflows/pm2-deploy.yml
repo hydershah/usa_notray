@@ -64,6 +64,7 @@ jobs:
             dist/ \
             package.json \
             package-lock.json \
+            ecosystem.config.js \
             shared/ \
             migrations/ \
             scripts/seed-essential-data.ts \
@@ -133,15 +134,7 @@ jobs:
 
 
 
-      - name: PM2 Status Check
-        run: |
-          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
-            echo '📊 PM2 Status:'
-            pm2 status
-            echo ''
-            echo '📋 PM2 Logs (last 20 lines):'
-            pm2 logs ${{ env.APP_NAME }} --lines 20
-          "
+
 
       - name: Cleanup old releases
         run: |
