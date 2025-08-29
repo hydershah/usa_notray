@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
+  "_comment": "Trigger CI/CD - 2025-01-02",
   "scripts": {
     "dev": "concurrently \"npm:dev:server\" \"npm:dev:client\" -k --names \"SERVER,CLIENT\"",
     "dev:simple": "cross-env NODE_ENV=development npx nodemon",
