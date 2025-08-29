@@ -1,0 +1,184 @@
+name: Deploy Node.js Backend App via PM2
+
+on:
+  push:
+    branches: [main, master, staging-9.0]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '18'
+  APP_NAME: 'usa-notary'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: |
+          npm run build:client
+          npm run build:server
+        env:
+          NODE_ENV: production
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Add VPS to known hosts
+        run: |
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Create release directory
+        run: |
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          echo "RELEASE_DIR=/opt/usa_notray/releases/$TIMESTAMP" >> $GITHUB_ENV
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "mkdir -p /opt/usa_notray/releases/$TIMESTAMP"
+
+      - name: Upload application files
+        run: |
+          # Create deployment package
+          tar -czf app.tar.gz \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.env*' \
+            --exclude='*.log' \
+            --exclude='client/src' \
+            --exclude='client/node_modules' \
+            dist/ \
+            package.json \
+            package-lock.json \
+            shared/ \
+            migrations/ \
+            scripts/seed-essential-data.ts \
+            scripts/health-check.ts
+          
+          # Upload to VPS
+          scp app.tar.gz ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ env.RELEASE_DIR }}/
+          
+          # Extract on VPS
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            cd ${{ env.RELEASE_DIR }}
+            tar -xzf app.tar.gz
+            rm app.tar.gz
+          "
+
+      - name: Install dependencies on VPS
+        run: |
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            cd ${{ env.RELEASE_DIR }}
+            npm ci --production --silent
+            
+            # Copy environment file
+            cp /opt/usa_notray/shared/.env .env
+            
+            # Create necessary directories
+            mkdir -p uploads certificates logs
+            chmod 755 uploads certificates logs
+          "
+
+      - name: Run database migrations
+        run: |
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            cd ${{ env.RELEASE_DIR }}
+            
+            # Push database schema
+            npm run db:push
+            
+            # Seed essential data (only on first deployment)
+            if [ ! -f /opt/usa_notray/shared/.seeded ]; then
+              npm run db:seed
+              touch /opt/usa_notray/shared/.seeded
+            fi
+          "
+
+      - name: Deploy with PM2
+        run: |
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            # Update symlink
+            ln -sfn ${{ env.RELEASE_DIR }} /opt/usa_notray/current
+            
+            # Check if PM2 process exists
+            if pm2 describe ${{ env.APP_NAME }} > /dev/null 2>&1; then
+              echo '🔄 Restarting existing PM2 process...'
+              pm2 restart ${{ env.APP_NAME }}
+            else
+              echo '🚀 Starting new PM2 process...'
+              cd /opt/usa_notray/current
+              pm2 start ecosystem.config.js
+            fi
+            
+            # Save PM2 configuration
+            pm2 save
+            
+            # Wait for app to start
+            sleep 15
+          "
+
+      - name: Health check
+        run: |
+          # Test health endpoint
+          for i in {1..10}; do
+            if curl -f http://${{ secrets.VPS_HOST }}:3000/health > /dev/null 2>&1; then
+              echo '✅ Health check passed!'
+              break
+            fi
+            echo "Health check attempt $i failed, retrying..."
+            sleep 5
+          done
+          
+          # Final health check
+          if ! curl -f http://${{ secrets.VPS_HOST }}:3000/health; then
+            echo '❌ Health check failed after deployment'
+            
+            # Rollback to previous release
+            ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+              cd /opt/usa_notray/releases
+              PREV_RELEASE=\$(ls -t | sed -n '2p')
+              if [ -n \"\$PREV_RELEASE\" ]; then
+                echo 'Rolling back to previous release...'
+                ln -sfn /opt/usa_notray/releases/\$PREV_RELEASE /opt/usa_notray/current
+                pm2 restart ${{ env.APP_NAME }}
+              fi
+            "
+            exit 1
+          fi
+
+      - name: PM2 Status Check
+        run: |
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            echo '📊 PM2 Status:'
+            pm2 status
+            echo ''
+            echo '📋 PM2 Logs (last 20 lines):'
+            pm2 logs ${{ env.APP_NAME }} --lines 20
+          "
+
+      - name: Cleanup old releases
+        run: |
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            cd /opt/usa_notray/releases
+            # Keep only the 5 most recent releases
+            ls -t | tail -n +6 | xargs -r rm -rf
+          "
+
+      - name: Deployment summary
+        run: |
+          echo "🎉 PM2 Deployment successful!"
+          echo "🔗 Application URL: http://${{ secrets.VPS_HOST }}:3000"
+          echo "📊 Release: ${{ env.RELEASE_DIR }}"
+          echo "⚡ PM2 App: ${{ env.APP_NAME }}"
+          echo "⏰ Deployment time: $(date)"
