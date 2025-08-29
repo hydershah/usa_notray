@@ -62,28 +62,60 @@ const getSSLConfig = () => {
   };
 };
 
-// Pool configuration optimized for local PostgreSQL development
+// Pool configuration optimized for Railway PostgreSQL performance
 const getPoolConfig = () => {
   const isLocal = DATABASE_URL.includes('localhost') || DATABASE_URL.includes('127.0.0.1');
+  const isRailway = DATABASE_URL.includes('railway.app') || DATABASE_URL.includes('rlwy.net');
   const sslConfig = getSSLConfig();
   
   console.log('🔧 Database Pool Configuration:', {
     isLocal,
+    isRailway,
     ssl: sslConfig,
     nodeEnv: process.env.NODE_ENV,
     tlsRejectUnauthorized: process.env.NODE_TLS_REJECT_UNAUTHORIZED
   });
   
+  // Railway-optimized configuration
+  if (isRailway) {
+    return {
+      connectionString: DATABASE_URL,
+      ssl: sslConfig,
+      // Optimized for Railway's connection limits and performance
+      max: 15,                                  // Railway has connection limits
+      min: 2,                                   // Keep fewer idle connections
+      idleTimeoutMillis: 120000,               // 2 minutes - shorter for Railway
+      connectionTimeoutMillis: 10000,          // 10 seconds - faster timeout
+      statement_timeout: 30000,                // 30 second query timeout
+      query_timeout: 30000,                    // 30 second query timeout
+      keepAlive: true,                         // Keep connections alive
+      keepAliveInitialDelayMillis: 10000,      // 10 seconds before first keepalive
+      application_name: 'usa_notary_api_railway'
+    };
+  }
+  
+  // Local development configuration
+  if (isLocal) {
+    return {
+      connectionString: DATABASE_URL,
+      ssl: sslConfig,
+      max: 20,                                 // More connections for local dev
+      min: 5,
+      idleTimeoutMillis: 300000,              // 5 minutes
+      connectionTimeoutMillis: 5000,          // 5 seconds for local
+      application_name: 'usa_notary_api_local'
+    };
+  }
+  
+  // Production configuration for other providers
   return {
     connectionString: DATABASE_URL,
     ssl: sslConfig,
-    // Connection pool settings optimized for local development
-    max: isLocal ? 20 : 100,                    // Fewer connections for local dev
-    min: isLocal ? 5 : 20,                      // Minimum pool size
-    idleTimeoutMillis: isLocal ? 300000 : 1800000, // 5 minutes local, 30 minutes production
-    connectionTimeoutMillis: 30000,             // 30 second connection timeout
-    // Application name for monitoring
-    application_name: isLocal ? 'usa_notary_api_local' : 'usa_notary_api_production'
+    max: 100,
+    min: 20,
+    idleTimeoutMillis: 1800000,              // 30 minutes
+    connectionTimeoutMillis: 30000,
+    application_name: 'usa_notary_api_production'
   };
 };
 

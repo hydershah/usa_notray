@@ -162,6 +162,15 @@ import {
 } from './email-template-routes';
 import { validateEmailUniqueness } from './middleware/email-validation';
 
+
+import { 
+  ultraFastCache, 
+  smartCacheInvalidation, 
+  CacheConfigs, 
+  preloadCache,
+  performanceMonitor 
+} from './middleware/ultra-fast-cache-middleware.js';
+import { ultraCache, CachePresets } from './lib/ultra-fast-cache.js';
 export async function registerRoutes(app: Express): Promise<Server> {
   
   // Basic route handlers to prevent 404 errors
