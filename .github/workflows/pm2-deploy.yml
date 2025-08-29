@@ -147,7 +147,7 @@ jobs:
       - name: Deployment summary
         run: |
           echo "🎉 PM2 Deployment successful!"
-          echo "🔗 Application URL: http://${{ secrets.VPS_HOST }}:3000"
+          echo "🔗 Application URL: http://${{ secrets.VPS_HOST }}:3002"
           echo "📊 Release: ${{ env.RELEASE_DIR }}"
           echo "⚡ PM2 App: ${{ env.APP_NAME }}"
           echo "⏰ Deployment time: $(date)"

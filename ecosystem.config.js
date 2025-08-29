@@ -7,11 +7,11 @@ module.exports = {
     exec_mode: 'fork', // Use fork mode for better stability initially
     env: {
       NODE_ENV: 'production',
-      PORT: 3000
+      PORT: 3002
     },
     env_production: {
       NODE_ENV: 'production',
-      PORT: 3000
+      PORT: 3002
     },
     // Logging
     error_file: '/opt/usa_notray/logs/err.log',
@@ -34,7 +34,7 @@ module.exports = {
     // Health check
     health_check_http: {
       path: '/health',
-      port: 3000,
+      port: 3002,
       timeout: 5000,
       interval: 30000
     }
