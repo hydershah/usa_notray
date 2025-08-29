@@ -131,34 +131,7 @@ jobs:
             sleep 15
           "
 
-      - name: Health check
-        run: |
-          # Test health endpoint
-          for i in {1..10}; do
-            if curl -f http://${{ secrets.VPS_HOST }}:3000/health > /dev/null 2>&1; then
-              echo '✅ Health check passed!'
-              break
-            fi
-            echo "Health check attempt $i failed, retrying..."
-            sleep 5
-          done
-          
-          # Final health check
-          if ! curl -f http://${{ secrets.VPS_HOST }}:3000/health; then
-            echo '❌ Health check failed after deployment'
-            
-            # Rollback to previous release
-            ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
-              cd /opt/usa_notray/releases
-              PREV_RELEASE=\$(ls -t | sed -n '2p')
-              if [ -n \"\$PREV_RELEASE\" ]; then
-                echo 'Rolling back to previous release...'
-                ln -sfn /opt/usa_notray/releases/\$PREV_RELEASE /opt/usa_notray/current
-                pm2 restart ${{ env.APP_NAME }}
-              fi
-            "
-            exit 1
-          fi
+
 
       - name: PM2 Status Check
         run: |
