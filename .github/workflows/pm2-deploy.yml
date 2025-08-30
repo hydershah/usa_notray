@@ -41,6 +41,22 @@ jobs:
           echo "✅ Build verification successful"
           ls -la dist/
 
+      - name: Prepare deployment files
+        run: |
+          # Create logs directory if it doesn't exist
+          mkdir -p logs
+          echo "📁 Created logs directory"
+          
+          # Create other necessary directories
+          mkdir -p uploads certificates
+          echo "📁 Created uploads and certificates directories"
+          
+          # List what we're about to package
+          echo "📦 Files to be packaged:"
+          ls -la dist/ || echo "dist/ not found"
+          ls -la logs/ || echo "logs/ not found"
+          ls -la shared/ || echo "shared/ not found"
+
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
