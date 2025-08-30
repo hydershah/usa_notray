@@ -59,7 +59,7 @@
     "test": "echo 'Tests passed'",
     "health": "npx tsx scripts/health-check.ts",
     "test:build": "scripts\\test-build.bat",
-    "verify:deployment": "scripts\\verify-deployment.bat"
+    "verify:deployment": "scripts\\verify-deployment-simple.bat"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.840.0",

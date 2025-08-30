@@ -43,18 +43,17 @@ jobs:
           echo "✅ Build verification successful"
           ls -la dist/
           
-          # Verify ecosystem.config.js is valid
+          # Verify ecosystem.config.cjs is valid
           if ! node -e "
-            import('./ecosystem.config.js')
-              .then(config => {
-                console.log('✅ ecosystem.config.js is valid ES module');
-              })
-              .catch(error => {
-                console.error('❌ ecosystem.config.js error:', error.message);
-                process.exit(1);
-              });
+            try {
+              const config = require('./ecosystem.config.cjs');
+              console.log('✅ ecosystem.config.cjs is valid CommonJS module');
+            } catch (error) {
+              console.error('❌ ecosystem.config.cjs error:', error.message);
+              process.exit(1);
+            }
           "; then
-            echo "❌ ecosystem.config.js validation failed"
+            echo "❌ ecosystem.config.cjs validation failed"
             exit 1
           fi
 
@@ -83,7 +82,7 @@ jobs:
             dist/ \
             package.json \
             package-lock.json \
-            ecosystem.config.js \
+            ecosystem.config.cjs \
             shared/
           
           # Verify package was created
@@ -145,12 +144,12 @@ jobs:
             echo '🚀 Starting new PM2 process...'
             cd /opt/usa_notray/current
             
-            # Verify ecosystem.config.js exists
-            if [ ! -f 'ecosystem.config.js' ]; then
-              echo '❌ ecosystem.config.js not found'
-              ls -la
-              exit 1
-            fi
+                         # Verify ecosystem.config.cjs exists
+             if [ ! -f 'ecosystem.config.cjs' ]; then
+               echo '❌ ecosystem.config.cjs not found'
+               ls -la
+               exit 1
+             fi
             
             # Verify dist/index.cjs exists
             if [ ! -f 'dist/index.cjs' ]; then
@@ -159,8 +158,8 @@ jobs:
               exit 1
             fi
             
-            # Start with production environment
-            pm2 start ecosystem.config.js --env production
+                         # Start with production environment
+             pm2 start ecosystem.config.cjs --env production
             
             # Save PM2 configuration
             pm2 save

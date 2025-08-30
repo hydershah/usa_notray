@@ -1,4 +1,4 @@
-export default {
+module.exports = {
   apps: [{
     name: 'usa-notary',
     script: './dist/index.cjs',
@@ -67,7 +67,7 @@ export default {
     pre_deploy: 'npm run build',
     
     // Post-deploy hooks
-    post_deploy: 'npm run db:migrate',
+    post_deploy: 'npm install && npm run db:migrate && pm2 reload ecosystem.config.js --env production',
     
     // Environment-specific overrides
     env_production: {
@@ -97,7 +97,7 @@ export default {
       path: '/opt/usa_notray-staging',
       'pre-deploy-local': 'npm run build',
       'post-deploy': 'npm install && npm run db:migrate && pm2 reload ecosystem.config.js --env staging',
-      'pre-setup': 'mkdir -p /opt/usa_notray-staging/logs'
+      'pre-setup': 'mkdir -p /opt/usa_notray/logs'
     }
   }
 };

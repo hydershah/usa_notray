@@ -6,36 +6,44 @@ echo 📁 Checking required files...
 
 set MISSING_FILES=
 
-if exist "dist\index.cjs" (
+dir "dist\index.cjs" >nul 2>&1
+if %errorlevel% equ 0 (
     echo ✅ dist\index.cjs
 ) else (
     echo ❌ dist\index.cjs (missing)
     set MISSING_FILES=1
 )
+echo 🔍 Debug: After first dist\index.cjs check, MISSING_FILES=%MISSING_FILES%
 
-if exist "package.json" (
+dir "package.json" >nul 2>&1
+if %errorlevel% equ 0 (
     echo ✅ package.json
 ) else (
     echo ❌ package.json (missing)
     set MISSING_FILES=1
 )
+echo 🔍 Debug: After package.json check, MISSING_FILES=%MISSING_FILES%
 
-if exist "package-lock.json" (
+dir "package-lock.json" >nul 2>&1
+if %errorlevel% equ 0 (
     echo ✅ package-lock.json
 ) else (
     echo ❌ package-lock.json (missing)
     set MISSING_FILES=1
 )
+echo 🔍 Debug: After package-lock.json check, MISSING_FILES=%MISSING_FILES%
 
-if exist "ecosystem.config.js" (
-    echo ✅ ecosystem.config.js
+dir "ecosystem.config.cjs" >nul 2>&1
+if %errorlevel% equ 0 (
+    echo ✅ ecosystem.config.cjs
 ) else (
-    echo ❌ ecosystem.config.js (missing)
+    echo ❌ ecosystem.config.cjs (missing)
     set MISSING_FILES=1
 )
 
 REM Check if shared directory exists
-if exist "shared" (
+dir "shared" >nul 2>&1
+if %errorlevel% equ 0 (
     echo ✅ shared\ directory
 ) else (
     echo ❌ shared\ directory (missing)
@@ -43,12 +51,14 @@ if exist "shared" (
 )
 
 REM Check if dist directory has content
-if exist "dist" (
+dir "dist" >nul 2>&1
+if %errorlevel% equ 0 (
     echo 📦 dist\ directory contents:
     dir dist
     
     REM Check if dist/index.cjs is executable
-    if exist "dist\index.cjs" (
+    dir "dist\index.cjs" >nul 2>&1
+    if %errorlevel% equ 0 (
         echo ✅ dist\index.cjs exists
     ) else (
         echo ❌ dist\index.cjs not found
@@ -59,19 +69,21 @@ if exist "dist" (
     set MISSING_FILES=1
 )
 
-REM Check ecosystem.config.js format
-if exist "ecosystem.config.js" (
-    echo 🔧 Checking ecosystem.config.js format...
-    node -e "import('./ecosystem.config.js').then(config => { console.log('✅ ecosystem.config.js is valid ES module'); console.log('📱 App name:', config.default.apps[0].name); console.log('📜 Script path:', config.default.apps[0].script); }).catch(error => { console.error('❌ ecosystem.config.js error:', error.message); process.exit(1); });"
+REM Check ecosystem.config.cjs format
+dir "ecosystem.config.cjs" >nul 2>&1
+if %errorlevel% equ 0 (
+    echo 🔧 Checking ecosystem.config.cjs format...
+    node -e "try { const config = require('./ecosystem.config.cjs'); console.log('✅ ecosystem.config.cjs is valid CommonJS module'); console.log('📱 App name:', config.apps[0].name); console.log('📜 Script path:', config.apps[0].script); } catch (error) { console.error('❌ ecosystem.config.cjs error:', error.message); process.exit(1); }"
     if %errorlevel% equ 0 (
-        echo ✅ ecosystem.config.js validation passed
+        echo ✅ ecosystem.config.cjs validation passed
     ) else (
-        echo ❌ ecosystem.config.js validation failed
+        echo ❌ ecosystem.config.cjs validation failed
         set MISSING_FILES=1
     )
 )
 
 REM Summary
+echo 🔍 Debug: MISSING_FILES variable is: %MISSING_FILES%
 if defined MISSING_FILES (
     echo ❌ Some required files are missing or invalid
     echo 🔧 Please fix these issues before deploying
