@@ -76,4 +76,4 @@ async function checkUser() {
   }
 }
 
-checkUser();
+checkUser()
