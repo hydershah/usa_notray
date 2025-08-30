@@ -28,10 +28,18 @@ jobs:
 
       - name: Build application
         run: |
-          npm run build:client
-          npm run build:server
+          npm run build:production
         env:
           NODE_ENV: production
+
+      - name: Verify build output
+        run: |
+          if [ ! -f "dist/index.cjs" ]; then
+            echo "❌ Build failed - dist/index.cjs not found"
+            exit 1
+          fi
+          echo "✅ Build verification successful"
+          ls -la dist/
 
       - name: Setup SSH
         run: |
@@ -53,7 +61,7 @@ jobs:
 
       - name: Upload application files
         run: |
-          # Create deployment package
+          # Create deployment package with only necessary files
           tar -czf app.tar.gz \
             --exclude='.git' \
             --exclude='node_modules' \
@@ -61,14 +69,18 @@ jobs:
             --exclude='*.log' \
             --exclude='client/src' \
             --exclude='client/node_modules' \
+            --exclude='server/src' \
+            --exclude='tests' \
+            --exclude='.github' \
+            --exclude='documentation' \
+            --exclude='scripts' \
+            --exclude='migrations' \
             dist/ \
             package.json \
             package-lock.json \
             ecosystem.config.js \
             shared/ \
-            migrations/ \
-            scripts/seed-essential-data.ts \
-            scripts/health-check.ts
+            logs/
           
           # Upload to VPS
           scp app.tar.gz ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ env.RELEASE_DIR }}/
@@ -78,34 +90,29 @@ jobs:
             cd ${{ env.RELEASE_DIR }}
             tar -xzf app.tar.gz
             rm app.tar.gz
+            chmod +x deploy.sh
           "
 
       - name: Install dependencies on VPS
         run: |
           ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
             cd ${{ env.RELEASE_DIR }}
+            
+            # Install production dependencies only
             npm ci --production --silent
             
-            # Copy environment file
-            cp /opt/usa_notray/shared/.env .env
+            # Copy environment file if it exists
+            if [ -f /opt/usa_notray/shared/.env ]; then
+              cp /opt/usa_notray/shared/.env .env
+            fi
             
             # Create necessary directories
             mkdir -p uploads certificates logs
             chmod 755 uploads certificates logs
-          "
-
-      - name: Run database migrations
-        run: |
-          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
-            cd ${{ env.RELEASE_DIR }}
             
-            # Push database schema
-            npm run db:push
-            
-            # Seed essential data (only on first deployment)
-            if [ ! -f /opt/usa_notray/shared/.seeded ]; then
-              npm run db:seed
-              touch /opt/usa_notray/shared/.seeded
+            # Ensure PM2 is installed globally
+            if ! command -v pm2 &> /dev/null; then
+              npm install -g pm2
             fi
           "
 
@@ -115,26 +122,58 @@ jobs:
             # Update symlink
             ln -sfn ${{ env.RELEASE_DIR }} /opt/usa_notray/current
             
-            # Check if PM2 process exists
+            # Stop existing PM2 process if running
             if pm2 describe ${{ env.APP_NAME }} > /dev/null 2>&1; then
-              echo '🔄 Restarting existing PM2 process...'
-              pm2 restart ${{ env.APP_NAME }}
-            else
-              echo '🚀 Starting new PM2 process...'
-              cd /opt/usa_notray/current
-              pm2 start ecosystem.config.js
+              echo '🔄 Stopping existing PM2 process...'
+              pm2 stop ${{ env.APP_NAME }}
+              pm2 delete ${{ env.APP_NAME }}
             fi
+            
+            echo '🚀 Starting new PM2 process...'
+            cd /opt/usa_notray/current
+            
+            # Start with production environment
+            pm2 start ecosystem.config.js --env production
             
             # Save PM2 configuration
             pm2 save
             
-            # Wait for app to start
-            sleep 15
+            # Setup PM2 to start on system boot
+            pm2 startup
+            
+            # Wait for app to start and check health
+            sleep 10
+            
+            # Check if app is running
+            if pm2 describe ${{ env.APP_NAME }} > /dev/null 2>&1; then
+              echo '✅ PM2 process started successfully'
+              pm2 list
+            else
+              echo '❌ PM2 process failed to start'
+              pm2 logs
+              exit 1
+            fi
           "
 
-
-
-
+      - name: Health check
+        run: |
+          echo "🔍 Performing health check..."
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            # Wait a bit more for app to fully initialize
+            sleep 5
+            
+            # Check if app is responding
+            if curl -f http://localhost:3000/health > /dev/null 2>&1; then
+              echo '✅ Health check passed'
+            else
+              echo '❌ Health check failed'
+              echo 'PM2 Status:'
+              pm2 list
+              echo 'Recent logs:'
+              pm2 logs ${{ env.APP_NAME }} --lines 20
+              exit 1
+            fi
+          "
 
       - name: Cleanup old releases
         run: |
@@ -147,7 +186,9 @@ jobs:
       - name: Deployment summary
         run: |
           echo "🎉 PM2 Deployment successful!"
-          echo "🔗 Application URL: http://${{ secrets.VPS_HOST }}:3002"
+          echo "🔗 Application URL: http://${{ secrets.VPS_HOST }}:3000"
           echo "📊 Release: ${{ env.RELEASE_DIR }}"
           echo "⚡ PM2 App: ${{ env.APP_NAME }}"
           echo "⏰ Deployment time: $(date)"
+          echo "📝 PM2 Status:"
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "pm2 list"
