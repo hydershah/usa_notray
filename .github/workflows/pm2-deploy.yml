@@ -45,13 +45,14 @@ jobs:
           
           # Verify ecosystem.config.js is valid
           if ! node -e "
-            try {
-              const config = await import('./ecosystem.config.js');
-              console.log('✅ ecosystem.config.js is valid ES module');
-            } catch (error) {
-              console.error('❌ ecosystem.config.js error:', error.message);
-              process.exit(1);
-            }
+            import('./ecosystem.config.js')
+              .then(config => {
+                console.log('✅ ecosystem.config.js is valid ES module');
+              })
+              .catch(error => {
+                console.error('❌ ecosystem.config.js error:', error.message);
+                process.exit(1);
+              });
           "; then
             echo "❌ ecosystem.config.js validation failed"
             exit 1

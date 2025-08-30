@@ -51,15 +51,16 @@ fi
 if [ -f "ecosystem.config.js" ]; then
     echo "🔧 Checking ecosystem.config.js format..."
     if node -e "
-        try {
-            const config = await import('./ecosystem.config.js');
-            console.log('✅ ecosystem.config.js is valid ES module');
-            console.log('📱 App name:', config.default.apps[0].name);
-            console.log('📜 Script path:', config.default.apps[0].script);
-        } catch (error) {
-            console.error('❌ ecosystem.config.js error:', error.message);
-            process.exit(1);
-        }
+        import('./ecosystem.config.js')
+            .then(config => {
+                console.log('✅ ecosystem.config.js is valid ES module');
+                console.log('📱 App name:', config.default.apps[0].name);
+                console.log('📜 Script path:', config.default.apps[0].script);
+            })
+            .catch(error => {
+                console.error('❌ ecosystem.config.js error:', error.message);
+                process.exit(1);
+            });
     "; then
         echo "✅ ecosystem.config.js validation passed"
     else
