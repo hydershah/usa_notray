@@ -12,6 +12,7 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout code
@@ -36,40 +37,25 @@ jobs:
         run: |
           if [ ! -f "dist/index.cjs" ]; then
             echo "❌ Build failed - dist/index.cjs not found"
+            ls -la dist/ || echo "dist/ directory not found"
             exit 1
           fi
           echo "✅ Build verification successful"
           ls -la dist/
-
-      - name: Prepare deployment files
-        run: |
-          # Create logs directory if it doesn't exist
-          mkdir -p logs
-          echo "📁 Created logs directory"
           
-          # Create other necessary directories
-          mkdir -p uploads certificates
-          echo "📁 Created uploads and certificates directories"
-          
-          # Verify deployment scripts exist
-          if [ ! -f "deploy.sh" ]; then
-            echo "❌ deploy.sh not found"
+          # Verify ecosystem.config.js is valid
+          if ! node -e "
+            try {
+              const config = await import('./ecosystem.config.js');
+              console.log('✅ ecosystem.config.js is valid ES module');
+            } catch (error) {
+              console.error('❌ ecosystem.config.js error:', error.message);
+              process.exit(1);
+            }
+          "; then
+            echo "❌ ecosystem.config.js validation failed"
             exit 1
           fi
-          
-          if [ ! -f "deploy.ps1" ]; then
-            echo "❌ deploy.ps1 not found"
-            exit 1
-          fi
-          
-          echo "✅ Deployment scripts verified"
-          
-          # List what we're about to package
-          echo "📦 Files to be packaged:"
-          ls -la dist/ || echo "dist/ not found"
-          ls -la logs/ || echo "logs/ not found"
-          ls -la shared/ || echo "shared/ not found"
-          ls -la deploy.sh deploy.ps1 ecosystem.config.js
 
       - name: Setup SSH
         run: |
@@ -93,26 +79,11 @@ jobs:
         run: |
           # Create deployment package with only necessary files
           tar -czf app.tar.gz \
-            --exclude='.git' \
-            --exclude='node_modules' \
-            --exclude='.env*' \
-            --exclude='*.log' \
-            --exclude='client/src' \
-            --exclude='client/node_modules' \
-            --exclude='server/src' \
-            --exclude='tests' \
-            --exclude='.github' \
-            --exclude='documentation' \
-            --exclude='scripts' \
-            --exclude='migrations' \
             dist/ \
             package.json \
             package-lock.json \
             ecosystem.config.js \
-            deploy.sh \
-            deploy.ps1 \
-            shared/ \
-            logs/
+            shared/
           
           # Verify package was created
           if [ ! -f "app.tar.gz" ]; then
@@ -131,7 +102,10 @@ jobs:
             cd ${{ env.RELEASE_DIR }}
             tar -xzf app.tar.gz
             rm app.tar.gz
-            chmod +x deploy.sh
+            
+            # Create necessary directories
+            mkdir -p logs uploads certificates
+            chmod 755 logs uploads certificates
           "
 
       - name: Install dependencies on VPS
@@ -147,10 +121,6 @@ jobs:
               cp /opt/usa_notray/shared/.env .env
             fi
             
-            # Create necessary directories
-            mkdir -p uploads certificates logs
-            chmod 755 uploads certificates logs
-            
             # Ensure PM2 is installed globally
             if ! command -v pm2 &> /dev/null; then
               npm install -g pm2
@@ -158,6 +128,7 @@ jobs:
           "
 
       - name: Deploy with PM2
+        timeout-minutes: 5
         run: |
           ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
             # Update symlink
@@ -173,6 +144,20 @@ jobs:
             echo '🚀 Starting new PM2 process...'
             cd /opt/usa_notray/current
             
+            # Verify ecosystem.config.js exists
+            if [ ! -f 'ecosystem.config.js' ]; then
+              echo '❌ ecosystem.config.js not found'
+              ls -la
+              exit 1
+            fi
+            
+            # Verify dist/index.cjs exists
+            if [ ! -f 'dist/index.cjs' ]; then
+              echo '❌ dist/index.cjs not found'
+              ls -la dist/
+              exit 1
+            fi
+            
             # Start with production environment
             pm2 start ecosystem.config.js --env production
             
@@ -184,7 +169,7 @@ jobs:
             
             # Wait for app to start and check health
             echo '⏳ Waiting for application to start...'
-            sleep 15
+            sleep 10
             
             # Check if app is running
             if pm2 describe ${{ env.APP_NAME }} > /dev/null 2>&1; then
@@ -193,7 +178,7 @@ jobs:
               
               # Show recent logs to verify startup
               echo '📝 Recent PM2 logs:'
-              pm2 logs ${{ env.APP_NAME }} --lines 20 || echo 'No logs available'
+              pm2 logs ${{ env.APP_NAME }} --lines 10 || echo 'No logs available'
             else
               echo '❌ PM2 process failed to start'
               echo '📋 PM2 error details:'
@@ -204,6 +189,7 @@ jobs:
           "
 
       - name: Health check
+        timeout-minutes: 3
         run: |
           echo "🔍 Performing health check..."
           ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "

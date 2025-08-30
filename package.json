@@ -57,7 +57,9 @@
     "lint": "echo 'Lint check passed'",
     "db:seed": "npx tsx scripts/seed-essential-data.ts",
     "test": "echo 'Tests passed'",
-    "health": "npx tsx scripts/health-check.ts"
+    "health": "npx tsx scripts/health-check.ts",
+    "test:build": "./scripts/test-build.sh",
+    "verify:deployment": "./scripts/verify-deployment.sh"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.840.0",

@@ -1,8 +1,8 @@
-module.exports = {
+export default {
   apps: [{
     name: 'usa-notary',
-    script: 'dist/index.cjs',
-    cwd: process.cwd(), // Use current working directory instead of hardcoded path
+    script: './dist/index.cjs',
+    cwd: process.cwd(),
     instances: 1,
     exec_mode: 'fork',
     
