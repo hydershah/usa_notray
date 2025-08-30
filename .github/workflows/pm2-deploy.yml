@@ -51,11 +51,25 @@ jobs:
           mkdir -p uploads certificates
           echo "📁 Created uploads and certificates directories"
           
+          # Verify deployment scripts exist
+          if [ ! -f "deploy.sh" ]; then
+            echo "❌ deploy.sh not found"
+            exit 1
+          fi
+          
+          if [ ! -f "deploy.ps1" ]; then
+            echo "❌ deploy.ps1 not found"
+            exit 1
+          fi
+          
+          echo "✅ Deployment scripts verified"
+          
           # List what we're about to package
           echo "📦 Files to be packaged:"
           ls -la dist/ || echo "dist/ not found"
           ls -la logs/ || echo "logs/ not found"
           ls -la shared/ || echo "shared/ not found"
+          ls -la deploy.sh deploy.ps1 ecosystem.config.js
 
       - name: Setup SSH
         run: |
@@ -95,8 +109,19 @@ jobs:
             package.json \
             package-lock.json \
             ecosystem.config.js \
+            deploy.sh \
+            deploy.ps1 \
             shared/ \
             logs/
+          
+          # Verify package was created
+          if [ ! -f "app.tar.gz" ]; then
+            echo "❌ Failed to create deployment package"
+            exit 1
+          fi
+          
+          echo "✅ Package created successfully"
+          ls -la app.tar.gz
           
           # Upload to VPS
           scp app.tar.gz ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ env.RELEASE_DIR }}/
