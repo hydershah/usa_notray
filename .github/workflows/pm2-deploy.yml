@@ -183,15 +183,22 @@ jobs:
             pm2 startup
             
             # Wait for app to start and check health
-            sleep 10
+            echo '⏳ Waiting for application to start...'
+            sleep 15
             
             # Check if app is running
             if pm2 describe ${{ env.APP_NAME }} > /dev/null 2>&1; then
               echo '✅ PM2 process started successfully'
               pm2 list
+              
+              # Show recent logs to verify startup
+              echo '📝 Recent PM2 logs:'
+              pm2 logs ${{ env.APP_NAME }} --lines 20 || echo 'No logs available'
             else
               echo '❌ PM2 process failed to start'
-              pm2 logs
+              echo '📋 PM2 error details:'
+              pm2 logs || echo 'No PM2 logs available'
+              pm2 list || echo 'PM2 list failed'
               exit 1
             fi
           "
