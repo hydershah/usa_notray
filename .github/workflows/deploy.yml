@@ -67,7 +67,8 @@ jobs:
             ecosystem.config.js \
             drizzle.config.ts \
             migrations/ \
-            scripts/
+            scripts/ \
+            shared/
           
           # Upload to VPS
           scp app.tar.gz ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ env.RELEASE_DIR }}/
@@ -114,7 +115,6 @@ jobs:
               echo '🚀 Starting new PM2 process...'
               cd /opt/usa_notray/current
               pm2 start ecosystem.config.js
-            drizzle.config.ts \
             fi
             
             # Save PM2 configuration
