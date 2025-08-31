@@ -82,7 +82,7 @@ jobs:
         run: |
           ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
             cd ${{ env.RELEASE_DIR }}
-            npm ci --production --silent
+            npm ci --silent
             
             # Copy environment file from shared directory
             cp /opt/usa_notray/.env .env
@@ -96,7 +96,7 @@ jobs:
         run: |
           ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
             cd ${{ env.RELEASE_DIR }}
-            npm run db:push
+            npx drizzle-kit push
           "
 
       - name: Deploy with PM2
