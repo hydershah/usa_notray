@@ -1,6 +1,6 @@
 module.exports = {
   apps: [{
-    name: 'usa-notary',
+    name: 'usa-notray',
     script: 'dist/index.cjs',
     cwd: '/opt/usa_notray/current',
     instances: 1, // Start with 1 instance, can scale later
