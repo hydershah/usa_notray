@@ -65,6 +65,7 @@ jobs:
             package.json \
             package-lock.json \
             ecosystem.config.js \
+            drizzle.config.ts \
             migrations/ \
             scripts/
           
@@ -113,6 +114,7 @@ jobs:
               echo '🚀 Starting new PM2 process...'
               cd /opt/usa_notray/current
               pm2 start ecosystem.config.js
+            drizzle.config.ts \
             fi
             
             # Save PM2 configuration
