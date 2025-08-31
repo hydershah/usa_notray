@@ -13,6 +13,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { performanceMonitor } from './middleware/performance-monitor';
 import { healthCheck } from './health-check';
+console.log("🚀 CI/CD Test: Application starting - $(new Date().toISOString())");
 import { redisCache } from './services/redis-cache';
 import { 
   errorHandler, 

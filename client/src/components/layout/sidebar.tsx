@@ -43,7 +43,7 @@ const menuItems: MenuItem[] = [
   // Primary actions
   {
     id: 'create-job',
-    label: 'Create Job',
+    label: 'create job',
     icon: Plus,
     path: '/create-job',
     roles: ['admin', 'title_company', 'notary'],
@@ -238,7 +238,7 @@ export function Sidebar() {
     const isAdmin = user?.isAdmin || user?.role === 'admin';
     const isNotary = user?.isNotary || user?.role === 'notary';
     
-    // Only show Create Job for subscriber notaries or admins/title companies
+    // Only show create job for subscriber notaries or admins/title companies
     if (item.id === 'create-job') {
       return isAdmin || 
              userRole === 'title_company' || 
