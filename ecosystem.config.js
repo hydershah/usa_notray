@@ -1,17 +1,18 @@
 module.exports = {
   apps: [{
-    name: 'usa-notary',
+    name: 'usa-notray',
     script: 'dist/index.cjs',
     cwd: '/opt/usa_notray/current',
     instances: 1, // Start with 1 instance, can scale later
     exec_mode: 'fork', // Use fork mode for better stability initially
+
     env: {
       NODE_ENV: 'production',
-      PORT: 3002
+      PORT: 3000
     },
     env_production: {
       NODE_ENV: 'production',
-      PORT: 3002
+      PORT: 3000
     },
     // Logging
     error_file: '/opt/usa_notray/logs/err.log',
@@ -34,7 +35,7 @@ module.exports = {
     // Health check
     health_check_http: {
       path: '/health',
-      port: 3002,
+      port: 3000,
       timeout: 5000,
       interval: 30000
     }

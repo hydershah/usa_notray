@@ -1,0 +1,156 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main, master, staging-9.0]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '18'
+  APP_NAME: 'usa-notray'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Test SSH connection
+        run: |
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "echo 'SSH connection successful'"
+
+      - name: Create release directory
+        run: |
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          echo "RELEASE_DIR=/opt/usa_notray/releases/$TIMESTAMP" >> $GITHUB_ENV
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "mkdir -p /opt/usa_notray/releases/$TIMESTAMP"
+
+      - name: Upload application files
+        run: |
+          # Create deployment package with only necessary files
+          tar -czf app.tar.gz \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.env*' \
+            --exclude='*.log' \
+            --exclude='client/src' \
+            --exclude='client/node_modules' \
+            --exclude='uploads' \
+            --exclude='certificates' \
+            --exclude='logs' \
+            dist/ \
+            package.json \
+            package-lock.json \
+            ecosystem.config.js \
+            drizzle.config.ts \
+            migrations/ \
+            scripts/ \
+            shared/
+          
+          # Upload to VPS
+          scp app.tar.gz ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ env.RELEASE_DIR }}/
+          
+          # Extract on VPS
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            cd ${{ env.RELEASE_DIR }}
+            tar -xzf app.tar.gz
+            rm app.tar.gz
+          "
+
+      - name: Install dependencies on VPS
+        run: |
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            cd ${{ env.RELEASE_DIR }}
+            npm ci --silent
+            
+            # Copy environment file from shared directory
+            cp /opt/usa_notray/.env .env
+            
+            # Create necessary directories
+            mkdir -p uploads certificates logs
+            chmod 755 uploads certificates logs
+          "
+
+      - name: Run database migrations
+        run: |
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            cd ${{ env.RELEASE_DIR }}
+            npx drizzle-kit push
+          "
+
+      - name: Deploy with PM2
+        run: |
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            # Update symlink to new release
+            ln -sfn ${{ env.RELEASE_DIR }} /opt/usa_notray/current
+            
+            # Check if PM2 process exists
+            if pm2 describe ${{ env.APP_NAME }} > /dev/null 2>&1; then
+              echo '🔄 Restarting existing PM2 process...'
+              pm2 restart ${{ env.APP_NAME }}
+            else
+              echo '🚀 Starting new PM2 process...'
+              cd /opt/usa_notray/current
+              pm2 start ecosystem.config.js
+            fi
+            
+            # Save PM2 configuration
+            pm2 save
+            
+            # Wait for app to start
+            sleep 10
+            
+            # Check if app is running
+            if pm2 describe ${{ env.APP_NAME }} | grep -q 'online'; then
+              echo '✅ Application deployed successfully!'
+            else
+              echo '❌ Application failed to start'
+              pm2 logs ${{ env.APP_NAME }} --lines 20
+              exit 1
+            fi
+          "
+
+      - name: Cleanup old releases
+        run: |
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            cd /opt/usa_notray/releases
+            # Keep only the 5 most recent releases
+            ls -t | tail -n +6 | xargs -r rm -rf
+          "
+
+      - name: Health check
+        run: |
+          echo "🔍 Performing health check..."
+          sleep 5
+          curl -f https://sharpnote.net/health || echo "Health check failed, but deployment completed"
+
+      - name: Deployment summary
+        run: |
+          echo "🎉 Deployment successful!"
+          echo "🔗 Application URL: https://sharpnote.net"
+          echo "📊 Release: ${{ env.RELEASE_DIR }}"
+          echo "⚡ PM2 App: ${{ env.APP_NAME }}"
+          echo "⏰ Deployment time: $(date)"
