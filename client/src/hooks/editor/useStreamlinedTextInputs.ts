@@ -877,6 +877,20 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
       const store = useEditorStore.getState();
       const tagDimensions = store.getTagDimensions('T') || { width: 60, height: 18 };
 
+      // Ensure stable yet unique createdAt per id to avoid duplicate React keys even when server timestamps are identical
+      let createdAt = new Date(tag.createdAt);
+      try {
+        const baseMs = createdAt.getTime();
+        if (!Number.isNaN(baseMs)) {
+          const idNum = Number(tag.id);
+          const hash = Number.isFinite(idNum)
+            ? Math.abs(idNum)
+            : String(tag.id).split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+          const offsetMs = hash % 997; // 0..996 ms (prime modulus) for low collision deterministic offset
+          createdAt = new Date(baseMs + offsetMs);
+        }
+      } catch {}
+
       return {
         id: tag.id,
         documentId: tag.documentId != null ? tag.documentId.toString() : undefined,
@@ -894,7 +908,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
         assignedUserId: tag.assignedUserId,
         userColor: tag.colorCode || '#4ECDC4',
         isNew: false,
-        createdAt: new Date(tag.createdAt)
+        createdAt
       };
     });
 
@@ -908,12 +922,19 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
         // If we have a recent local coordinate update, avoid overwriting with potentially stale server coords
         const lastLocalAt = existing ? (lastLocalCoordinateUpdateAt.current.get(existing.id) || 0) : 0;
         const recentlyMovedLocally = Date.now() - lastLocalAt < 1200; // 1.2s protection window
+        // Use global editor store to determine if this text input is actively being edited
+        const activeId = (useEditorStore.getState() as any).activeTextInputId;
+        const isCurrentlyEditing = activeId === input.id;
 
-        if (existing && recentlyMovedLocally) {
-          // Merge everything except coordinates to prevent snapping back
+        if (existing && (recentlyMovedLocally || isCurrentlyEditing)) {
+          // Minimal protection:
+          // - Preserve coordinates only if we just moved locally (prevent snapping back)
+          // - Preserve content if currently editing (prevent vanishing on tag switch)
           byId.set(input.id, {
             ...existing,
-            content: input.content,
+            coordinates: recentlyMovedLocally ? existing.coordinates : input.coordinates,
+            content: isCurrentlyEditing ? existing.content : input.content,
+            // Always accept server-driven styling/assignment updates
             fontSize: input.fontSize,
             fontFamily: input.fontFamily,
             textColor: input.textColor,
