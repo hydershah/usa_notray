@@ -97,7 +97,7 @@ jobs:
         run: |
           ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
             cd ${{ env.RELEASE_DIR }}
-            npx drizzle-kit push
+            npm run db:migrate
           "
 
       - name: Deploy with PM2
