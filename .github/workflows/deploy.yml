@@ -64,7 +64,7 @@ jobs:
             dist/ \
             package.json \
             package-lock.json \
-            ecosystem.config.js \
+            ecosystem.config.cjs \
             drizzle.config.ts \
             migrations/ \
             scripts/
@@ -121,11 +121,11 @@ jobs:
 
             echo '🚀 Starting PM2 with latest release (update env + cwd)'
             cd /opt/usa_notray/current
-            if [ -f "/opt/usa_notray/current/ecosystem.config.js" ]; then
-              echo '🧩 Found ecosystem.config.js, starting via ecosystem file'
-              pm2 start /opt/usa_notray/current/ecosystem.config.js --update-env
+            if [ -f "/opt/usa_notray/current/ecosystem.config.cjs" ]; then
+              echo '🧩 Found ecosystem.config.cjs, starting via ecosystem file'
+              pm2 start /opt/usa_notray/current/ecosystem.config.cjs --update-env
             else
-              echo '⚠️ ecosystem.config.js not found, starting app from dist/index.cjs as fallback'
+              echo '⚠️ ecosystem.config.cjs not found, starting app from dist/index.cjs as fallback'
               if [ -f "dist/index.cjs" ]; then
                 pm2 start dist/index.cjs --name ${{ env.APP_NAME }} --update-env
               else
