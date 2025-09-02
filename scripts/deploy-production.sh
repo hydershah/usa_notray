@@ -1,5 +1,24 @@
 #!/bin/bash
 
+set -e
+
+echo "Deploying to production via PM2..."
+
+npm ci
+npm run build:production
+npm prune --production
+
+if pm2 list | grep -q "usa-notray"; then
+  pm2 reload ecosystem.config.js --update-env --env production
+else
+  pm2 start ecosystem.config.js --env production
+fi
+
+pm2 save
+echo "Done."
+
+#!/bin/bash
+
 echo "🚀 Deploying USA Notary Platform to PRODUCTION"
 echo "==============================================="
 

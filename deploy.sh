@@ -46,9 +46,9 @@ print_status "Deploying to environment: $ENV"
 print_status "Cleaning previous builds..."
 npm run build:clean
 
-# Install dependencies
+# Install dependencies (include dev deps for build)
 print_status "Installing dependencies..."
-npm ci --only=production
+npm ci
 
 # Build the application
 print_status "Building application..."
@@ -62,14 +62,18 @@ fi
 
 print_status "Build completed successfully!"
 
+# Prune devDependencies for runtime
+print_status "Pruning dev dependencies for production runtime..."
+npm prune --production
+
 # Create logs directory if it doesn't exist
 mkdir -p logs
 
 # Stop existing PM2 process if running
-if pm2 list | grep -q "usa-notary"; then
+if pm2 list | grep -q "usa-notray"; then
     print_status "Stopping existing PM2 process..."
-    pm2 stop usa-notary || true
-    pm2 delete usa-notary || true
+    pm2 stop usa-notray || true
+    pm2 delete usa-notray || true
 fi
 
 # Start the application with PM2
@@ -90,9 +94,9 @@ pm2 list
 
 # Show logs
 print_status "Recent logs:"
-pm2 logs usa-notary --lines 20
+pm2 logs usa-notray --lines 20
 
 print_status "✅ Deployment completed successfully!"
 print_status "📊 Monitor your app with: pm2 monit"
-print_status "📝 View logs with: pm2 logs usa-notary"
-print_status "🔄 Restart with: pm2 restart usa-notary"
+print_status "📝 View logs with: pm2 logs usa-notray"
+print_status "🔄 Restart with: pm2 restart usa-notray"

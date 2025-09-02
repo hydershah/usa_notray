@@ -2,7 +2,7 @@ module.exports = {
   apps: [{
     name: 'usa-notray',
     script: 'dist/index.cjs',
-    cwd: '/opt/usa_notray/current',
+    cwd: process.cwd(),
     instances: 1, // Start with 1 instance, can scale later
     exec_mode: 'fork', // Use fork mode for better stability initially
 
@@ -15,9 +15,9 @@ module.exports = {
       PORT: 3000
     },
     // Logging
-    error_file: '/opt/usa_notray/logs/err.log',
-    out_file: '/opt/usa_notray/logs/out.log',
-    log_file: '/opt/usa_notray/logs/combined.log',
+    error_file: './logs/err.log',
+    out_file: './logs/out.log',
+    log_file: './logs/combined.log',
     time: true,
     
     // Process management

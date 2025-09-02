@@ -1,6 +1,6 @@
 module.exports = {
   apps: [{
-    name: 'usa-notary',
+    name: 'usa-notray',
     script: './dist/index.cjs',
     cwd: process.cwd(),
     instances: 1,

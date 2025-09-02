@@ -44,9 +44,9 @@ Write-Status "Deploying to environment: $Environment"
 Write-Status "Cleaning previous builds..."
 npm run build:clean
 
-# Install dependencies
+# Install dependencies (include dev deps for build)
 Write-Status "Installing dependencies..."
-npm ci --only=production
+npm ci
 
 # Build the application
 Write-Status "Building application..."
@@ -60,6 +60,10 @@ if (-not (Test-Path "dist/index.cjs")) {
 
 Write-Status "Build completed successfully!"
 
+# Prune devDependencies for runtime
+Write-Status "Pruning dev dependencies for production runtime..."
+npm prune --production
+
 # Create logs directory if it doesn't exist
 if (-not (Test-Path "logs")) {
     New-Item -ItemType Directory -Path "logs" -Force
@@ -68,10 +72,10 @@ if (-not (Test-Path "logs")) {
 # Stop existing PM2 process if running
 try {
     $pm2List = pm2 list
-    if ($pm2List -match "usa-notary") {
+    if ($pm2List -match "usa-notray") {
         Write-Status "Stopping existing PM2 process..."
-        pm2 stop usa-notary
-        pm2 delete usa-notary
+        pm2 stop usa-notray
+        pm2 delete usa-notray
     }
 } catch {
     Write-Warning "No existing PM2 process found or error stopping it"
@@ -95,9 +99,9 @@ pm2 list
 
 # Show logs
 Write-Status "Recent logs:"
-pm2 logs usa-notary --lines 20
+pm2 logs usa-notray --lines 20
 
 Write-Status "✅ Deployment completed successfully!"
 Write-Status "📊 Monitor your app with: pm2 monit"
-Write-Status "📝 View logs with: pm2 logs usa-notary"
-Write-Status "🔄 Restart with: pm2 restart usa-notary"
+Write-Status "📝 View logs with: pm2 logs usa-notray"
+Write-Status "🔄 Restart with: pm2 restart usa-notray"

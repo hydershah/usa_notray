@@ -1,3 +1,56 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: |
+            ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add server to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+
+      - name: Rsync code to server
+        run: |
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude 'node_modules' \
+            --exclude 'client/node_modules' \
+            ./ $DEPLOY_USER@$SERVER_HOST:$DEPLOY_PATH
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+      - name: Install and restart on server
+        run: |
+          ssh $DEPLOY_USER@$SERVER_HOST "cd $DEPLOY_PATH && \
+            nvm use 18 || true; \
+            npm ci && npm run build:production && npm prune --production && \
+            pm2 reload ecosystem.config.js --update-env --env production || pm2 start ecosystem.config.js --env production && pm2 save"
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+
 name: Deploy to VPS
 
 on:
