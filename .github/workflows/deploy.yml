@@ -106,28 +106,34 @@ jobs:
             # Update symlink to new release
             ln -sfn ${{ env.RELEASE_DIR }} /opt/usa_notray/current
             
-            # Check if PM2 process exists
+            echo '🔗 Symlink now points to:'
+            readlink -f /opt/usa_notray/current
+
+            # Ensure PM2 uses the fresh symlink target
             if pm2 describe ${{ env.APP_NAME }} > /dev/null 2>&1; then
-              echo '🔄 Restarting existing PM2 process...'
-              pm2 restart ${{ env.APP_NAME }}
-            else
-              echo '🚀 Starting new PM2 process...'
-              cd /opt/usa_notray/current
-              pm2 start ecosystem.config.js
+              echo '🧹 Deleting existing PM2 process to refresh cwd/script path...'
+              pm2 delete ${{ env.APP_NAME }} || true
             fi
-            
+
+            echo '🚀 Starting PM2 with latest release (update env + cwd)'
+            cd /opt/usa_notray/current
+            pm2 start ecosystem.config.js --update-env
+
             # Save PM2 configuration
             pm2 save
-            
+
             # Wait for app to start
             sleep 10
-            
+
+            echo 'ℹ️ PM2 info:'
+            pm2 info ${{ env.APP_NAME }} | sed -n '1,80p'
+
             # Check if app is running
             if pm2 describe ${{ env.APP_NAME }} | grep -q 'online'; then
               echo '✅ Application deployed successfully!'
             else
               echo '❌ Application failed to start'
-              pm2 logs ${{ env.APP_NAME }} --lines 20
+              pm2 logs ${{ env.APP_NAME }} --lines 50
               exit 1
             fi
           "
@@ -145,6 +151,12 @@ jobs:
           echo "🔍 Performing health check..."
           sleep 5
           curl -f https://sharpnote.net/health || echo "Health check failed, but deployment completed"
+
+      - name: Static path verification
+        run: |
+          echo "🔎 Verifying static files path served by app..."
+          # This endpoint is implemented in server/vite.ts
+          curl -s https://sharpnote.net/static-health | sed -n '1,200p' || echo "static-health endpoint not available"
 
       - name: Deployment summary
         run: |
