@@ -107,7 +107,11 @@ jobs:
             ln -sfn ${{ env.RELEASE_DIR }} /opt/usa_notray/current
             
             echo '🔗 Symlink now points to:'
-            readlink -f /opt/usa_notray/current
+            ls -l /opt/usa_notray/current || true
+            readlink -f /opt/usa_notray/current || true
+            
+            echo '📁 Contents of current release:'
+            ls -la /opt/usa_notray/current | sed -n '1,200p'
 
             # Ensure PM2 uses the fresh symlink target
             if pm2 describe ${{ env.APP_NAME }} > /dev/null 2>&1; then
@@ -117,7 +121,19 @@ jobs:
 
             echo '🚀 Starting PM2 with latest release (update env + cwd)'
             cd /opt/usa_notray/current
-            pm2 start ecosystem.config.js --update-env
+            if [ -f "/opt/usa_notray/current/ecosystem.config.js" ]; then
+              echo '🧩 Found ecosystem.config.js, starting via ecosystem file'
+              pm2 start /opt/usa_notray/current/ecosystem.config.js --update-env
+            else
+              echo '⚠️ ecosystem.config.js not found, starting app from dist/index.cjs as fallback'
+              if [ -f "dist/index.cjs" ]; then
+                pm2 start dist/index.cjs --name ${{ env.APP_NAME }} --update-env
+              else
+                echo '❌ dist/index.cjs not found in current release directory'
+                ls -la
+                exit 1
+              fi
+            fi
 
             # Save PM2 configuration
             pm2 save
