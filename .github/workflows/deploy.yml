@@ -121,6 +121,16 @@ jobs:
 
             echo '🚀 Starting PM2 with latest release (update env + cwd)'
             cd /opt/usa_notray/current
+            echo '🔍 Verifying build artifacts...'
+            if [ ! -f "dist/index.cjs" ]; then
+              echo '⚠️ dist/index.cjs missing on server. Rebuilding on VPS...'
+              NODE_ENV=production npm ci --silent
+              NODE_ENV=production npm run build
+              echo '📦 Rebuild complete. Listing dist:'
+              ls -la dist | sed -n '1,200p' || true
+            else
+              echo '✅ dist/index.cjs found.'
+            fi
             if [ -f "/opt/usa_notray/current/ecosystem.config.cjs" ]; then
               echo '🧩 Found ecosystem.config.cjs, starting via ecosystem file'
               pm2 start /opt/usa_notray/current/ecosystem.config.cjs --update-env
