@@ -29,7 +29,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { User as UserIcon, Shield, FileText, Settings } from 'lucide-react';
+import { User as UserIcon, Shield, FileText, Settings, Eye, EyeOff } from 'lucide-react';
 
 // Create a partial schema for updates that makes most fields optional
 const userUpdateSchema = z.object({
@@ -81,6 +81,7 @@ const availablePrivileges = [
 ];
 
 export function UserForm({ user, isOpen, onClose, onSubmit, isLoading = false, defaultRole = 'client' }: UserFormProps) {
+  const [showPassword, setShowPassword] = React.useState(false);
   const isUpdate = !!user;
   
   const form = useForm<UserFormData>({
@@ -287,11 +288,23 @@ export function UserForm({ user, isOpen, onClose, onSubmit, isLoading = false, d
                           {user && <span className="text-sm text-muted-foreground ml-1">(leave blank to keep current)</span>}
                         </FormLabel>
                         <FormControl>
-                          <Input 
-                            type="password" 
-                            placeholder={user ? "Enter new password" : "Enter password"} 
-                            {...field} 
-                          />
+                          <div className="relative">
+                            <Input 
+                              type={showPassword ? "text" : "password"} 
+                              placeholder={user ? "Enter new password" : "Enter password"} 
+                              className="pr-12"
+                              {...field} 
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                              onClick={() => setShowPassword(!showPassword)}
+                            >
+                              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </Button>
+                          </div>
                         </FormControl>
                         <FormMessage />
                       </FormItem>

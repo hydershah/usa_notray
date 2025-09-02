@@ -231,7 +231,7 @@ export const useEditorStore = create<EditorStore>()(
       viewer: {
         currentPage: 1,
         totalPages: 0,
-        zoomLevel: 1.0,
+        zoomLevel: 2.25,
         scrollTop: 0,
         documentId: '',
         pendingScrollToPage: null

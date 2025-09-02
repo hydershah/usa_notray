@@ -962,7 +962,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         // Default layout: side video panel and document area
         <div className="flex-1 flex overflow-hidden">
           {renderVideoPanel && (
-            <div className="w-64 bg-gradient-to-b from-gray-50 to-gray-100 border-r border-gray-200 flex-shrink-0 shadow-sm">
+            <div className="w-48 bg-gradient-to-b from-gray-50 to-gray-100 border-r border-gray-200 flex-shrink-0 shadow-sm">
               <div className="h-full flex flex-col">
                 <div className="flex-1">
                   {videoSessionData && (

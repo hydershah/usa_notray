@@ -569,8 +569,8 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
       // Delay zoom setting to ensure PDF is loaded and container is ready
       const timer = setTimeout(() => {
         if (mode === 'signing') {
-          setZoomLevel(isMobile ? 1.0 : 1.5); // Fit for mobile signers; larger for desktop
-          console.log('🔍 Set initial zoom level for signing mode', { isMobile, zoom: isMobile ? 1.0 : 1.5 });
+          setZoomLevel(isMobile ? 1.0 : 2.1); // Fit for mobile signers; larger for desktop
+          console.log('🔍 Set initial zoom level for signing mode', { isMobile, zoom: isMobile ? 1.0 : 2.1 });
         } else if (mode === 'tagging' || mode === 'notary') {
           setZoomLevel(2.25); // 225% zoom for tagging mode
           console.log('🔍 Set initial zoom level to 225% for tagging mode');

@@ -266,7 +266,7 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
   }
 
   return (
-    <div className="w-full flex flex-col bg-white">
+    <div className="w-full h-full flex flex-col bg-white">
       {/* Header Section - Fixed at top */}
       <div className="flex-shrink-0 border-b bg-white z-10">
         <div className="flex items-center justify-between p-4 lg:p-6">
@@ -355,21 +355,21 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
             </TabsList>
           </div>
 
-          {/* Content Section - Natural height */}
-          <div className="flex-1">
-            <TabsContent value="basic" className="p-4 lg:p-6 m-0 bg-gray-50">
-              <div className="max-w-5xl mx-auto space-y-8">
+          {/* Content Section - Scrollable */}
+          <div className="flex-1 overflow-y-auto">
+            <TabsContent value="basic" className="p-2 lg:p-3 m-0 bg-gray-50 min-h-full">
+              <div className="max-w-5xl mx-auto space-y-2">
                 {/* Company and Job Type */}
                 <Card className="border-0 shadow-sm">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="text-lg flex items-center space-x-2">
-                      <Building className="h-5 w-5" />
+                  <CardHeader className="pb-1">
+                    <CardTitle className="text-sm flex items-center space-x-1">
+                      <Building className="h-3 w-3" />
                       <span>Company Information</span>
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      <div className="space-y-2">
+                  <CardContent className="space-y-2">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                      <div className="space-y-1">
                         <Label htmlFor="titleCompany" className="text-sm font-medium">
                           Title Company
                         </Label>
@@ -377,7 +377,7 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
                           value={formData.titleCompany || ''}
                           onValueChange={(value) => handleFormChange('titleCompany', value)}
                         >
-                          <SelectTrigger className="h-11">
+                          <SelectTrigger className="h-8">
                             <SelectValue placeholder="Select title company" />
                           </SelectTrigger>
                           <SelectContent>
@@ -390,7 +390,7 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
                         </Select>
                       </div>
 
-                      <div className="space-y-2">
+                      <div className="space-y-1">
                         <Label htmlFor="closingType" className="text-sm font-medium">
                           Closing Type
                         </Label>
@@ -399,44 +399,36 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
                           value={formData.closingType || ''}
                           onChange={(e) => handleFormChange('closingType', e.target.value)}
                           placeholder="e.g., Purchase, Refinance"
-                          className="h-11"
+                          className="h-8"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label htmlFor="internalReference" className="text-sm font-medium">
+                          Internal Reference
+                        </Label>
+                        <Input
+                          id="internalReference"
+                          value={formData.internalReference || ''}
+                          onChange={(e) => handleFormChange('internalReference', e.target.value)}
+                          placeholder="Internal tracking reference"
+                          className="h-8"
                         />
                       </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Internal Reference */}
-                <Card className="border-0 shadow-sm">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="text-lg">Internal Reference</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      <Label htmlFor="internalReference" className="text-sm font-medium">
-                        Internal tracking reference
-                      </Label>
-                      <Input
-                        id="internalReference"
-                        value={formData.internalReference || ''}
-                        onChange={(e) => handleFormChange('internalReference', e.target.value)}
-                        placeholder="Internal tracking reference"
-                        className="h-11"
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-
                 {/* Property Address */}
-                <div className="space-y-4">
-                  <Label className="flex items-center space-x-2 text-base font-medium">
-                    <MapPin className="h-4 w-4" />
+                <div className="space-y-2">
+                  <Label className="flex items-center space-x-1 text-sm font-medium">
+                    <MapPin className="h-3 w-3" />
                     <span>Property Address</span>
                   </Label>
                   
-                  <div className="grid grid-cols-1 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="propertyAddressOne">Address Line 1</Label>
+                  <div className="grid grid-cols-1 gap-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="propertyAddressOne" className="text-sm">Address Line 1</Label>
                       <Input
                         id="propertyAddressOne"
                         value={formData.propertyAddressOne || ''}
@@ -445,8 +437,8 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
                       />
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="propertyAddressTwo">Address Line 2 (Optional)</Label>
+                    <div className="space-y-1">
+                      <Label htmlFor="propertyAddressTwo" className="text-sm">Address Line 2 (Optional)</Label>
                       <Input
                         id="propertyAddressTwo"
                         value={formData.propertyAddressTwo || ''}
@@ -455,9 +447,9 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
                       />
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="propertyCity">City</Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="space-y-1">
+                        <Label htmlFor="propertyCity" className="text-sm">City</Label>
                         <Input
                           id="propertyCity"
                           value={formData.propertyCity || ''}
@@ -466,8 +458,8 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
                         />
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="propertyState">State</Label>
+                      <div className="space-y-1">
+                        <Label htmlFor="propertyState" className="text-sm">State</Label>
                         <Input
                           id="propertyState"
                           value={formData.propertyState || ''}
@@ -476,8 +468,8 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
                         />
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="propertyZipCode">ZIP Code</Label>
+                      <div className="space-y-1">
+                        <Label htmlFor="propertyZipCode" className="text-sm">ZIP Code</Label>
                         <Input
                           id="propertyZipCode"
                           value={formData.propertyZipCode || ''}
@@ -490,15 +482,15 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
                 </div>
 
                 {/* Scheduling */}
-                <div className="space-y-4">
-                  <Label className="flex items-center space-x-2 text-base font-medium">
-                    <Calendar className="h-4 w-4" />
+                <div className="space-y-2">
+                  <Label className="flex items-center space-x-1 text-sm font-medium">
+                    <Calendar className="h-3 w-3" />
                     <span>Scheduling</span>
                   </Label>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="selectedDate">Selected Date</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="selectedDate" className="text-sm">Selected Date</Label>
                       <Input
                         id="selectedDate"
                         type="date"
@@ -507,8 +499,8 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
                       />
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="selectedTime">Selected Time</Label>
+                    <div className="space-y-1">
+                      <Label htmlFor="selectedTime" className="text-sm">Selected Time</Label>
                       <Input
                         id="selectedTime"
                         type="time"
@@ -520,15 +512,15 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
                 </div>
 
                 {/* Notary Assignment */}
-                <div className="space-y-4">
-                  <Label className="flex items-center space-x-2 text-base font-medium">
-                    <User className="h-4 w-4" />
+                <div className="space-y-2">
+                  <Label className="flex items-center space-x-1 text-sm font-medium">
+                    <User className="h-3 w-3" />
                     <span>Notary Assignment</span>
                   </Label>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="notaryOption">Assignment Type</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="notaryOption" className="text-sm">Assignment Type</Label>
                       <Select
                         value={formData.notaryOption || ''}
                         onValueChange={(value) => handleFormChange('notaryOption', value)}
@@ -544,8 +536,8 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
                     </div>
 
                     {formData.notaryOption === 'assign' && (
-                      <div className="space-y-2">
-                        <Label htmlFor="selectedNotary">Select Notary</Label>
+                      <div className="space-y-1">
+                        <Label htmlFor="selectedNotary" className="text-sm">Select Notary</Label>
                         <Select
                           value={formData.selectedNotary || ''}
                           onValueChange={(value) => handleFormChange('selectedNotary', value)}
@@ -568,7 +560,7 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
               </div>
             </TabsContent>
 
-            <TabsContent value="signers" className="h-full p-6 m-0">
+            <TabsContent value="signers" className="h-full p-6 m-0 overflow-y-auto">
               <JobSignersManager 
                 jobId={jobId} 
                 onSignersUpdated={() => {
@@ -578,7 +570,7 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
               />
             </TabsContent>
 
-            <TabsContent value="documents" className="h-full p-6 m-0">
+            <TabsContent value="documents" className="h-full p-6 m-0 overflow-y-auto">
               <EnhancedDocumentManager 
                 jobId={jobId}
                 userRole={user?.role || 'client'}
@@ -590,13 +582,13 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
               />
             </TabsContent>
 
-            <TabsContent value="settings" className="h-full p-6 m-0">
-              <div className="space-y-6">
-                <div className="space-y-4">
+            <TabsContent value="settings" className="h-full p-4 m-0 overflow-y-auto">
+              <div className="space-y-4">
+                <div className="space-y-3">
                   <Label className="text-base font-medium">Job Requirements</Label>
                   
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 border rounded-lg">
                       <div className="space-y-1">
                         <div className="font-medium">Knowledge-Based Authentication (KBA)</div>
                         <div className="text-sm text-muted-foreground">
@@ -637,7 +629,7 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
                   </div>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-3">
                   <Label className="text-base font-medium">Job Type</Label>
                   <Select
                     value={formData.jobType || ''}
@@ -657,7 +649,7 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
 
 
 
-            <TabsContent value="documents" className="p-4 lg:p-6 m-0 bg-gray-50">
+            <TabsContent value="documents" className="p-3 lg:p-4 m-0 bg-gray-50 min-h-full">
               <div className="max-w-5xl mx-auto">
                 <EnhancedDocumentManager 
                   jobId={jobId} 
@@ -667,14 +659,14 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
               </div>
             </TabsContent>
 
-            <TabsContent value="settings" className="p-4 lg:p-6 m-0 bg-gray-50">
+            <TabsContent value="settings" className="p-3 lg:p-4 m-0 bg-gray-50 min-h-full">
               <div className="max-w-5xl mx-auto">
                 <Card>
-                  <CardHeader>
-                    <CardTitle>Job Settings</CardTitle>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Job Settings</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Job Priority</Label>
                         <Select defaultValue="normal">

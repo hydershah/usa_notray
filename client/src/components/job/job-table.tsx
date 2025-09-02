@@ -792,83 +792,83 @@ export function JobTable({ onCreateJob }: JobTableProps) {
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent bg-gray-50/50">
-                    <TableHead className="w-12 py-4">
+                    <TableHead className="w-8 py-3 px-1">
                       <Checkbox
                         checked={selectedJobs.length === paginatedJobs.length && paginatedJobs.length > 0}
                         onCheckedChange={handleSelectAll}
                       />
                     </TableHead>
-                    <TableHead className="py-4">
+                    <TableHead className="py-3 px-1">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleSort('title')}
-                        className="h-8 px-3 font-semibold text-gray-700 hover:text-blue-600"
+                        className="h-7 px-1 font-semibold text-gray-700 hover:text-blue-600 text-xs"
                       >
-                        Order Number
+                        Order#
                         {getSortIcon('title')}
                       </Button>
                     </TableHead>
-                    <TableHead className="py-4">
+                    <TableHead className="py-3 px-1">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleSort('date')}
-                        className="h-8 px-3 font-semibold text-gray-700 hover:text-blue-600"
+                        className="h-7 px-1 font-semibold text-gray-700 hover:text-blue-600 text-xs"
                       >
-                        Signing Date
+                        Date/Time
                         {getSortIcon('date')}
                       </Button>
                     </TableHead>
                     {!isTitleCompany && (
-                      <TableHead className="py-4">
+                      <TableHead className="py-3 px-1">
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => handleSort('company')}
-                          className="h-8 px-3 font-semibold text-gray-700 hover:text-blue-600"
+                          className="h-7 px-1 font-semibold text-gray-700 hover:text-blue-600 text-xs"
                         >
-                          Title Company
+                          Company
                           {getSortIcon('company')}
                         </Button>
                       </TableHead>
                     )}
                     {!isNotary && (
-                      <TableHead className="py-4">
+                      <TableHead className="py-3 px-1">
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => handleSort('notary')}
-                          className="h-8 px-3 font-semibold text-gray-700 hover:text-blue-600"
+                          className="h-7 px-1 font-semibold text-gray-700 hover:text-blue-600 text-xs"
                         >
                           Notary
                           {getSortIcon('notary')}
                         </Button>
                       </TableHead>
                     )}
-                    <TableHead className="py-4">
+                    <TableHead className="py-3 px-1">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleSort('signer')}
-                        className="h-8 px-3 font-semibold text-gray-700 hover:text-blue-600"
+                        className="h-7 px-1 font-semibold text-gray-700 hover:text-blue-600 text-xs"
                       >
-                        First Signer
+                        Signer
                         {getSortIcon('signer')}
                       </Button>
                     </TableHead>
-                    <TableHead className="py-4">
+                    <TableHead className="py-3 px-1">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleSort('status')}
-                        className="h-8 px-3 font-semibold text-gray-700 hover:text-blue-600"
+                        className="h-7 px-1 font-semibold text-gray-700 hover:text-blue-600 text-xs"
                       >
                         Status
                         {getSortIcon('status')}
                       </Button>
                     </TableHead>
-                    <TableHead className="py-4 font-semibold text-gray-700">Actions</TableHead>
+                    <TableHead className="py-3 px-1 font-semibold text-gray-700 text-xs">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -881,7 +881,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                           : index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'
                       }`}
                     >
-                      <TableCell className="py-4">
+                      <TableCell className="py-3 px-1">
                         <Checkbox
                           checked={selectedJobs.includes(job.id)}
                           onCheckedChange={(checked) => handleSelectJob(job.id, !!checked)}
@@ -905,49 +905,48 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                         </TableCell>
                       )}
                       {!isNotary && (
-                        <TableCell className="py-4">
-                          <div className="text-sm text-gray-600">
+                        <TableCell className="py-3 px-1">
+                          <div className="text-xs text-gray-600">
                             {getAssignedNotary(job)}
                           </div>
                         </TableCell>
                       )}
-                      <TableCell className="py-4">
-                        <div className="text-sm text-gray-600">
+                      <TableCell className="py-3 px-1">
+                        <div className="text-xs text-gray-600 truncate max-w-[100px]">
                           {getFirstSignerName(job)}
                         </div>
                       </TableCell>
-                      <TableCell className="py-4">
-                        {getStatusBadge(getJobStatus(job))}
+                      <TableCell className="py-3 px-1">
+                        <div className="scale-90 origin-left">
+                          {getStatusBadge(getJobStatus(job))}
+                        </div>
                       </TableCell>
-                      <TableCell className="py-4">
-                        <div className="flex gap-2">
+                      <TableCell className="py-3 px-1">
+                        <div className="flex gap-0.5">
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handleViewDetails(job)}
-                            className="hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                            className="hover:bg-blue-50 hover:text-blue-600 transition-colors h-7 px-2 text-xs"
                           >
-                            <Eye className="h-4 w-4 mr-2" />
-                            View
+                            <Eye className="h-3 w-3" />
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => setLocation(`/jobs/${job.id}`)}
-                            className="hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                            className="hover:bg-blue-50 hover:text-blue-600 transition-colors h-7 px-2 text-xs"
                           >
-                            <ExternalLink className="h-4 w-4 mr-2" />
-                            Details
+                            <ExternalLink className="h-3 w-3" />
                           </Button>
                           {canCreateJob && (
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => handleEditJob(job)}
-                              className="hover:bg-green-50 hover:text-blue-600 transition-colors"
+                              className="hover:bg-green-50 hover:text-blue-600 transition-colors h-7 px-2 text-xs"
                             >
-                              <Edit3 className="h-4 w-4 mr-2" />
-                              Edit
+                              <Edit3 className="h-3 w-3" />
                             </Button>
                           )}
                         </div>
@@ -1046,7 +1045,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
 
       {/* Enhanced Job Editor Dialog with improved modal positioning */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent className="w-[95vw] max-w-7xl h-[95vh] p-0
+        <DialogContent className="!w-[95vw] !max-w-7xl !h-[95vh] !max-h-[95vh] !p-0 !overflow-hidden !flex !flex-col
                                  data-[state=open]:animate-in data-[state=closed]:animate-out 
                                  data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 
                                  data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 
