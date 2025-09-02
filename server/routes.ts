@@ -827,30 +827,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const updatedUser = await storage.updateUser(userId, updateData);
-
       if (!updatedUser) {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      // Propagate phone number changes to signer records linked to this user
-      try {
-        if (updateData.phoneNumber) {
+      // Propagate phone number changes to signer records linked to this user (best-effort)
+      if (updateData.phoneNumber) {
+        try {
           await db.update(signers)
             .set({ signerPhoneNumber: updateData.phoneNumber })
             .where(eq(signers.userId, userId));
+        } catch (syncErr) {
+          console.error('Failed to sync signer phone numbers:', syncErr);
         }
-      } catch (syncErr) {
-        console.error('Failed to sync signer phone numbers:', syncErr);
-        // Non-fatal: continue
       }
 
-      // Invalidate user-specific cache to ensure fresh data on next request
+      // Invalidate user-specific cache (best-effort)
       try {
         await redisCache.delPattern(`user:${userId}:*`);
         console.log(`🧹 Invalidated cache for user ${userId} after profile update`);
       } catch (cacheError) {
         console.error('Failed to invalidate cache after profile update:', cacheError);
-        // Don't fail the request if cache invalidation fails
       }
 
       res.json({
@@ -862,7 +859,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error('Update user error:', error);
-      res.status(500).json({ message: 'Internal server error' });
+      return res.status(500).json({ message: 'Internal server error' });
     }
   });
 
