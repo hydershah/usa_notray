@@ -198,13 +198,15 @@ jobs:
             readlink -f /opt/usa_notray/current || true
             
             echo '📁 Contents of current release:'
-            ls -la /opt/usa_notray/current | sed -n '1,200p'
+            ls -la ${{ env.RELEASE_DIR }} | sed -n '1,200p'
 
             # Clean up any hanging deployment processes first
             echo '🧹 Cleaning up any hanging processes...'
-            pkill -f 'npm.*build' 2>/dev/null || echo 'No npm build processes to kill'
-            pkill -f 'pm2.*logs' 2>/dev/null || echo 'No pm2 log processes to kill'
-            pkill -f 'bash.*usa_notray' 2>/dev/null || echo 'No deployment bash processes to kill'
+            set +e  # Temporarily disable exit on error for cleanup
+            pkill -f 'npm.*build' 2>/dev/null && echo 'Killed npm build processes' || echo 'No npm build processes to kill'
+            pkill -f 'pm2.*logs' 2>/dev/null && echo 'Killed pm2 log processes' || echo 'No pm2 log processes to kill'  
+            pkill -f 'bash.*usa_notray' 2>/dev/null && echo 'Killed deployment bash processes' || echo 'No deployment bash processes to kill'
+            set -e  # Re-enable exit on error
             sleep 2
             
             # Ensure PM2 uses the fresh symlink target
