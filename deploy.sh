@@ -47,8 +47,8 @@ print_status "Cleaning previous builds..."
 npm run build:clean
 
 # Install dependencies (include dev deps for build)
-print_status "Installing dependencies..."
-npm ci
+print_status "Installing dependencies (including dev for build)..."
+npm ci --include=dev
 
 # Build the application
 print_status "Building application..."
@@ -64,7 +64,7 @@ print_status "Build completed successfully!"
 
 # Prune devDependencies for runtime
 print_status "Pruning dev dependencies for production runtime..."
-npm prune --production
+npm prune --omit=dev
 
 # Create logs directory if it doesn't exist
 mkdir -p logs
