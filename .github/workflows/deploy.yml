@@ -79,11 +79,11 @@ jobs:
             rm app.tar.gz
           "
 
-      - name: Install dependencies on VPS
+      - name: Install dependencies on VPS (include dev for build)
         run: |
           ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
             cd ${{ env.RELEASE_DIR }}
-            npm ci --silent
+            npm ci --silent --include=dev
             
             # Copy environment file from shared directory
             cp /opt/usa_notray/.env .env
@@ -124,8 +124,9 @@ jobs:
             echo '🔍 Verifying build artifacts...'
             if [ ! -f "dist/index.cjs" ]; then
               echo '⚠️ dist/index.cjs missing on server. Rebuilding on VPS...'
-              NODE_ENV=production npm ci --silent
+              NODE_ENV=production npm ci --silent --include=dev
               NODE_ENV=production npm run build
+              npm prune --omit=dev
               echo '📦 Rebuild complete. Listing dist:'
               ls -la dist | sed -n '1,200p' || true
             else
