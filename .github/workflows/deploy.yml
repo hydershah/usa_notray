@@ -125,7 +125,8 @@ jobs:
             if [ ! -f "dist/index.cjs" ]; then
               echo '⚠️ dist/index.cjs missing on server. Rebuilding on VPS...'
               NODE_ENV=production npm ci --silent --include=dev
-              NODE_ENV=production npm run build
+              # Only rebuild the server bundle; client assets were uploaded from CI
+              NODE_ENV=production npm run build:server
               npm prune --omit=dev
               echo '📦 Rebuild complete. Listing dist:'
               ls -la dist | sed -n '1,200p' || true
