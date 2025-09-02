@@ -16,7 +16,8 @@ module.exports = {
     },
     env_production: {
       NODE_ENV: 'production',
-      PORT: 3000
+      PORT: 3000,
+      SERVE_STATIC_FILES: 'true'
     },
     env_staging: {
       NODE_ENV: 'staging',
@@ -37,7 +38,7 @@ module.exports = {
     restart_delay: 4000,
     
     // Node.js options
-    node_args: '--max-old-space-size=2048 --optimize-for-size',
+    node_args: '--max-old-space-size=2048',
     
     // Auto restart settings
     autorestart: true,
@@ -71,14 +72,7 @@ module.exports = {
     
     // Post-deploy hooks
     // Install dev deps for build, build, prune to production, migrate, then start
-    post_deploy: 'npm ci --include=dev && npm run build && npm prune --omit=dev && npm run db:migrate && pm2 startOrReload ecosystem.config.cjs --env production',
-    
-    // Environment-specific overrides
-    env_production: {
-      NODE_ENV: 'production',
-      PORT: 3000,
-      SERVE_STATIC_FILES: 'true'
-    }
+    post_deploy: 'npm ci --include=dev && npm run build && npm prune --omit=dev && npm run db:migrate && pm2 startOrReload ecosystem.config.cjs --env production'
   }],
   
   // Deployment configuration

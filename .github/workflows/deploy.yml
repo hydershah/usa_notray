@@ -148,15 +148,36 @@ jobs:
             sed -i 's|/usa_notray\"|/usa_notray_production\"|g' .env
             sed -i 's|/usa_notray$|/usa_notray_production|g' .env
             
+            # Enable static file serving
+            echo 'SERVE_STATIC_FILES=true' >> .env
+            
             echo \"📋 Updated DATABASE_URL:\"
             grep DATABASE_URL .env || echo \"No DATABASE_URL found in .env\"
+            
+            # Fix client files path structure if nested
+            if [ -d \"dist/public/dist\" ] && [ ! -f \"dist/public/index.html\" ]; then
+              echo \"📂 Fixing nested client files structure...\"
+              mv dist/public/dist/* dist/public/ 2>/dev/null || true
+              rmdir dist/public/dist 2>/dev/null || true
+              echo \"✅ Client files structure fixed\"
+            fi
             
             # Create necessary directories
             mkdir -p uploads certificates logs
             chmod 755 uploads certificates logs
           "
 
-      # Database is already set up - no migrations needed
+      - name: Fix database permissions
+        run: |
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            # Fix database table ownership to prevent permission errors
+            sudo -u postgres psql -d usa_notray_production -c \"
+              ALTER TABLE IF EXISTS certificates OWNER TO usa_notray_user;
+              ALTER TABLE IF EXISTS certificate_storage OWNER TO usa_notray_user;
+              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO usa_notray_user;
+              GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO usa_notray_user;
+            \" || echo 'Database permission fix attempted'
+          "
 
       - name: Deploy with PM2
         run: |
@@ -179,6 +200,12 @@ jobs:
             echo '📁 Contents of current release:'
             ls -la /opt/usa_notray/current | sed -n '1,200p'
 
+            # Clean up any hanging deployment processes first
+            echo '🧹 Cleaning up any hanging processes...'
+            pkill -f 'npm.*build' || true
+            pkill -f 'pm2.*logs' || true
+            pkill -f 'bash.*usa_notray' || true
+            
             # Ensure PM2 uses the fresh symlink target
             if pm2 describe ${{ env.APP_NAME }} > /dev/null 2>&1; then
               echo '🧹 Deleting existing PM2 process to refresh cwd/script path...'
@@ -211,19 +238,40 @@ jobs:
             # Save PM2 configuration
             pm2 save
 
-            # Wait for app to start
-            sleep 10
+            # Wait for app to start with timeout
+            echo '⏳ Waiting for application to start...'
+            TIMEOUT=30
+            COUNTER=0
+            while [ \$COUNTER -lt \$TIMEOUT ]; do
+              if pm2 describe ${{ env.APP_NAME }} | grep -q 'online' 2>/dev/null; then
+                echo '✅ Application is online!'
+                break
+              fi
+              if pm2 describe ${{ env.APP_NAME }} | grep -q 'errored\|stopped' 2>/dev/null; then
+                echo '❌ Application failed to start'
+                pm2 logs ${{ env.APP_NAME }} --lines 20
+                exit 1
+              fi
+              sleep 1
+              COUNTER=\$((COUNTER + 1))
+              echo \"Waiting... (\$COUNTER/\$TIMEOUT)\"
+            done
 
-            echo 'ℹ️ PM2 info:'
-            pm2 info ${{ env.APP_NAME }} | sed -n '1,80p'
-
-            # Check if app is running
-            if pm2 describe ${{ env.APP_NAME }} | grep -q 'online'; then
-              echo '✅ Application deployed successfully!'
-            else
-              echo '❌ Application failed to start'
-              pm2 logs ${{ env.APP_NAME }} --lines 50
+            if [ \$COUNTER -eq \$TIMEOUT ]; then
+              echo '❌ Application startup timeout'
+              pm2 logs ${{ env.APP_NAME }} --lines 20
               exit 1
+            fi
+
+            echo 'ℹ️ Final PM2 status:'
+            pm2 status
+            
+            # Verify port is listening
+            if netstat -tlnp | grep -q ':3000.*LISTEN'; then
+              echo '✅ Application is listening on port 3000'
+            else
+              echo '⚠️ Application may not be listening on port 3000'
+              netstat -tlnp | grep :3000 || echo 'No process on port 3000'
             fi
           "
 
