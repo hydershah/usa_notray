@@ -156,28 +156,7 @@ jobs:
             chmod 755 uploads certificates logs
           "
 
-      - name: Ensure database exists and run migrations
-        run: |
-          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
-            # Load nvm
-            export NVM_DIR=\"\$HOME/.nvm\"
-            [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
-            
-            cd ${{ env.RELEASE_DIR }}
-            nvm use ${{ env.NODE_VERSION }}
-            
-            # Ensure database exists (create if not)
-            echo \"🔍 Checking if database exists...\"
-            if ! PGPASSWORD=secure_password_2024 psql -U usa_notray_user -h localhost -lqt | cut -d \| -f 1 | grep -qw usa_notray_production; then
-              echo \"📦 Creating database usa_notray_production...\"
-              PGPASSWORD=secure_password_2024 createdb -U usa_notray_user -h localhost usa_notray_production || echo \"Database might already exist or creation failed\"
-            else
-              echo \"✅ Database usa_notray_production already exists\"
-            fi
-            
-            # Run migrations
-            npm run db:migrate
-          "
+      # Database is already set up - no migrations needed
 
       - name: Deploy with PM2
         run: |

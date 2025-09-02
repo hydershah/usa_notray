@@ -43,9 +43,7 @@
     "email:list-signers": "npx tsx scripts/list-signer-links.ts",
     "url:test": "npx tsx scripts/test-url-config.ts",
     "evs:test": "npx tsx scripts/test-evs-real-integration.ts",
-    "db:migrate": "node scripts/run-migrations.mjs migrate",
-    "db:migrate:single": "node scripts/run-migrations.mjs single",
-    "db:test": "node scripts/run-migrations.mjs test",
+
     "job:fix": "npx tsx run-job-integrity-fix.ts",
     "job:validate": "npx tsx scripts/validate-job-integrity.ts",
     "job:stats": "npx tsx scripts/show-job-stats.ts",
