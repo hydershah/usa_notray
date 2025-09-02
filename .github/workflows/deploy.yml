@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  NODE_VERSION: '18.20.8'
+  NODE_VERSION: '20.19.4'
   APP_NAME: 'usa-notray'
 
 jobs:

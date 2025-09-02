@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
-  "_comment": "Trigger CI/CD - 2025-01-02",
+  "_comment": "Trigger CI/CD - 2025-09-02 - Node.js v20.19.4 update",
   "engines": {
-    "node": ">=18.20.8",
+    "node": ">=20.19.4",
     "npm": ">=10.8.2"
   },
   "scripts": {
