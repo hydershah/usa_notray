@@ -586,7 +586,7 @@ export function VouchedIdentityVerification({
   const renderCompleteStep = () => (
     <div className="space-y-6 text-center">
       <div className="p-6 bg-green-50 rounded-lg">
-        <CheckCircle className="w-16 h-16 mx-auto text-green-600 mb-4" />
+        <CheckCircle className="w-16 h-16 mx-auto text-blue-600 mb-4" />
         <h3 className="text-xl font-semibold mb-2 text-green-800">Verification Complete!</h3>
         <p className="text-green-700">
           Your identity has been successfully verified with high confidence

@@ -45,7 +45,7 @@ export function JobRequestActionsModal({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-green-100 rounded-lg">
-                <CheckCircle className="h-5 w-5 text-green-600" />
+                <CheckCircle className="h-5 w-5 text-blue-600" />
               </div>
               <div>
                 <DialogTitle className="text-xl font-semibold text-gray-900">

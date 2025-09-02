@@ -189,7 +189,7 @@ export default function TestEmailSecurity() {
         <div className="mb-8 text-center">
           <div className="flex items-center justify-center gap-2 mb-4">
             <Shield className="h-8 w-8 text-blue-600" />
-            <TestTube className="h-8 w-8 text-green-600" />
+            <TestTube className="h-8 w-8 text-blue-600" />
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             Email Security Test Suite
@@ -205,7 +205,7 @@ export default function TestEmailSecurity() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <TestTube className="h-5 w-5 text-green-600" />
+                <TestTube className="h-5 w-5 text-blue-600" />
                 Security Test Configuration
               </CardTitle>
               <CardDescription>

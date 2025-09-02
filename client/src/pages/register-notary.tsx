@@ -599,7 +599,7 @@ export default function RegisterNotary() {
                       <p className="text-sm font-medium text-gray-700 mb-3">Password Requirements:</p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
                         {passwordRequirements.map((req, index) => (
-                          <div key={index} className={`flex items-center gap-2 ${req.test(formData.password) ? 'text-green-600' : 'text-gray-500'}`}>
+                          <div key={index} className={`flex items-center gap-2 ${req.test(formData.password) ? 'text-blue-600' : 'text-gray-500'}`}>
                             {req.test(formData.password) ? <Check className="h-4 w-4" aria-label="Requirement met" /> : <X className="h-4 w-4" aria-label="Requirement not met" />}
                             <span>{req.text}</span>
                           </div>

@@ -331,7 +331,7 @@ export const AudioVideoTest: React.FC<AudioVideoTestProps> = ({
   // Get test status icon
   const getTestIcon = (result: boolean | null) => {
     if (result === null) return <AlertTriangle className="h-4 w-4 text-gray-400" />;
-    return result ? <CheckCircle className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4 text-red-600" />;
+    return result ? <CheckCircle className="h-4 w-4 text-blue-600" /> : <XCircle className="h-4 w-4 text-red-600" />;
   };
 
   return (

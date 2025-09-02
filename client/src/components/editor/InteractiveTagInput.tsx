@@ -462,7 +462,7 @@ export const InteractiveTagInput: React.FC<InteractiveTagInputProps> = ({
       <div className="h-full w-full flex items-center justify-center bg-green-50 border border-green-200">
         {tag.tagType === 'S' ? renderSignaturePreview() : (
           <div className="text-center p-1">
-            <Check className="h-3 w-3 text-green-600 mx-auto mb-1" />
+            <Check className="h-3 w-3 text-blue-600 mx-auto mb-1" />
             <p className="text-xs text-green-700 truncate max-w-full">
               {typeof content.value === 'string' 
                 ? content.value.length > 20 ? `${content.value.substring(0, 20)}...` : content.value

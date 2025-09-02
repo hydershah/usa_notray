@@ -144,7 +144,7 @@ export function JobCreationWithKBA({ userId, userInfo }: JobCreationWithKBAProps
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="yes" id="kba-yes" />
                   <Label htmlFor="kba-yes" className="flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-green-600" />
+                    <Shield className="h-4 w-4 text-blue-600" />
                     Yes, require KBA verification (Recommended for high-security documents)
                   </Label>
                 </div>
@@ -161,7 +161,7 @@ export function JobCreationWithKBA({ userId, userInfo }: JobCreationWithKBAProps
                 <div className="mt-4">
                   {kbaCompleted ? (
                     <Alert className="border-green-200 bg-green-50">
-                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <CheckCircle className="h-4 w-4 text-blue-600" />
                       <AlertDescription className="text-green-800">
                         <strong>KBA Verification Completed!</strong> 
                         <br />

@@ -281,7 +281,7 @@ export default function Login() {
             <div className="flex items-center space-x-4">
               <div className="flex-shrink-0">
                 <div className="h-14 w-14 bg-green-100 group-hover:bg-green-600 rounded-xl flex items-center justify-center transition-colors duration-300 shadow-sm">
-                  <NotebookPen className="h-7 w-7 text-green-600 group-hover:text-white transition-colors duration-300" />
+                  <NotebookPen className="h-7 w-7 text-blue-600 group-hover:text-white transition-colors duration-300" />
                 </div>
               </div>
               <div className="flex-1">

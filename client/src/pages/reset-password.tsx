@@ -263,23 +263,23 @@ function ResetPasswordPage() {
             <div className="space-y-2">
               <Label className="text-sm font-medium">Password Requirements:</Label>
               <div className="space-y-1">
-                <div className={`flex items-center text-sm ${passwordValidation.minLength ? 'text-green-600' : 'text-gray-500'}`}>
+                <div className={`flex items-center text-sm ${passwordValidation.minLength ? 'text-blue-600' : 'text-gray-500'}`}>
                   {passwordValidation.minLength ? <CheckCircle className="h-3 w-3 mr-2" /> : <XCircle className="h-3 w-3 mr-2" />}
                   At least 8 characters
                 </div>
-                <div className={`flex items-center text-sm ${passwordValidation.hasUpperCase ? 'text-green-600' : 'text-gray-500'}`}>
+                <div className={`flex items-center text-sm ${passwordValidation.hasUpperCase ? 'text-blue-600' : 'text-gray-500'}`}>
                   {passwordValidation.hasUpperCase ? <CheckCircle className="h-3 w-3 mr-2" /> : <XCircle className="h-3 w-3 mr-2" />}
                   One uppercase letter
                 </div>
-                <div className={`flex items-center text-sm ${passwordValidation.hasLowerCase ? 'text-green-600' : 'text-gray-500'}`}>
+                <div className={`flex items-center text-sm ${passwordValidation.hasLowerCase ? 'text-blue-600' : 'text-gray-500'}`}>
                   {passwordValidation.hasLowerCase ? <CheckCircle className="h-3 w-3 mr-2" /> : <XCircle className="h-3 w-3 mr-2" />}
                   One lowercase letter
                 </div>
-                <div className={`flex items-center text-sm ${passwordValidation.hasNumbers ? 'text-green-600' : 'text-gray-500'}`}>
+                <div className={`flex items-center text-sm ${passwordValidation.hasNumbers ? 'text-blue-600' : 'text-gray-500'}`}>
                   {passwordValidation.hasNumbers ? <CheckCircle className="h-3 w-3 mr-2" /> : <XCircle className="h-3 w-3 mr-2" />}
                   One number
                 </div>
-                <div className={`flex items-center text-sm ${passwordValidation.hasSpecialChar ? 'text-green-600' : 'text-gray-500'}`}>
+                <div className={`flex items-center text-sm ${passwordValidation.hasSpecialChar ? 'text-blue-600' : 'text-gray-500'}`}>
                   {passwordValidation.hasSpecialChar ? <CheckCircle className="h-3 w-3 mr-2" /> : <XCircle className="h-3 w-3 mr-2" />}
                   One special character
                 </div>

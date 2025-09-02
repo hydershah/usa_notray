@@ -1792,7 +1792,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
 
         {/* Right Column - Simplified Controls (hidden for signers at all sizes) */}
         {!(mode === 'signing' && !canSeeRightPanel) && (
-          <div className="w-64 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col min-h-0">
+          <div className="w-48 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col min-h-0">
             <div className="h-full min-h-0 flex flex-col">
               {/* Tagging Toolbar */}
               <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">

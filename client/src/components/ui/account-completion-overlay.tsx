@@ -359,7 +359,7 @@ export function AccountCompletionOverlay({ isOpen, onComplete }: AccountCompleti
               </div>
               <span className={`text-sm font-medium ${
                 currentStep === 'profile' ? 'text-blue-600' : 
-                currentStep === 'verification' || currentStep === 'complete' ? 'text-green-600' :
+                currentStep === 'verification' || currentStep === 'complete' ? 'text-blue-600' :
                 'text-gray-500'
               }`}>
                 Profile Information
@@ -378,7 +378,7 @@ export function AccountCompletionOverlay({ isOpen, onComplete }: AccountCompleti
               </div>
               <span className={`text-sm font-medium ${
                 currentStep === 'verification' ? 'text-blue-600' : 
-                currentStep === 'complete' ? 'text-green-600' :
+                currentStep === 'complete' ? 'text-blue-600' :
                 'text-gray-500'
               }`}>
                 ID Verification
@@ -679,7 +679,7 @@ export function AccountCompletionOverlay({ isOpen, onComplete }: AccountCompleti
           {currentStep === 'complete' && (
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-green-600">
+                <CardTitle className="flex items-center gap-2 text-blue-600">
                   <CheckCircle className="h-5 w-5" />
                   Account Setup Complete!
                 </CardTitle>
@@ -687,7 +687,7 @@ export function AccountCompletionOverlay({ isOpen, onComplete }: AccountCompleti
               <CardContent>
                 <div className="text-center py-8">
                   <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle className="h-8 w-8 text-green-600" />
+                    <CheckCircle className="h-8 w-8 text-blue-600" />
                   </div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">
                     Welcome to Digital Notarization!

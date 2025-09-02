@@ -158,8 +158,8 @@ export function MonthView({ currentDate, timeSlots, events, onDateClick }: Month
                     <div className="flex items-center gap-2 text-xs">
                       {slotStats.available > 0 && (
                         <div className="flex items-center gap-1">
-                          <CheckCircle className="h-3 w-3 text-green-600" />
-                          <span className="text-green-600">{slotStats.available}</span>
+                          <CheckCircle className="h-3 w-3 text-blue-600" />
+                          <span className="text-blue-600">{slotStats.available}</span>
                         </div>
                       )}
                       {slotStats.booked > 0 && (

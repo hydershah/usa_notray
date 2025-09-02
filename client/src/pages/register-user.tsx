@@ -299,7 +299,7 @@ export default function RegisterUser() {
                             ) : (
                               <X className="h-3 w-3 text-red-400" />
                             )}
-                            <span className={`text-xs ${isPasswordRequirementMet(req) ? 'text-green-600' : 'text-gray-600'}`}>
+                            <span className={`text-xs ${isPasswordRequirementMet(req) ? 'text-blue-600' : 'text-gray-600'}`}>
                               {req.text}
                             </span>
                           </div>

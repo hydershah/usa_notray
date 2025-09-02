@@ -450,7 +450,7 @@ export function NotaryProfileCompletion() {
               className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-colors duration-200"
             />
             {uploadedFiles[fileType] && (
-              <div className="flex items-center gap-2 text-sm text-green-600">
+              <div className="flex items-center gap-2 text-sm text-blue-600">
                 <CheckCircle className="h-4 w-4" />
                 {uploadedFiles[fileType]!.name}
               </div>

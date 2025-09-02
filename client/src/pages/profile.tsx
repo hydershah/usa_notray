@@ -54,13 +54,7 @@ export default function Profile() {
     county: '',
     disclosure: '',
     
-    // Commission Address
-    commissionAddress1: '',
-    commissionAddress2: '',
-    commissionCity: '',
-    commissionState: '',
-    commissionZipCode: '',
-    commissionCounty: '',
+
     
     // E&O Insurance
     eoInsuranceCompany: '',
@@ -183,13 +177,7 @@ export default function Profile() {
             county: profileData.county || '',
             disclosure: profileData.disclosure || 'I acknowledge that this document was signed before me on this date.',
             
-            // Commission Address
-            commissionAddress1: profileData.commissionAddress1 || '',
-            commissionAddress2: profileData.commissionAddress2 || '',
-            commissionCity: profileData.commissionCity || '',
-            commissionState: profileData.commissionState || '',
-            commissionZipCode: profileData.commissionZipCode || '',
-            commissionCounty: profileData.commissionCounty || '',
+
             
             // E&O Insurance
             eoInsuranceCompany: profileData.eoInsuranceCompany || '',
@@ -251,13 +239,7 @@ export default function Profile() {
           county: '',
           disclosure: 'I acknowledge that this document was signed before me on this date.',
           
-          // Commission Address
-          commissionAddress1: '',
-          commissionAddress2: '',
-          commissionCity: '',
-          commissionState: '',
-          commissionZipCode: '',
-          commissionCounty: '',
+
           
           // E&O Insurance
           eoInsuranceCompany: '',
@@ -322,13 +304,7 @@ export default function Profile() {
           county: formData.county,
           disclosure: formData.disclosure,
           
-          // Commission Address
-          commissionAddress1: formData.commissionAddress1,
-          commissionAddress2: formData.commissionAddress2,
-          commissionCity: formData.commissionCity,
-          commissionState: formData.commissionState,
-          commissionZipCode: formData.commissionZipCode,
-          commissionCounty: formData.commissionCounty,
+
           
           // E&O Insurance
           eoInsuranceCompany: formData.eoInsuranceCompany,
@@ -460,7 +436,7 @@ export default function Profile() {
           <div className="flex items-center gap-2">
                   <Button 
               onClick={() => (isEditing ? handleSaveProfile() : setIsEditing(true))}
-              className={isEditing ? 'bg-green-600 hover:bg-green-700' : ''}
+              variant={isEditing ? 'success' : 'default'}
                   >
                     {isEditing ? (
                       <>
@@ -541,10 +517,10 @@ export default function Profile() {
               </CardContent>
             </Card>
 
-                {/* Personal Address */}
+                {/* Address Information */}
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">Personal Address</CardTitle>
+                    <CardTitle className="text-base">Address Information</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -613,40 +589,6 @@ export default function Profile() {
                       </CardContent>
                     </Card>
 
-                    {/* Commission Address */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-base">Commission Address</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Address Line 1</label>
-                            <Input value={formData.commissionAddress1} disabled={!isEditing} onChange={(e) => setFormData(p => ({...p, commissionAddress1: e.target.value}))} />
-                            </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Address Line 2</label>
-                            <Input value={formData.commissionAddress2} disabled={!isEditing} onChange={(e) => setFormData(p => ({...p, commissionAddress2: e.target.value}))} />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">City</label>
-                            <Input value={formData.commissionCity} disabled={!isEditing} onChange={(e) => setFormData(p => ({...p, commissionCity: e.target.value}))} />
-                            </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">State</label>
-                            <Input value={formData.commissionState} disabled={!isEditing} onChange={(e) => setFormData(p => ({...p, commissionState: e.target.value}))} />
-                            </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">ZIP Code</label>
-                            <Input value={formData.commissionZipCode} disabled={!isEditing} onChange={(e) => setFormData(p => ({...p, commissionZipCode: e.target.value}))} />
-                            </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">County</label>
-                            <Input value={formData.commissionCounty} disabled={!isEditing} onChange={(e) => setFormData(p => ({...p, commissionCounty: e.target.value}))} />
-                            </div>
-                            </div>
-                      </CardContent>
-                    </Card>
 
                     {/* Insurance & Bond */}
                     <Card>

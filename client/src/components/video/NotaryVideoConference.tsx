@@ -445,11 +445,8 @@ export const NotaryVideoConference: React.FC<NotaryVideoConferenceProps> = ({
           }).map((_, index) => (
             <div 
               key={`empty-${index}`}
-              className="aspect-video bg-gray-800 rounded-lg border-2 border-dashed border-gray-600 flex items-center justify-center"
+              className="aspect-video bg-gray-800 rounded-lg"
             >
-              <span className="text-gray-400 text-sm">
-                Waiting for participant...
-              </span>
             </div>
           ))}
         </div>

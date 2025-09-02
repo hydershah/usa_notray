@@ -154,7 +154,7 @@ const CompanyTable: React.FC<{
     switch (type) {
       case 'title_company': return <Badge variant="outline" className="text-blue-600">Title Company</Badge>;
              case 'lending_institution': return <Badge variant="outline" className="text-blue-600">Lending Institution</Badge>;
-      case 'real_estate_agency': return <Badge variant="outline" className="text-green-600">Real Estate Agency</Badge>;
+      case 'real_estate_agency': return <Badge variant="outline" className="text-blue-600">Real Estate Agency</Badge>;
       case 'law_firm': return <Badge variant="outline" className="text-orange-600">Law Firm</Badge>;
       case 'other': return <Badge variant="outline" className="text-gray-600">Other</Badge>;
       default: return <Badge variant="outline">{type}</Badge>;
@@ -243,7 +243,7 @@ const CompanyTable: React.FC<{
                       variant="outline"
                       size="sm"
                       onClick={() => onApproveCompany(company)}
-                      className="h-8 text-green-600 border-green-200 hover:bg-green-50"
+                      className="h-8 text-blue-600 border-green-200 hover:bg-green-50"
                     >
                       <CheckCircle className="h-4 w-4 mr-1" />
                       Approve

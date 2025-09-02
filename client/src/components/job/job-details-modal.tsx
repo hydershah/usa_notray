@@ -1308,7 +1308,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
             >
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <FileCheck className="h-4 w-4 text-green-600" />
+                  <FileCheck className="h-4 w-4 text-blue-600" />
                   Completed Documents
                   <Badge className="ml-2 bg-green-100 text-green-800 border-green-200">{completedDocuments.length}</Badge>
                 </CardTitle>
@@ -1335,7 +1335,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex items-center gap-3">
                             <div className="h-10 w-10 bg-green-100 rounded-lg flex items-center justify-center">
-                              <FileCheck className="h-5 w-5 text-green-600" />
+                              <FileCheck className="h-5 w-5 text-blue-600" />
                             </div>
                             <div>
                               <h4 className="font-medium text-green-900 text-sm">
@@ -1345,7 +1345,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                                 Completed: {new Date(completedDoc.completedAt || completedDoc.createdAt).toLocaleString()}
                               </p>
                               {completedDoc.fileSize && (
-                                <p className="text-[11px] text-green-600 mt-1">
+                                <p className="text-[11px] text-blue-600 mt-1">
                                   Size: {formatFileSize(completedDoc.fileSize)}
                                 </p>
                               )}
@@ -1575,7 +1575,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
               <Button
                 variant="outline"
                 onClick={handleDownloadPackage}
-                className="bg-green-50 text-green-600 border-green-300 hover:bg-green-100 transition-colors duration-150"
+                className="bg-green-50 text-blue-600 border-green-300 hover:bg-green-100 transition-colors duration-150"
                 disabled={downloadingPackage}
               >
                 {downloadingPackage ? (

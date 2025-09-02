@@ -150,10 +150,10 @@ export function AdminVerification() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">Verified Users</p>
-                  <p className="text-2xl font-bold text-green-600">{verificationStats.verifiedUsers || 0}</p>
+                  <p className="text-2xl font-bold text-blue-600">{verificationStats.verifiedUsers || 0}</p>
                 </div>
                 <div className="p-2 bg-green-100 rounded-lg">
-                  <CheckCircle className="h-5 w-5 text-green-600" />
+                  <CheckCircle className="h-5 w-5 text-blue-600" />
                 </div>
               </div>
             </CardContent>

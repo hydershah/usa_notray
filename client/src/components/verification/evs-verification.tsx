@@ -452,14 +452,14 @@ export function EVSVerification({
     return (
       <Card className="w-full max-w-2xl mx-auto">
         <CardHeader>
-          <CardTitle className="flex items-center text-green-600">
+          <CardTitle className="flex items-center text-blue-600">
             <CheckCircle className="h-5 w-5 mr-2" />
             Verification Complete
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="text-center py-8">
-            <CheckCircle className="h-16 w-16 text-green-600 mx-auto mb-4" />
+            <CheckCircle className="h-16 w-16 text-blue-600 mx-auto mb-4" />
             <h3 className="text-lg font-medium mb-2">Identity Successfully Verified</h3>
             <p className="text-gray-600 mb-4">
               Your identity has been verified through EVS Solutions. You can now participate in signing sessions.
@@ -621,8 +621,8 @@ export function EVSVerification({
                       className="max-h-48 mx-auto rounded border"
                     />
                     <div className="flex items-center justify-center space-x-2">
-                      <CheckCircle className="h-4 w-4 text-green-600" />
-                      <span className="text-sm text-green-600">Front of ID uploaded</span>
+                      <CheckCircle className="h-4 w-4 text-blue-600" />
+                      <span className="text-sm text-blue-600">Front of ID uploaded</span>
                     </div>
                     <Button 
                       variant="outline" 
@@ -672,8 +672,8 @@ export function EVSVerification({
                       className="max-h-48 mx-auto rounded border"
                     />
                     <div className="flex items-center justify-center space-x-2">
-                      <CheckCircle className="h-4 w-4 text-green-600" />
-                      <span className="text-sm text-green-600">Back of ID uploaded</span>
+                      <CheckCircle className="h-4 w-4 text-blue-600" />
+                      <span className="text-sm text-blue-600">Back of ID uploaded</span>
                     </div>
                     <Button 
                       variant="outline" 
@@ -724,8 +724,8 @@ export function EVSVerification({
                       className="max-h-48 mx-auto rounded border"
                     />
                     <div className="flex items-center justify-center space-x-2">
-                      <CheckCircle className="h-4 w-4 text-green-600" />
-                      <span className="text-sm text-green-600">Selfie captured</span>
+                      <CheckCircle className="h-4 w-4 text-blue-600" />
+                      <span className="text-sm text-blue-600">Selfie captured</span>
                     </div>
                     <div className="flex space-x-2">
                       <Button 

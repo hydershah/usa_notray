@@ -404,7 +404,7 @@ export default function TitleCompanies() {
 
   const getStatusBadge = (status: string) => {
     const config = {
-      active: { variant: 'default' as const, icon: CheckCircle, color: 'text-green-600' },
+      active: { variant: 'default' as const, icon: CheckCircle, color: 'text-blue-600' },
       inactive: { variant: 'secondary' as const, icon: XCircle, color: 'text-gray-600' },
       suspended: { variant: 'destructive' as const, icon: XCircle, color: 'text-red-600' },
       pending: { variant: 'secondary' as const, icon: AlertCircle, color: 'text-yellow-600' },

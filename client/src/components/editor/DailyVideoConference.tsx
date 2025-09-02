@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import DailyIframe from '@daily-co/daily-js';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { 
   Video, 
@@ -2120,34 +2121,36 @@ const DailyVideoConference = forwardRef<
           </div>
           <div className="flex items-center gap-2 ml-2 flex-shrink-0">
             {!isRecording ? (
-              <button
+              <Button
                 onClick={startRecording}
-                className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs transition-colors"
+                variant="destructive"
+                size="sm"
+                className="text-xs"
                 title="Start Recording"
               >
                 Record
-              </button>
+              </Button>
             ) : (
-              <button
+              <Button
                 onClick={stopRecording}
-                className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded-md text-xs transition-colors"
+                variant="secondary"
+                size="sm"
+                className="text-xs"
                 title="Stop Recording"
               >
                 Stop Recording
-              </button>
+              </Button>
             )}
             
-            <button
+            <Button
               onClick={() => setShowDailyInterface(!showDailyInterface)}
-              className={`px-2 py-1 rounded-md text-xs transition-colors ${
-                showDailyInterface 
-                  ? 'bg-purple-700 hover:bg-purple-800 text-white' 
-                  : 'bg-purple-600 hover:bg-purple-700 text-white'
-              }`}
+              variant={showDailyInterface ? "secondary" : "outline"}
+              size="sm"
+              className="text-xs"
               title={showDailyInterface ? "Switch to Custom UI" : "Switch to Daily.co UI"}
             >
               {showDailyInterface ? "Custom UI" : "Daily.co UI"}
-            </button>
+            </Button>
             
             <button
               onClick={() => {

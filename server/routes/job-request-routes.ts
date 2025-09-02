@@ -30,13 +30,7 @@ const requireRole = (allowedRoles: string[]) => {
  * GET /api/job-requests/test-db
  * Test database connection and table existence
  */
-router.get('/test-db', 
-  process.env.NODE_ENV === 'development' ? 
-    (req: any, res: any, next: any) => {
-      console.log('Development mode: bypassing authentication for database test');
-      req.user = { id: 1, role: 'admin', email: 'admin@example.com', privileges: ['admin'] };
-      next();
-    } : verifyToken, 
+router.get('/test-db', verifyToken, 
   async (req, res) => {
     try {
       console.log('Testing database connection...');
@@ -71,13 +65,7 @@ router.get('/test-db',
  * POST /api/job-requests/upload-document
  * Upload document for job request (before job request is created)
  */
-router.post('/upload-document', 
-  process.env.NODE_ENV === 'development' ? 
-    (req: any, res: any, next: any) => {
-      console.log('Development mode: bypassing authentication for job request document upload');
-      req.user = { id: 1, role: 'admin', email: 'admin@example.com', privileges: ['admin'] };
-      next();
-    } : verifyToken, 
+router.post('/upload-document', verifyToken, 
   upload.single('document'), async (req: any, res) => {
     try {
       console.log('Job request document upload request received');

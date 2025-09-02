@@ -156,7 +156,7 @@ export function NotarizationLogs() {
   };
 
   const getActionColor = (action: string) => {
-    if (action.includes('signed') || action.includes('completed')) return 'text-green-600';
+    if (action.includes('signed') || action.includes('completed')) return 'text-blue-600';
     if (action.includes('failed') || action.includes('error')) return 'text-red-600';
     if (action.includes('started') || action.includes('created')) return 'text-blue-600';
     return 'text-gray-600';

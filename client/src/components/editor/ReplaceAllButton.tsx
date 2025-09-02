@@ -312,7 +312,7 @@ export const ReplaceAllButton: React.FC<ReplaceAllButtonProps> = ({
                   {results.failed > 0 ? (
                     <XCircle className="h-4 w-4 text-red-600" />
                   ) : (
-                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <CheckCircle className="h-4 w-4 text-blue-600" />
                   )}
                   <AlertDescription>
                     {results.failed > 0 

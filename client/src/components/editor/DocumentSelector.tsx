@@ -53,7 +53,7 @@ export const DocumentSelector: React.FC<DocumentSelectorProps> = ({
   };
 
   const getProgressColor = (percentage: number) => {
-    if (percentage === 100) return 'text-green-600';
+    if (percentage === 100) return 'text-blue-600';
     if (percentage >= 50) return 'text-yellow-600';
     return 'text-gray-500';
   };
@@ -139,7 +139,7 @@ export const DocumentSelector: React.FC<DocumentSelectorProps> = ({
                         {doc.fileName}
                       </p>
                       {isSelected && (
-                        <Check className="h-4 w-4 text-green-600 flex-shrink-0" />
+                        <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-1">

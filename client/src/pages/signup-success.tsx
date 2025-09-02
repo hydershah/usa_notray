@@ -40,7 +40,7 @@ const signupContent: Record<SignupType, SignupContent> = {
     buttonColor: "bg-blue-600 hover:bg-blue-700"
   },
   notary: {
-    icon: <Shield className="h-8 w-8 text-green-600" />,
+    icon: <Shield className="h-8 w-8 text-blue-600" />,
     title: "Notary Application Submitted!",
     description: "Thank you for applying to join our notary network. Your application is under review by our admin team.",
     nextSteps: [

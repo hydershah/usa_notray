@@ -457,7 +457,7 @@ export function KBAPopupVerification({
       <div className="text-center space-y-6">
         {isPassed ? (
           <div className="p-6 bg-green-50 rounded-lg">
-            <CheckCircle className="w-16 h-16 mx-auto text-green-600 mb-4" />
+            <CheckCircle className="w-16 h-16 mx-auto text-blue-600 mb-4" />
             <h3 className="text-xl font-semibold text-green-800 mb-2">KBA Verification Passed!</h3>
             <p className="text-green-700">
               You scored {kbaResult.score}% ({kbaResult.correctAnswers}/{kbaResult.totalQuestions} correct)

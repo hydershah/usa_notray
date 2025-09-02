@@ -819,7 +819,7 @@ export function AdminCompanies() {
                     
                     <Card>
                       <CardContent className="p-4 text-center">
-                        <div className="text-2xl font-bold text-green-600">
+                        <div className="text-2xl font-bold text-blue-600">
                           {selectedCompany.completedJobs || 0}
                         </div>
                         <div className="text-sm text-gray-500">Completed Jobs</div>
@@ -860,7 +860,7 @@ export function AdminCompanies() {
                         
                         <div className="grid grid-cols-3 gap-4 text-center text-xs">
                           <div>
-                            <div className="text-green-600 font-medium">92%</div>
+                            <div className="text-blue-600 font-medium">92%</div>
                             <div className="text-gray-500">Job Completion</div>
                           </div>
                           <div>

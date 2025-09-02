@@ -182,7 +182,7 @@ export default function Notifications() {
     switch (priority) {
       case 'high': return 'text-red-600 bg-red-50 border-red-200';
       case 'medium': return 'text-yellow-600 bg-yellow-50 border-yellow-200';
-      case 'low': return 'text-green-600 bg-green-50 border-green-200';
+      case 'low': return 'text-blue-600 bg-green-50 border-green-200';
       default: return 'text-gray-600 bg-gray-50 border-gray-200';
     }
   };
@@ -281,7 +281,7 @@ export default function Notifications() {
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-green-100 rounded-lg">
-                  <CheckCircle className="w-5 h-5 text-green-600" />
+                  <CheckCircle className="w-5 h-5 text-blue-600" />
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Job Updates</p>

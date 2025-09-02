@@ -827,7 +827,7 @@ export function registerNotaryProfileRoutes(app: Express) {
    * GET /api/notary/profile/status
    * Check if notary profile is complete and approved
    */
-  app.get('/api/notary/profile/status', verifyToken, cacheUserData(300), async (req: any, res) => {
+  app.get('/api/notary/profile/status', verifyToken, async (req: any, res) => {
     try {
       if (!hasNotaryPrivileges(req.user)) {
         return res.status(403).json({ message: 'Notary privileges required to check profile status' });
@@ -854,6 +854,13 @@ export function registerNotaryProfileRoutes(app: Express) {
       
       // Profile is complete if user has submitted it OR has core fields
       const profileComplete = user.profileSubmitted || missingCoreFields.length === 0;
+      
+      console.log(`🔍 Notary profile status for user ${user.id}:`, {
+        profileSubmitted: user.profileSubmitted,
+        missingCoreFields,
+        profileComplete,
+        approvalStatus: user.approvalStatus
+      });
 
       // For detailed status, check all recommended fields
       const allRecommendedFields = [

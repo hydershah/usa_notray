@@ -47,7 +47,7 @@ export const SessionStatus: React.FC<SessionStatusProps> = ({
 
   const getProgressColor = () => {
     const percentage = getCompletionPercentage();
-    if (percentage >= 100) return 'bg-green-500';
+    if (percentage >= 100) return 'bg-blue-600';
     if (percentage >= 75) return 'bg-blue-500';
     if (percentage >= 50) return 'bg-yellow-500';
     return 'bg-red-500';
@@ -58,7 +58,7 @@ export const SessionStatus: React.FC<SessionStatusProps> = ({
       case 'waiting':
         return { text: 'Waiting to Start', color: 'bg-blue-100 text-blue-800', icon: <Clock className="h-3 w-3" /> };
       case 'active':
-        return { text: 'Active', color: 'bg-green-100 text-green-800', icon: <CheckCircle className="h-3 w-3" /> };
+        return { text: 'Active', color: 'bg-blue-100 text-blue-800', icon: <CheckCircle className="h-3 w-3" /> };
       case 'paused':
         return { text: 'Paused', color: 'bg-yellow-100 text-yellow-800', icon: <AlertTriangle className="h-3 w-3" /> };
       case 'completing':

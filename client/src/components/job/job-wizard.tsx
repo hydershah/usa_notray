@@ -1127,7 +1127,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                       <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
                         <div className="flex items-start">
                           <div className="flex-shrink-0">
-                            <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+                            <CheckCircle className="h-5 w-5 text-blue-600 mt-0.5" />
                           </div>
                           <div className="ml-3">
                             <h4 className="text-sm font-medium text-green-900">Title Company Job</h4>
@@ -1606,7 +1606,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                     <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerEmail}</p>
                                   )}
                                   {autoPopulatedSigners[index] && (
-                                    <p className="text-xs text-green-600 mt-1 flex items-center">
+                                    <p className="text-xs text-blue-600 mt-1 flex items-center">
                                       <CheckCircle className="w-4 h-4 mr-1" />
                                       User found! Details auto-populated from existing account.
                                     </p>
@@ -1667,12 +1667,12 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                               {autoPopulatedSigners[index] && signer.existingUserId && (
                                 <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
                                   <div className="flex items-center">
-                                    <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
+                                    <CheckCircle className="w-5 h-5 text-blue-600 mr-2" />
                                     <div>
                                       <p className="text-sm font-medium text-green-800">
                                         Existing User: {signer.signerName}
                                       </p>
-                                      <p className="text-xs text-green-600">
+                                      <p className="text-xs text-blue-600">
                                         {signer.signerEmail} • Information auto-populated from existing account
                                       </p>
                                     </div>
@@ -1945,7 +1945,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                 {notaryIdCodeLookup.result && (
                                   <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
                                     <div className="flex items-center">
-                                      <CheckCircle className="w-5 h-5 text-green-600 mr-3" />
+                                      <CheckCircle className="w-5 h-5 text-blue-600 mr-3" />
                                       <div className="flex-1">
                                         <h4 className="text-sm font-medium text-green-800">
                                           Notary Found: {notaryIdCodeLookup.result.firstName} {notaryIdCodeLookup.result.lastName}
@@ -2300,7 +2300,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                     {/* Final Confirmation */}
                     <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-6 border border-green-200">
                       <div className="flex items-center">
-                        <AlertCircle className="w-6 h-6 text-green-600 mr-3" />
+                        <AlertCircle className="w-6 h-6 text-blue-600 mr-3" />
                         <div>
                           <h3 className="font-semibold text-gray-900">Ready to Submit</h3>
                           <p className="text-sm text-gray-600 mt-1">

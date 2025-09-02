@@ -430,8 +430,8 @@ export function ParticipantRolesManagement() {
                     <TableCell>
                       {role.isActive ? (
                         <div className="flex items-center">
-                          <Eye className="h-4 w-4 text-green-600 mr-1" />
-                          <span className="text-green-600">Active</span>
+                          <Eye className="h-4 w-4 text-blue-600 mr-1" />
+                          <span className="text-blue-600">Active</span>
                         </div>
                       ) : (
                         <div className="flex items-center">

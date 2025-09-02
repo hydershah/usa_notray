@@ -110,7 +110,7 @@ export function IDVerificationStatus({
         }`}>
           <div className="flex items-center">
             <Shield className={`h-4 w-4 mr-2 ${
-              isVerified ? 'text-green-600' : 'text-yellow-600'
+              isVerified ? 'text-blue-600' : 'text-yellow-600'
             }`} />
             <span className={`text-sm font-medium ${
               isVerified ? 'text-green-800' : 'text-yellow-800'

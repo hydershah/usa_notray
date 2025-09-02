@@ -68,6 +68,16 @@ export function useNotaryProfileCompletion(): NotaryProfileStatus {
       // Show overlay if notary needs profile completion
       const shouldShowOverlay = needsCompletion;
 
+      console.log('🔍 Notary profile completion check:', {
+        user: user.email,
+        profileComplete,
+        isApproved,
+        canAccessDashboard,
+        needsCompletion,
+        shouldShowOverlay,
+        statusData
+      });
+
       return {
         isComplete: profileComplete && isApproved,
         needsProfileCompletion: needsCompletion,
@@ -155,6 +165,14 @@ export function useNotaryProfileCompletion(): NotaryProfileStatus {
     const profileComplete = profileStatus.profileComplete || false;
     const isApproved = profileStatus.approvalStatus === 'approved';
     const needsCompletion = !profileComplete;
+
+    console.log('🔍 Final notary status calculation:', {
+      profileComplete,
+      isApproved,
+      needsCompletion,
+      showOverlay,
+      profileStatus
+    });
 
     return {
       isComplete: profileComplete && isApproved,

@@ -238,7 +238,7 @@ export default function SignupNotary() {
         <Button
           variant="ghost"
           onClick={() => setLocation('/')}
-          className="mb-4 text-green-600 hover:text-green-700"
+          className="mb-4 text-blue-600 hover:text-green-700"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Home
@@ -247,7 +247,7 @@ export default function SignupNotary() {
         <Card className="shadow-lg border-0">
           <CardHeader className="text-center pb-6">
             <div className="mx-auto mb-4 p-3 bg-green-100 rounded-full w-16 h-16 flex items-center justify-center">
-              <Shield className="h-8 w-8 text-green-600" />
+              <Shield className="h-8 w-8 text-blue-600" />
             </div>
             <CardTitle className="text-2xl font-bold text-gray-900">Join Our Notary Network</CardTitle>
             <CardDescription className="text-gray-600">
@@ -265,7 +265,7 @@ export default function SignupNotary() {
               {/* Personal Information */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                  <Award className="mr-2 h-5 w-5 text-green-600" />
+                  <Award className="mr-2 h-5 w-5 text-blue-600" />
                   Personal Information
                 </h3>
                 
@@ -614,7 +614,7 @@ export default function SignupNotary() {
                 Already have an account?{' '}
                 <button
                   onClick={() => setLocation('/login')}
-                  className="text-green-600 hover:text-green-700 font-medium"
+                  className="text-blue-600 hover:text-green-700 font-medium"
                 >
                   Sign in here
                 </button>

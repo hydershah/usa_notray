@@ -173,8 +173,8 @@ export function ClientDashboard() {
   const StatCard = ({ title, value, icon: Icon, description, trend, color = "blue" }: any) => {
     const colorClasses = {
       blue: "from-blue-500 to-blue-600",
-      green: "from-green-500 to-green-600",
-      purple: "from-purple-500 to-purple-600",
+      slate: "from-slate-500 to-slate-600",
+      navy: "from-slate-700 to-slate-800",
       orange: "from-orange-500 to-orange-600",
       red: "from-red-500 to-red-600",
       indigo: "from-indigo-500 to-indigo-600"
@@ -189,7 +189,7 @@ export function ClientDashboard() {
               <div className="flex items-baseline gap-2">
                 <p className="text-3xl font-bold text-gray-900">{value}</p>
                 {trend && (
-                  <div className="text-sm font-medium text-green-600">
+                  <div className="text-sm font-medium text-blue-600">
                     {trend}
                   </div>
                 )}
@@ -364,7 +364,7 @@ export function ClientDashboard() {
               value={payments.completedJobs}
               icon={CheckCircle}
               description="Successfully completed"
-              color="green"
+              color="slate"
             />
             <StatCard
               title="Pending Payments"
@@ -680,7 +680,7 @@ export function ClientDashboard() {
               {profile?.isVerified && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <div className="flex items-start space-x-3">
-                    <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+                    <CheckCircle className="h-5 w-5 text-blue-600 mt-0.5" />
                     <div>
                       <h4 className="font-medium text-green-900">Identity Verified</h4>
                       <p className="text-sm text-green-800 mt-1">

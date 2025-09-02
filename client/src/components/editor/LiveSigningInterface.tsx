@@ -738,7 +738,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         {liveSession.state === 'active' && (
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 bg-green-100 px-4 py-2 rounded-lg">
-              <CheckCircle className="h-5 w-5 text-green-600" />
+              <CheckCircle className="h-5 w-5 text-blue-600" />
               <span className="text-green-800 font-medium">Session Active</span>
             </div>
             

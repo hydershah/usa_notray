@@ -440,9 +440,9 @@ export function DayView({ date, timeSlots, events, onSlotUpdate }: DayViewProps)
               {dayEvents.map((event: any) => (
                 <div
                   key={event.id}
-                  className="flex items-start gap-3 p-3 rounded-lg border bg-blue-50 border-blue-200"
+                  className="flex items-start gap-3 p-3 rounded-lg border bg-primary/10 border-primary/20"
                 >
-                  <div className="flex-shrink-0 w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
+                  <div className="flex-shrink-0 w-2 h-2 bg-primary rounded-full mt-2"></div>
                   <div className="flex-1 min-w-0">
                     <h4 className="font-medium text-sm">{event.title}</h4>
                     {event.description && (
@@ -482,15 +482,15 @@ export function DayView({ date, timeSlots, events, onSlotUpdate }: DayViewProps)
             <CardTitle className="text-base">Time Slots (15-minute intervals)</CardTitle>
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <div className="flex items-center gap-1">
-                <div className="w-3 h-3 bg-green-100 border border-green-300 rounded"></div>
+                <div className="w-3 h-3 bg-success/20 border border-success rounded"></div>
                 Available
               </div>
               <div className="flex items-center gap-1">
-                <div className="w-3 h-3 bg-blue-100 border border-blue-300 rounded"></div>
+                <div className="w-3 h-3 bg-primary/20 border border-primary rounded"></div>
                 Booked
               </div>
               <div className="flex items-center gap-1">
-                <div className="w-3 h-3 bg-red-100 border border-red-300 rounded"></div>
+                <div className="w-3 h-3 bg-destructive/20 border border-destructive rounded"></div>
                 Blocked
               </div>
             </div>
@@ -503,11 +503,11 @@ export function DayView({ date, timeSlots, events, onSlotUpdate }: DayViewProps)
                 key={time}
                 className={cn(
                   "flex items-center justify-between p-3 rounded-lg border transition-all duration-200",
-                  slot?.status === 'available' && "bg-green-50 border-green-200 hover:bg-green-100",
-                  slot?.status === 'booked' && "bg-blue-50 border-blue-200 hover:bg-blue-100",
-                  slot?.status === 'blocked' && "bg-red-50 border-red-200 hover:bg-red-100",
-                  !slot && "bg-gray-50 border-gray-200 hover:bg-gray-100",
-                  selectedSlots.includes(time) && "ring-2 ring-blue-500",
+                  slot?.status === 'available' && "bg-success/10 border-success/20 hover:bg-success/20",
+                  slot?.status === 'booked' && "bg-primary/10 border-primary/20 hover:bg-primary/20",
+                  slot?.status === 'blocked' && "bg-destructive/10 border-destructive/20 hover:bg-destructive/20",
+                  !slot && "bg-muted border-border hover:bg-muted/80",
+                  selectedSlots.includes(time) && "ring-2 ring-primary",
                   slot && isUpdating.has(slot.id) && "opacity-50"
                 )}
               >
@@ -516,7 +516,7 @@ export function DayView({ date, timeSlots, events, onSlotUpdate }: DayViewProps)
                     type="checkbox"
                     checked={selectedSlots.includes(time)}
                     onChange={() => handleSlotSelection(time)}
-                    className="w-4 h-4 text-blue-600 rounded border-gray-300"
+                    className="w-4 h-4 text-primary rounded border-border"
                   />
                   <span className="font-mono text-sm font-medium">{time}</span>
                   {slot && (

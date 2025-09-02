@@ -591,7 +591,7 @@ export function SignerVerificationManager({
                   <Button
                     variant="outline"
                     size="sm"
-                    className="border-green-300 text-green-600 hover:bg-green-50"
+                    className="border-green-300 text-blue-600 hover:bg-green-50"
                   >
                     <UserCheck className="h-3 w-3 mr-1" />
                     Bypass

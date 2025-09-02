@@ -280,7 +280,7 @@ export function VerificationManagement() {
 
   const getConfidenceColor = (confidence: number | null) => {
     if (!confidence) return 'text-gray-500';
-    if (confidence >= 80) return 'text-green-600';
+    if (confidence >= 80) return 'text-blue-600';
     if (confidence >= 60) return 'text-yellow-600';
     return 'text-red-600';
   };
@@ -516,7 +516,7 @@ export function VerificationManagement() {
                                       <div>
                                         <span className="font-medium">Face Match:</span>
                                         <br />
-                                        <span className={user.evs_face_match_result ? 'text-green-600' : 'text-red-600'}>
+                                        <span className={user.evs_face_match_result ? 'text-blue-600' : 'text-red-600'}>
                                           {user.evs_face_match_result ? 'Passed' : 'Failed'}
                                           {user.evs_face_match_confidence && ` (${user.evs_face_match_confidence}%)`}
                                         </span>
@@ -635,7 +635,7 @@ export function VerificationManagement() {
                                         <div>
                                           <span className="font-medium">Face Match:</span>
                                           <br />
-                                          <span className={attempt.faceMatchResult ? 'text-green-600' : 'text-red-600'}>
+                                          <span className={attempt.faceMatchResult ? 'text-blue-600' : 'text-red-600'}>
                                             {attempt.faceMatchResult ? 'Passed' : 'Failed'} ({attempt.faceMatchConfidence}%)
                                           </span>
                                         </div>

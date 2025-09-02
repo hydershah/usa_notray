@@ -239,7 +239,7 @@ export default function IDVerification() {
                   }`}>
                     <UserCheck className={`h-5 w-5 ${
                       verificationStatus?.idVerified || verificationStatus?.isVerificationBypassed 
-                        ? 'text-green-600' : 'text-gray-500'
+                        ? 'text-blue-600' : 'text-gray-500'
                     }`} />
                   </div>
                   <div>
@@ -257,7 +257,7 @@ export default function IDVerification() {
                     verificationStatus?.kbaVerified ? 'bg-green-100' : 'bg-gray-200'
                   }`}>
                     <FileText className={`h-5 w-5 ${
-                      verificationStatus?.kbaVerified ? 'text-green-600' : 'text-gray-500'
+                      verificationStatus?.kbaVerified ? 'text-blue-600' : 'text-gray-500'
                     }`} />
                   </div>
                   <div>
@@ -274,7 +274,7 @@ export default function IDVerification() {
                     verificationStatus?.certificate?.hasCertificate ? 'bg-green-100' : 'bg-gray-200'
                   }`}>
                     <Award className={`h-5 w-5 ${
-                      verificationStatus?.certificate?.hasCertificate ? 'text-green-600' : 'text-gray-500'
+                      verificationStatus?.certificate?.hasCertificate ? 'text-blue-600' : 'text-gray-500'
                     }`} />
                   </div>
                   <div>
@@ -310,7 +310,7 @@ export default function IDVerification() {
                 {verificationStatus?.idVerified || verificationStatus?.isVerificationBypassed ? (
                   <div className="space-y-4">
                     <Alert className="border-green-200 bg-green-50">
-                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <CheckCircle className="h-4 w-4 text-blue-600" />
                       <AlertDescription className="text-green-800">
                         <strong>Identity Verified!</strong> Your identity has been successfully verified
                         {verificationStatus.verificationDate && 
@@ -400,7 +400,7 @@ export default function IDVerification() {
                 {verificationStatus?.kbaVerified ? (
                   <div className="space-y-4">
                     <Alert className="border-green-200 bg-green-50">
-                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <CheckCircle className="h-4 w-4 text-blue-600" />
                       <AlertDescription className="text-green-800">
                         <strong>KBA Verification Complete!</strong> You scored {verificationStatus.kbaScore}%
                         {verificationStatus.kbaVerificationDate && 
@@ -460,7 +460,7 @@ export default function IDVerification() {
                 {verificationStatus?.certificate?.hasCertificate ? (
                   <div className="space-y-4">
                     <Alert className="border-green-200 bg-green-50">
-                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <CheckCircle className="h-4 w-4 text-blue-600" />
                       <AlertDescription className="text-green-800">
                         <strong>Certificate Generated!</strong> Your digital certificate is ready for secure document signing.
                       </AlertDescription>

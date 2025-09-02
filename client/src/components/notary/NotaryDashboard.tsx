@@ -211,7 +211,7 @@ export function NotaryDashboard() {
         <div className="text-2xl font-bold">{value}</div>
         <p className="text-xs text-muted-foreground">{description}</p>
         {trend && (
-          <div className="text-xs text-green-600 flex items-center mt-1">
+          <div className="text-xs text-blue-600 flex items-center mt-1">
             <TrendingUp className="h-3 w-3 mr-1" />
             {trend}
           </div>
@@ -251,7 +251,7 @@ export function NotaryDashboard() {
           }`}>
             <div className="flex items-center">
               <AlertCircle className={`h-5 w-5 mr-2 ${
-                profile?.approvalStatus === 'approved' ? 'text-green-600' :
+                profile?.approvalStatus === 'approved' ? 'text-blue-600' :
                 profile?.approvalStatus === 'rejected' ? 'text-red-600' :
                 'text-yellow-600'
               }`} />

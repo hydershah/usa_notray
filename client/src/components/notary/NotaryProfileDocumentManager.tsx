@@ -386,7 +386,7 @@ export function NotaryProfileDocumentManager({
               </div>
               <div>
                 <h4 className="font-semibold text-gray-900">{docType.label}</h4>
-                <p className={`text-sm ${hasFile ? 'text-green-600' : 'text-gray-600'}`}>
+                <p className={`text-sm ${hasFile ? 'text-blue-600' : 'text-gray-600'}`}>
                   {hasFile ? 'Uploaded' : 'Not uploaded'}
                   {docType.required && !hasFile && ' (Required)'}
                 </p>

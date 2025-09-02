@@ -342,7 +342,7 @@ export default function FinancialDashboard() {
                       <p className="text-sm font-medium text-gray-600">Status</p>
                       <p className="text-lg font-bold">
                         {accountSummary.canTakeJobs ? (
-                          <span className="text-green-600">Active</span>
+                          <span className="text-blue-600">Active</span>
                         ) : (
                           <span className="text-red-600">Low Balance</span>
                         )}
@@ -442,7 +442,7 @@ export default function FinancialDashboard() {
                           </TableCell>
                           <TableCell>{transaction.description}</TableCell>
                           <TableCell>
-                            <span className={transaction.amount >= 0 ? 'text-green-600' : 'text-red-600'}>
+                            <span className={transaction.amount >= 0 ? 'text-blue-600' : 'text-red-600'}>
                               {transaction.amount >= 0 ? '+' : ''}{formatCurrency(Math.abs(transaction.amount))}
                             </span>
                           </TableCell>
@@ -492,7 +492,7 @@ export default function FinancialDashboard() {
                         <TableRow key={payment.id}>
                           <TableCell>#{payment.jobId}</TableCell>
                           <TableCell>{formatCurrency(payment.totalJobFee)}</TableCell>
-                          <TableCell className="text-green-600 font-medium">
+                          <TableCell className="text-blue-600 font-medium">
                             {formatCurrency(payment.contractorAmount)}
                           </TableCell>
                           <TableCell>{formatCurrency(payment.platformFee)}</TableCell>
@@ -672,7 +672,7 @@ export default function FinancialDashboard() {
                   <div>
                     <label className="text-sm font-medium text-gray-500">Amount</label>
                     <p className="text-sm font-medium">
-                      <span className={selectedTransaction.amount >= 0 ? 'text-green-600' : 'text-red-600'}>
+                      <span className={selectedTransaction.amount >= 0 ? 'text-blue-600' : 'text-red-600'}>
                         {selectedTransaction.amount >= 0 ? '+' : ''}{formatCurrency(Math.abs(selectedTransaction.amount))}
                       </span>
                     </p>

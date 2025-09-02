@@ -1527,7 +1527,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           SELECT 
             id,
             notary_id as "notaryId",
-            stamp_name as "stampType",
+            stamp_type as "stampType",
             stamp_data as "stampData", 
             is_active as "isActive",
             created_at as "createdAt",
@@ -3775,7 +3775,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           SELECT 
             id,
             notary_id as "notaryId",
-            stamp_name as "stampType",
+            stamp_type as "stampType",
             stamp_data as "stampData", 
             is_active as "isActive",
             created_at as "createdAt",
@@ -5671,13 +5671,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== ENHANCED UPLOAD SYSTEM ROUTES (VULTR-ENABLED) =====
   
   // Professional signature upload with Vultr cloud storage
-  app.post('/api/uploads/signature', 
-    process.env.NODE_ENV === 'development' ? 
-      (req: any, res: any, next: any) => {
-        console.log('Development mode: bypassing authentication for signature upload');
-        req.user = { id: 1, role: 'admin', email: 'admin@example.com' };
-        next();
-      } : verifyToken, 
+  app.post('/api/uploads/signature', verifyToken, 
     upload.single('signature'), async (req: any, res) => {
       try {
         if (!req.file) {
@@ -5726,13 +5720,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   
   // Document upload with Vultr cloud storage
-  app.post('/api/uploads/document', 
-    process.env.NODE_ENV === 'development' ? 
-      (req: any, res: any, next: any) => {
-        console.log('Development mode: bypassing authentication for document upload');
-        req.user = { id: 1, role: 'admin', email: 'admin@example.com' };
-        next();
-      } : verifyToken, 
+  app.post('/api/uploads/document', verifyToken, 
     upload.single('document'), async (req: any, res) => {
       try {
         if (!req.file) {
@@ -5799,13 +5787,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   
   // Notary stamp upload with Vultr cloud storage
-  app.post('/api/uploads/notary-stamp', 
-    process.env.NODE_ENV === 'development' ? 
-      (req: any, res: any, next: any) => {
-        console.log('Development mode: bypassing authentication for stamp upload');
-        req.user = { id: 1, role: 'admin', email: 'admin@example.com' };
-        next();
-      } : verifyToken, 
+  app.post('/api/uploads/notary-stamp', verifyToken, 
     upload.single('stamp'), async (req: any, res) => {
       try {
         if (!req.file) {
@@ -5891,13 +5873,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   
   // Signer document upload with Vultr cloud storage
-  app.post('/api/uploads/signer-document', 
-    process.env.NODE_ENV === 'development' ? 
-      (req: any, res: any, next: any) => {
-        console.log('Development mode: bypassing authentication for signer document upload');
-        req.user = { id: 1, role: 'user', email: 'user@example.com' };
-        next();
-      } : verifyToken, 
+  app.post('/api/uploads/signer-document', verifyToken, 
     upload.single('document'), async (req: any, res) => {
       try {
         if (!req.file) {
@@ -6238,8 +6214,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         SELECT 
           id,
           notary_id as "notaryId",
-          stamp_name as "stampType",
-          stamp_image as "stampData",
+          stamp_type as "stampType",
+          stamp_data as "stampData",
           is_active as "isActive"
         FROM notary_stamps 
         WHERE id = ${stampId}
@@ -6313,8 +6289,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         SELECT 
           id,
           notary_id as "notaryId",
-          stamp_name as "stampType",
-          stamp_image as "stampData",
+          stamp_type as "stampType",
+          stamp_data as "stampData",
           is_active as "isActive"
         FROM notary_stamps 
         WHERE id = ${stampId}

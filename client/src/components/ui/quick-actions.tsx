@@ -40,21 +40,21 @@ export function QuickStatusToggle({ currentStatus, onStatusChange, type = 'user'
     switch (type) {
       case 'user':
         return {
-          active: { label: 'Active', color: 'bg-green-100 text-green-800', icon: Power },
-          inactive: { label: 'Inactive', color: 'bg-gray-100 text-gray-800', icon: PowerOff },
+          active: { label: 'Active', color: 'bg-success/10 text-success', icon: Power },
+          inactive: { label: 'Inactive', color: 'bg-muted text-muted-foreground', icon: PowerOff },
         };
       case 'company':
         return {
-          active: { label: 'Active', color: 'bg-green-100 text-green-800', icon: Power },
-          inactive: { label: 'Inactive', color: 'bg-gray-100 text-gray-800', icon: PowerOff },
-          pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-800', icon: Shield },
-          rejected: { label: 'Rejected', color: 'bg-red-100 text-red-800', icon: ShieldOff },
+          active: { label: 'Active', color: 'bg-success/10 text-success', icon: Power },
+          inactive: { label: 'Inactive', color: 'bg-muted text-muted-foreground', icon: PowerOff },
+          pending: { label: 'Pending', color: 'bg-warning/10 text-warning', icon: Shield },
+          rejected: { label: 'Rejected', color: 'bg-destructive/10 text-destructive', icon: ShieldOff },
         };
       case 'approval':
         return {
-          pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-800', icon: Shield },
-          approved: { label: 'Approved', color: 'bg-green-100 text-green-800', icon: UserCheck },
-          rejected: { label: 'Rejected', color: 'bg-red-100 text-red-800', icon: UserX },
+          pending: { label: 'Pending', color: 'bg-warning/10 text-warning', icon: Shield },
+          approved: { label: 'Approved', color: 'bg-success/10 text-success', icon: UserCheck },
+          rejected: { label: 'Rejected', color: 'bg-destructive/10 text-destructive', icon: UserX },
         };
       default:
         return {};

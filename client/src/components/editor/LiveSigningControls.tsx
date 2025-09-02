@@ -31,7 +31,8 @@ export const LiveSigningControls: React.FC<LiveSigningControlsProps> = ({
         <Button 
           onClick={onStartSession} 
           size="lg"
-          className="bg-green-600 hover:bg-green-700 px-6 py-3 text-base font-semibold"
+          variant="success"
+          className="px-6 py-3 text-base font-semibold"
           disabled={isLoading}
         >
           {isLoading ? (
@@ -63,7 +64,8 @@ export const LiveSigningControls: React.FC<LiveSigningControlsProps> = ({
           <Button 
             onClick={onCompleteSession} 
             size="lg"
-            className="bg-blue-600 hover:bg-blue-700 px-5 py-3 text-base font-semibold"
+            variant="default"
+            className="px-5 py-3 text-base font-semibold"
             disabled={isLoading}
           >
             {isLoading ? (
@@ -81,7 +83,8 @@ export const LiveSigningControls: React.FC<LiveSigningControlsProps> = ({
           <Button 
             onClick={onResumeSession} 
             size="lg"
-            className="bg-blue-600 hover:bg-blue-700 px-5 py-3 text-base font-semibold"
+            variant="default"
+            className="px-5 py-3 text-base font-semibold"
             disabled={isLoading}
           >
             {isLoading ? (
@@ -95,7 +98,8 @@ export const LiveSigningControls: React.FC<LiveSigningControlsProps> = ({
           <Button 
             onClick={onCompleteSession} 
             size="lg"
-            className="bg-blue-600 hover:bg-blue-700 px-5 py-3 text-base font-semibold"
+            variant="default"
+            className="px-5 py-3 text-base font-semibold"
             disabled={isLoading}
           >
             {isLoading ? (

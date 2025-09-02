@@ -247,7 +247,7 @@ export function AdminCertificateManager({ selectedUserIds = [], onClose }: Admin
               <div className="flex items-center justify-center mb-2">
                 {getStatsIcon('active')}
               </div>
-              <div className="text-2xl font-bold text-green-600">{stats?.active || 0}</div>
+              <div className="text-2xl font-bold text-blue-600">{stats?.active || 0}</div>
               <div className="text-sm text-gray-600">Active</div>
             </div>
             

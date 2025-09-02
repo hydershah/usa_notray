@@ -192,7 +192,7 @@ function BulkAvailabilityModal({ onSave, open, onOpenChange }: { onSave: (newSlo
               <SelectContent>
                 <SelectItem value="available">
                   <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <CheckCircle className="h-4 w-4 text-blue-600" />
                     Set Available
                   </div>
                 </SelectItem>

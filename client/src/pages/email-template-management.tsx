@@ -600,7 +600,7 @@ export default function EmailTemplateManagement() {
                           </div>
                         )}
                         {log.sent_at && (
-                          <div className="text-sm text-green-600">
+                          <div className="text-sm text-blue-600">
                             <span className="font-medium">Sent:</span> {new Date(log.sent_at).toLocaleString()}
                           </div>
                         )}
@@ -635,7 +635,7 @@ export default function EmailTemplateManagement() {
                   </div>
                   <div className="p-4 bg-green-50 rounded-lg">
                     <div className="flex items-center gap-2 mb-2">
-                      <Check className="h-4 w-4 text-green-600" />
+                      <Check className="h-4 w-4 text-blue-600" />
                       <span className="font-medium text-green-900">Base Template</span>
                     </div>
                     <p className="text-sm text-green-800">

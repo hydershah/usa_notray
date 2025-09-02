@@ -441,7 +441,7 @@ export default function JobDetailsPage() {
               <Button 
                 onClick={handleDownloadPackage}
                 variant="outline"
-                className="border-green-600 text-green-600 hover:bg-green-50"
+                className="border-green-600 text-blue-600 hover:bg-green-50"
                 title="Download completion report and completed documents"
                 size="sm"
                 disabled={downloadingPackage}
@@ -710,7 +710,7 @@ export default function JobDetailsPage() {
         <Card className="border-none shadow-none">
           <CardHeader className="py-3">
             <CardTitle className="flex items-center text-base">
-              <FileCheck className="h-5 w-5 mr-2 text-green-600" />
+              <FileCheck className="h-5 w-5 mr-2 text-blue-600" />
               Completed Documents ({completedDocuments.length})
             </CardTitle>
           </CardHeader>
@@ -720,14 +720,14 @@ export default function JobDetailsPage() {
                 {completedDocuments.map((document: any) => (
                   <div key={document.id} className="py-3 flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <FileCheck className="h-6 w-6 text-green-600" />
+                      <FileCheck className="h-6 w-6 text-blue-600" />
                       <div>
                         <p className="font-medium text-green-900 text-sm">{document.fileName || `job_${jobId}_signed.pdf`}</p>
                         <p className="text-xs text-green-700">
                           Completed: {formatDate(document.completedAt || document.createdAt)}
                         </p>
                         {document.fileSize && (
-                          <p className="text-[11px] text-green-600">
+                          <p className="text-[11px] text-blue-600">
                             Size: {(document.fileSize / 1024 / 1024).toFixed(2)} MB
                           </p>
                         )}

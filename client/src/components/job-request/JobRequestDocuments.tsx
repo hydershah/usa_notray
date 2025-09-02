@@ -234,7 +234,7 @@ export function JobRequestDocuments({ requestId, canView = true, canDelete = tru
                     variant="ghost"
                     size="sm"
                     onClick={() => handleDownload(document)}
-                    className="text-green-600 hover:text-green-700"
+                    className="text-blue-600 hover:text-green-700"
                   >
                     <Download className="h-4 w-4" />
                   </Button>

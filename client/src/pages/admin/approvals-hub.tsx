@@ -195,7 +195,7 @@ export default function ApprovalsHub() {
       description: 'Company registrations waiting for approval',
       path: '/admin/companies?status=pending',
       icon: Building,
-      color: 'text-green-600',
+      color: 'text-blue-600',
       bgColor: 'bg-green-100'
     },
     {
@@ -320,13 +320,13 @@ export default function ApprovalsHub() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-green-600">All Caught Up</p>
+                <p className="text-sm font-medium text-blue-600">All Caught Up</p>
                 <p className="text-3xl font-bold text-green-900">
                   {stats.totalPending === 0 ? 'Yes' : 'No'}
                 </p>
               </div>
               <div className="p-3 bg-green-200 rounded-lg">
-                <CheckCircle className="h-8 w-8 text-green-600" />
+                <CheckCircle className="h-8 w-8 text-blue-600" />
               </div>
             </div>
           </CardContent>
@@ -389,7 +389,7 @@ export default function ApprovalsHub() {
                   </div>
                   
                   {summary.count === 0 && (
-                    <div className="flex items-center gap-2 text-green-600">
+                    <div className="flex items-center gap-2 text-blue-600">
                       <CheckCircle className="h-4 w-4" />
                       <span className="text-sm font-medium">All caught up!</span>
                     </div>

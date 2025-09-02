@@ -525,7 +525,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
       completed: { 
         variant: 'default' as const, 
         icon: CheckCircle, 
-        color: 'text-green-600',
+        color: 'text-blue-600',
         bgColor: 'bg-green-50 border-green-200'
       },
       cancelled: { 
@@ -601,7 +601,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
       },
       approved: {
         icon: CheckCircle,
-        color: 'text-green-600',
+        color: 'text-blue-600',
         bgColor: 'bg-green-50 border-green-200',
         text: 'Approved'
       },
@@ -944,7 +944,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                               variant="outline"
                               size="sm"
                               onClick={() => handleEditJob(job)}
-                              className="hover:bg-green-50 hover:text-green-600 transition-colors"
+                              className="hover:bg-green-50 hover:text-blue-600 transition-colors"
                             >
                               <Edit3 className="h-4 w-4 mr-2" />
                               Edit

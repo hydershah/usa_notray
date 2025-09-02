@@ -321,23 +321,23 @@ function SetPasswordPage() {
               <div className="text-sm">
                 <p className="font-medium text-gray-700 mb-2">Password Requirements:</p>
                 <ul className="space-y-1">
-                  <li className={`flex items-center ${passwordValidation.minLength ? 'text-green-600' : 'text-red-600'}`}>
+                  <li className={`flex items-center ${passwordValidation.minLength ? 'text-blue-600' : 'text-red-600'}`}>
                     {passwordValidation.minLength ? <CheckCircle className="h-3 w-3 mr-2" /> : <XCircle className="h-3 w-3 mr-2" />}
                     At least 8 characters
                   </li>
-                  <li className={`flex items-center ${passwordValidation.hasUpperCase ? 'text-green-600' : 'text-red-600'}`}>
+                  <li className={`flex items-center ${passwordValidation.hasUpperCase ? 'text-blue-600' : 'text-red-600'}`}>
                     {passwordValidation.hasUpperCase ? <CheckCircle className="h-3 w-3 mr-2" /> : <XCircle className="h-3 w-3 mr-2" />}
                     One uppercase letter
                   </li>
-                  <li className={`flex items-center ${passwordValidation.hasLowerCase ? 'text-green-600' : 'text-red-600'}`}>
+                  <li className={`flex items-center ${passwordValidation.hasLowerCase ? 'text-blue-600' : 'text-red-600'}`}>
                     {passwordValidation.hasLowerCase ? <CheckCircle className="h-3 w-3 mr-2" /> : <XCircle className="h-3 w-3 mr-2" />}
                     One lowercase letter
                   </li>
-                  <li className={`flex items-center ${passwordValidation.hasNumbers ? 'text-green-600' : 'text-red-600'}`}>
+                  <li className={`flex items-center ${passwordValidation.hasNumbers ? 'text-blue-600' : 'text-red-600'}`}>
                     {passwordValidation.hasNumbers ? <CheckCircle className="h-3 w-3 mr-2" /> : <XCircle className="h-3 w-3 mr-2" />}
                     One number
                   </li>
-                  <li className={`flex items-center ${passwordValidation.hasSpecialChar ? 'text-green-600' : 'text-red-600'}`}>
+                  <li className={`flex items-center ${passwordValidation.hasSpecialChar ? 'text-blue-600' : 'text-red-600'}`}>
                     {passwordValidation.hasSpecialChar ? <CheckCircle className="h-3 w-3 mr-2" /> : <XCircle className="h-3 w-3 mr-2" />}
                     One special character
                   </li>
@@ -346,7 +346,7 @@ function SetPasswordPage() {
 
               {/* Password Match Indicator */}
               {confirmPassword && (
-                <div className={`text-sm flex items-center ${password === confirmPassword ? 'text-green-600' : 'text-red-600'}`}>
+                <div className={`text-sm flex items-center ${password === confirmPassword ? 'text-blue-600' : 'text-red-600'}`}>
                   {password === confirmPassword ? <CheckCircle className="h-3 w-3 mr-2" /> : <XCircle className="h-3 w-3 mr-2" />}
                   {password === confirmPassword ? 'Passwords match' : 'Passwords do not match'}
                 </div>

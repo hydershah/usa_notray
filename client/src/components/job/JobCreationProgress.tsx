@@ -141,7 +141,7 @@ export function JobCreationProgress({
                         {step.label}
                       </h4>
                       {status === 'completed' && (
-                        <span className="text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
+                        <span className="text-xs text-blue-600 bg-green-100 px-2 py-0.5 rounded-full">
                           Complete
                         </span>
                       )}

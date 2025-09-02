@@ -77,12 +77,12 @@ const JobRequestStatsCards: React.FC<{ stats: JobRequestStats; loading: boolean 
   }
 
   const statCards = [
-    { label: 'Total Requests', value: stats.total, icon: FileText, color: 'text-blue-600', bg: 'bg-blue-100' },
-    { label: 'Pending', value: stats.pending, icon: Clock, color: 'text-yellow-600', bg: 'bg-yellow-100' },
-    { label: 'Approved', value: stats.approved, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100' },
-    { label: 'Rejected', value: stats.rejected, icon: XCircle, color: 'text-red-600', bg: 'bg-red-100' },
-         { label: 'Assigned', value: stats.assigned, icon: User, color: 'text-blue-600', bg: 'bg-blue-100' },
-    { label: 'Completed', value: stats.completed, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-100' }
+    { label: 'Total Requests', value: stats.total, icon: FileText, color: 'text-primary', bg: 'bg-primary/10' },
+    { label: 'Pending', value: stats.pending, icon: Clock, color: 'text-warning', bg: 'bg-warning/10' },
+    { label: 'Approved', value: stats.approved, icon: CheckCircle, color: 'text-success', bg: 'bg-success/10' },
+    { label: 'Rejected', value: stats.rejected, icon: XCircle, color: 'text-destructive', bg: 'bg-destructive/10' },
+         { label: 'Assigned', value: stats.assigned, icon: User, color: 'text-primary', bg: 'bg-primary/10' },
+    { label: 'Completed', value: stats.completed, icon: CheckCircle, color: 'text-success', bg: 'bg-success/10' }
   ];
 
   return (
@@ -280,7 +280,7 @@ const JobRequestTable: React.FC<{
                       variant="outline"
                       size="sm"
                       onClick={() => onApproveRequest(request)}
-                      className="h-8 text-green-600 border-green-200 hover:bg-green-50"
+                      className="h-8 text-blue-600 border-green-200 hover:bg-green-50"
                     >
                       <CheckCircle className="h-4 w-4 mr-1" />
                       Approve

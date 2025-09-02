@@ -551,7 +551,7 @@ export function JobRequestManager() {
                     <h4 className="text-sm font-semibold text-green-800 mb-1">Assigned to:</h4>
                     <p className="text-sm text-green-700">{request.assignedNotaryName}</p>
                     {request.assignmentNotes && (
-                      <p className="text-sm text-green-600 mt-1">{request.assignmentNotes}</p>
+                      <p className="text-sm text-blue-600 mt-1">{request.assignmentNotes}</p>
                     )}
                   </div>
                 )}
@@ -1125,12 +1125,12 @@ export function JobRequestManager() {
                                 {notaryCodeResult && (
                                   <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
                                     <div className="flex items-center gap-2">
-                                      <CheckCircle className="h-4 w-4 text-green-600" />
+                                      <CheckCircle className="h-4 w-4 text-blue-600" />
                                       <div>
                                         <p className="text-sm font-medium text-green-800">
                                           {notaryCodeResult.firstName} {notaryCodeResult.lastName}
                                         </p>
-                                        <p className="text-xs text-green-600">{notaryCodeResult.email}</p>
+                                        <p className="text-xs text-blue-600">{notaryCodeResult.email}</p>
                                       </div>
                                     </div>
                                   </div>

@@ -66,7 +66,7 @@ const UserStatsCards: React.FC<{ stats: UserStats; loading: boolean }> = ({ stat
 
   const statCards = [
     { label: 'Total Users', value: stats.total, icon: Users, color: 'text-blue-600', bg: 'bg-blue-100' },
-    { label: 'Active', value: stats.active, icon: UserCheck, color: 'text-green-600', bg: 'bg-green-100' },
+    { label: 'Active', value: stats.active, icon: UserCheck, color: 'text-blue-600', bg: 'bg-green-100' },
     { label: 'Pending', value: stats.pending, icon: AlertTriangle, color: 'text-yellow-600', bg: 'bg-yellow-100' },
     { label: 'Inactive', value: stats.inactive, icon: UserX, color: 'text-red-600', bg: 'bg-red-100' }
   ];
@@ -286,7 +286,7 @@ const UserTable: React.FC<{
                           variant="ghost"
                           size="sm"
                           onClick={() => onApproveUser(user)}
-                          className="h-8 w-8 p-0 text-green-600 hover:text-green-700 hover:bg-green-50"
+                          className="h-8 w-8 p-0 text-blue-600 hover:text-green-700 hover:bg-green-50"
                           title="Approve User"
                         >
                           <CheckCircle className="h-4 w-4" />

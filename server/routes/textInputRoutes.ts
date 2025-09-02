@@ -10,12 +10,14 @@ import type {
   TextInputUpdateRequest 
 } from '../../client/src/types/textInput';
 import { WebSocketService } from '../services/editor/WebSocketService';
+import type { AuthUser } from '../auth';
 
 // Request type definitions
 interface CreateTextInputRequest extends Request {
   body: TextInputCreateRequest & {
     createdBy?: number;
   };
+  user?: AuthUser;
 }
 
 interface UpdateTextInputRequest extends Request {
@@ -25,12 +27,14 @@ interface UpdateTextInputRequest extends Request {
   body: TextInputUpdateRequest & {
     updatedBy?: number;
   };
+  user?: AuthUser;
 }
 
 interface DeleteTextInputRequest extends Request {
   params: {
     textInputId: string;
   };
+  user?: AuthUser;
 }
 
 interface GetTextInputsRequest extends Request {
@@ -224,7 +228,7 @@ export function registerTextInputRoutes(app: Express) {
       WebSocketService.broadcastToSession(textInput.sessionId, {
         type: 'text_input_deleted',
         payload: { textInputId },
-        userId: '1', // System user for deletions
+        userId: (request.user as AuthUser)?.id?.toString() || 'system', // Use actual user ID who performed the deletion
         sessionId: textInput.sessionId,
         timestamp: Date.now(),
       });

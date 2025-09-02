@@ -283,7 +283,7 @@ const VideoConferenceDiagnostics: React.FC<DiagnosticProps> = ({ jobId, onRetry 
           Video Conference Diagnostics
         </CardTitle>
         <div className="flex gap-4 text-sm">
-          <span className="text-green-600">✅ Passed: {passedTests}</span>
+          <span className="text-blue-600">✅ Passed: {passedTests}</span>
           <span className="text-yellow-600">⚠️ Warnings: {warningTests}</span>
           <span className="text-red-600">❌ Failed: {failedTests}</span>
         </div>

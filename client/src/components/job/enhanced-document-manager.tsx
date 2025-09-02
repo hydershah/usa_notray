@@ -236,7 +236,7 @@ export default function EnhancedDocumentManager({
       case 'ready':
         return <FileCheck className="h-4 w-4 text-green-500" />;
       case 'signed':
-        return <CheckCircle className="h-4 w-4 text-green-600" />;
+        return <CheckCircle className="h-4 w-4 text-blue-600" />;
       default:
         return <File className="h-4 w-4 text-gray-500" />;
     }

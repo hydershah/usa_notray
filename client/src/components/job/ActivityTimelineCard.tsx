@@ -103,7 +103,7 @@ export function ActivityTimelineCard({ jobId }: ActivityTimelineCardProps) {
 
   const getActionColor = (category: string, action: string) => {
     if (action.includes('approve') || action.includes('complete')) {
-      return 'text-green-600 bg-green-100';
+      return 'text-blue-600 bg-green-100';
     }
     if (action.includes('reject') || action.includes('delete') || action.includes('cancel')) {
       return 'text-red-600 bg-red-100';

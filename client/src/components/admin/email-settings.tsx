@@ -168,7 +168,7 @@ export function EmailSettings() {
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="postmark" id="postmark" />
                   <Label htmlFor="postmark">Postmark (Recommended)</Label>
-                  <span className="text-sm text-green-600">✨ High deliverability, tracking, analytics</span>
+                  <span className="text-sm text-blue-600">✨ High deliverability, tracking, analytics</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="smtp" id="smtp" />

@@ -253,32 +253,32 @@ const VideoConferenceExample: React.FC<VideoConferenceExampleProps> = ({
                 <tr className="border-b">
                   <td className="py-2 font-medium">Setup Complexity</td>
                   <td className="py-2 text-red-600">Complex signaling server required</td>
-                  <td className="py-2 text-green-600">Simple iframe integration</td>
+                  <td className="py-2 text-blue-600">Simple iframe integration</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-2 font-medium">Recording</td>
                   <td className="py-2 text-orange-600">Custom implementation needed</td>
-                  <td className="py-2 text-green-600">Built-in cloud recording</td>
+                  <td className="py-2 text-blue-600">Built-in cloud recording</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-2 font-medium">Mobile Support</td>
                   <td className="py-2 text-orange-600">Limited browser support</td>
-                  <td className="py-2 text-green-600">Full mobile browser support</td>
+                  <td className="py-2 text-blue-600">Full mobile browser support</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-2 font-medium">Maintenance</td>
                   <td className="py-2 text-red-600">High maintenance overhead</td>
-                  <td className="py-2 text-green-600">Managed service</td>
+                  <td className="py-2 text-blue-600">Managed service</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-2 font-medium">Compliance</td>
                   <td className="py-2 text-orange-600">Self-managed</td>
-                  <td className="py-2 text-green-600">HIPAA & SOC2 compliant</td>
+                  <td className="py-2 text-blue-600">HIPAA & SOC2 compliant</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-2 font-medium">Reliability</td>
                   <td className="py-2 text-orange-600">Depends on implementation</td>
-                  <td className="py-2 text-green-600">Enterprise-grade infrastructure</td>
+                  <td className="py-2 text-blue-600">Enterprise-grade infrastructure</td>
                 </tr>
               </tbody>
             </table>

@@ -60,7 +60,7 @@ export const ParticipantPanel: React.FC<ParticipantPanelProps> = ({
     if (isActive) {
       return <Zap className="h-4 w-4 text-blue-600" />;
     } else if (hasJoined) {
-      return <CheckCircle className="h-4 w-4 text-green-600" />;
+      return <CheckCircle className="h-4 w-4 text-blue-600" />;
     } else {
       return <Clock className="h-4 w-4 text-yellow-600" />;
     }
@@ -203,8 +203,8 @@ export const ParticipantPanel: React.FC<ParticipantPanelProps> = ({
                     
                     {/* Audio/Video indicators (placeholder for future video integration) */}
                     <div className="flex items-center gap-1">
-                      <Mic className="h-3 w-3 text-green-600" />
-                      <Video className="h-3 w-3 text-green-600" />
+                      <Mic className="h-3 w-3 text-blue-600" />
+                      <Video className="h-3 w-3 text-blue-600" />
                     </div>
                   </div>
                 </div>

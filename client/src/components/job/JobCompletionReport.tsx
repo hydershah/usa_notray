@@ -189,7 +189,7 @@ export function JobCompletionReport({ jobId, jobStatus, minimal = false }: JobCo
           </div>
         ) : hasReport ? (
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-green-600 text-sm">
+            <div className="flex items-center gap-2 text-blue-600 text-sm">
               <CheckCircle className="h-4 w-4" />
               <span>Available</span>
             </div>
@@ -243,7 +243,7 @@ export function JobCompletionReport({ jobId, jobStatus, minimal = false }: JobCo
           </div>
         ) : hasReport ? (
           <div className="space-y-4">
-            <div className="flex items-center gap-2 text-green-600">
+            <div className="flex items-center gap-2 text-blue-600">
               <CheckCircle className="h-4 w-4" />
               <span>Completion report is available</span>
             </div>

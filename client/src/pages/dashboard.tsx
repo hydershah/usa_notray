@@ -148,7 +148,7 @@ function CompanyUserDashboard() {
                       <p className="text-sm font-medium text-gray-600">Completed</p>
                       <p className="text-3xl font-bold text-gray-900 mt-2">{stats?.completedJobs || 0}</p>
                     </div>
-                    <CheckCircle className="h-8 w-8 text-green-600" />
+                    <CheckCircle className="h-8 w-8 text-blue-600" />
                   </div>
                 </CardContent>
               </Card>
@@ -448,7 +448,7 @@ function SignerDashboard() {
         </Alert>
       ) : (
         <Alert className="border-green-200 bg-green-50">
-          <CheckCircle className="h-4 w-4 text-green-600" />
+          <CheckCircle className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-green-800">
             <strong>Verification Complete:</strong> You're ready to sign documents!
           </AlertDescription>
@@ -644,7 +644,7 @@ function SignerDashboard() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <UserCheck className="h-5 w-5 text-green-600" />
+                <UserCheck className="h-5 w-5 text-blue-600" />
                 <div>
                   <p className="font-medium">Identity Verification</p>
                   <p className="text-sm text-gray-600">Confirm your identity before signing</p>
@@ -888,7 +888,7 @@ function WitnessDashboard() {
         </Alert>
       ) : (
         <Alert className="border-green-200 bg-green-50">
-          <CheckCircle className="h-4 w-4 text-green-600" />
+          <CheckCircle className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-green-800">
             <strong>Verification Complete:</strong> You're ready to participate in notarization sessions!
           </AlertDescription>
@@ -968,7 +968,7 @@ function WitnessDashboard() {
             >
               <Link to="/profile">
                 <div className="p-3 rounded-lg bg-green-100">
-                  <User className="h-8 w-8 text-green-600" />
+                  <User className="h-8 w-8 text-blue-600" />
                 </div>
                 <div className="text-center">
                   <h3 className="font-medium text-gray-900">Profile Settings</h3>
@@ -988,7 +988,7 @@ function WitnessDashboard() {
               disabled={profile?.isVerified}
             >
               <div className={`p-3 rounded-lg ${profile?.isVerified ? 'bg-green-100' : 'bg-orange-100'}`}>
-                <Shield className={`h-8 w-8 ${profile?.isVerified ? 'text-green-600' : 'text-orange-600'}`} />
+                <Shield className={`h-8 w-8 ${profile?.isVerified ? 'text-blue-600' : 'text-orange-600'}`} />
               </div>
               <div className="text-center">
                 <h3 className="font-medium text-gray-900">
@@ -1014,7 +1014,7 @@ function WitnessDashboard() {
                   {profile?.isVerified ? 'Verified' : 'Pending'}
                 </p>
               </div>
-              <Shield className={`h-8 w-8 ${profile?.isVerified ? 'text-green-600' : 'text-orange-600'}`} />
+              <Shield className={`h-8 w-8 ${profile?.isVerified ? 'text-blue-600' : 'text-orange-600'}`} />
             </div>
           </CardContent>
         </Card>
@@ -1057,7 +1057,7 @@ function WitnessDashboard() {
         </Alert>
       ) : (
         <Alert className="border-green-200 bg-green-50">
-          <CheckCircle className="h-4 w-4 text-green-600" />
+          <CheckCircle className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-green-800">
             <strong>Ready to Witness:</strong> Your identity is verified. You can now participate in notarization sessions.
             <Link to="/jobs" className="ml-1 underline font-medium">View available sessions →</Link>
@@ -1080,7 +1080,7 @@ function WitnessDashboard() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <UserCheck className="h-5 w-5 text-green-600" />
+                <UserCheck className="h-5 w-5 text-blue-600" />
                 <div>
                   <p className="font-medium">Verify Signer Identity</p>
                   <p className="text-sm text-gray-600">Confirm the identity of document signers</p>

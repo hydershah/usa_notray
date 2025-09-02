@@ -392,7 +392,7 @@ export default function JobRequestPage() {
                     <Card className="border-gray-200">
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-lg">
-                          <Calendar className="h-5 w-5 text-green-600" />
+                          <Calendar className="h-5 w-5 text-blue-600" />
                           Quick Actions
                         </CardTitle>
                         <CardDescription>

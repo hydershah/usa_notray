@@ -683,7 +683,7 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
                         {doc.uploadStatus === 'error' ? (
                           <AlertCircle className="h-4 w-4 text-red-600" />
                         ) : doc.uploadStatus === 'completed' ? (
-                          <CheckCircle className="h-4 w-4 text-green-600" />
+                          <CheckCircle className="h-4 w-4 text-blue-600" />
                         ) : (
                           <File className="h-4 w-4 text-blue-600" />
                         )}
@@ -701,7 +701,7 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
                             <span className="text-red-600">{doc.errorMessage}</span>
                           )}
                           {doc.uploadStatus === 'completed' && (
-                            <span className="text-green-600">Uploaded successfully</span>
+                            <span className="text-blue-600">Uploaded successfully</span>
                           )}
                         </div>
                         {doc.uploadStatus === 'uploading' && doc.uploadProgress !== undefined && (

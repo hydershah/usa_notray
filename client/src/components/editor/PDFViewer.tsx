@@ -2294,7 +2294,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         <div className="flex items-center gap-2">
           <div className="text-sm text-gray-700 bg-gray-100 px-3 py-2 rounded-lg">
             📄 Page {viewer.currentPage} of {viewer.totalPages}
-            {tags.length > 0 && <span className="ml-3 text-green-600">• {tags.length} tags</span>}
+            {tags.length > 0 && <span className="ml-3 text-blue-600">• {tags.length} tags</span>}
           </div>
           
           {/* Sync Button - Only for notaries in signing mode */}
@@ -2385,7 +2385,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                 <div className="text-sm text-gray-600 font-medium mb-3 flex items-center justify-between">
                   <span>Page {pageNumber}</span>
                   {pageTags.length > 0 && (
-                    <span className="text-green-600 text-xs bg-green-50 px-2 py-1 rounded-full">
+                    <span className="text-blue-600 text-xs bg-green-50 px-2 py-1 rounded-full">
                       {pageTags.length} tags
                     </span>
                   )}

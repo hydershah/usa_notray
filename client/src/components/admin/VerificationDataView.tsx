@@ -148,7 +148,7 @@ export function VerificationDataView({
 
   const getVerificationStatusBadge = (status: string, isVerified: boolean) => {
     if (isVerified && status === 'verified') {
-      return <Badge variant="default" className="bg-green-100 text-green-800 border-green-300">
+      return <Badge variant="default" className="bg-blue-100 text-blue-800 border-blue-300">
         <CheckCircle className="w-3 h-3 mr-1" />
         Verified
       </Badge>;
@@ -176,14 +176,14 @@ export function VerificationDataView({
 
   const getConfidenceColor = (confidence?: number) => {
     if (!confidence) return 'text-gray-500';
-    if (confidence >= 90) return 'text-green-600';
+    if (confidence >= 90) return 'text-blue-600';
     if (confidence >= 75) return 'text-yellow-600';
     return 'text-red-600';
   };
 
   const getBiometricStatusIcon = (result?: boolean, confidence?: number) => {
     if (result === true && confidence && confidence >= 75) {
-      return <CheckCircle className="w-4 h-4 text-green-600" />;
+      return <CheckCircle className="w-4 h-4 text-blue-600" />;
     }
     if (result === false || (confidence && confidence < 75)) {
       return <XCircle className="w-4 h-4 text-red-600" />;
@@ -479,7 +479,7 @@ export function VerificationDataView({
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium">Overall Score</span>
                     {verificationData.evsVerificationConfidence && verificationData.evsVerificationConfidence >= 75 ? (
-                      <CheckCircle className="w-4 h-4 text-green-600" />
+                      <CheckCircle className="w-4 h-4 text-blue-600" />
                     ) : (
                       <XCircle className="w-4 h-4 text-red-600" />
                     )}

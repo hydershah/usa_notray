@@ -675,7 +675,7 @@ export function AdminNotaries() {
                                 size="sm"
                                 onClick={() => handleToggleStatus(notary)}
                                 title={notary.isActive === false ? 'Activate notary' : 'Deactivate notary'}
-                                className={notary.isActive === false ? 'text-green-600' : 'text-red-600'}
+                                className={notary.isActive === false ? 'text-blue-600' : 'text-red-600'}
                               >
                                 {notary.isActive === false ? <UserCheck className="h-4 w-4" /> : <UserX className="h-4 w-4" />}
                               </Button>

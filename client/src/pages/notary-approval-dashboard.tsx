@@ -512,7 +512,7 @@ export default function NotaryApprovalDashboard() {
                                       setSelectedApproval(item);
                                       handleProcessApproval('approve');
                                     }}
-                                    className="text-green-600 hover:text-green-700"
+                                    className="text-blue-600 hover:text-green-700"
                                   >
                                     <CheckCircle className="h-4 w-4" />
                                   </Button>

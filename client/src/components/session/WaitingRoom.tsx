@@ -119,7 +119,7 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
   const getConnectionIcon = (status?: string) => {
     switch (status) {
       case 'connected':
-        return <Wifi className="h-3 w-3 text-green-600" />;
+        return <Wifi className="h-3 w-3 text-blue-600" />;
       case 'connecting':
         return <Clock className="h-3 w-3 text-yellow-600 animate-pulse" />;
       default:
@@ -341,7 +341,7 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
                   <span className="text-sm">Participant Verification</span>
                   <div className="flex items-center gap-2">
                     {allVerified ? (
-                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <CheckCircle className="h-4 w-4 text-blue-600" />
                     ) : (
                       <Clock className="h-4 w-4 text-yellow-600" />
                     )}
@@ -362,7 +362,8 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
             <Button
               onClick={handleStartSession}
               disabled={!readyToStart || !canStart}
-              className={`w-full ${readyToStart ? 'bg-green-600 hover:bg-green-700' : ''}`}
+              variant={readyToStart ? 'success' : 'secondary'}
+              className="w-full"
               size="lg"
             >
               <Play className="h-4 w-4 mr-2" />

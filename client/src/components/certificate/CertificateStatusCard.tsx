@@ -224,7 +224,7 @@ const CertificateStatusCard: React.FC<CertificateStatusCardProps> = ({
           </div>
           
           <div className="text-center p-3 bg-green-50 rounded-lg">
-            <div className="text-2xl font-bold text-green-600">
+            <div className="text-2xl font-bold text-blue-600">
               {verification.summary.withValidCertificates}
             </div>
             <div className="text-sm text-green-700">Valid Certificates</div>
