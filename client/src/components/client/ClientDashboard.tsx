@@ -454,7 +454,7 @@ export function ClientDashboard() {
             </div>
             <Button onClick={() => setLocation('/jobs/create')}>
               <Plus className="h-4 w-4 mr-2" />
-               New Job
+               Create New Job
             </Button>
           </div>
 
