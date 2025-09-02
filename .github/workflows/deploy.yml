@@ -162,6 +162,14 @@ jobs:
               echo \"✅ Client files structure fixed\"
             fi
             
+            # Create client/dist symlink pointing to dist/public for server compatibility
+            if [ -d \"dist/public\" ] && [ ! -d \"client/dist\" ]; then
+              echo \"📂 Creating client/dist symlink for server compatibility...\"
+              mkdir -p client
+              ln -sf ../dist/public client/dist
+              echo \"✅ client/dist -> dist/public symlink created\"
+            fi
+            
             # Create necessary directories
             mkdir -p uploads certificates logs
             chmod 755 uploads certificates logs
