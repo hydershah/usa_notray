@@ -91,6 +91,10 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
     // User Switching Shortcuts
     if (key === '`' || key === '~' || key === '0') {
       event.preventDefault();
+      
+      // If no tag type is currently selected, auto-select 'A' (Name tag) when switching to notary
+      const shouldAutoSelectNameTag = !selectedTagType;
+      
       if (onUserSwitch) {
         onUserSwitch(0); // 0 for notary
       } else {
@@ -100,6 +104,17 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
           setSelectedUser(notary);
         }
       }
+      
+      // Auto-select Name tag ('A') if no tag was previously selected
+      if (shouldAutoSelectNameTag) {
+        if (onTagTypeSelect) {
+          onTagTypeSelect('A');
+        } else {
+          setSelectedTagType('A');
+        }
+        console.log('🎯 Auto-selected notary with Name tag (A)');
+      }
+      
       return;
     }
 
@@ -107,6 +122,10 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
     if (/^[1-8]$/.test(key)) {
       event.preventDefault();
       const userIndex = parseInt(key);
+      
+      // If no tag type is currently selected, auto-select 'A' (Name tag) when switching users
+      const shouldAutoSelectNameTag = !selectedTagType;
+      
       if (onUserSwitch) {
         onUserSwitch(userIndex);
       } else {
@@ -117,6 +136,17 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
           setSelectedUser(signers[signerIndex]);
         }
       }
+      
+      // Auto-select Name tag ('A') if no tag was previously selected
+      if (shouldAutoSelectNameTag) {
+        if (onTagTypeSelect) {
+          onTagTypeSelect('A');
+        } else {
+          setSelectedTagType('A');
+        }
+        console.log(`🎯 Auto-selected user ${userIndex} with Name tag (A)`);
+      }
+      
       return;
     }
 
@@ -149,13 +179,16 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
           return;
         }
 
-        // Always default to notary for hotkey tag placement
-        const notary = participants.find(p => p.userType === 'notary');
-        if (notary && (!selectedUser || selectedUser.userType !== 'notary')) {
-          setSelectedUser(notary);
+        // Only default to notary if NO user is currently selected
+        // If a user is already selected, respect that selection
+        if (!selectedUser) {
+          const notary = participants.find(p => p.userType === 'notary');
+          if (notary) {
+            setSelectedUser(notary);
+          }
         }
         
-        // Check if user has permission for this tag type based on the effective user type
+        // Check if current user has permission for this tag type
         const effectiveUserType = selectedUser?.userType || 'notary';
         const hasPermission = checkTagPermission(tagType, effectiveUserType);
         
@@ -166,6 +199,9 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
             // Fallback to direct store manipulation
             setSelectedTagType(tagType);
           }
+          console.log(`🎯 Selected tag ${tagType} for user: ${selectedUser?.displayName || 'Unknown'} (${effectiveUserType})`);
+        } else {
+          console.warn(`❌ User ${effectiveUserType} doesn't have permission for tag type ${tagType}`);
         }
         return;
       }

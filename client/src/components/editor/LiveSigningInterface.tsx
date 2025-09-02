@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useWebSocket } from '@/hooks/editor/useWebSocket';
 import { useEditorStore } from '@/hooks/editor/useEditorStore';
+import { useLocation } from 'wouter';
 import { 
   Play, 
   Pause, 
@@ -13,7 +14,8 @@ import {
   Clock,
   CheckCircle,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Home
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/auth';
 import { NotaryVideoSession } from '@/components/video';
@@ -81,6 +83,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
 }) => {
   const { toast } = useToast();
   const isMobile = useIsMobile();
+  const [, setLocation] = useLocation();
   
   // State management
   const [liveSession, setLiveSession] = useState<LiveSessionState>({
@@ -872,6 +875,17 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
           </div>
           
           <div className="flex items-center gap-2">
+            {/* Dashboard Button */}
+            <Button
+              onClick={() => setLocation('/dashboard')}
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2"
+            >
+              <Home className="h-4 w-4" />
+              <span className="hidden sm:inline">Dashboard</span>
+            </Button>
+            
             {renderSessionControls()}
             
             {/* Video and Participants buttons removed */}

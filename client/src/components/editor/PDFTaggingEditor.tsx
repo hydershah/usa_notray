@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState, useRef, useMemo, useImperativeHandle } from 'react';
 import { PDFViewer } from './PDFViewer';
 import { TaggingToolbar } from './TaggingToolbar';
+import { useLocation } from 'wouter';
+import { Home } from 'lucide-react';
 
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
 import { HotkeyHandler } from './HotkeyHandler';
@@ -92,6 +94,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
   const signatureChoiceRef = useRef<Map<string, { type: 'signature'; value: string }>>(new Map());
   
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
 
   // Tag operations with batching and debouncing
   const {
@@ -1651,10 +1654,20 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Simplified Header */}
       <div className="bg-white border-b px-4 py-3 shadow-sm">
-        <div className="flex items-center justify-end">
-          {/* Complete Button for Tagging Mode */}
-          {mode === 'tagging' && (
-              <button
+        <div className="flex items-center justify-between">
+          {/* Dashboard Button */}
+          <button
+            onClick={() => setLocation('/dashboard')}
+            className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors text-sm"
+          >
+            <Home className="h-4 w-4" />
+            <span className="hidden sm:inline">Dashboard</span>
+          </button>
+          
+          <div className="flex items-center gap-2">
+            {/* Complete Button for Tagging Mode */}
+            {mode === 'tagging' && (
+                <button
                 onClick={async () => {
                   if (!sessionId || isCompleting) return;
                   
@@ -1708,7 +1721,8 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
               >
                 {isCompleting ? 'Completing...' : 'Complete Tagging'}
               </button>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
