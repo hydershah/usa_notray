@@ -67,7 +67,8 @@ module.exports = {
     pre_deploy: 'npm run build',
     
     // Post-deploy hooks
-    post_deploy: 'npm install && npm run db:migrate && pm2 reload ecosystem.config.js --env production',
+    // Ensure server installs deps, builds, then starts with the correct ecosystem file
+    post_deploy: 'npm ci && npm run build && npm run db:migrate && pm2 startOrReload ecosystem.config.cjs --env production',
     
     // Environment-specific overrides
     env_production: {
@@ -86,7 +87,7 @@ module.exports = {
       repo: 'your-git-repo-url',
       path: '/opt/usa_notray',
       'pre-deploy-local': 'npm run build',
-      'post-deploy': 'npm install && npm run db:migrate && pm2 reload ecosystem.config.js --env production',
+      'post-deploy': 'npm ci && npm run build && npm run db:migrate && pm2 startOrReload ecosystem.config.cjs --env production',
       'pre-setup': 'mkdir -p /opt/usa_notray/logs'
     },
     staging: {
@@ -96,7 +97,7 @@ module.exports = {
       repo: 'your-git-repo-url',
       path: '/opt/usa_notray-staging',
       'pre-deploy-local': 'npm run build',
-      'post-deploy': 'npm install && npm run db:migrate && pm2 reload ecosystem.config.js --env staging',
+      'post-deploy': 'npm ci && npm run build && npm run db:migrate && pm2 startOrReload ecosystem.config.cjs --env staging',
       'pre-setup': 'mkdir -p /opt/usa_notray/logs'
     }
   }

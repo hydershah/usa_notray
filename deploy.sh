@@ -78,7 +78,7 @@ fi
 
 # Start the application with PM2
 print_status "Starting application with PM2..."
-pm2 start ecosystem.config.js --env $ENV
+pm2 start ecosystem.config.cjs --env $ENV
 
 # Save PM2 configuration
 print_status "Saving PM2 configuration..."
