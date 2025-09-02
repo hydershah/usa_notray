@@ -171,8 +171,8 @@ export default function RegisterUser() {
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50">
       {/* Left Side - Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-gray-900 via-black to-gray-900 relative overflow-hidden">
-        <div className="absolute inset-0 bg-black/20" />
+      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden" style={{background: 'linear-gradient(to bottom right, #00335B, #001a2e, #00335B)'}}>
+        <div className="absolute inset-0" style={{backgroundColor: 'rgba(0, 51, 91, 0.2)'}} />
         <div className="relative z-10 flex flex-col justify-center items-center text-white p-12">
           <div className="text-center max-w-lg">
             <div className="mb-8">

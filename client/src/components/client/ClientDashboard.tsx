@@ -172,12 +172,12 @@ export function ClientDashboard() {
 
   const StatCard = ({ title, value, icon: Icon, description, trend, color = "blue" }: any) => {
     const colorClasses = {
-      blue: "from-blue-500 to-blue-600",
+      blue: "from-primary to-primary",
       slate: "from-slate-500 to-slate-600",
-      navy: "from-slate-700 to-slate-800",
+      navy: "from-primary to-primary",
       orange: "from-orange-500 to-orange-600",
       red: "from-red-500 to-red-600",
-      indigo: "from-indigo-500 to-indigo-600"
+      indigo: "from-primary to-primary"
     };
 
     return (
@@ -189,7 +189,7 @@ export function ClientDashboard() {
               <div className="flex items-baseline gap-2">
                 <p className="text-3xl font-bold text-gray-900">{value}</p>
                 {trend && (
-                  <div className="text-sm font-medium text-blue-600">
+                  <div className="text-sm font-medium text-primary">
                     {trend}
                   </div>
                 )}
@@ -210,7 +210,7 @@ export function ClientDashboard() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading your dashboard...</p>
         </div>
       </div>

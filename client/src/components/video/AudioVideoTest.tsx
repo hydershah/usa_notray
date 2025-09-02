@@ -547,7 +547,7 @@ export const AudioVideoTest: React.FC<AudioVideoTestProps> = ({
         )}
         
         {currentStep === 'complete' && (
-          <Button onClick={handleComplete} className="flex-1 bg-green-600 hover:bg-green-700">
+          <Button onClick={handleComplete} className="flex-1 text-white" style={{backgroundColor: '#00335b'}} onMouseEnter={(e) => e.target.style.backgroundColor = '#002347'} onMouseLeave={(e) => e.target.style.backgroundColor = '#00335b'}>
             <CheckCircle className="h-4 w-4 mr-2" />
             Complete Setup
           </Button>

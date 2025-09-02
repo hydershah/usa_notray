@@ -151,7 +151,7 @@ export const ParticipantPanel: React.FC<ParticipantPanelProps> = ({
                 key={participant.id}
                 className={`p-3 rounded-lg border transition-all duration-200 ${
                   isActiveUser 
-                    ? 'bg-blue-50 border-blue-200 shadow-sm' 
+                    ? 'bg-primary/10 border-primary/20 shadow-sm' 
                     : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
                 }`}
               >

@@ -9,8 +9,8 @@
   --card-foreground: hsl(240 10% 3.9%);
   --popover: hsl(0 0% 100%);
   --popover-foreground: hsl(240 10% 3.9%);
-  --primary: hsl(207 90% 54%);
-  --primary-foreground: hsl(60 9.1% 97.8%);
+  --primary: hsl(212 100% 18%);
+  --primary-foreground: hsl(0 0% 100%);
   --secondary: hsl(240 4.8% 95.9%);
   --secondary-foreground: hsl(240 5.9% 10%);
   --muted: hsl(240 4.8% 95.9%);
@@ -29,8 +29,8 @@
   --warning-foreground: hsl(48 96% 12%);
   --sidebar-background: hsl(240 10% 3.9%);
   --sidebar-foreground: hsl(0 0% 98%);
-  --sidebar-primary: hsl(207 90% 54%);
-  --sidebar-primary-foreground: hsl(60 9.1% 97.8%);
+  --sidebar-primary: hsl(212 100% 18%);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
   --sidebar-accent: hsl(240 3.7% 15.9%);
   --sidebar-accent-foreground: hsl(0 0% 98%);
   --sidebar-border: hsl(240 3.7% 15.9%);
@@ -44,8 +44,8 @@
   --card-foreground: hsl(0 0% 98%);
   --popover: hsl(240 10% 3.9%);
   --popover-foreground: hsl(0 0% 98%);
-  --primary: hsl(207 90% 54%);
-  --primary-foreground: hsl(60 9.1% 97.8%);
+  --primary: hsl(212 100% 18%);
+  --primary-foreground: hsl(0 0% 100%);
   --secondary: hsl(240 3.7% 15.9%);
   --secondary-foreground: hsl(0 0% 98%);
   --muted: hsl(240 3.7% 15.9%);
@@ -63,8 +63,8 @@
   --warning-foreground: hsl(48 96% 12%);
   --sidebar-background: hsl(0 0% 100%);
   --sidebar-foreground: hsl(240 5.3% 26.1%);
-  --sidebar-primary: hsl(207 90% 54%);
-  --sidebar-primary-foreground: hsl(210 100% 98%);
+  --sidebar-primary: hsl(212 100% 18%);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
   --sidebar-accent: hsl(60 4.8% 95.9%);
   --sidebar-accent-foreground: hsl(24 9.8% 10%);
   --sidebar-border: hsl(20 5.9% 90%);
@@ -190,7 +190,11 @@
 
   /* Gradient text */
   .gradient-text {
-    @apply bg-gradient-to-r from-blue-600 to-slate-700 bg-clip-text text-transparent;
+    background: linear-gradient(to right, #00335B, #1e293b);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
   }
 }
 

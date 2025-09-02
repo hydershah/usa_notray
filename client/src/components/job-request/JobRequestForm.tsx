@@ -751,7 +751,10 @@ export function JobRequestForm({ onSuccess, editData }: JobRequestFormProps) {
           <Button
             type="submit"
             disabled={isSubmitting || isUploading}
-            className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors duration-200 shadow-sm"
+            className="w-full h-11 text-white font-semibold rounded-lg transition-colors duration-200 shadow-sm" 
+            style={{backgroundColor: '#00335b'}} 
+            onMouseEnter={(e) => e.target.style.backgroundColor = '#002347'} 
+            onMouseLeave={(e) => e.target.style.backgroundColor = '#00335b'}
           >
             {isSubmitting ? (
               <>

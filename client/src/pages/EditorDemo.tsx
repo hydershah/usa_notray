@@ -101,11 +101,11 @@ const EditorDemo: React.FC = () => {
   return (
     <div className="h-screen bg-gray-100">
       {/* Demo Controls */}
-      <div className="bg-blue-600 text-white p-4">
+      <div className="bg-primary text-primary-foreground p-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold">PDF Tagging Editor - Demo</h1>
-            <p className="text-blue-100 text-sm">
+            <p className="text-primary-foreground/80 text-sm">
               Interactive demo of the Digital Notary PDF tagging system
             </p>
           </div>
@@ -118,7 +118,7 @@ const EditorDemo: React.FC = () => {
             
             <button
               onClick={handleModeSwitch}
-              className="px-4 py-2 bg-white text-blue-600 rounded-lg hover:bg-blue-50 transition-colors font-medium"
+              className="px-4 py-2 bg-white text-primary rounded-lg hover:bg-primary/5 transition-colors font-medium"
             >
               Switch to {currentMode === 'tagging' ? 'Notary' : 'Tagging'} Mode
             </button>

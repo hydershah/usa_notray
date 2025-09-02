@@ -1022,9 +1022,9 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                     currentStep > step.id 
                       ? 'bg-gray-700 text-white shadow-lg' 
                       : currentStep === step.id 
-                        ? 'bg-gray-900 text-white shadow-lg ring-4 ring-gray-200' 
+                        ? 'text-white shadow-lg ring-4 ring-gray-200' 
                         : 'bg-gray-200 text-gray-600'
-                  }`}>
+                  }`} style={currentStep === step.id ? {backgroundColor: '#00335b'} : {}}>
                     {currentStep > step.id ? (
                       <CheckCircle className="w-6 h-6" />
                     ) : (
@@ -1033,7 +1033,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                     
                     {/* Pulse animation for current step */}
                     {currentStep === step.id && (
-                      <div className="absolute inset-0 rounded-full bg-gray-900 animate-ping opacity-25"></div>
+                      <div className="absolute inset-0 rounded-full animate-ping opacity-25" style={{backgroundColor: '#00335b'}}></div>
                     )}
                   </div>
                   
@@ -1065,8 +1065,8 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
           {/* Progress Bar */}
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div 
-              className="bg-gray-900 h-2 rounded-full transition-all duration-500 ease-out"
-              style={{ width: `${progress}%` }}
+              className="h-2 rounded-full transition-all duration-500 ease-out" 
+              style={{backgroundColor: '#00335b', width: `${progress}%`}}
             ></div>
           </div>
         </div>
@@ -1482,7 +1482,10 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                         type="button" 
                         onClick={handleAddSigner} 
                         size={singlePage ? "sm" : undefined}
-                        className={singlePage ? "bg-gray-900 hover:bg-gray-800 text-white" : "bg-gray-900 hover:bg-gray-800 text-white shadow-md"}
+                        className={singlePage ? "text-white" : "text-white shadow-md"}
+                        style={{backgroundColor: '#00335b'}} 
+                        onMouseEnter={(e) => e.target.style.backgroundColor = '#002347'} 
+                        onMouseLeave={(e) => e.target.style.backgroundColor = '#00335b'}
                       >
                         <Plus className="h-4 w-4 mr-2" />
                         Add Participant
@@ -1494,7 +1497,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                       singlePage ? (
                         <div className="flex items-center justify-between p-2 border rounded">
                           <span className="text-sm text-gray-600">No participants yet</span>
-                          <Button type="button" size="sm" onClick={handleAddSigner} className="bg-gray-900 hover:bg-gray-800 text-white">
+                          <Button type="button" size="sm" onClick={handleAddSigner} className="text-white" style={{backgroundColor: '#00335b'}} onMouseEnter={(e) => e.target.style.backgroundColor = '#002347'} onMouseLeave={(e) => e.target.style.backgroundColor = '#00335b'}>
                             <Plus className="h-4 w-4 mr-2" /> Add
                           </Button>
                         </div>
@@ -1503,7 +1506,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                           <UserIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                           <h3 className="text-lg font-medium text-gray-900 mb-2">No participants added yet</h3>
                           <p className="text-gray-600 mb-6">Click "Add Participant" to add signers and witnesses</p>
-                          <Button type="button" onClick={handleAddSigner} className="bg-gray-900 hover:bg-gray-800 text-white">
+                          <Button type="button" onClick={handleAddSigner} className="text-white" style={{backgroundColor: '#00335b'}} onMouseEnter={(e) => e.target.style.backgroundColor = '#002347'} onMouseLeave={(e) => e.target.style.backgroundColor = '#00335b'}>
                             <Plus className="h-4 w-4 mr-2" /> Add Your First Participant
                           </Button>
                         </div>
@@ -1518,7 +1521,10 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                         <Button 
                           type="button" 
                           onClick={handleAddSigner} 
-                          className="bg-gray-900 hover:bg-gray-800 text-white"
+                          className="text-white"
+                          style={{backgroundColor: '#00335b'}} 
+                          onMouseEnter={(e) => e.target.style.backgroundColor = '#002347'} 
+                          onMouseLeave={(e) => e.target.style.backgroundColor = '#00335b'}
                         >
                           <Plus className="h-4 w-4 mr-2" />
                           Add Your First Participant
@@ -1531,7 +1537,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                             <CardHeader className={singlePage ? "py-2 px-3 border-b bg-white" : "bg-gradient-to-r from-gray-50 to-gray-100 border-b"}>
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center">
-                                  <div className={singlePage ? "w-6 h-6 bg-gray-900 rounded-full flex items-center justify-center text-white font-semibold text-xs mr-2" : "w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center text-white font-semibold text-sm mr-3"}>
+                                  <div className={singlePage ? "w-6 h-6 rounded-full flex items-center justify-center text-white font-semibold text-xs mr-2" : "w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm mr-3"} style={{backgroundColor: '#00335b'}}>
                                     {index + 1}
                                   </div>
                                   <div>
@@ -2130,7 +2136,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                           <p className="text-gray-600">Drag and drop files here, or click to browse your computer</p>
                         </div>
                         <input type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" multiple onChange={handleFileUpload} className="hidden" id="file-upload" />
-                        <Button type="button" onClick={() => document.getElementById('file-upload')?.click()} className="bg-gray-900 hover:bg-gray-800 text-white px-8 py-3 text-lg">
+                        <Button type="button" onClick={() => document.getElementById('file-upload')?.click()} className="text-white px-8 py-3 text-lg" style={{backgroundColor: '#00335b'}} onMouseEnter={(e) => e.target.style.backgroundColor = '#002347'} onMouseLeave={(e) => e.target.style.backgroundColor = '#00335b'}>
                           <Plus className="h-5 w-5 mr-3" /> Select Documents
                         </Button>
                         <p className="text-sm text-gray-500 mt-4">Supported formats: PDF, DOC, DOCX, JPG, PNG • Maximum 10MB per file</p>
@@ -2248,7 +2254,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                             <div key={index} className="p-4 bg-gray-50 rounded-lg border">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center">
-                                  <div className="w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center text-white font-semibold text-sm mr-3">
+                                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm mr-3" style={{backgroundColor: '#00335b'}}>
                                     {index + 1}
                                   </div>
                                   <div>
@@ -2358,7 +2364,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                           e.stopPropagation();
                           handleNext();
                         }}
-                        className="px-6 py-3 bg-gray-900 hover:bg-gray-800 text-white shadow-lg hover:shadow-xl transition-shadow"
+                        className="px-6 py-3 text-white shadow-lg hover:shadow-xl transition-shadow" style={{backgroundColor: '#00335b'}} onMouseEnter={(e) => e.target.style.backgroundColor = '#002347'} onMouseLeave={(e) => e.target.style.backgroundColor = '#00335b'}
                       >
                         Next Step
                         <ArrowRight className="h-4 w-4 ml-2" />
@@ -2367,7 +2373,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                       <Button 
                         type="submit" 
                         disabled={createJobMutation.isPending || isSubmitting}
-                        className="px-8 py-3 bg-gray-900 hover:bg-gray-800 text-white shadow-lg hover:shadow-xl transition-all disabled:opacity-50"
+                        className="px-8 py-3 text-white shadow-lg hover:shadow-xl transition-all disabled:opacity-50" style={{backgroundColor: '#00335b'}} onMouseEnter={(e) => !e.target.disabled && (e.target.style.backgroundColor = '#002347')} onMouseLeave={(e) => !e.target.disabled && (e.target.style.backgroundColor = '#00335b')}
                       >
                         {createJobMutation.isPending || isSubmitting ? (
                           <div className="flex items-center">

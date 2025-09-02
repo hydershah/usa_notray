@@ -1618,7 +1618,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           accountSetupComplete: !needsPasswordReset // Mark as incomplete if needs password reset
         };
 
-        const result = await storage.registerCompany(companyData, managerData);
+        // Since this is an admin-protected route, companies created here should be auto-approved
+        const adminApprovedCompanyData = {
+          ...companyData,
+          status: 'approved', // Admin-created companies are auto-approved
+          approvedBy: req.user.id, // Track who approved it
+          approvedAt: new Date(),
+          approvalNotes: 'Auto-approved: Created by admin'
+        };
+        
+        const result = await storage.registerCompany(adminApprovedCompanyData, managerData);
         
         console.log(`✅ Company registration completed: ${result.company.companyName} (ID: ${result.company.id}) with manager ${result.manager.email} (ID: ${result.manager.id})`);
         
@@ -3847,7 +3856,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           accountSetupComplete: !needsPasswordReset // Mark as incomplete if needs password reset
         };
 
-        const result = await storage.registerCompany(companyData, managerData);
+        // Since this is an admin-protected route, companies created here should be auto-approved
+        const adminApprovedCompanyData = {
+          ...companyData,
+          status: 'approved', // Admin-created companies are auto-approved
+          approvedBy: req.user.id, // Track who approved it
+          approvedAt: new Date(),
+          approvalNotes: 'Auto-approved: Created by admin'
+        };
+        
+        const result = await storage.registerCompany(adminApprovedCompanyData, managerData);
         
         console.log(`✅ Company registration completed: ${result.company.companyName} (ID: ${result.company.id}) with manager ${result.manager.email} (ID: ${result.manager.id})`);
         

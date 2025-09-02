@@ -252,12 +252,12 @@ export default function Login() {
       
       <div className="space-y-4">
         {/* User Signup */}
-        <Card className="group cursor-pointer hover:shadow-xl transition-all duration-300 border-2 border-gray-200 hover:border-blue-400 hover:bg-blue-50/50">
+        <Card className="group cursor-pointer hover:shadow-md transition-all duration-200 border border-gray-200 hover:border-gray-300">
           <CardContent className="p-6">
             <div className="flex items-center space-x-4">
               <div className="flex-shrink-0">
-                <div className="h-14 w-14 bg-blue-100 group-hover:bg-blue-600 rounded-xl flex items-center justify-center transition-colors duration-300 shadow-sm">
-                  <FileText className="h-7 w-7 text-blue-600 group-hover:text-white transition-colors duration-300" />
+                <div className="h-14 w-14 bg-gray-100 rounded-xl flex items-center justify-center">
+                  <FileText className="h-7 w-7 text-gray-600" />
                 </div>
               </div>
               <div className="flex-1">
@@ -265,7 +265,10 @@ export default function Login() {
                 <p className="text-sm text-gray-600 mb-4">Get your documents notarized quickly and securely</p>
                 <Button 
                   onClick={() => setLocation('/signup/client')}
-                  className="w-full h-11 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium rounded-lg shadow-md transition-all duration-200 transform group-hover:scale-[1.02]"
+                  className="w-full h-11 text-white font-medium rounded-lg transition-colors duration-200"
+                  style={{backgroundColor: '#00335b'}} 
+                  onMouseEnter={(e) => e.target.style.backgroundColor = '#002347'} 
+                  onMouseLeave={(e) => e.target.style.backgroundColor = '#00335b'}
                 >
                   Sign Up as User
                   <ArrowRight className="ml-2 h-4 w-4" />
@@ -276,12 +279,12 @@ export default function Login() {
         </Card>
 
         {/* Notary Signup */}
-        <Card className="group cursor-pointer hover:shadow-xl transition-all duration-300 border-2 border-gray-200 hover:border-green-400 hover:bg-green-50/50">
+        <Card className="group cursor-pointer hover:shadow-md transition-all duration-200 border border-gray-200 hover:border-gray-300">
           <CardContent className="p-6">
             <div className="flex items-center space-x-4">
               <div className="flex-shrink-0">
-                <div className="h-14 w-14 bg-green-100 group-hover:bg-green-600 rounded-xl flex items-center justify-center transition-colors duration-300 shadow-sm">
-                  <NotebookPen className="h-7 w-7 text-blue-600 group-hover:text-white transition-colors duration-300" />
+                <div className="h-14 w-14 bg-gray-100 rounded-xl flex items-center justify-center">
+                  <NotebookPen className="h-7 w-7 text-gray-600" />
                 </div>
               </div>
               <div className="flex-1">
@@ -289,7 +292,10 @@ export default function Login() {
                 <p className="text-sm text-gray-600 mb-4">Join our network of professional notaries</p>
                 <Button 
                   onClick={() => setLocation('/signup/notary')}
-                  className="w-full h-11 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-medium rounded-lg shadow-md transition-all duration-200 transform group-hover:scale-[1.02]"
+                  className="w-full h-11 text-white font-medium rounded-lg transition-colors duration-200"
+                  style={{backgroundColor: '#00335b'}} 
+                  onMouseEnter={(e) => e.target.style.backgroundColor = '#002347'} 
+                  onMouseLeave={(e) => e.target.style.backgroundColor = '#00335b'}
                 >
                   Sign Up as Notary
                   <ArrowRight className="ml-2 h-4 w-4" />
@@ -310,12 +316,12 @@ export default function Login() {
         </div>
 
         {/* Title Company Registration */}
-        <Card className="group cursor-pointer hover:shadow-xl transition-all duration-300 border-2 border-gray-200 hover:border-purple-400 hover:bg-purple-50/50">
+        <Card className="group cursor-pointer hover:shadow-md transition-all duration-200 border border-gray-200 hover:border-gray-300">
           <CardContent className="p-6">
             <div className="flex items-center space-x-4">
               <div className="flex-shrink-0">
-                                 <div className="h-14 w-14 bg-blue-100 group-hover:bg-blue-600 rounded-xl flex items-center justify-center transition-colors duration-300 shadow-sm">
-                   <Building className="h-7 w-7 text-blue-600 group-hover:text-white transition-colors duration-300" />
+                <div className="h-14 w-14 bg-gray-100 rounded-xl flex items-center justify-center">
+                  <Building className="h-7 w-7 text-gray-600" />
                 </div>
               </div>
               <div className="flex-1">
@@ -323,7 +329,10 @@ export default function Login() {
                 <p className="text-sm text-gray-600 mb-4">Create an account for your title company and manage your team</p>
                 <Button 
                   onClick={() => setLocation('/signup/company')}
-                                     className="w-full h-11 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium rounded-lg shadow-md transition-all duration-200 transform group-hover:scale-[1.02]"
+                  className="w-full h-11 text-white font-medium rounded-lg transition-colors duration-200"
+                  style={{backgroundColor: '#00335b'}} 
+                  onMouseEnter={(e) => e.target.style.backgroundColor = '#002347'} 
+                  onMouseLeave={(e) => e.target.style.backgroundColor = '#00335b'}
                 >
                   Register Title Company
                   <ArrowRight className="ml-2 h-4 w-4" />
@@ -350,8 +359,8 @@ export default function Login() {
     <>
       <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50">
       {/* Left Side - Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-gray-900 via-black to-gray-900 relative overflow-hidden">
-        <div className="absolute inset-0 bg-black/20" />
+      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden" style={{background: 'linear-gradient(to bottom right, #00335B, #001a2e, #00335B)'}}>
+        <div className="absolute inset-0" style={{backgroundColor: 'rgba(0, 51, 91, 0.2)'}} />
         <div className="relative z-10 flex flex-col justify-center items-center text-white p-12">
           <div className="text-center max-w-lg">
             <div className="mb-8">
@@ -585,7 +594,10 @@ export default function Login() {
                   <div className="space-y-4 pt-2">
                     <Button 
                       type="submit" 
-                      className="w-full h-12 bg-gradient-to-r from-gray-900 to-black hover:from-black hover:to-gray-900 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform hover:scale-[1.02] text-base" 
+                      className="w-full h-12 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform hover:scale-[1.02] text-base"
+                      style={{backgroundColor: '#00335b'}} 
+                      onMouseEnter={(e) => e.target.style.backgroundColor = '#002347'} 
+                      onMouseLeave={(e) => e.target.style.backgroundColor = '#00335b'}
                       disabled={isLoading || (requiresTwoFactor && twoFactorCode.length !== 6)}
                     >
                       {isLoading ? (

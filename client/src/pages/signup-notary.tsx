@@ -246,8 +246,8 @@ export default function SignupNotary() {
 
         <Card className="shadow-lg border-0">
           <CardHeader className="text-center pb-6">
-            <div className="mx-auto mb-4 p-3 bg-green-100 rounded-full w-16 h-16 flex items-center justify-center">
-              <Shield className="h-8 w-8 text-blue-600" />
+            <div className="mx-auto mb-4 p-3 bg-gray-100 rounded-full w-16 h-16 flex items-center justify-center">
+              <Shield className="h-8 w-8 text-gray-600" />
             </div>
             <CardTitle className="text-2xl font-bold text-gray-900">Join Our Notary Network</CardTitle>
             <CardDescription className="text-gray-600">
@@ -602,7 +602,10 @@ export default function SignupNotary() {
 
               <Button 
                 type="submit" 
-                className="w-full bg-green-600 hover:bg-green-700" 
+                className="w-full text-white" 
+                style={{backgroundColor: '#00335b'}} 
+                onMouseEnter={(e) => e.target.style.backgroundColor = '#002347'} 
+                onMouseLeave={(e) => e.target.style.backgroundColor = '#00335b'}
                 disabled={isLoading}
               >
                 {isLoading ? 'Submitting Application...' : 'Submit Notary Application'}

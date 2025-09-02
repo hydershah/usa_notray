@@ -187,7 +187,7 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
     hasContent: !!tag.content,
     hasContentData: !!tag.contentData,
     shouldBeTransparent: hasContent,
-    backgroundColorWillBe: hasContent ? 'transparent' : (tag.tagType === 'W' ? '#ffffff' : (tag.colorCode || '#1e40af'))
+    backgroundColorWillBe: hasContent ? 'transparent' : (tag.tagType === 'W' ? '#ffffff' : (tag.colorCode || '#00335B'))
   });
   
   return (
@@ -205,7 +205,7 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
         backgroundColor: hasContent 
           ? 'transparent' 
           : tag.tagType === 'W' ? '#ffffff' : (() => {
-              const hex = tag.colorCode || '#1e40af';
+              const hex = tag.colorCode || '#00335B';
               const r = parseInt(hex.slice(1, 3), 16);
               const g = parseInt(hex.slice(3, 5), 16);
               const b = parseInt(hex.slice(5, 7), 16);

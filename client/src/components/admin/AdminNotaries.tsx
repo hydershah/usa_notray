@@ -417,7 +417,8 @@ export function AdminNotaries() {
       ...formData,
       role: 'notary',
       userType: 'notary', // Required for the register-user endpoint
-      notaryType: formData.notaryType || 'contractor'
+      notaryType: formData.notaryType || 'contractor',
+      registrationSource: 'admin_create' // Explicitly mark as admin-created
     };
 
     if (selectedUser) {

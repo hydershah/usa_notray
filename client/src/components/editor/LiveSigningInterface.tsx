@@ -698,7 +698,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
                 handleSessionAction('start');
               }} 
               size="lg"
-              className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed px-6 py-3 text-base font-semibold transition-all duration-200"
+              className="text-white disabled:bg-gray-400 disabled:cursor-not-allowed px-6 py-3 text-base font-semibold transition-all duration-200" style={{backgroundColor: '#00335b'}} onMouseEnter={(e) => !e.target.disabled && (e.target.style.backgroundColor = '#002347')} onMouseLeave={(e) => !e.target.disabled && (e.target.style.backgroundColor = '#00335b')}
               disabled={buttonDisabled}
               title={
                 !isWebSocketReady ? 'Waiting for connection...' : 

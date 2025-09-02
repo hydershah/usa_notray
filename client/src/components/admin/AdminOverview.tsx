@@ -280,7 +280,7 @@ export function AdminOverview() {
         <div className="flex items-center gap-3">
           <Button 
             onClick={() => setLocation('/admin/approvals')}
-            className="bg-gray-800 hover:bg-gray-900 text-white shadow-lg"
+            className="text-white shadow-lg" style={{backgroundColor: '#00335b'}} onMouseEnter={(e) => e.target.style.backgroundColor = '#002347'} onMouseLeave={(e) => e.target.style.backgroundColor = '#00335b'}
           >
             <Plus className="h-4 w-4 mr-2" />
             Quick Actions
@@ -467,7 +467,7 @@ export function AdminOverview() {
                         <Button
                           size="sm"
                           onClick={() => setLocation('/admin/approvals')}
-                          className="bg-gray-800 hover:bg-gray-900 text-white text-xs px-2 py-0.5 h-6"
+                          className="text-white text-xs px-2 py-0.5 h-6" style={{backgroundColor: '#00335b'}} onMouseEnter={(e) => e.target.style.backgroundColor = '#002347'} onMouseLeave={(e) => e.target.style.backgroundColor = '#00335b'}
                         >
                           Review
                         </Button>
@@ -490,7 +490,7 @@ export function AdminOverview() {
                         <Button
                           size="sm"
                           onClick={() => setLocation('/admin/companies')}
-                          className="bg-gray-800 hover:bg-gray-900 text-white text-xs px-2 py-0.5 h-6"
+                          className="text-white text-xs px-2 py-0.5 h-6" style={{backgroundColor: '#00335b'}} onMouseEnter={(e) => e.target.style.backgroundColor = '#002347'} onMouseLeave={(e) => e.target.style.backgroundColor = '#00335b'}
                         >
                           Review
                         </Button>

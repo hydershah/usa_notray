@@ -287,8 +287,8 @@ export function Sidebar() {
             <div className={cn(
               "p-2 rounded-lg transition-all duration-300",
               isActive && !hasSubsections
-                ? "bg-gray-800 text-white shadow-md" 
-                : "bg-gray-100 text-gray-500 group-hover:bg-gray-200 group-hover:text-gray-700 group-hover:shadow-sm",
+                ? "bg-primary text-primary-foreground shadow-md" 
+                : "bg-gray-100 text-gray-500 group-hover:bg-primary/10 group-hover:text-primary group-hover:shadow-sm",
               level > 0 && "p-1.5"
             )}>
               <Icon className={cn("h-4 w-4", level > 0 && "h-3 w-3")} />
@@ -303,7 +303,7 @@ export function Sidebar() {
           
           <div className="flex items-center gap-2">
             {item.badge && (
-              <span className="bg-gray-800 text-white text-xs font-bold px-2 py-1 rounded-full shadow-sm">
+              <span className="bg-primary text-primary-foreground text-xs font-bold px-2 py-1 rounded-full shadow-sm">
                 {item.badge}
               </span>
             )}

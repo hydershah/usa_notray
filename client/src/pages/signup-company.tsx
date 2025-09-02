@@ -204,8 +204,8 @@ export default function SignupCompany() {
 
         <Card className="shadow-lg border-0">
           <CardHeader className="text-center pb-6">
-            <div className="mx-auto mb-4 p-3 bg-blue-100 rounded-full w-16 h-16 flex items-center justify-center">
-              <Building2 className="h-8 w-8 text-blue-600" />
+            <div className="mx-auto mb-4 p-3 bg-gray-100 rounded-full w-16 h-16 flex items-center justify-center">
+              <Building2 className="h-8 w-8 text-gray-600" />
             </div>
             <CardTitle className="text-2xl font-bold text-gray-900">Register Your Title Company</CardTitle>
             <CardDescription className="text-gray-600">

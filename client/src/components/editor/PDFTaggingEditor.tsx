@@ -1717,7 +1717,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
                   }
                 }}
                 disabled={isCompleting}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                className="px-4 py-2 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium" style={{backgroundColor: '#00335b'}} onMouseEnter={(e) => !e.disabled && (e.target.style.backgroundColor = '#002347')} onMouseLeave={(e) => !e.disabled && (e.target.style.backgroundColor = '#00335b')}
               >
                 {isCompleting ? 'Completing...' : 'Complete Tagging'}
               </button>
