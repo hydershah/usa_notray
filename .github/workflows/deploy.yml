@@ -202,9 +202,10 @@ jobs:
 
             # Clean up any hanging deployment processes first
             echo '🧹 Cleaning up any hanging processes...'
-            pkill -f 'npm.*build' || true
-            pkill -f 'pm2.*logs' || true
-            pkill -f 'bash.*usa_notray' || true
+            pkill -f 'npm.*build' 2>/dev/null || echo 'No npm build processes to kill'
+            pkill -f 'pm2.*logs' 2>/dev/null || echo 'No pm2 log processes to kill'
+            pkill -f 'bash.*usa_notray' 2>/dev/null || echo 'No deployment bash processes to kill'
+            sleep 2
             
             # Ensure PM2 uses the fresh symlink target
             if pm2 describe ${{ env.APP_NAME }} > /dev/null 2>&1; then
