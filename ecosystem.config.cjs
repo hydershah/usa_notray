@@ -2,7 +2,8 @@ module.exports = {
   apps: [{
     name: 'usa-notray',
     script: './dist/index.cjs',
-    cwd: process.cwd(),
+    // Ensure PM2 runs from the deployed release directory
+    cwd: './',
     instances: 1,
     exec_mode: 'fork',
     
