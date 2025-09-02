@@ -43,7 +43,7 @@ const menuItems: MenuItem[] = [
   // Primary actions
   {
     id: 'create-job',
-    label: 'create job',
+    label: 'Create job',
     icon: Plus,
     path: '/create-job',
     roles: ['admin', 'title_company', 'notary'],
