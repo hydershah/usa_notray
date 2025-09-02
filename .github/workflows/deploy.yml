@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  NODE_VERSION: '18'
+  NODE_VERSION: '20.16.x'
   APP_NAME: 'usa-notray'
 
 jobs:
@@ -30,6 +30,16 @@ jobs:
         run: npm run build
         env:
           NODE_ENV: production
+
+      - name: Verify build artifacts
+        run: |
+          if [ ! -f "dist/index.cjs" ]; then
+            echo "❌ dist/index.cjs missing after build. Failing CI."
+            echo "📁 Workspace root contents:" && ls -la | sed -n '1,200p'
+            echo "📁 dist/ contents (if any):" && ls -la dist || true
+            exit 1
+          fi
+          echo "✅ dist/index.cjs present. Proceeding to package."
 
       - name: Setup SSH
         run: |
