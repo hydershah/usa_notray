@@ -1291,55 +1291,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const profileData = req.body;
       
-      // Update user with new profile data
-      const updateData: any = {
-        firstName: profileData.firstName,
-        lastName: profileData.lastName,
-        title: profileData.title,
-        commissionNumber: profileData.commissionNumber,
-        commissionExpiration: profileData.commissionExpiration,
-        state: profileData.state,
-        county: profileData.county,
-        disclosure: profileData.disclosure,
-        phoneNumber: profileData.phoneNumber,
-        address: profileData.address, // Legacy single address field
-        // 🔧 FIX: Add separate address fields for compatibility
-        address1: profileData.address1,
-        address2: profileData.address2,
-        city: profileData.city,
-        zipCode: profileData.zipCode,
-        isActive: profileData.isActive,
-        isNotarySigningAgent: profileData.isNotarySigningAgent,
-        isSpanishSpeaking: profileData.isSpanishSpeaking,
-        notaryType: profileData.notaryType,
+      // Helper function to build partial update object (only include non-undefined fields)
+      const buildPartialUpdate = (data: any) => {
+        const update: any = {};
+        
+        // Only add fields that are explicitly provided (not undefined)
+        if (data.firstName !== undefined) update.firstName = data.firstName;
+        if (data.lastName !== undefined) update.lastName = data.lastName;
+        if (data.title !== undefined) update.title = data.title;
+        if (data.commissionNumber !== undefined) update.commissionNumber = data.commissionNumber;
+        if (data.commissionExpiration !== undefined) update.commissionExpiration = data.commissionExpiration;
+        if (data.state !== undefined) update.state = data.state;
+        if (data.county !== undefined) update.county = data.county;
+        if (data.disclosure !== undefined) update.disclosure = data.disclosure;
+        if (data.phoneNumber !== undefined) update.phoneNumber = data.phoneNumber;
+        if (data.address !== undefined) update.address = data.address;
+        if (data.address1 !== undefined) update.address1 = data.address1;
+        if (data.address2 !== undefined) update.address2 = data.address2;
+        if (data.city !== undefined) update.city = data.city;
+        if (data.zipCode !== undefined) update.zipCode = data.zipCode;
+        if (data.isActive !== undefined) update.isActive = data.isActive;
+        if (data.isNotarySigningAgent !== undefined) update.isNotarySigningAgent = data.isNotarySigningAgent;
+        if (data.isSpanishSpeaking !== undefined) update.isSpanishSpeaking = data.isSpanishSpeaking;
+        if (data.notaryType !== undefined) update.notaryType = data.notaryType;
+        
+        return update;
       };
 
-      // Auto-generate fullName from firstName and lastName if provided
-      if (profileData.firstName || profileData.lastName) {
-        const fullName = [profileData.firstName, profileData.lastName].filter(Boolean).join(' ').trim();
+      // Update user with new profile data (only provided fields)
+      const updateData: any = buildPartialUpdate(profileData);
+
+      // Auto-generate fullName from firstName and lastName if either is provided
+      if (profileData.firstName !== undefined || profileData.lastName !== undefined) {
+        // Get current user data to use existing values if new ones aren't provided
+        const currentUser = await storage.getUser(userId);
+        const firstName = profileData.firstName !== undefined ? profileData.firstName : (currentUser?.firstName || '');
+        const lastName = profileData.lastName !== undefined ? profileData.lastName : (currentUser?.lastName || '');
+        
+        const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
         if (fullName) {
           updateData.fullName = fullName;
         }
       }
 
       // 🔧 FIX: Automatically set accountSetupComplete based on user role and requirements
-      // Use the actual field names from profileData for validation
-      const hasBasicInfo = Boolean(profileData.firstName && profileData.lastName && profileData.phoneNumber);
-      const hasAddress = Boolean(
-        (profileData.address1 && profileData.city && profileData.state && profileData.zipCode) || 
-        profileData.address
-      );
-      
-      // Get current user to check role
+      // For validation, we need to check both new data and existing data since this is a partial update
       const currentUser = await storage.getUser(userId);
+      
+      // Use provided values or fall back to current values for validation
+      const firstName = profileData.firstName !== undefined ? profileData.firstName : currentUser?.firstName;
+      const lastName = profileData.lastName !== undefined ? profileData.lastName : currentUser?.lastName;
+      const phoneNumber = profileData.phoneNumber !== undefined ? profileData.phoneNumber : currentUser?.phoneNumber;
+      const address1 = profileData.address1 !== undefined ? profileData.address1 : currentUser?.address1;
+      const city = profileData.city !== undefined ? profileData.city : currentUser?.city;
+      const state = profileData.state !== undefined ? profileData.state : currentUser?.state;
+      const zipCode = profileData.zipCode !== undefined ? profileData.zipCode : currentUser?.zipCode;
+      const address = profileData.address !== undefined ? profileData.address : currentUser?.address;
+      
+      const hasBasicInfo = Boolean(firstName && lastName && phoneNumber);
+      const hasAddress = Boolean(
+        (address1 && city && state && zipCode) || address
+      );
       
       if (currentUser?.role === 'notary') {
         // For notaries, require additional fields for profile completion
+        // Use provided values or fall back to current values for validation
+        const nameOnCommission = profileData.nameOnCommission !== undefined ? profileData.nameOnCommission : currentUser?.nameOnCommission;
+        const commissionNumber = profileData.commissionNumber !== undefined ? profileData.commissionNumber : currentUser?.commissionNumber;
+        const commissionExpiration = profileData.commissionExpiration !== undefined ? profileData.commissionExpiration : currentUser?.commissionExpiration;
+        const commissionState = profileData.commissionState !== undefined ? profileData.commissionState : currentUser?.commissionState;
+        
         const hasNotaryCredentials = Boolean(
-          profileData.nameOnCommission && 
-          profileData.commissionNumber && 
-          profileData.commissionExpiration &&
-          profileData.commissionState
+          nameOnCommission && 
+          commissionNumber && 
+          commissionExpiration &&
+          commissionState
         );
         
         // Notary profile is complete when they have basic info, address, and notary credentials
@@ -1362,14 +1388,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hasBasicInfo,
         hasAddress,
         accountSetupComplete: updateData.accountSetupComplete,
-        fields: {
-          firstName: profileData.firstName,
-          lastName: profileData.lastName,
-          phoneNumber: profileData.phoneNumber,
-          address1: profileData.address1,
-          city: profileData.city,
-          state: profileData.state,
-          zipCode: profileData.zipCode
+        providedFields: Object.keys(updateData),
+        validationFields: {
+          firstName,
+          lastName,
+          phoneNumber,
+          address1,
+          city,
+          state,
+          zipCode
         }
       });
 
@@ -1501,7 +1528,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             id,
             notary_id as "notaryId",
             stamp_name as "stampType",
-            stamp_image as "stampData", 
+            stamp_data as "stampData", 
             is_active as "isActive",
             created_at as "createdAt",
             updated_at as "updatedAt"
@@ -3518,55 +3545,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const profileData = req.body;
       
-      // Update user with new profile data
-      const updateData: any = {
-        firstName: profileData.firstName,
-        lastName: profileData.lastName,
-        title: profileData.title,
-        commissionNumber: profileData.commissionNumber,
-        commissionExpiration: profileData.commissionExpiration,
-        state: profileData.state,
-        county: profileData.county,
-        disclosure: profileData.disclosure,
-        phoneNumber: profileData.phoneNumber,
-        address: profileData.address, // Legacy single address field
-        // 🔧 FIX: Add separate address fields for compatibility
-        address1: profileData.address1,
-        address2: profileData.address2,
-        city: profileData.city,
-        zipCode: profileData.zipCode,
-        isActive: profileData.isActive,
-        isNotarySigningAgent: profileData.isNotarySigningAgent,
-        isSpanishSpeaking: profileData.isSpanishSpeaking,
-        notaryType: profileData.notaryType,
+      // Helper function to build partial update object (only include non-undefined fields)
+      const buildPartialUpdate = (data: any) => {
+        const update: any = {};
+        
+        // Only add fields that are explicitly provided (not undefined)
+        if (data.firstName !== undefined) update.firstName = data.firstName;
+        if (data.lastName !== undefined) update.lastName = data.lastName;
+        if (data.title !== undefined) update.title = data.title;
+        if (data.commissionNumber !== undefined) update.commissionNumber = data.commissionNumber;
+        if (data.commissionExpiration !== undefined) update.commissionExpiration = data.commissionExpiration;
+        if (data.state !== undefined) update.state = data.state;
+        if (data.county !== undefined) update.county = data.county;
+        if (data.disclosure !== undefined) update.disclosure = data.disclosure;
+        if (data.phoneNumber !== undefined) update.phoneNumber = data.phoneNumber;
+        if (data.address !== undefined) update.address = data.address;
+        if (data.address1 !== undefined) update.address1 = data.address1;
+        if (data.address2 !== undefined) update.address2 = data.address2;
+        if (data.city !== undefined) update.city = data.city;
+        if (data.zipCode !== undefined) update.zipCode = data.zipCode;
+        if (data.isActive !== undefined) update.isActive = data.isActive;
+        if (data.isNotarySigningAgent !== undefined) update.isNotarySigningAgent = data.isNotarySigningAgent;
+        if (data.isSpanishSpeaking !== undefined) update.isSpanishSpeaking = data.isSpanishSpeaking;
+        if (data.notaryType !== undefined) update.notaryType = data.notaryType;
+        
+        return update;
       };
 
-      // Auto-generate fullName from firstName and lastName if provided
-      if (profileData.firstName || profileData.lastName) {
-        const fullName = [profileData.firstName, profileData.lastName].filter(Boolean).join(' ').trim();
+      // Update user with new profile data (only provided fields)
+      const updateData: any = buildPartialUpdate(profileData);
+
+      // Auto-generate fullName from firstName and lastName if either is provided
+      if (profileData.firstName !== undefined || profileData.lastName !== undefined) {
+        // Get current user data to use existing values if new ones aren't provided
+        const currentUser = await storage.getUser(userId);
+        const firstName = profileData.firstName !== undefined ? profileData.firstName : (currentUser?.firstName || '');
+        const lastName = profileData.lastName !== undefined ? profileData.lastName : (currentUser?.lastName || '');
+        
+        const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
         if (fullName) {
           updateData.fullName = fullName;
         }
       }
 
       // 🔧 FIX: Automatically set accountSetupComplete based on user role and requirements
-      // Use the actual field names from profileData for validation
-      const hasBasicInfo = Boolean(profileData.firstName && profileData.lastName && profileData.phoneNumber);
-      const hasAddress = Boolean(
-        (profileData.address1 && profileData.city && profileData.state && profileData.zipCode) || 
-        profileData.address
-      );
-      
-      // Get current user to check role
+      // For validation, we need to check both new data and existing data since this is a partial update
       const currentUser = await storage.getUser(userId);
+      
+      // Use provided values or fall back to current values for validation
+      const firstName = profileData.firstName !== undefined ? profileData.firstName : currentUser?.firstName;
+      const lastName = profileData.lastName !== undefined ? profileData.lastName : currentUser?.lastName;
+      const phoneNumber = profileData.phoneNumber !== undefined ? profileData.phoneNumber : currentUser?.phoneNumber;
+      const address1 = profileData.address1 !== undefined ? profileData.address1 : currentUser?.address1;
+      const city = profileData.city !== undefined ? profileData.city : currentUser?.city;
+      const state = profileData.state !== undefined ? profileData.state : currentUser?.state;
+      const zipCode = profileData.zipCode !== undefined ? profileData.zipCode : currentUser?.zipCode;
+      const address = profileData.address !== undefined ? profileData.address : currentUser?.address;
+      
+      const hasBasicInfo = Boolean(firstName && lastName && phoneNumber);
+      const hasAddress = Boolean(
+        (address1 && city && state && zipCode) || address
+      );
       
       if (currentUser?.role === 'notary') {
         // For notaries, require additional fields for profile completion
+        // Use provided values or fall back to current values for validation
+        const nameOnCommission = profileData.nameOnCommission !== undefined ? profileData.nameOnCommission : currentUser?.nameOnCommission;
+        const commissionNumber = profileData.commissionNumber !== undefined ? profileData.commissionNumber : currentUser?.commissionNumber;
+        const commissionExpiration = profileData.commissionExpiration !== undefined ? profileData.commissionExpiration : currentUser?.commissionExpiration;
+        const commissionState = profileData.commissionState !== undefined ? profileData.commissionState : currentUser?.commissionState;
+        
         const hasNotaryCredentials = Boolean(
-          profileData.nameOnCommission && 
-          profileData.commissionNumber && 
-          profileData.commissionExpiration &&
-          profileData.commissionState
+          nameOnCommission && 
+          commissionNumber && 
+          commissionExpiration &&
+          commissionState
         );
         
         // Notary profile is complete when they have basic info, address, and notary credentials
@@ -3589,14 +3642,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hasBasicInfo,
         hasAddress,
         accountSetupComplete: updateData.accountSetupComplete,
-        fields: {
-          firstName: profileData.firstName,
-          lastName: profileData.lastName,
-          phoneNumber: profileData.phoneNumber,
-          address1: profileData.address1,
-          city: profileData.city,
-          state: profileData.state,
-          zipCode: profileData.zipCode
+        providedFields: Object.keys(updateData),
+        validationFields: {
+          firstName,
+          lastName,
+          phoneNumber,
+          address1,
+          city,
+          state,
+          zipCode
         }
       });
 
@@ -3722,7 +3776,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             id,
             notary_id as "notaryId",
             stamp_name as "stampType",
-            stamp_image as "stampData", 
+            stamp_data as "stampData", 
             is_active as "isActive",
             created_at as "createdAt",
             updated_at as "updatedAt"
@@ -5796,7 +5850,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         try {
           const insertResult = await db.execute(sql`
-            INSERT INTO notary_stamps (notary_id, stamp_name, stamp_image, is_active, created_at, updated_at)
+            INSERT INTO notary_stamps (notary_id, stamp_type, stamp_data, is_active, created_at, updated_at)
             VALUES (${parseInt(notaryId)}, 'notary', ${uploadResult.fileKey}, false, NOW(), NOW())
             RETURNING id
           `);

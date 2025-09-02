@@ -1,0 +1,18 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+echo "🔍 Running pre-commit validation..."
+
+# Check Node version
+NODE_VERSION=$(node --version)
+echo "Node.js version: $NODE_VERSION"
+
+# Run type check
+echo "🔍 Type checking..."
+npm run type-check
+
+# Validate build (server only, faster than full build)
+echo "🔍 Validating server build..."
+npm run validate-build
+
+echo "✅ Pre-commit validation passed!"

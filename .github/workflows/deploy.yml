@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  NODE_VERSION: '20.16.x'
+  NODE_VERSION: '18.20.8'
   APP_NAME: 'usa-notray'
 
 jobs:
@@ -25,6 +25,18 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Validate build compatibility
+        run: |
+          echo "🔍 Checking tool versions..."
+          node --version
+          npm --version
+          npx esbuild --version
+          npx tsc --version
+          echo "✅ Tool versions validated"
+
+      - name: Type check
+        run: npm run type-check
 
       - name: Build application
         run: npm run build
@@ -77,7 +89,8 @@ jobs:
             ecosystem.config.cjs \
             drizzle.config.ts \
             migrations/ \
-            scripts/
+            scripts/ \
+            shared/
           
           # Upload to VPS
           scp app.tar.gz ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ env.RELEASE_DIR }}/

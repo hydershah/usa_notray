@@ -4,6 +4,10 @@
   "type": "module",
   "license": "MIT",
   "_comment": "Trigger CI/CD - 2025-01-02",
+  "engines": {
+    "node": ">=18.20.8",
+    "npm": ">=10.8.2"
+  },
   "scripts": {
     "dev": "concurrently \"npm:dev:server\" \"npm:dev:client\" -k --names \"SERVER,CLIENT\"",
     "dev:simple": "cross-env NODE_ENV=development npx nodemon",
@@ -29,6 +33,8 @@
     "deploy:production": "npm run build:production && npm run start",
     "validate:deployment": "node scripts/validate-deployment.js",
     "check": "tsc",
+    "type-check": "tsc --noEmit",
+    "validate-build": "npm run type-check && npm run build:server",
     "db:push": "drizzle-kit push",
     "migrate:guest-session": "npx tsx scripts/add-guest-session-fields.ts",
     "email:test": "npx tsx scripts/test-email-connection.ts",
@@ -224,7 +230,7 @@
     "axios": "^1.11.0",
     "concurrently": "^8.2.2",
     "drizzle-kit": "^0.30.4",
-    "esbuild": "^0.25.0",
+    "esbuild": "0.25.9",
     "form-data": "^4.0.4",
     "kill-port": "^2.0.1",
     "nodemon": "^3.1.10",

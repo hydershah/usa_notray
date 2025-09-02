@@ -126,8 +126,8 @@ export class ProfileAutoFillService {
         SELECT 
           id,
           notary_id as "notaryId",
-          stamp_name as "stampType",
-          stamp_image as "stampData", 
+          stamp_type as "stampType",
+          stamp_data as "stampData", 
           is_active as "isActive",
           created_at as "createdAt",
           updated_at as "updatedAt"

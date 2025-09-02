@@ -788,7 +788,19 @@ export function registerNotaryProfileRoutes(app: Express) {
         profileCompleted: true
       };
 
-      await storage.updateUser(req.user.id, updateData);
+      console.log(`📝 Updating user ${req.user.id} with profile data:`, {
+        fieldsBeingUpdated: Object.keys(updateData),
+        userId: req.user.id
+      });
+
+      const updatedUser = await storage.updateUser(req.user.id, updateData);
+
+      if (!updatedUser) {
+        console.error(`❌ Failed to update user ${req.user.id} - user not found or update failed`);
+        return res.status(404).json({ message: 'User not found or update failed' });
+      }
+
+      console.log(`✅ Successfully updated user ${req.user.id} profile`);
 
       // Invalidate user-specific cache to ensure fresh data on next request
       try {
@@ -801,7 +813,8 @@ export function registerNotaryProfileRoutes(app: Express) {
 
       res.json({
         message: 'Profile completed successfully',
-        approvalStatus: 'pending'
+        approvalStatus: 'pending',
+        updatedFields: Object.keys(updateData)
       });
 
     } catch (error) {

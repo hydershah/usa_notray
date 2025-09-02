@@ -106,6 +106,31 @@ export function UserForm({ user, isOpen, onClose, onSubmit, isLoading = false, d
     },
   });
 
+  // Reset form when user data changes or dialog opens
+  React.useEffect(() => {
+    if (isOpen) {
+      form.reset({
+        username: user?.username || '',
+        email: user?.email || '',
+        password: '', // Always empty for security
+        role: user?.role || defaultRole,
+        privileges: user?.privileges || [],
+        notaryType: user?.notaryType || 'contractor',
+        firstName: user?.firstName || '',
+        lastName: user?.lastName || '',
+        fullName: user?.fullName || '',
+        phoneNumber: user?.phoneNumber || '',
+        commissionNumber: user?.commissionNumber || '',
+        commissionExpiration: user?.commissionExpiration || '',
+        state: user?.state || '',
+        county: user?.county || '',
+        isActive: user?.isActive ?? true,
+        isNotarySigningAgent: user?.isNotarySigningAgent ?? false,
+        isSpanishSpeaking: user?.isSpanishSpeaking ?? false,
+      });
+    }
+  }, [user, isOpen, form, defaultRole]);
+
   const handleSubmit = (data: UserFormData) => {
     if (isUpdate) {
       // For updates, only send changed fields
