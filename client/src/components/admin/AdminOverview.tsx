@@ -85,41 +85,32 @@ interface StatCardProps {
   color?: string;
 }
 
-function StatCard({ title, value, icon: Icon, description, trend, trendDirection, color = 'blue' }: StatCardProps) {
-  const colorClasses = {
-    blue: 'from-blue-500 to-blue-600',
-    green: 'from-green-500 to-green-600',
-    orange: 'from-orange-500 to-orange-600',
-    red: 'from-red-500 to-red-600',
-    purple: 'from-purple-500 to-purple-600',
-    indigo: 'from-indigo-500 to-indigo-600'
-  };
-
+function StatCard({ title, value, icon: Icon, description, trend, trendDirection, color = 'neutral' }: StatCardProps) {
   return (
-    <Card className="border border-gray-200 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className={`p-3 bg-gradient-to-br ${colorClasses[color as keyof typeof colorClasses] || colorClasses.blue} rounded-xl shadow-lg`}>
-            <Icon className="h-6 w-6 text-white" />
+    <Card className="border border-gray-200 hover:shadow-sm transition-all duration-200">
+      <CardContent className="p-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="p-1.5 bg-gray-100 rounded-md shadow-sm border border-gray-200">
+            <Icon className="h-3.5 w-3.5 text-gray-700" />
           </div>
           {trend && (
-            <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+            <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium ${
               trendDirection === 'up' 
-                ? 'bg-green-100 text-green-700' 
-                : 'bg-red-100 text-red-700'
+                ? 'bg-gray-100 text-gray-700' 
+                : 'bg-gray-100 text-gray-700'
             }`}>
               {trendDirection === 'up' ? (
-                <ArrowUpRight className="h-3 w-3" />
+                <ArrowUpRight className="h-2.5 w-2.5" />
               ) : (
-                <ArrowDownRight className="h-3 w-3" />
+                <ArrowDownRight className="h-2.5 w-2.5" />
               )}
               {trend}
             </div>
           )}
         </div>
-        <div className="space-y-2">
-          <h3 className="text-2xl font-bold text-gray-900">{value}</h3>
-          <p className="text-sm font-medium text-gray-600">{title}</p>
+        <div className="space-y-0.5">
+          <h3 className="text-lg font-bold text-gray-900">{value}</h3>
+          <p className="text-xs font-medium text-gray-600">{title}</p>
           <p className="text-xs text-gray-500">{description}</p>
         </div>
       </CardContent>
@@ -289,7 +280,7 @@ export function AdminOverview() {
         <div className="flex items-center gap-3">
           <Button 
             onClick={() => setLocation('/admin/approvals')}
-            className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg"
+            className="bg-gray-800 hover:bg-gray-900 text-white shadow-lg"
           >
             <Plus className="h-4 w-4 mr-2" />
             Quick Actions
@@ -298,7 +289,7 @@ export function AdminOverview() {
       </div>
 
       {/* Statistics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
           title="Total Users"
           value={stats.totalUsers.toLocaleString()}
@@ -306,7 +297,6 @@ export function AdminOverview() {
           description="All registered users"
           trend="+12.5%"
           trendDirection="up"
-          color="blue"
         />
         <StatCard
           title="Pending Approvals"
@@ -315,7 +305,6 @@ export function AdminOverview() {
           description="Users awaiting approval"
           trend={stats.pendingApprovals > 5 ? "High" : "Normal"}
           trendDirection={stats.pendingApprovals > 5 ? "up" : "down"}
-          color={stats.pendingApprovals > 5 ? "red" : "green"}
         />
         <StatCard
           title="Active Notaries"
@@ -324,7 +313,6 @@ export function AdminOverview() {
           description="Approved and active notaries"
           trend="+8.2%"
           trendDirection="up"
-          color="green"
         />
         <StatCard
           title="Total Title Companies"
@@ -333,20 +321,18 @@ export function AdminOverview() {
           description="Registered title companies"
           trend="+15.3%"
           trendDirection="up"
-          color="purple"
         />
       </div>
 
       {/* Job Request Statistics */}
       <div className="mt-8">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Job Request Management</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2">
           <StatCard
             title="Total Requests"
             value={stats.totalJobRequests}
             icon={FileText}
             description="All job requests"
-            color="blue"
           />
           <StatCard
             title="Pending Review"
@@ -355,49 +341,45 @@ export function AdminOverview() {
             description="Awaiting admin review"
             trend={stats.pendingJobRequests > 10 ? "High" : "Normal"}
             trendDirection={stats.pendingJobRequests > 10 ? "up" : "down"}
-            color={stats.pendingJobRequests > 10 ? "red" : "yellow"}
           />
           <StatCard
             title="Approved"
             value={stats.approvedJobRequests}
             icon={CheckCircle}
             description="Approved requests"
-            color="green"
           />
           <StatCard
             title="Assigned"
             value={stats.assignedJobRequests}
             icon={UserCheck}
             description="Assigned to notaries"
-            color="purple"
           />
           <StatCard
             title="Rejected"
             value={stats.rejectedJobRequests}
             icon={XCircle}
             description="Rejected requests"
-            color="red"
           />
         </div>
       </div>
 
       {/* Quick Actions & Recent Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Quick Actions */}
         <Card className="border border-gray-200 shadow-lg">
-          <CardHeader className="pb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg">
-                <Zap className="h-5 w-5 text-white" />
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-gray-100 rounded-md shadow-sm border border-gray-200">
+                <Zap className="h-3.5 w-3.5 text-gray-700" />
               </div>
               <div>
-                <CardTitle className="text-lg">Quick Actions</CardTitle>
-                <CardDescription>Common administrative tasks</CardDescription>
+                <CardTitle className="text-sm">Quick Actions</CardTitle>
+                <CardDescription className="text-xs">Common administrative tasks</CardDescription>
               </div>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
+          <CardContent className="pt-0">
+            <div className="space-y-1.5">
               {[
                 { label: 'Review Pending Approvals', icon: CheckCircle, path: '/admin/approvals', count: stats.pendingApprovals },
                 { label: 'Job Request Management', icon: FileText, path: '/admin/job-requests', count: stats.pendingJobRequests },
@@ -409,15 +391,15 @@ export function AdminOverview() {
                 <Button
                   key={index}
                   onClick={() => setLocation(action.path)}
-                  className="w-full justify-between h-12 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:shadow-md transition-all duration-200"
+                  className="w-full justify-between h-8 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:shadow-sm transition-all duration-200"
                   variant="outline"
                 >
-                  <div className="flex items-center gap-3">
-                    <action.icon className="h-5 w-5 text-gray-500" />
-                    <span className="text-sm font-medium">{action.label}</span>
+                  <div className="flex items-center gap-1.5">
+                    <action.icon className="h-3.5 w-3.5 text-gray-500" />
+                    <span className="text-xs font-medium">{action.label}</span>
                   </div>
                   {action.count !== null && (
-                    <Badge variant="secondary" className="bg-blue-100 text-blue-700">
+                    <Badge variant="secondary" className="bg-gray-100 text-gray-700 text-xs px-1.5 py-0.5">
                       {action.count}
                     </Badge>
                   )}
@@ -429,33 +411,33 @@ export function AdminOverview() {
 
         {/* Recent Activity */}
         <Card className="border border-gray-200 shadow-lg">
-          <CardHeader className="pb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg">
-                <Activity className="h-5 w-5 text-white" />
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-gray-100 rounded-md shadow-sm border border-gray-200">
+                <Activity className="h-3.5 w-3.5 text-gray-700" />
               </div>
               <div>
-                <CardTitle className="text-lg">Recent Activity</CardTitle>
-                <CardDescription>Latest system events</CardDescription>
+                <CardTitle className="text-sm">Recent Activity</CardTitle>
+                <CardDescription className="text-xs">Latest system events</CardDescription>
               </div>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
+          <CardContent className="pt-0">
+            <div className="space-y-1.5">
               {recentActivity.length > 0 ? (
                 recentActivity.map((activity, index) => (
-                  <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                    <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                  <div key={index} className="flex items-center gap-1.5 p-1.5 bg-gray-50 rounded-md">
+                    <div className="w-1.5 h-1.5 bg-gray-400 rounded-full"></div>
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-900">{activity.description}</p>
+                      <p className="text-xs font-medium text-gray-900">{activity.description}</p>
                       <p className="text-xs text-gray-500">{activity.timestamp}</p>
                     </div>
                   </div>
                 ))
               ) : (
-                <div className="text-center py-8">
-                  <Activity className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500">No recent activity</p>
+                <div className="text-center py-4">
+                  <Activity className="h-6 w-6 text-gray-300 mx-auto mb-1" />
+                  <p className="text-gray-500 text-xs">No recent activity</p>
                 </div>
               )}
             </div>
@@ -466,26 +448,26 @@ export function AdminOverview() {
       {/* Pending Items */}
       {(pendingUsers.length > 0 || pendingCompanies.length > 0) && (
         <Card className="border border-gray-200 shadow-lg">
-          <CardHeader>
-            <CardTitle className="text-lg">Pending Items</CardTitle>
-            <CardDescription>Items requiring your attention</CardDescription>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Pending Items</CardTitle>
+            <CardDescription className="text-xs">Items requiring your attention</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <CardContent className="pt-0">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {pendingUsers.length > 0 && (
                 <div>
-                  <h4 className="font-semibold text-gray-900 mb-3">Pending User Approvals</h4>
-                  <div className="space-y-2">
+                  <h4 className="font-semibold text-gray-900 mb-1.5 text-xs">Pending User Approvals</h4>
+                  <div className="space-y-1.5">
                     {pendingUsers.slice(0, 3).map((user) => (
-                      <div key={user.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div key={user.id} className="flex items-center justify-between p-1.5 bg-gray-50 rounded-md">
                         <div>
-                          <p className="font-medium text-gray-900">{user.fullName}</p>
-                          <p className="text-sm text-gray-600">{user.role}</p>
+                          <p className="font-medium text-gray-900 text-xs">{user.fullName}</p>
+                          <p className="text-xs text-gray-600">{user.role}</p>
                         </div>
                         <Button
                           size="sm"
                           onClick={() => setLocation('/admin/approvals')}
-                          className="bg-blue-500 hover:bg-blue-600 text-white"
+                          className="bg-gray-800 hover:bg-gray-900 text-white text-xs px-2 py-0.5 h-6"
                         >
                           Review
                         </Button>
@@ -497,18 +479,18 @@ export function AdminOverview() {
 
               {pendingCompanies.length > 0 && (
                 <div>
-                  <h4 className="font-semibold text-gray-900 mb-3">Pending Company Approvals</h4>
-                  <div className="space-y-2">
+                  <h4 className="font-semibold text-gray-900 mb-1.5 text-xs">Pending Company Approvals</h4>
+                  <div className="space-y-1.5">
                     {pendingCompanies.slice(0, 3).map((company) => (
-                      <div key={company.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div key={company.id} className="flex items-center justify-between p-1.5 bg-gray-50 rounded-md">
                         <div>
-                          <p className="font-medium text-gray-900">{company.companyName}</p>
-                          <p className="text-sm text-gray-600">{company.contactEmail}</p>
+                          <p className="font-medium text-gray-900 text-xs">{company.companyName}</p>
+                          <p className="text-xs text-gray-600">{company.contactEmail}</p>
                         </div>
                         <Button
                           size="sm"
                           onClick={() => setLocation('/admin/companies')}
-                          className="bg-blue-500 hover:bg-blue-600 text-white"
+                          className="bg-gray-800 hover:bg-gray-900 text-white text-xs px-2 py-0.5 h-6"
                         >
                           Review
                         </Button>

@@ -63,7 +63,7 @@ class JobWizardErrorBoundary extends React.Component<
     if (this.state.hasError) {
       return (
         <MainLayout>
-          <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+          <div className="min-h-screen bg-gray-50">
             <div className="flex items-center justify-center h-96">
               <div className="text-center">
                 <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
@@ -378,10 +378,10 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
   // Show loading state while user data is loading
   if (isUserLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+      <div className="min-h-screen bg-gray-50">
         <div className="flex items-center justify-center h-96">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-600 border-t-transparent mx-auto mb-4"></div>
             <p className="text-lg text-gray-600">Loading user data...</p>
           </div>
         </div>
@@ -392,7 +392,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
   // Show error state if user data failed to load
   if (userError || (!currentUser && !isUserLoading)) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+      <div className="min-h-screen bg-gray-50">
         <div className="flex items-center justify-center h-96">
           <div className="text-center">
             <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
@@ -1001,7 +1001,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
   };
 
   return (
-    <div className={singlePage ? "min-h-screen bg-white" : "min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50"}>
+    <div className={singlePage ? "min-h-screen bg-white" : "min-h-screen bg-gray-50"}>
       <div className={singlePage ? "max-w-5xl mx-auto px-3 py-2" : "max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-2"}>
         
         {/* Enhanced Header */}
@@ -1020,9 +1020,9 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                   {/* Step Circle */}
                   <div className={`relative w-12 h-12 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300 ${
                     currentStep > step.id 
-                      ? 'bg-green-500 text-white shadow-lg' 
+                      ? 'bg-gray-700 text-white shadow-lg' 
                       : currentStep === step.id 
-                        ? 'bg-blue-600 text-white shadow-lg ring-4 ring-blue-200' 
+                        ? 'bg-gray-900 text-white shadow-lg ring-4 ring-gray-200' 
                         : 'bg-gray-200 text-gray-600'
                   }`}>
                     {currentStep > step.id ? (
@@ -1033,14 +1033,14 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                     
                     {/* Pulse animation for current step */}
                     {currentStep === step.id && (
-                      <div className="absolute inset-0 rounded-full bg-blue-600 animate-ping opacity-25"></div>
+                      <div className="absolute inset-0 rounded-full bg-gray-900 animate-ping opacity-25"></div>
                     )}
                   </div>
                   
                   {/* Step Labels */}
                   <div className="mt-2 text-center">
                     <div className={`text-sm font-medium transition-colors ${
-                      currentStep >= step.id ? 'text-blue-600' : 'text-gray-500'
+                      currentStep >= step.id ? 'text-gray-900' : 'text-gray-500'
                     }`}>
                       {step.title}
                     </div>
@@ -1055,7 +1055,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                 {/* Connector Line */}
                 {index < steps.length - 1 && (
                   <div className={`flex-1 h-0.5 mx-4 transition-colors ${
-                    currentStep > step.id ? 'bg-green-500' : 'bg-gray-200'
+                    currentStep > step.id ? 'bg-gray-700' : 'bg-gray-200'
                   }`}></div>
                 )}
               </div>
@@ -1065,7 +1065,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
           {/* Progress Bar */}
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div 
-              className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-500 ease-out"
+              className="bg-gray-900 h-2 rounded-full transition-all duration-500 ease-out"
               style={{ width: `${progress}%` }}
             ></div>
           </div>
@@ -1090,14 +1090,14 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
 
                     {/* Different messaging based on user type */}
                     {currentUser?.role === 'notary' && currentUser?.notaryType === 'subscriber' && (
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
                         <div className="flex items-start">
                           <div className="flex-shrink-0">
-                            <UserIcon className="h-5 w-5 text-blue-600 mt-0.5" />
+                            <UserIcon className="h-5 w-5 text-gray-600 mt-0.5" />
                           </div>
                           <div className="ml-3">
-                            <h4 className="text-sm font-medium text-blue-900">Personal Client Job</h4>
-                            <p className="text-sm text-blue-800 mt-1">
+                            <h4 className="text-sm font-medium text-gray-900">Personal Client Job</h4>
+                            <p className="text-sm text-gray-700 mt-1">
                               You're creating a job for your personal clients. You will automatically be assigned as the notary for this job.
                               Platform fees will be deducted from your account upon completion.
                             </p>
@@ -1107,14 +1107,14 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                     )}
 
                     {currentUser?.role === 'admin' && (
-                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-6">
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
                         <div className="flex items-start">
                           <div className="flex-shrink-0">
-                            <CheckCircle className="h-5 w-5 text-purple-600 mt-0.5" />
+                            <CheckCircle className="h-5 w-5 text-gray-600 mt-0.5" />
                           </div>
                           <div className="ml-3">
-                            <h4 className="text-sm font-medium text-purple-900">Admin Job Creation</h4>
-                            <p className="text-sm text-purple-800 mt-1">
+                            <h4 className="text-sm font-medium text-gray-900">Admin Job Creation</h4>
+                            <p className="text-sm text-gray-700 mt-1">
                               As an admin, you can assign yourself as the notary, automatically assign a contractor notary, or manually select a specific notary.
                               You have full control over the assignment process.
                             </p>
@@ -1124,14 +1124,14 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                     )}
 
                     {currentUser?.role === 'title_company' && (
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
                         <div className="flex items-start">
                           <div className="flex-shrink-0">
-                            <CheckCircle className="h-5 w-5 text-blue-600 mt-0.5" />
+                            <CheckCircle className="h-5 w-5 text-gray-600 mt-0.5" />
                           </div>
                           <div className="ml-3">
-                            <h4 className="text-sm font-medium text-green-900">Title Company Job</h4>
-                            <p className="text-sm text-green-800 mt-1">
+                            <h4 className="text-sm font-medium text-gray-900">Title Company Job</h4>
+                            <p className="text-sm text-gray-700 mt-1">
                               You're creating a job for Sharp Note clients. The system will assign a qualified contractor notary based on your preferences.
                               The assigned notary will be paid from the client fees.
                             </p>
@@ -1142,7 +1142,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                     
                                           <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
                         <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center">
-                          <div className="w-2 h-4 bg-blue-500 rounded-full mr-2"></div>
+                          <div className="w-2 h-4 bg-gray-400 rounded-full mr-2"></div>
                           Primary Details
                         </h3>
                       
@@ -1175,7 +1175,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                   defaultValue={field.value}
                                 >
                                   <FormControl>
-                                    <SelectTrigger className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
+                                    <SelectTrigger className={`h-12 border-gray-200 focus:border-gray-500 focus:ring-gray-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
                                       <SelectValue placeholder="Select title company" />
                                     </SelectTrigger>
                                   </FormControl>
@@ -1215,7 +1215,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                 defaultValue={field.value}
                               >
                                 <FormControl>
-                                  <SelectTrigger className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
+                                  <SelectTrigger className={`h-12 border-gray-200 focus:border-gray-500 focus:ring-gray-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
                                     <SelectValue placeholder="Select closing type" />
                                   </SelectTrigger>
                                 </FormControl>
@@ -1245,7 +1245,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                               <FormControl>
                                 <Input 
                                   placeholder="Enter internal reference" 
-                                  className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                  className={`h-12 border-gray-200 focus:border-gray-500 focus:ring-gray-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                   {...field}
                                   onBlur={() => form.trigger('internalReference')}
                                 />
@@ -1293,7 +1293,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                     {/* Property Address */}
                     <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
                       <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                        <div className="w-2 h-6 bg-green-500 rounded-full mr-3"></div>
+                        <div className="w-2 h-6 bg-gray-400 rounded-full mr-3"></div>
                         Property Address
                       </h3>
                       
@@ -1309,7 +1309,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                               <FormControl>
                                 <Input 
                                   placeholder="Enter street address" 
-                                  className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                  className={`h-12 border-gray-200 focus:border-gray-500 focus:ring-gray-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                   {...field}
                                   onBlur={() => form.trigger('propertyAddressOne')}
                                 />
@@ -1330,7 +1330,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                               <FormControl>
                                 <Input 
                                   placeholder="Apt, suite, etc. (optional)" 
-                                  className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                  className={`h-12 border-gray-200 focus:border-gray-500 focus:ring-gray-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                   {...field}
                                   onBlur={() => form.trigger('propertyAddressTwo')}
                                 />
@@ -1352,7 +1352,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                 <FormControl>
                                   <Input 
                                     placeholder="Enter city" 
-                                    className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                    className={`h-12 border-gray-200 focus:border-gray-500 focus:ring-gray-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     {...field}
                                     onBlur={() => form.trigger('propertyCity')}
                                   />
@@ -1379,7 +1379,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                   defaultValue={field.value}
                                 >
                                   <FormControl>
-                                    <SelectTrigger className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
+                                    <SelectTrigger className={`h-12 border-gray-200 focus:border-gray-500 focus:ring-gray-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
                                       <SelectValue placeholder="Select state" />
                                     </SelectTrigger>
                                   </FormControl>
@@ -1452,7 +1452,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                 <FormControl>
                                   <Input 
                                     placeholder="Enter ZIP code" 
-                                    className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                    className={`h-12 border-gray-200 focus:border-gray-500 focus:ring-gray-500 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     {...field}
                                     onBlur={() => form.trigger('propertyZipCode')}
                                   />
@@ -1471,9 +1471,9 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                 {(singlePage || currentStep === 2) && (
                   <div className="space-y-4">
 
-                    <div className={singlePage ? "flex items-center justify-between p-2" : "flex items-center justify-between bg-blue-50 rounded-lg p-4"}>
+                    <div className={singlePage ? "flex items-center justify-between p-2" : "flex items-center justify-between bg-gray-50 rounded-lg p-4"}>
                       <div className="flex items-center">
-                        <AlertCircle className="w-4 h-4 text-blue-600 mr-2" />
+                        <AlertCircle className="w-4 h-4 text-gray-600 mr-2" />
                         <span className="text-sm font-medium text-gray-800">
                           {signers.length} participant{signers.length !== 1 ? 's' : ''} added
                         </span>
@@ -1482,7 +1482,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                         type="button" 
                         onClick={handleAddSigner} 
                         size={singlePage ? "sm" : undefined}
-                        className={singlePage ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-blue-600 hover:bg-blue-700 text-white shadow-md"}
+                        className={singlePage ? "bg-gray-900 hover:bg-gray-800 text-white" : "bg-gray-900 hover:bg-gray-800 text-white shadow-md"}
                       >
                         <Plus className="h-4 w-4 mr-2" />
                         Add Participant
@@ -1494,7 +1494,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                       singlePage ? (
                         <div className="flex items-center justify-between p-2 border rounded">
                           <span className="text-sm text-gray-600">No participants yet</span>
-                          <Button type="button" size="sm" onClick={handleAddSigner} className="bg-blue-600 hover:bg-blue-700 text-white">
+                          <Button type="button" size="sm" onClick={handleAddSigner} className="bg-gray-900 hover:bg-gray-800 text-white">
                             <Plus className="h-4 w-4 mr-2" /> Add
                           </Button>
                         </div>
@@ -1503,7 +1503,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                           <UserIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                           <h3 className="text-lg font-medium text-gray-900 mb-2">No participants added yet</h3>
                           <p className="text-gray-600 mb-6">Click "Add Participant" to add signers and witnesses</p>
-                          <Button type="button" onClick={handleAddSigner} className="bg-blue-600 hover:bg-blue-700 text-white">
+                          <Button type="button" onClick={handleAddSigner} className="bg-gray-900 hover:bg-gray-800 text-white">
                             <Plus className="h-4 w-4 mr-2" /> Add Your First Participant
                           </Button>
                         </div>
@@ -1518,7 +1518,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                         <Button 
                           type="button" 
                           onClick={handleAddSigner} 
-                          className="bg-blue-600 hover:bg-blue-700 text-white"
+                          className="bg-gray-900 hover:bg-gray-800 text-white"
                         >
                           <Plus className="h-4 w-4 mr-2" />
                           Add Your First Participant
@@ -1527,11 +1527,11 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                     ) : (
                       <div className="space-y-6">
                         {signers.map((signer, index) => (
-                          <Card key={index} className={singlePage ? "border rounded-md" : "border-2 border-gray-100 hover:border-blue-200 transition-colors"}>
+                          <Card key={index} className={singlePage ? "border rounded-md" : "border-2 border-gray-100 hover:border-gray-300 transition-colors"}>
                             <CardHeader className={singlePage ? "py-2 px-3 border-b bg-white" : "bg-gradient-to-r from-gray-50 to-gray-100 border-b"}>
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center">
-                                  <div className={singlePage ? "w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-xs mr-2" : "w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-sm mr-3"}>
+                                  <div className={singlePage ? "w-6 h-6 bg-gray-900 rounded-full flex items-center justify-center text-white font-semibold text-xs mr-2" : "w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center text-white font-semibold text-sm mr-3"}>
                                     {index + 1}
                                   </div>
                                   <div>
@@ -1558,12 +1558,12 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                             <CardContent className={singlePage ? "p-3" : "p-6"}>
                               {/* Email Lookup Info */}
                               {!singlePage && (
-                                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
                                   <div className="flex items-center">
-                                    <AlertCircle className="w-5 h-5 text-blue-600 mr-2" />
+                                    <AlertCircle className="w-5 h-5 text-gray-600 mr-2" />
                                     <div>
-                                      <h4 className="text-sm font-medium text-blue-800">Smart Participant Entry</h4>
-                                      <p className="text-xs text-blue-700 mt-1">
+                                      <h4 className="text-sm font-medium text-gray-800">Smart Participant Entry</h4>
+                                      <p className="text-xs text-gray-700 mt-1">
                                         Enter an email address below. If the user exists in our system, their details will auto-populate. Otherwise, you can manually enter their information.
                                       </p>
                                     </div>
@@ -1581,7 +1581,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                     value={signer.signerName}
                                     onChange={(e) => handleSignerChange(index, 'signerName', e.target.value)}
                                     placeholder="Enter participant name"
-                                    className={`${singlePage ? 'h-10' : 'h-12'} mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerName ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                    className={`${singlePage ? 'h-10' : 'h-12'} mt-2 border-gray-200 focus:border-gray-500 focus:ring-gray-500 ${signerErrors[index]?.signerName ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
                                     disabled={autoPopulatedSigners[index] && !isAdmin}
                                   />
@@ -1599,14 +1599,14 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                     value={signer.signerEmail}
                                     onChange={(e) => handleEmailLookup(index, e.target.value)}
                                     placeholder="Enter email address (will auto-populate if user exists)"
-                                    className={`${singlePage ? 'h-10' : 'h-12'} mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerEmail ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                    className={`${singlePage ? 'h-10' : 'h-12'} mt-2 border-gray-200 focus:border-gray-500 focus:ring-gray-500 ${signerErrors[index]?.signerEmail ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
                                   />
                                   {signerErrors[index]?.signerEmail && (
                                     <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerEmail}</p>
                                   )}
                                   {autoPopulatedSigners[index] && (
-                                    <p className="text-xs text-blue-600 mt-1 flex items-center">
+                                    <p className="text-xs text-gray-600 mt-1 flex items-center">
                                       <CheckCircle className="w-4 h-4 mr-1" />
                                       User found! Details auto-populated from existing account.
                                     </p>
@@ -1621,7 +1621,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                     value={signer.signerPhoneNumber}
                                     onChange={(e) => handleSignerChange(index, 'signerPhoneNumber', e.target.value)}
                                     placeholder="(123) 456-7890"
-                                    className={`${singlePage ? 'h-10' : 'h-12'} mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerPhoneNumber ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                    className={`${singlePage ? 'h-10' : 'h-12'} mt-2 border-gray-200 focus:border-gray-500 focus:ring-gray-500 ${signerErrors[index]?.signerPhoneNumber ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
                                     disabled={autoPopulatedSigners[index] && !isAdmin}
                                   />
@@ -1641,7 +1641,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                       validateSigner({ ...signer, signerRole: value }, index);
                                     }}
                                   >
-                                    <SelectTrigger className={`${singlePage ? 'h-10' : 'h-12'} mt-2 border-gray-200 focus:border-blue-500 focus:ring-blue-500 ${signerErrors[index]?.signerRole ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
+                                    <SelectTrigger className={`${singlePage ? 'h-10' : 'h-12'} mt-2 border-gray-200 focus:border-gray-500 focus:ring-gray-500 ${signerErrors[index]?.signerRole ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
                                       <SelectValue placeholder="Select role" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -1656,7 +1656,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                     <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerRole}</p>
                                   )}
                                   {signer.signerRole === 'witness' && (
-                                    <p className="text-xs text-blue-600 mt-1">
+                                    <p className="text-xs text-gray-600 mt-1">
                                       <span className="font-medium">Witness:</span> This person will observe the signing but won't sign documents themselves.
                                     </p>
                                   )}
@@ -1665,14 +1665,14 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
 
                               {/* Auto-populated User Info */}
                               {autoPopulatedSigners[index] && signer.existingUserId && (
-                                <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                                <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
                                   <div className="flex items-center">
-                                    <CheckCircle className="w-5 h-5 text-blue-600 mr-2" />
+                                    <CheckCircle className="w-5 h-5 text-gray-600 mr-2" />
                                     <div>
-                                      <p className="text-sm font-medium text-green-800">
+                                      <p className="text-sm font-medium text-gray-800">
                                         Existing User: {signer.signerName}
                                       </p>
-                                      <p className="text-xs text-blue-600">
+                                      <p className="text-xs text-gray-600">
                                         {signer.signerEmail} • Information auto-populated from existing account
                                       </p>
                                     </div>
@@ -1694,14 +1694,14 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                     {/* Subscriber Notary: Simple date/time selection */}
                     {currentUser?.role === 'notary' && currentUser?.notaryType === 'subscriber' ? (
                       <div className="space-y-6">
-                        <div className={singlePage ? "p-3 border rounded" : "bg-blue-50 border border-blue-200 rounded-lg p-4"}>
+                        <div className={singlePage ? "p-3 border rounded" : "bg-gray-50 border border-gray-200 rounded-lg p-4"}>
                           <div className="flex items-start">
                             <div className="flex-shrink-0">
-                              <UserIcon className="h-5 w-5 text-blue-600 mt-0.5" />
+                              <UserIcon className="h-5 w-5 text-gray-600 mt-0.5" />
                             </div>
                             <div className="ml-3">
-                              <h4 className="text-sm font-medium text-blue-900">You are the assigned notary</h4>
-                              <p className="text-sm text-blue-800 mt-1">
+                              <h4 className="text-sm font-medium text-gray-900">You are the assigned notary</h4>
+                              <p className="text-sm text-gray-800 mt-1">
                                 As a subscriber notary, you are automatically assigned to handle this job for your personal clients.
                               </p>
                             </div>
@@ -1710,7 +1710,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
 
                         <div className={singlePage ? "border rounded-md p-3" : "bg-gray-50 rounded-lg p-4 border border-gray-100"}>
                           <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center">
-                            <div className="w-2 h-4 bg-purple-500 rounded-full mr-2"></div>
+                            <div className="w-2 h-4 bg-gray-400 rounded-full mr-2"></div>
                             Your Available Times
                           </h3>
                           
@@ -1726,7 +1726,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                       /* Title Company/Admin: Full notary assignment workflow */
                       <div className={singlePage ? "border rounded-md p-3" : "bg-gray-50 rounded-xl p-6 border border-gray-100"}>
                         <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                          <div className="w-2 h-6 bg-purple-500 rounded-full mr-3"></div>
+                          <div className="w-2 h-6 bg-gray-400 rounded-full mr-3"></div>
                           Notary Assignment
                         </h3>
                         
@@ -1866,7 +1866,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                     defaultValue={field.value}
                                   >
                                     <FormControl>
-                                      <SelectTrigger className={`${singlePage ? 'h-10' : 'h-12'} border-gray-200 focus:border-blue-500 focus:ring-blue-500 mt-2 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
+                                      <SelectTrigger className={`${singlePage ? 'h-10' : 'h-12'} border-gray-200 focus:border-gray-500 focus:ring-gray-500 mt-2 ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
                                         <SelectValue placeholder="Choose a contractor notary" />
                                       </SelectTrigger>
                                     </FormControl>
@@ -1904,7 +1904,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                       <Input
                                         {...field}
                                         placeholder="CY0123"
-                                        className={`h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 mt-2 uppercase ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                        className={`h-12 border-gray-200 focus:border-gray-500 focus:ring-gray-500 mt-2 uppercase ${fieldState.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                         onChange={(e) => {
                                           const value = e.target.value.toUpperCase();
                                           field.onChange(value);
@@ -1914,7 +1914,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                       />
                                       {notaryIdCodeLookup.isLoading && (
                                         <div className="absolute right-3 top-1/2 transform -translate-y-1/2 mt-1">
-                                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-600"></div>
                                         </div>
                                       )}
                                     </div>
@@ -1943,24 +1943,24 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                 )}
 
                                 {notaryIdCodeLookup.result && (
-                                  <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                                  <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
                                     <div className="flex items-center">
-                                      <CheckCircle className="w-5 h-5 text-blue-600 mr-3" />
+                                      <CheckCircle className="w-5 h-5 text-gray-600 mr-3" />
                                       <div className="flex-1">
-                                        <h4 className="text-sm font-medium text-green-800">
+                                        <h4 className="text-sm font-medium text-gray-800">
                                           Notary Found: {notaryIdCodeLookup.result.firstName} {notaryIdCodeLookup.result.lastName}
                                         </h4>
-                                        <p className="text-xs text-green-700 mt-1">
+                                        <p className="text-xs text-gray-700 mt-1">
                                           Code: {notaryIdCodeLookup.result.notaryIdCode}
                                         </p>
                                         <div className="flex items-center space-x-4 mt-2">
                                           {notaryIdCodeLookup.result.isNotarySigningAgent && (
-                                            <Badge variant="outline" className="text-xs border-green-300 text-green-700">
+                                            <Badge variant="outline" className="text-xs border-gray-300 text-gray-700">
                                               NSA Certified
                                             </Badge>
                                           )}
                                           {notaryIdCodeLookup.result.isSpanishSpeaking && (
-                                            <Badge variant="outline" className="text-xs border-blue-300 text-blue-700">
+                                            <Badge variant="outline" className="text-xs border-gray-300 text-gray-700">
                                               Spanish Speaking
                                             </Badge>
                                           )}
@@ -1982,7 +1982,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                           <div className="mt-6">
                             <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
                               <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                                <div className="w-2 h-6 bg-blue-500 rounded-full mr-3"></div>
+                                <div className="w-2 h-6 bg-gray-400 rounded-full mr-3"></div>
                                 Available Appointment Times
                                 <Badge variant="outline" className="ml-3">
                                   {(() => {
@@ -2006,7 +2006,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                           <div className="mt-6">
                             <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
                               <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                                <div className="w-2 h-6 bg-orange-500 rounded-full mr-3"></div>
+                                <div className="w-2 h-6 bg-gray-400 rounded-full mr-3"></div>
                                 Available Appointment Times
                                 <Badge variant="outline" className="ml-3">
                                   {notaryIdCodeLookup.result.firstName} {notaryIdCodeLookup.result.lastName}
@@ -2027,7 +2027,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                           <div className="mt-6">
                             <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
                               <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                                <div className="w-2 h-6 bg-purple-500 rounded-full mr-3"></div>
+                                <div className="w-2 h-6 bg-gray-400 rounded-full mr-3"></div>
                                 Your Available Times
                                 <Badge variant="outline" className="ml-3">
                                   {currentUser?.firstName && currentUser?.lastName 
@@ -2051,7 +2051,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                     {(currentUser?.role === 'admin' || currentUser?.role === 'title_company') && (
                       <div className={singlePage ? "border rounded-md p-3" : "bg-gray-50 rounded-xl p-6 border border-gray-100"}>
                         <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                          <div className="w-2 h-6 bg-orange-500 rounded-full mr-3"></div>
+                          <div className="w-2 h-6 bg-gray-400 rounded-full mr-3"></div>
                           Special Requirements
                         </h3>
                         
@@ -2102,15 +2102,15 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                 {/* Step 4: Documents */}
                 {(singlePage || currentStep === 4) && (
                   <div className="space-y-4">
-                    <div className={singlePage ? "flex items-center justify-between p-2" : "flex items-center justify-between bg-indigo-50 rounded-lg p-4"}>
+                    <div className={singlePage ? "flex items-center justify-between p-2" : "flex items-center justify-between bg-gray-50 rounded-lg p-4"}>
                       <div className="flex items-center">
-                        <FileText className="w-4 h-4 text-indigo-600 mr-2" />
+                        <FileText className="w-4 h-4 text-gray-600 mr-2" />
                         <span className="text-sm font-medium text-gray-800">
                           {documents.length} document{documents.length !== 1 ? 's' : ''} uploaded
                         </span>
                       </div>
                       {!singlePage && (
-                        <div className="text-xs text-indigo-600">PDF, DOC, DOCX supported • Max 10MB each</div>
+                        <div className="text-xs text-gray-600">PDF, DOC, DOCX supported • Max 10MB each</div>
                       )}
                     </div>
 
@@ -2121,16 +2121,16 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                         <p className="text-xs text-gray-500">PDF, DOC, DOCX, JPG, PNG • Max 10MB each</p>
                       </div>
                     ) : (
-                      <div className={`border-2 border-dashed rounded-xl p-12 text-center hover:border-blue-400 transition-colors ${documents.length === 0 ? 'border-yellow-300 bg-yellow-50' : 'border-gray-300'}`}>
-                        <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                          <Upload className="h-8 w-8 text-blue-600" />
+                      <div className={`border-2 border-dashed rounded-xl p-12 text-center hover:border-gray-400 transition-colors ${documents.length === 0 ? 'border-gray-300 bg-gray-50' : 'border-gray-300'}`}>
+                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                          <Upload className="h-8 w-8 text-gray-600" />
                         </div>
                         <div className="mb-6">
                           <h3 className="text-xl font-semibold text-gray-900 mb-2">Upload Multiple Documents</h3>
                           <p className="text-gray-600">Drag and drop files here, or click to browse your computer</p>
                         </div>
                         <input type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" multiple onChange={handleFileUpload} className="hidden" id="file-upload" />
-                        <Button type="button" onClick={() => document.getElementById('file-upload')?.click()} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg">
+                        <Button type="button" onClick={() => document.getElementById('file-upload')?.click()} className="bg-gray-900 hover:bg-gray-800 text-white px-8 py-3 text-lg">
                           <Plus className="h-5 w-5 mr-3" /> Select Documents
                         </Button>
                         <p className="text-sm text-gray-500 mt-4">Supported formats: PDF, DOC, DOCX, JPG, PNG • Maximum 10MB per file</p>
@@ -2141,7 +2141,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                     {documents.length > 0 && (
                       <div className={singlePage ? "border rounded-md p-3" : "bg-gray-50 rounded-xl p-6 border border-gray-100"}>
                         <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                          <div className="w-2 h-6 bg-indigo-500 rounded-full mr-3"></div>
+                          <div className="w-2 h-6 bg-gray-400 rounded-full mr-3"></div>
                           Uploaded Documents
                         </h3>
                         
@@ -2149,7 +2149,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                           {documents.map((doc) => (
                             <div key={doc.id} className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:shadow-sm transition-shadow">
                               <div className="flex items-center flex-1">
-                                <FileText className="h-8 w-8 text-blue-600 mr-4" />
+                                <FileText className="h-8 w-8 text-gray-600 mr-4" />
                                 <div className="flex-1">
                                   <h4 className="font-medium text-gray-900">{doc.name}</h4>
                                   <div className="flex items-center space-x-4 mt-1">
@@ -2194,9 +2194,9 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                     
                     {/* Client Information Summary */}
                     <Card className="border-2 border-gray-100">
-                      <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100 border-b">
+                      <CardHeader className="bg-gray-50 border-b">
                         <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                          <CheckCircle className="h-6 w-6 text-green-500 mr-3" />
+                          <CheckCircle className="h-6 w-6 text-gray-600 mr-3" />
                           Client Information
                         </h3>
                       </CardHeader>
@@ -2236,9 +2236,9 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
 
                     {/* Signers Summary */}
                     <Card className="border-2 border-gray-100">
-                      <CardHeader className="bg-gradient-to-r from-green-50 to-green-100 border-b">
+                      <CardHeader className="bg-gray-50 border-b">
                         <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                          <CheckCircle className="h-6 w-6 text-green-500 mr-3" />
+                          <CheckCircle className="h-6 w-6 text-gray-600 mr-3" />
                           Participants ({signers.length})
                         </h3>
                       </CardHeader>
@@ -2248,7 +2248,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                             <div key={index} className="p-4 bg-gray-50 rounded-lg border">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center">
-                                  <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-sm mr-3">
+                                  <div className="w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center text-white font-semibold text-sm mr-3">
                                     {index + 1}
                                   </div>
                                   <div>
@@ -2269,9 +2269,9 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
 
                     {/* Documents Summary */}
                     <Card className="border-2 border-gray-100">
-                      <CardHeader className="bg-gradient-to-r from-indigo-50 to-indigo-100 border-b">
+                      <CardHeader className="bg-gray-50 border-b">
                         <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                          <CheckCircle className="h-6 w-6 text-green-500 mr-3" />
+                          <CheckCircle className="h-6 w-6 text-gray-600 mr-3" />
                           Documents ({documents.length})
                         </h3>
                       </CardHeader>
@@ -2280,7 +2280,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                           {documents.map((doc, index) => (
                             <div key={doc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
                               <div className="flex items-center">
-                                <FileText className="h-5 w-5 text-blue-600 mr-3" />
+                                <FileText className="h-5 w-5 text-gray-600 mr-3" />
                                 <div>
                                   <span className="font-medium text-gray-900">{doc.name}</span>
                                   <span className="text-sm text-gray-500 ml-2">({formatFileSize(doc.size)})</span>
@@ -2298,9 +2298,9 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                     </Card>
 
                     {/* Final Confirmation */}
-                    <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-6 border border-green-200">
+                    <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
                       <div className="flex items-center">
-                        <AlertCircle className="w-6 h-6 text-blue-600 mr-3" />
+                        <AlertCircle className="w-6 h-6 text-gray-600 mr-3" />
                         <div>
                           <h3 className="font-semibold text-gray-900">Ready to Submit</h3>
                           <p className="text-sm text-gray-600 mt-1">
@@ -2358,7 +2358,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                           e.stopPropagation();
                           handleNext();
                         }}
-                        className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl transition-shadow"
+                        className="px-6 py-3 bg-gray-900 hover:bg-gray-800 text-white shadow-lg hover:shadow-xl transition-shadow"
                       >
                         Next Step
                         <ArrowRight className="h-4 w-4 ml-2" />
@@ -2367,7 +2367,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                       <Button 
                         type="submit" 
                         disabled={createJobMutation.isPending || isSubmitting}
-                        className="px-8 py-3 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white shadow-lg hover:shadow-xl transition-all transform hover:scale-105 disabled:transform-none disabled:opacity-50"
+                        className="px-8 py-3 bg-gray-900 hover:bg-gray-800 text-white shadow-lg hover:shadow-xl transition-all disabled:opacity-50"
                       >
                         {createJobMutation.isPending || isSubmitting ? (
                           <div className="flex items-center">
