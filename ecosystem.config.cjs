@@ -6,6 +6,8 @@ module.exports = {
     cwd: './',
     instances: 1,
     exec_mode: 'fork',
+    // Use nvm Node path
+    interpreter: process.env.HOME + '/.nvm/versions/node/v20.19.4/bin/node',
     
     // Environment configuration
     env: {

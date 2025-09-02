@@ -357,7 +357,9 @@ export default function EnhancedCompanyManagement() {
               </div>
             ) : (
               <div className="space-y-4">
-                {filteredCompanies.map((company) => (
+                <Table>
+                  <TableBody>
+                    {filteredCompanies.map((company) => (
                       <TableRow key={company.id}>
                         <TableCell>
                           <div>
@@ -434,8 +436,8 @@ export default function EnhancedCompanyManagement() {
                     ))}
                   </TableBody>
                 </Table>
-              )}
-            </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 

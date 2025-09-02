@@ -102,10 +102,41 @@ jobs:
             rm app.tar.gz
           "
 
+      - name: Install Node.js on VPS
+        run: |
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            # Install Node Version Manager (nvm) if not already installed
+            if [ ! -d ~/.nvm ]; then
+              curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+            fi
+            
+            # Load nvm
+            export NVM_DIR=\"\$HOME/.nvm\"
+            [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
+            
+            # Install and use exact Node version
+            nvm install ${{ env.NODE_VERSION }}
+            nvm use ${{ env.NODE_VERSION }}
+            nvm alias default ${{ env.NODE_VERSION }}
+            
+            # Verify versions
+            echo \"Node version: \$(node --version)\"
+            echo \"npm version: \$(npm --version)\"
+          "
+
       - name: Install runtime dependencies on VPS (prod only)
         run: |
           ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            # Load nvm
+            export NVM_DIR=\"\$HOME/.nvm\"
+            [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
+            
             cd ${{ env.RELEASE_DIR }}
+            
+            # Ensure we're using the right Node version
+            nvm use ${{ env.NODE_VERSION }}
+            
+            # Install with exact versions
             npm ci --silent --omit=dev
             
             # Copy environment file from shared directory
@@ -119,13 +150,26 @@ jobs:
       - name: Run database migrations
         run: |
           ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            # Load nvm
+            export NVM_DIR=\"\$HOME/.nvm\"
+            [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
+            
             cd ${{ env.RELEASE_DIR }}
+            nvm use ${{ env.NODE_VERSION }}
             npm run db:migrate
           "
 
       - name: Deploy with PM2
         run: |
           ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            # Load nvm
+            export NVM_DIR=\"\$HOME/.nvm\"
+            [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
+            
+            # Ensure PM2 is installed globally for this Node version
+            nvm use ${{ env.NODE_VERSION }}
+            npm install -g pm2
+            
             # Update symlink to new release
             ln -sfn ${{ env.RELEASE_DIR }} /opt/usa_notray/current
             
