@@ -1006,7 +1006,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
         
         {/* Enhanced Header */}
         <div className="text-center mb-3">
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">Create New Job</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">New Job</h1>
           <p className="text-sm text-gray-600">{singlePage ? 'Fill out the form below to create your notarization job' : 'Follow the steps below to create your notarization job'}</p>
         </div>
 
