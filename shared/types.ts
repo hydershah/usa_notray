@@ -1,7 +1,7 @@
 // This file exports only TypeScript types for use in client code
 // No drizzle-orm imports to avoid browser module resolution issues
 
-import { z } from 'zod';
+import { z } from 'zod'
 
 // Express Request type for server-side use
 // Using 'any' for browser compatibility
