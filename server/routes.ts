@@ -173,26 +173,7 @@ import {
 import { ultraCache, CachePresets } from './lib/ultra-fast-cache.js';
 export async function registerRoutes(app: Express): Promise<Server> {
   
-  // Basic route handlers to prevent 404 errors
-  // Only serve API response if we're not serving static files
-  app.get('/', (req, res, next) => {
-    // In production with static files, let the static middleware handle this
-    if (process.env.NODE_ENV === 'production' && process.env.SERVE_STATIC_FILES !== 'false') {
-      return next(); // Let static file middleware handle this
-    }
-    
-    // Otherwise serve API information
-    res.json({ 
-      status: 'ok', 
-      message: 'Notary API Server', 
-      version: '1.0.0',
-      endpoints: {
-        api: '/api',
-        health: '/health',
-        docs: '/api/docs'
-      }
-    });
-  });
+  // Root route handler removed - static file middleware will handle the root path
 
   app.get('/favicon.ico', (req, res) => {
     res.status(204).send(); // No content
@@ -2577,26 +2558,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Internal server error' });
     }
   });
-  // Basic route handlers to prevent 404 errors
-  // Only serve API response if we're not serving static files
-  app.get('/', (req, res, next) => {
-    // In production with static files, let the static middleware handle this
-    if (process.env.NODE_ENV === 'production' && process.env.SERVE_STATIC_FILES !== 'false') {
-      return next(); // Let static file middleware handle this
-    }
-    
-    // Otherwise serve API information
-    res.json({ 
-      status: 'ok', 
-      message: 'Notary API Server', 
-      version: '1.0.0',
-      endpoints: {
-        api: '/api',
-        health: '/health',
-        docs: '/api/docs'
-      }
-    });
-  });
+  // Root route handler removed - static file middleware will handle the root path
 
   app.get('/favicon.ico', (req, res) => {
     res.status(204).send(); // No content
@@ -13364,6 +13326,26 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     } catch (error) {
       console.error('Error generating download package:', error);
       res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // API-only root route handler (only when static files are not served)
+  app.get('/', (req, res, next) => {
+    // Only serve API response when NOT serving static files
+    if (process.env.SERVE_STATIC_FILES === 'false') {
+      res.json({ 
+        status: 'ok', 
+        message: 'Notary API Server', 
+        version: '1.0.0',
+        endpoints: {
+          api: '/api',
+          health: '/health',
+          docs: '/api/docs'
+        }
+      });
+    } else {
+      // Let static file middleware handle this (should not reach here in normal flow)
+      next();
     }
   });
 
