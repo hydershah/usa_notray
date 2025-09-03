@@ -58,17 +58,17 @@ export function NotaryAssignmentCard({ jobId }: NotaryAssignmentCardProps) {
 
   if (loading) {
     return (
-      <Card className="border-none shadow-none">
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <User className="h-5 w-5 mr-2" />
+      <Card className="border border-gray-200 hover:shadow-sm transition-all duration-200">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center text-lg font-semibold text-gray-900">
+            <User className="h-5 w-5 mr-2 text-gray-700" />
             Assigned Notary
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center py-4">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-            <span className="ml-2 text-gray-600">Loading notary details...</span>
+        <CardContent className="pt-0">
+          <div className="flex items-center justify-center py-6">
+            <div className="animate-spin rounded-full h-5 w-5 border-2 border-[#002A5C] border-t-transparent"></div>
+            <span className="ml-2 text-gray-600 text-sm">Loading notary details...</span>
           </div>
         </CardContent>
       </Card>
@@ -77,17 +77,17 @@ export function NotaryAssignmentCard({ jobId }: NotaryAssignmentCardProps) {
 
   if (error) {
     return (
-      <Card className="border-none shadow-none">
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <User className="h-5 w-5 mr-2" />
+      <Card className="border border-gray-200 hover:shadow-sm transition-all duration-200">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center text-lg font-semibold text-gray-900">
+            <User className="h-5 w-5 mr-2 text-gray-700" />
             Assigned Notary
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center text-red-600">
+        <CardContent className="pt-0">
+          <div className="flex items-center text-red-600 py-4">
             <AlertCircle className="h-4 w-4 mr-2" />
-            <span>Error: {error}</span>
+            <span className="text-sm">Error: {error}</span>
           </div>
         </CardContent>
       </Card>
@@ -95,39 +95,40 @@ export function NotaryAssignmentCard({ jobId }: NotaryAssignmentCardProps) {
   }
 
   return (
-    <Card className="border-none shadow-none">
-      <CardHeader>
-        <CardTitle className="flex items-center">
-          <User className="h-5 w-5 mr-2" />
+    <Card className="border border-gray-200 hover:shadow-sm transition-all duration-200">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center text-lg font-semibold text-gray-900">
+          <User className="h-5 w-5 mr-2 text-gray-700" />
           Assigned Notary
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="pt-0">
         {notary ? (
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Award className="h-5 w-5 text-blue-600" />
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border">
+              <div className="p-2 bg-[#002A5C]/10 rounded-lg">
+                <Award className="h-5 w-5 text-[#002A5C]" />
               </div>
-              <div>
-                <p className="font-medium text-gray-900">{notary.name}</p>
+              <div className="flex-1">
+                <p className="font-semibold text-gray-900">{notary.name}</p>
                 <p className="text-sm text-gray-600">{notary.email}</p>
               </div>
             </div>
             
-            <div className="flex items-center gap-2">
+            <div className="flex justify-center">
               <Badge 
-                variant="secondary" 
-                className={notary.type === 'subscriber' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}
+                variant="outline"
+                className="bg-[#002A5C]/10 text-[#002A5C] border-[#002A5C]/20"
               >
                 {notary.type || 'contractor'}
               </Badge>
             </div>
           </div>
         ) : (
-          <div className="text-center py-4">
-            <User className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-            <p className="text-gray-500">No notary assigned yet</p>
+          <div className="text-center py-8 text-gray-500">
+            <User className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+            <p className="text-sm font-medium">No notary assigned yet</p>
+            <p className="text-xs mt-1">A notary will be assigned to this job</p>
           </div>
         )}
       </CardContent>

@@ -261,12 +261,12 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'completed':
-        return 'bg-green-100 text-green-800 border-green-200';
+        return 'bg-[#002A5C]/10 text-[#002A5C] border-[#002A5C]/20';
       case 'in_progress':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
+        return 'bg-[#002A5C]/20 text-[#002A5C] border-[#002A5C]/30';
       case 'pending':
       case 'open':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+        return 'bg-gray-100 text-gray-700 border-gray-200';
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200';
     }
@@ -282,8 +282,8 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
 
   const getDocumentTypeColor = (type: string) => {
     switch (type) {
-      case 'original': return 'bg-blue-100 text-blue-800';
-      case 'notarized': return 'bg-green-100 text-green-800';
+      case 'original': return 'bg-[#002A5C]/10 text-[#002A5C]';
+      case 'notarized': return 'bg-[#002A5C]/15 text-[#002A5C]';
       case 'additional': return 'bg-gray-100 text-gray-800';
       default: return 'bg-gray-100 text-gray-800';
     }
@@ -296,11 +296,11 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
   const getRoleColor = (role: string) => {
     switch (role.toLowerCase()) {
       case 'buyer':
-        return 'bg-blue-100 text-blue-800';
+        return 'bg-[#002A5C]/10 text-[#002A5C]';
       case 'seller':
-        return 'bg-green-100 text-green-800';
+        return 'bg-[#002A5C]/15 text-[#002A5C]';
       case 'witness':
-        return 'bg-blue-100 text-blue-800';
+        return 'bg-[#002A5C]/10 text-[#002A5C]';
       default:
         return 'bg-gray-100 text-gray-800';
     }
@@ -892,7 +892,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                             size="sm"
                             onClick={handleNotaryChange}
                             disabled={!selectedNewNotary || changingNotary}
-                            className="bg-green-600 hover:bg-green-700"
+                            className="bg-[#002A5C] hover:bg-[#002A5C]/90"
                           >
                             <Save className="h-3 w-3 mr-1" />
                             {changingNotary ? 'Saving...' : 'Save'}
@@ -996,7 +996,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                             <Badge className={getRoleColor(signer.signerRole)}>
                               {formatRole(signer.signerRole)}
                             </Badge>
-                            <Badge className={signer.invitationSentAt ? 'bg-green-100 text-green-800 border-green-200' : ''}>
+                            <Badge className={signer.invitationSentAt ? 'bg-[#002A5C]/10 text-[#002A5C] border-[#002A5C]/20' : 'bg-gray-100 text-gray-700'}>
                               {signer.invitationSentAt ? 'Invited' : 'Pending'}
                             </Badge>
                           </div>
@@ -1310,7 +1310,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                 <CardTitle className="text-base flex items-center gap-2">
                   <FileCheck className="h-4 w-4 text-blue-600" />
                   Completed Documents
-                  <Badge className="ml-2 bg-green-100 text-green-800 border-green-200">{completedDocuments.length}</Badge>
+                  <Badge className="ml-2 bg-[#002A5C]/10 text-[#002A5C] border-[#002A5C]/20">{completedDocuments.length}</Badge>
                 </CardTitle>
                 {expandedSections.completed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </div>
@@ -1319,7 +1319,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
               <CardContent className="pt-0">
                 {loadingCompleted ? (
                   <div className="text-center py-8 text-gray-500">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto mb-2"></div>
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#002A5C] mx-auto mb-2"></div>
                     Loading completed documents...
                   </div>
                 ) : completedDocuments.length === 0 ? (
@@ -1497,7 +1497,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                   onClick={() => {
                     window.open(`/editor/${job.id}?mode=tagging`, '_blank');
                   }}
-                  className="bg-orange-50 text-orange-600 border-orange-300 hover:bg-orange-100 transition-colors duration-150"
+                  className="bg-[#002A5C]/5 text-[#002A5C] border-[#002A5C] hover:bg-[#002A5C]/10 transition-colors duration-150"
                 >
                   <Tag className="h-4 w-4 mr-2" />
                   Start Tagging
@@ -1553,7 +1553,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                     }
                   }}
                   disabled={isStartingLiveSession}
-                  className="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+                  className="bg-[#002A5C] hover:bg-[#002A5C]/90 text-white disabled:opacity-50"
                 >
                   {isStartingLiveSession ? (
                     <>
@@ -1575,12 +1575,12 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
               <Button
                 variant="outline"
                 onClick={handleDownloadPackage}
-                className="bg-green-50 text-blue-600 border-green-300 hover:bg-green-100 transition-colors duration-150"
+                className="bg-[#002A5C]/5 text-[#002A5C] border-[#002A5C] hover:bg-[#002A5C]/10 transition-colors duration-150"
                 disabled={downloadingPackage}
               >
                 {downloadingPackage ? (
                   <>
-                    <div className="animate-spin w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full mr-2" />
+                    <div className="animate-spin w-4 h-4 border-2 border-[#002A5C] border-t-transparent rounded-full mr-2" />
                     Downloading...
                   </>
                 ) : (

@@ -184,12 +184,31 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
     });
   }, [textInputs, currentDocument?.id]);
 
+  // Track previous text tag IDs to avoid unnecessary reloads
+  const prevTextTagIdsRef = useRef<string>('');
+  
   // Keep streamlined text inputs in sync with tag list for the current document
+  // Only reload when text tags are added/removed, not on every tag update
   useEffect(() => {
     try {
       if (!currentDocument) return;
-      const currentDocTags = tags.filter(t => t.documentId === currentDocument.id);
-      loadTextInputsFromTags(currentDocTags);
+      const currentDocTextTags = tags.filter(t => 
+        t.documentId === currentDocument.id && t.tagType === 'T'
+      );
+      
+      // Create a stable key based on text tag IDs to avoid unnecessary reloads
+      const textTagIds = currentDocTextTags.map(t => t.id).sort().join(',');
+      
+      // Only reload if text tag IDs have changed (tags added/removed)
+      if (prevTextTagIdsRef.current !== textTagIds) {
+        console.log('📝 Text tag IDs changed, reloading text inputs:', {
+          prev: prevTextTagIdsRef.current || '(empty)',
+          current: textTagIds || '(empty)',
+          tagCount: currentDocTextTags.length
+        });
+        prevTextTagIdsRef.current = textTagIds;
+        loadTextInputsFromTags(currentDocTextTags);
+      }
     } catch (e) {
       // No-op: defensive guard
     }

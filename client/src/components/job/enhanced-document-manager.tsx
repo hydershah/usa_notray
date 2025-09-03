@@ -244,10 +244,10 @@ export default function EnhancedDocumentManager({
 
   const getStatusBadge = (status: string) => {
     const colors = {
-      uploaded: "bg-blue-100 text-blue-800",
-      processing: "bg-yellow-100 text-yellow-800", 
-      ready: "bg-green-100 text-green-800",
-      signed: "bg-green-100 text-green-800"
+      uploaded: "bg-[#002A5C]/10 text-[#002A5C]",
+      processing: "bg-gray-100 text-gray-700", 
+      ready: "bg-[#002A5C]/15 text-[#002A5C]",
+      signed: "bg-[#002A5C]/20 text-[#002A5C]"
     };
 
     const colorClass = colors[status as keyof typeof colors] || "bg-gray-100 text-gray-800";
@@ -453,7 +453,7 @@ export default function EnhancedDocumentManager({
           <CardContent>
             <div
               className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
-                dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+                dragOver ? 'border-[#002A5C] bg-[#002A5C]/5' : 'border-gray-300'
               }`}
               onDrop={handleDrop}
               onDragOver={handleDragOver}

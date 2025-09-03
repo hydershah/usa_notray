@@ -435,8 +435,8 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
                   </div>
                 )}
                 
-      {/* Session Completion */}
-      {propMode !== 'signing' && sessionId && (
+      {/* Session Completion - REMOVED */}
+      {/* {propMode !== 'signing' && sessionId && (
         <div className="border-t pt-4 space-y-2">
           <button
             onClick={handleComplete}
@@ -452,7 +452,7 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
             </div>
           )}
         </div>
-      )}
+      )} */}
     </div>
   );
 };

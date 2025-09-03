@@ -215,7 +215,7 @@ export function SessionRecordingCard({ jobId }: SessionRecordingCardProps) {
         ) : recording && recording.fileUrl ? (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
-              <Badge className="bg-green-100 text-green-800 border-green-200">
+              <Badge className="bg-[#002A5C]/10 text-[#002A5C] border-[#002A5C]/20">
                 <Video className="h-3 w-3 mr-1" />
                 Recording Available
               </Badge>
@@ -257,11 +257,11 @@ export function SessionRecordingCard({ jobId }: SessionRecordingCardProps) {
               </div>
 
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={handlePlay}>
+                <Button variant="outline" size="sm" onClick={handlePlay} className="border-[#002A5C] text-[#002A5C] hover:bg-[#002A5C]/5">
                   <Eye className="h-4 w-4 mr-2" />
                   Play
                 </Button>
-                <Button variant="outline" size="sm" onClick={handleDownload}>
+                <Button variant="outline" size="sm" onClick={handleDownload} className="border-[#002A5C] text-[#002A5C] hover:bg-[#002A5C]/5">
                   <Download className="h-4 w-4 mr-2" />
                   Download
                 </Button>
@@ -271,8 +271,8 @@ export function SessionRecordingCard({ jobId }: SessionRecordingCardProps) {
         ) : processing ? (
           <div className="text-center py-6">
             <div className="flex items-center justify-center gap-2 mb-3">
-              <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
-              <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">
+              <Loader2 className="h-6 w-6 animate-spin text-[#002A5C]" />
+              <Badge className="bg-gray-100 text-gray-700 border-gray-200">
                 Processing
               </Badge>
             </div>

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -126,6 +126,11 @@ export function JobTable({ onCreateJob }: JobTableProps) {
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Reset to first page when search changes to avoid empty pages
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   // Helpers to read fields from either camelCase (drizzle selects) or snake_case (raw SQL)
   const getValue = <T,>(obj: any, keys: string[], fallback?: T): T | undefined => {
@@ -660,8 +665,8 @@ export function JobTable({ onCreateJob }: JobTableProps) {
       <div className="space-y-6">
 
 
-        {/* Enhanced Filters */}
-        <div className="px-6 space-y-4">
+        {/* Filters */}
+        <div className="px-6 py-2 space-y-4">
           <div className="flex flex-col lg:flex-row gap-4">
             <div className="flex-1">
               <div className="relative">
@@ -669,8 +674,9 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                 <Input
                   placeholder="Search jobs by reference, company, address, or closing type..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-12 pr-4 py-2 h-11 bg-white border-2 border-gray-200 focus:border-blue-500 rounded-xl shadow-sm"
+                  onChange={(e) => setSearchTerm(e.currentTarget.value)}
+                  aria-label="Search jobs"
+                  className="pl-12 pr-4 h-12 bg-white border border-gray-200 focus:border-blue-500 rounded-lg w-full"
                 />
               </div>
             </div>
@@ -690,7 +696,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
             </div>
           ) : filteredAndSortedJobs.length === 0 ? (
             <div className="text-center py-16">
-              <div className="w-20 h-20 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <div className="w-20 h-20 bg-gray-100 rounded-xl flex items-center justify-center mx-auto mb-6">
                 <FileText className="h-10 w-10 text-gray-400" />
               </div>
               <h3 className="text-xl font-semibold text-gray-900 mb-2">
@@ -700,7 +706,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                 {searchTerm ? "Try adjusting your search criteria" : "Get started by creating your first job"}
               </p>
               {canCreateJob && !searchTerm && (
-                <Button onClick={onCreateJob} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700">
+                <Button onClick={onCreateJob} className="bg-[#002A5C] hover:bg-[#002A5C]/90">
                   <Plus className="h-4 w-4 mr-2" />
                   Create your first job
                 </Button>
@@ -710,10 +716,10 @@ export function JobTable({ onCreateJob }: JobTableProps) {
             // Grid View
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {paginatedJobs.map((job) => (
-                <Card key={job.id} className={`group hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-2 ${
+                <Card key={job.id} className={`group hover:shadow-md transition-all duration-200 border ${
                   getJobStatus(job) === 'cancelled' 
-                    ? 'bg-red-100 border-red-300 hover:border-red-400' 
-                    : 'border-gray-100 hover:border-blue-200'
+                    ? 'bg-red-50 border-red-200' 
+                    : 'border-gray-200'
                 }`}>
                   <CardHeader className="pb-4">
                     <div className="flex items-start justify-between">
@@ -766,18 +772,11 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                     </div>
 
                     <div className="pt-2 border-t border-gray-100 space-y-2">
-                      <Button
-                        onClick={() => handleViewDetails(job)}
-                        variant="outline"
-                        className="w-full hover:bg-blue-50 hover:text-blue-600 transition-colors"
-                      >
+                      <Button onClick={() => handleViewDetails(job)} variant="outline" className="w-full">
                         <Eye className="w-4 h-4 mr-2" />
                         Quick View
                       </Button>
-                      <Button
-                        onClick={() => window.open(`/jobs/${job.id}`, '_blank')}
-                        className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
-                      >
+                      <Button onClick={() => window.open(`/jobs/${job.id}`, '_blank')} className="w-full bg-[#002A5C] hover:bg-[#002A5C]/90">
                         <ExternalLink className="w-4 h-4 mr-2" />
                         Job View
                       </Button>
@@ -788,17 +787,17 @@ export function JobTable({ onCreateJob }: JobTableProps) {
             </div>
           ) : (
             // Enhanced Table View
-            <div className="bg-white rounded-2xl border-2 border-gray-100 overflow-hidden shadow-sm">
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
               <Table>
                 <TableHeader>
-                  <TableRow className="hover:bg-transparent bg-gray-50/50">
-                    <TableHead className="w-8 py-3 px-1">
+                  <TableRow className="hover:bg-transparent bg-gray-50">
+                    <TableHead className="w-8 py-3 px-2">
                       <Checkbox
                         checked={selectedJobs.length === paginatedJobs.length && paginatedJobs.length > 0}
                         onCheckedChange={handleSelectAll}
                       />
                     </TableHead>
-                    <TableHead className="py-3 px-1">
+                    <TableHead className="py-3 px-2">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -809,7 +808,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                         {getSortIcon('title')}
                       </Button>
                     </TableHead>
-                    <TableHead className="py-3 px-1">
+                    <TableHead className="py-3 px-2">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -821,7 +820,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                       </Button>
                     </TableHead>
                     {!isTitleCompany && (
-                      <TableHead className="py-3 px-1">
+                      <TableHead className="py-3 px-2">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -834,7 +833,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                       </TableHead>
                     )}
                     {!isNotary && (
-                      <TableHead className="py-3 px-1">
+                      <TableHead className="py-3 px-2">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -846,7 +845,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                         </Button>
                       </TableHead>
                     )}
-                    <TableHead className="py-3 px-1">
+                    <TableHead className="py-3 px-2">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -857,7 +856,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                         {getSortIcon('signer')}
                       </Button>
                     </TableHead>
-                    <TableHead className="py-3 px-1">
+                    <TableHead className="py-3 px-2">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -868,66 +867,66 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                         {getSortIcon('status')}
                       </Button>
                     </TableHead>
-                    <TableHead className="py-3 px-1 font-semibold text-gray-700 text-xs">Actions</TableHead>
+                    <TableHead className="py-3 px-2 font-semibold text-gray-700 text-xs">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paginatedJobs.map((job, index) => (
                     <TableRow 
                       key={job.id} 
-                      className={`hover:bg-blue-50/50 transition-colors border-b border-gray-100 ${
+                      className={`hover:bg-gray-50 transition-colors border-b border-gray-100 ${
                         getJobStatus(job) === 'cancelled' 
-                          ? 'bg-red-100 hover:bg-red-150' 
-                          : index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'
+                          ? 'bg-red-50' 
+                          : index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
                       }`}
                     >
-                      <TableCell className="py-3 px-1">
+                      <TableCell className="py-3 px-2">
                         <Checkbox
                           checked={selectedJobs.includes(job.id)}
                           onCheckedChange={(checked) => handleSelectJob(job.id, !!checked)}
                         />
                       </TableCell>
-                      <TableCell className="py-4">
+                      <TableCell className="py-4 px-2">
                         <div className="font-semibold text-gray-900 text-base">
                           {job.internalReference || `Job #${job.id}`}
                         </div>
                       </TableCell>
-                      <TableCell className="py-4">
+                      <TableCell className="py-4 px-2">
                         <div className="text-sm text-gray-600">
                           {formatSigningDateTime(getSelectedDate(job) || '', getSelectedTime(job) || '')}
                         </div>
                       </TableCell>
                       {!isTitleCompany && (
-                        <TableCell className="py-4">
+                        <TableCell className="py-4 px-2">
                           <div className="text-sm text-gray-600">
                             {getTitleCompany(job) || '—'}
                           </div>
                         </TableCell>
                       )}
                       {!isNotary && (
-                        <TableCell className="py-3 px-1">
+                        <TableCell className="py-3 px-2">
                           <div className="text-xs text-gray-600">
                             {getAssignedNotary(job)}
                           </div>
                         </TableCell>
                       )}
-                      <TableCell className="py-3 px-1">
+                      <TableCell className="py-3 px-2">
                         <div className="text-xs text-gray-600 truncate max-w-[100px]">
                           {getFirstSignerName(job)}
                         </div>
                       </TableCell>
-                      <TableCell className="py-3 px-1">
-                        <div className="scale-90 origin-left">
+                      <TableCell className="py-3 px-2">
+                        <div className="origin-left">
                           {getStatusBadge(getJobStatus(job))}
                         </div>
                       </TableCell>
-                      <TableCell className="py-3 px-1">
-                        <div className="flex gap-0.5">
+                      <TableCell className="py-3 px-2">
+                        <div className="flex gap-1">
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handleViewDetails(job)}
-                            className="hover:bg-blue-50 hover:text-blue-600 transition-colors h-7 px-2 text-xs"
+                            className="h-7 px-2 text-xs"
                           >
                             <Eye className="h-3 w-3" />
                           </Button>
@@ -935,7 +934,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                             variant="outline"
                             size="sm"
                             onClick={() => setLocation(`/jobs/${job.id}`)}
-                            className="hover:bg-blue-50 hover:text-blue-600 transition-colors h-7 px-2 text-xs"
+                            className="h-7 px-2 text-xs"
                           >
                             <ExternalLink className="h-3 w-3" />
                           </Button>
@@ -944,7 +943,17 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                               variant="outline"
                               size="sm"
                               onClick={() => handleEditJob(job)}
-                              className="hover:bg-green-50 hover:text-blue-600 transition-colors h-7 px-2 text-xs"
+                              disabled={getJobStatus(job) === 'completed'}
+                              className={`h-7 px-2 text-xs ${
+                                getJobStatus(job) === 'completed'
+                                  ? 'opacity-50 cursor-not-allowed'
+                                  : ''
+                              }`}
+                              title={
+                                getJobStatus(job) === 'completed'
+                                  ? 'Cannot edit completed job'
+                                  : 'Edit job'
+                              }
                             >
                               <Edit3 className="h-3 w-3" />
                             </Button>
@@ -960,7 +969,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
 
           {/* Enhanced Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-8 bg-white rounded-xl p-4 border-2 border-gray-100">
+            <div className="flex items-center justify-between mt-8 bg-white rounded-lg p-4 border border-gray-200">
               <div className="text-sm text-gray-600 font-medium">
                 Page {currentPage} of {totalPages} • {filteredAndSortedJobs.length} total results
               </div>
@@ -970,7 +979,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   size="sm"
                   onClick={() => handlePageChange(1)}
                   disabled={currentPage === 1}
-                  className="border-2"
+                  className=""
                 >
                   First
                 </Button>
@@ -979,7 +988,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   size="sm"
                   onClick={() => handlePageChange(currentPage - 1)}
                   disabled={currentPage === 1}
-                  className="border-2"
+                  className=""
                 >
                   <ChevronLeft className="h-4 w-4" />
                   Previous
@@ -995,7 +1004,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                         variant={pageNum === currentPage ? "default" : "outline"}
                         size="sm"
                         onClick={() => handlePageChange(pageNum)}
-                        className={`w-10 ${pageNum === currentPage ? 'bg-blue-600 hover:bg-blue-700' : 'border-2'}`}
+                        className={`w-10 ${pageNum === currentPage ? 'bg-[#002A5C] hover:bg-[#002A5C]/90' : ''}`}
                       >
                         {pageNum}
                       </Button>
@@ -1008,7 +1017,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   size="sm"
                   onClick={() => handlePageChange(currentPage + 1)}
                   disabled={currentPage === totalPages}
-                  className="border-2"
+                  className=""
                 >
                   Next
                   <ChevronRight className="h-4 w-4" />
@@ -1018,7 +1027,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                   size="sm"
                   onClick={() => handlePageChange(totalPages)}
                   disabled={currentPage === totalPages}
-                  className="border-2"
+                  className=""
                 >
                   Last
                 </Button>
@@ -1028,7 +1037,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
         </div>
       </div>
 
-      {/* Enhanced Job Details Modal with better positioning and animation */}
+      {/* Job Details Modal */}
       <JobDetailsModal
         job={selectedJob}
         isOpen={isModalOpen}
@@ -1043,15 +1052,9 @@ export function JobTable({ onCreateJob }: JobTableProps) {
         }}
       />
 
-      {/* Enhanced Job Editor Dialog with improved modal positioning */}
+      {/* Job Editor Dialog */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent className="!w-[95vw] !max-w-7xl !h-[95vh] !max-h-[95vh] !p-0 !overflow-hidden !flex !flex-col
-                                 data-[state=open]:animate-in data-[state=closed]:animate-out 
-                                 data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 
-                                 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 
-                                 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] 
-                                 data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]
-                                 sm:rounded-lg shadow-2xl border-2 border-gray-200">
+        <DialogContent className="!w-[95vw] !max-w-7xl !h-[95vh] !max-h-[95vh] !p-0 !overflow-hidden !flex !flex-col sm:rounded-lg border border-gray-200">
           {editingJob && (
             <JobEditor
               jobId={editingJob.id}
@@ -1065,15 +1068,9 @@ export function JobTable({ onCreateJob }: JobTableProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Enhanced Bulk Action Confirmation Dialog */}
+      {/* Bulk Action Confirmation Dialog */}
       <AlertDialog open={isBulkActionOpen} onOpenChange={setIsBulkActionOpen}>
-        <AlertDialogContent className="sm:max-w-lg 
-                                     data-[state=open]:animate-in data-[state=closed]:animate-out 
-                                     data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 
-                                     data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 
-                                     data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] 
-                                     data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]
-                                     shadow-2xl border-2 border-gray-200">
+        <AlertDialogContent className="sm:max-w-lg border border-gray-200">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <Trash2 className="h-5 w-5 text-red-600" />
@@ -1084,7 +1081,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="border-2">Cancel</AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmBulkAction}
               className="bg-red-600 hover:bg-red-700"

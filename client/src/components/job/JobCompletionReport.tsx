@@ -146,12 +146,20 @@ export function JobCompletionReport({ jobId, jobStatus, minimal = false }: JobCo
   if (loading) {
     if (minimal) {
       return (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <RefreshCw className="h-4 w-4 animate-spin" />
-            <span>Loading report information...</span>
-          </div>
-        </div>
+        <Card className="border border-gray-200 hover:shadow-sm transition-all duration-200">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center text-lg font-semibold text-gray-900">
+              <FileCheck className="h-5 w-5 mr-2 text-gray-700" />
+              Completion Report
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="flex items-center justify-center py-6">
+              <div className="animate-spin rounded-full h-5 w-5 border-2 border-[#002A5C] border-t-transparent"></div>
+              <span className="ml-2 text-gray-600 text-sm">Loading report information...</span>
+            </div>
+          </CardContent>
+        </Card>
       );
     }
     return (
@@ -177,53 +185,92 @@ export function JobCompletionReport({ jobId, jobStatus, minimal = false }: JobCo
 
   if (minimal) {
     return (
-      <div className="space-y-3">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <FileText className="h-4 w-4" />
-          <span>Completion Report</span>
-        </div>
-        {!isJobCompleted ? (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Clock className="h-3 w-3" />
-            <span>Generated after job is finished</span>
-          </div>
-        ) : hasReport ? (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-blue-600 text-sm">
-              <CheckCircle className="h-4 w-4" />
-              <span>Available</span>
+      <Card className="border border-gray-200 hover:shadow-sm transition-all duration-200">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center text-lg font-semibold text-gray-900">
+            <FileCheck className="h-5 w-5 mr-2 text-gray-700" />
+            Completion Report
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {!isJobCompleted ? (
+            <div className="text-center py-6 text-gray-500">
+              <Clock className="h-8 w-8 text-gray-300 mx-auto mb-3" />
+              <p className="text-sm font-medium">Report Pending</p>
+              <p className="text-xs mt-1">Generated after job is completed</p>
             </div>
-            <div className="flex gap-2">
-              <Button onClick={downloadReport} disabled={downloading} size="sm">
-                {downloading ? (
-                  <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+          ) : hasReport ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 p-3 bg-[#002A5C]/5 rounded-lg border border-[#002A5C]/20">
+                <div className="p-2 bg-[#002A5C]/10 rounded-lg">
+                  <CheckCircle className="h-5 w-5 text-[#002A5C]" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-gray-900">Available</p>
+                  <p className="text-sm text-gray-600">Ready for download</p>
+                </div>
+              </div>
+              
+              <div className="flex gap-2">
+                <Button 
+                  onClick={downloadReport} 
+                  disabled={downloading} 
+                  size="sm"
+                  className="flex-1 bg-[#002A5C] hover:bg-[#002A5C]/90"
+                >
+                  {downloading ? (
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4 mr-2" />
+                  )}
+                  Download
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={generateReport} 
+                  disabled={generating} 
+                  size="sm"
+                  className="border-[#002A5C] text-[#002A5C] hover:bg-[#002A5C]/5"
+                  title="Regenerate report"
+                >
+                  {generating ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                <div className="p-2 bg-amber-100 rounded-lg">
+                  <AlertCircle className="h-5 w-5 text-amber-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-gray-900">Not Generated</p>
+                  <p className="text-sm text-gray-600">Report needs to be created</p>
+                </div>
+              </div>
+              
+              <Button
+                onClick={generateReport}
+                disabled={generating}
+                variant="outline"
+                size="sm"
+                className="w-full border-[#002A5C] text-[#002A5C] hover:bg-[#002A5C]/5"
+              >
+                {generating ? (
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
-                  <Download className="h-3 w-3 mr-1" />
+                  <FileText className="h-4 w-4 mr-2" />
                 )}
-                Download
-              </Button>
-              <Button variant="outline" onClick={generateReport} disabled={generating} size="sm">
-                <RefreshCw className="h-3 w-3" />
+                Generate Report
               </Button>
             </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-amber-600 text-sm">
-            <AlertCircle className="h-4 w-4" />
-            <span>Not generated</span>
-            <Button
-              onClick={generateReport}
-              disabled={generating}
-              variant="outline"
-              size="sm"
-              className="ml-auto"
-            >
-              <FileText className="h-3 w-3 mr-1" />
-              Generate
-            </Button>
-          </div>
-        )}
-      </div>
+          )}
+        </CardContent>
+      </Card>
     );
   }
 

@@ -223,13 +223,24 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
             const lastLocalUpdate = lastLocalCoordinateUpdateAt.current.get(data.id) || 0;
             const timeSinceLocal = Date.now() - lastLocalUpdate;
             
-            if (timeSinceLocal > 1000) {
+            if (timeSinceLocal > 2000) { // 2s protection window to handle network latency
               // Only apply if enough time has passed since local update
+              console.log('✅ Applying tag_updated coordinates - protection window passed:', {
+                id: data.id,
+                timeSinceLocal: timeSinceLocal + 'ms',
+                coordinates: data.updates.coordinates
+              });
               setTextInputs(prev => prev.map(input => 
                 input.id === data.id 
                   ? { ...input, coordinates: { ...input.coordinates, ...data.updates.coordinates } }
                   : input
               ));
+            } else {
+              console.log('🛡️ PROTECTED: Skipping tag_updated coordinates - recent local move:', {
+                id: data.id,
+                timeSinceLocal: timeSinceLocal + 'ms',
+                wouldHaveApplied: data.updates.coordinates
+              });
             }
           }
           break;
@@ -298,10 +309,15 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
             currentlySelected: selectedTextInputId === data.textInputId
           });
           
-          // Suppress echo of our own recent updates (within 700ms)
+          // Suppress echo of our own recent updates (within 2000ms)
+          // This needs to be longer than network round-trip time to prevent position bouncing
           const lastAt = lastLocalCoordinateUpdateAt.current.get(data.textInputId) || 0;
-          if (Date.now() - lastAt < 700) {
-            console.log('⏭️ Skipping echo coordinate update shortly after local change:', data.textInputId);
+          const timeSinceLocal = Date.now() - lastAt;
+          if (timeSinceLocal < 2000) {
+            console.log('⏭️ Skipping echo coordinate update shortly after local change:', {
+              textInputId: data.textInputId,
+              timeSinceLocal: timeSinceLocal + 'ms'
+            });
             break;
           }
 
@@ -528,6 +544,10 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
   // Move text input to new coordinates (moved above saveTextContent to avoid TDZ)
   const moveTextInput = useCallback(async (textInputId: string, coordinates: { x: number; y: number; width?: number; height?: number }) => {
     try {
+      // Track this local update IMMEDIATELY to prevent echo from WebSocket
+      // This must happen BEFORE updating state to ensure protection is active
+      lastLocalCoordinateUpdateAt.current.set(textInputId, Date.now());
+      
       // Update local state immediately for responsive UI
       setTextInputs(prev => prev.map(input => 
         input.id === textInputId
@@ -544,7 +564,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           : input
       ));
 
-      // Track this local update to prevent echo
+      // Update timestamp again to extend protection window
       lastLocalCoordinateUpdateAt.current.set(textInputId, Date.now());
       
       // If this is a temporary ID, don't call the server yet (prevents 400s)
@@ -921,7 +941,7 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
         const existing = byId.get(input.id);
         // If we have a recent local coordinate update, avoid overwriting with potentially stale server coords
         const lastLocalAt = existing ? (lastLocalCoordinateUpdateAt.current.get(existing.id) || 0) : 0;
-        const recentlyMovedLocally = Date.now() - lastLocalAt < 1200; // 1.2s protection window
+        const recentlyMovedLocally = Date.now() - lastLocalAt < 2000; // 2s protection window to handle network latency
         // Use global editor store to determine if this text input is actively being edited
         const activeId = (useEditorStore.getState() as any).activeTextInputId;
         const isCurrentlyEditing = activeId === input.id;
@@ -930,6 +950,14 @@ export const useStreamlinedTextInputs = (sessionId: string) => {
           // Minimal protection:
           // - Preserve coordinates only if we just moved locally (prevent snapping back)
           // - Preserve content if currently editing (prevent vanishing on tag switch)
+          console.log('🛡️ PROTECTED: Preserving local state for text input:', {
+            id: input.id,
+            recentlyMovedLocally,
+            isCurrentlyEditing,
+            timeSinceMove: Date.now() - lastLocalAt,
+            preservingCoords: recentlyMovedLocally,
+            preservingContent: isCurrentlyEditing
+          });
           byId.set(input.id, {
             ...existing,
             coordinates: recentlyMovedLocally ? existing.coordinates : input.coordinates,

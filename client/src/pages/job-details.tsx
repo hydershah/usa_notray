@@ -27,7 +27,8 @@ import {
   Edit3,
   Shield,
   FileCheck,
-  Loader2
+  Loader2,
+  UserCheck
 } from 'lucide-react';
 import { getStatusColor, formatDate, isMobileDevice } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -364,31 +365,44 @@ export default function JobDetailsPage() {
     );
   }
 
+
+
   return (
     <MainLayout>
-      <div className="max-w-6xl mx-auto p-6 space-y-4">
-        {/* Header */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8 animate-in fade-in-50 duration-500">
+        
+        {/* Header Section - Clean and Professional */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-4">
             <Button variant="outline" onClick={handleBackToJobs}>
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to Jobs
             </Button>
-            <div>
-              <h1 className="text-2xl font-semibold">Job #{job.id}</h1>
-              <p className="text-gray-600 text-sm">{job.titleCompany}</p>
+            <div className="border-l border-gray-300 pl-4">
+              <h1 className="text-3xl font-bold text-gray-900">Job #{job.id}</h1>
+              <p className="text-gray-600 mt-2">{job.titleCompany}</p>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
-            {/* Hide Edit, Tag, and Live Session buttons for signers when job is completed and title companies */}
+          
+          <div className="flex items-center gap-3">
+            {/* Action Buttons - Professional Style */}
             {!(user?.role === 'signer' && job.jobStatus === 'completed') && 
              !(user?.role === 'title_company' || user?.role === 'company_manager' || user?.role === 'client') && (
               <>
                 <Button 
                   onClick={() => setIsEditModalOpen(true)}
                   variant="outline"
-                  className="border-orange-600 text-orange-600 hover:bg-orange-50"
-                  title="Edit job details, signers, and documents"
+                  disabled={job.jobStatus === 'completed'}
+                  className={`transition-colors duration-150 ${
+                    job.jobStatus === 'completed'
+                      ? 'border-gray-400 text-gray-400 cursor-not-allowed'
+                      : 'border-[#002A5C] text-[#002A5C] hover:bg-[#002A5C]/5'
+                  }`}
+                  title={
+                    job.jobStatus === 'completed'
+                      ? 'Cannot edit completed job'
+                      : 'Edit job details, signers, and documents'
+                  }
                   size="sm"
                 >
                   <Edit3 className="h-4 w-4 mr-2" />
@@ -398,33 +412,43 @@ export default function JobDetailsPage() {
                   onClick={handleStartTagging} 
                   variant="outline" 
                   disabled={
+                    job.jobStatus === 'completed' ||
                     certificateVerification?.participantStatuses?.some((p: any) => p.userRole === 'notary' && !p.canProceed) || false
                   }
                   className={`transition-colors duration-150 ${
+                    job.jobStatus === 'completed' ||
                     certificateVerification?.participantStatuses?.some((p: any) => p.userRole === 'notary' && !p.canProceed)
                       ? 'border-gray-400 text-gray-400 cursor-not-allowed'
-                      : 'border-blue-600 text-blue-600 hover:bg-blue-50'
+                      : 'border-[#002A5C] text-[#002A5C] hover:bg-[#002A5C]/5'
                   }`}
                   title={
-                    certificateVerification?.participantStatuses?.some((p: any) => p.userRole === 'notary' && !p.canProceed)
+                    job.jobStatus === 'completed'
+                      ? 'Cannot tag documents for completed job'
+                      : certificateVerification?.participantStatuses?.some((p: any) => p.userRole === 'notary' && !p.canProceed)
                       ? 'Notary needs a valid digital certificate to start tagging'
                       : 'Start tagging documents'
                   }
                   size="sm"
                 >
-                  <Edit3 className="h-4 w-4 mr-2" />
+                  <Tag className="h-4 w-4 mr-2" />
                   Tag
                 </Button>
                 <Button 
                   onClick={handleStartLiveSession} 
-                  disabled={Boolean(certificateVerification && !certificateVerification.canStartJob)}
+                  disabled={
+                    job.jobStatus === 'completed' ||
+                    Boolean(certificateVerification && !certificateVerification.canStartJob)
+                  }
                   className={`transition-colors duration-150 ${
-                    certificateVerification && !certificateVerification.canStartJob
+                    job.jobStatus === 'completed' ||
+                    (certificateVerification && !certificateVerification.canStartJob)
                       ? 'bg-gray-400 hover:bg-gray-500 cursor-not-allowed'
-                      : 'bg-green-600 hover:bg-green-700'
+                      : 'bg-[#002A5C] hover:bg-[#002A5C]/90'
                   }`}
                   title={
-                    certificateVerification && !certificateVerification.canStartJob
+                    job.jobStatus === 'completed'
+                      ? 'Cannot start live session for completed job'
+                      : certificateVerification && !certificateVerification.canStartJob
                       ? 'All participants need valid digital certificates to start'
                       : 'Start the live signing session'
                   }
@@ -441,7 +465,7 @@ export default function JobDetailsPage() {
               <Button 
                 onClick={handleDownloadPackage}
                 variant="outline"
-                className="border-green-600 text-blue-600 hover:bg-green-50"
+                className="border-[#002A5C] text-[#002A5C] hover:bg-[#002A5C]/5"
                 title="Download completion report and completed documents"
                 size="sm"
                 disabled={downloadingPackage}
@@ -461,64 +485,105 @@ export default function JobDetailsPage() {
           </div>
         </div>
 
+
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Assigned Notary */}
-          <div className="lg:col-span-1">
+          {/* Left Column - Assigned Notary & Completion Report */}
+          <div className="lg:col-span-1 space-y-4">
             <NotaryAssignmentCard jobId={job.id} />
+            <JobCompletionReport 
+              jobId={job.id} 
+              jobStatus={job.jobStatus}
+              minimal
+            />
           </div>
 
           {/* Job Information */}
-          <Card className="border-none shadow-none lg:col-span-2">
-            <CardHeader className="py-3">
-              <CardTitle className="flex items-center text-base">
-                <FileText className="h-5 w-5 mr-2" />
+          <Card className="border border-gray-200 hover:shadow-sm transition-all duration-200 lg:col-span-2">
+            <CardHeader className="pb-4">
+              <CardTitle className="flex items-center text-lg font-semibold text-gray-900">
+                <Building className="h-5 w-5 mr-2 text-[#002A5C]" />
                 Job Information
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 pt-0">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <label className="text-[12px] font-medium text-gray-500">Reference</label>
-                  <p>{job.internalReference || `Job #${job.id}`}</p>
+            <CardContent className="pt-0 space-y-6">
+              {/* Basic Information Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Reference</p>
+                      <p className="text-sm font-semibold text-gray-900 mt-1">{job.internalReference || `Job #${job.id}`}</p>
+                    </div>
+                    <FileText className="h-4 w-4 text-[#002A5C]" />
+                  </div>
+                  
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">KBA Required</p>
+                      <p className="text-sm font-semibold text-gray-900 mt-1">{job.kbaRequired ? 'Yes' : 'No'}</p>
+                    </div>
+                    <Shield className="h-4 w-4 text-[#002A5C]" />
+                  </div>
                 </div>
-                <div>
-                  <label className="text-[12px] font-medium text-gray-500">Closing Type</label>
-                  <p>{job.closingType}</p>
-                </div>
-                <div>
-                  <label className="text-[12px] font-medium text-gray-500">KBA Required</label>
-                  <p>{job.kbaRequired ? 'Yes' : 'No'}</p>
-                </div>
-                <div>
-                  <label className="text-[12px] font-medium text-gray-500">Created</label>
-                  <p>{formatDate(job.createdAt)}</p>
+                
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Closing Type</p>
+                      <p className="text-sm font-semibold text-gray-900 mt-1">{job.closingType}</p>
+                    </div>
+                    <Building className="h-4 w-4 text-[#002A5C]" />
+                  </div>
+                  
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Created</p>
+                      <p className="text-sm font-semibold text-gray-900 mt-1">{formatDate(job.createdAt)}</p>
+                    </div>
+                    <Calendar className="h-4 w-4 text-[#002A5C]" />
+                  </div>
                 </div>
               </div>
+
+              {/* Scheduling Information */}
               {(job.scheduledAt || job.selectedDate || job.selectedTime) && (
-                <div>
-                  <label className="text-[12px] font-medium text-gray-500">Scheduled</label>
-                  <div className="flex items-center mt-1 text-sm">
-                    <Calendar className="h-4 w-4 mr-2 text-blue-600" />
-                    <span>
-                      {job.scheduledAt ? (
-                        `${new Date(job.scheduledAt).toLocaleDateString()} at ${new Date(job.scheduledAt).toLocaleTimeString()}`
-                      ) : (
-                        `${job.selectedDate ? new Date(job.selectedDate).toLocaleDateString() : 'Not scheduled'} at ${job.selectedTime || 'Not scheduled'}`
-                      )}
-                    </span>
+                <div className="border-t pt-4">
+                  <div className="flex items-center justify-between p-4 bg-[#002A5C]/5 rounded-lg border border-[#002A5C]/20">
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Scheduled Appointment</p>
+                      <div className="flex items-center">
+                        <Calendar className="h-4 w-4 mr-2 text-[#002A5C]" />
+                        <span className="text-sm font-semibold text-gray-900">
+                          {job.scheduledAt ? (
+                            `${new Date(job.scheduledAt).toLocaleDateString()} at ${new Date(job.scheduledAt).toLocaleTimeString()}`
+                          ) : (
+                            `${job.selectedDate ? new Date(job.selectedDate).toLocaleDateString() : 'Not scheduled'} at ${job.selectedTime || 'Not scheduled'}`
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                    <Clock className="h-6 w-6 text-[#002A5C]" />
                   </div>
                 </div>
               )}
+
+              {/* Property Address */}
               {job.propertyAddressOne && (
-                <div>
-                  <label className="text-[12px] font-medium text-gray-500">Property Address</label>
-                  <div className="flex items-start mt-1 text-sm">
-                    <MapPin className="h-4 w-4 mr-2 text-gray-600 mt-0.5" />
-                    <div>
-                      <p>{job.propertyAddressOne}</p>
-                      {job.propertyAddressTwo && <p>{job.propertyAddressTwo}</p>}
-                      <p>{job.propertyCity}, {job.propertyState} {job.propertyZipCode}</p>
+                <div className="border-t pt-4">
+                  <div className="flex items-start justify-between p-4 bg-gray-50 rounded-lg border">
+                    <div className="flex-1">
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Property Address</p>
+                      <div className="flex items-start">
+                        <MapPin className="h-4 w-4 mr-2 text-[#002A5C] mt-0.5 flex-shrink-0" />
+                        <div className="text-sm font-medium text-gray-900">
+                          <p>{job.propertyAddressOne}</p>
+                          {job.propertyAddressTwo && <p>{job.propertyAddressTwo}</p>}
+                          <p className="text-gray-600">{job.propertyCity}, {job.propertyState} {job.propertyZipCode}</p>
+                        </div>
+                      </div>
                     </div>
+                    <Building className="h-6 w-6 text-[#002A5C] ml-4" />
                   </div>
                 </div>
               )}
@@ -526,43 +591,43 @@ export default function JobDetailsPage() {
           </Card>
 
           {/* Signers */}
-          <Card className="border-none shadow-none lg:col-span-3">
-            <CardHeader className="py-3">
-              <CardTitle className="flex items-center text-base">
-                <Users className="h-5 w-5 mr-2" />
+          <Card className="border border-gray-200 hover:shadow-sm transition-all duration-200 lg:col-span-3">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center text-lg font-semibold text-gray-900">
+                <Users className="h-5 w-5 mr-2 text-gray-700" />
                 Signers ({job.signers?.length || 0})
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
               {job.signers && job.signers.length > 0 ? (
-                <div className="divide-y divide-gray-200 border-t border-b">
+                <div className="space-y-4">
                   {job.signers.map((signer: any, index: number) => (
-                    <div key={signer.id} className="py-3">
-                      <div className="flex items-center justify-between">
+                    <div key={signer.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-all duration-200">
+                      <div className="flex items-center justify-between mb-3">
                         <div>
-                          <p className="font-medium text-sm">{signer.signerName}</p>
-                          <p className="text-xs text-gray-600 capitalize">{signer.signerRole}</p>
+                          <p className="font-semibold text-gray-900">{signer.signerName}</p>
+                          <p className="text-sm text-gray-600 capitalize">{signer.signerRole}</p>
                         </div>
-                        <Badge variant="outline">Signer {index + 1}</Badge>
+                        <Badge variant="outline" className="text-xs">Signer {index + 1}</Badge>
                       </div>
                       {(signer.signerEmail || signer.signerPhone) && (
-                        <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-600">
+                        <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-3">
                           {signer.signerEmail && (
                             <div className="flex items-center">
-                              <Mail className="h-3 w-3 mr-2" />
+                              <Mail className="h-4 w-4 mr-2 text-[#002A5C]" />
                               {signer.signerEmail}
                             </div>
                           )}
                           {signer.signerPhone && (
                             <div className="flex items-center">
-                              <Phone className="h-3 w-3 mr-2" />
+                              <Phone className="h-4 w-4 mr-2 text-[#002A5C]" />
                               {signer.signerPhone}
                             </div>
                           )}
                         </div>
                       )}
                       <div className="mt-2">
-                        <Badge className={signer.invitationSentAt ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>
+                        <Badge className={signer.invitationSentAt ? 'bg-[#002A5C]/10 text-[#002A5C]' : 'bg-gray-100 text-gray-700'}>
                           {signer.invitationSentAt ? 'Invitation Sent' : 'Pending'}
                         </Badge>
                       </div>
@@ -570,195 +635,171 @@ export default function JobDetailsPage() {
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-500 text-center py-4 text-sm">No signers added yet</p>
+                <div className="text-center py-8 text-gray-500">
+                  <Users className="h-10 w-10 mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">No signers added yet</p>
+                  <p className="text-xs mt-1">Signers will appear here once added to the job</p>
+                </div>
               )}
             </CardContent>
           </Card>
-
-          {/* Completion Report */}
-          <div className="lg:col-span-3">
-            <JobCompletionReport 
-              jobId={job.id} 
-              jobStatus={job.jobStatus}
-              minimal
-            />
-          </div>
         </div>
 
-        {/* Digital Certificate Status */}
-        {isLoadingCertificates && (
-          <Card className="border-none bg-blue-50 shadow-none">
-            <CardContent className="pt-4">
-              <div className="text-blue-800 flex items-center space-x-2">
-                <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-                <p>🔄 <strong>Loading certificate verification...</strong></p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-        
-        {certificateError && (
-          <Card className="border-none bg-red-50 shadow-none">
-            <CardContent className="pt-4">
-              <div className="text-red-800">
-                <p>❌ <strong>Certificate Verification Error:</strong></p>
-                <p className="text-sm mt-1">{certificateError.message}</p>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => refetchCertificates()}
-                  className="mt-2"
-                >
-                  Retry
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-        
-        {!isLoadingCertificates && !certificateError && !certificateVerification && (
-          <Card className="border-none bg-yellow-50 shadow-none">
-            <CardContent className="pt-4">
-              <div className="text-yellow-800">
-                <p>🔍 <strong>DEBUG:</strong> Certificate verification data not loaded</p>
-                <p className="text-sm">jobId: {jobId}</p>
-                <p className="text-sm">API call succeeded but returned no data</p>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => refetchCertificates()}
-                  className="mt-2"
-                >
-                  Refresh
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-        
-        {certificateVerification && (
-          <CertificateStatusCard
-            verification={certificateVerification}
-            onGenerateCertificate={handleGenerateCertificate}
-            onRefresh={refetchCertificates}
-            isLoading={isLoadingCertificates}
-            compact
-          />
-        )}
 
-        {/* Documents */}
-        <Card className="border-none shadow-none">
-          <CardHeader className="py-3">
-            <CardTitle className="flex items-center text-base">
-              <FileText className="h-5 w-5 mr-2" />
-              Documents ({documents.length})
+
+        {/* Documents Section */}
+        <Card className="border border-gray-200 hover:shadow-sm transition-all duration-200">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between text-lg font-semibold text-gray-900">
+              <div className="flex items-center">
+                <FileText className="h-5 w-5 mr-2 text-gray-700" />
+                Documents ({documents.length})
+              </div>
+              <Badge variant="outline" className="text-xs">
+                {documents.length} total
+              </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
             {documents.length > 0 ? (
-              <div className="divide-y divide-gray-200 border-t border-b">
+              <div className="space-y-3">
                 {documents.map((document: any) => (
-                  <div key={document.id} className="py-3 flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <FileText className="h-6 w-6 text-blue-600" />
-                      <div>
-                        <p className="font-medium text-sm">{document.originalName}</p>
-                        <p className="text-xs text-gray-600">
-                          Uploaded {formatDate(document.uploadedAt)}
-                        </p>
+                  <div key={document.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-all duration-200 bg-gray-50/50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        <div className="p-2 bg-[#002A5C]/10 rounded-lg">
+                          <FileText className="h-6 w-6 text-[#002A5C]" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-900 text-sm">{document.originalName}</p>
+                          <div className="flex items-center gap-4 text-xs text-gray-600 mt-1">
+                            <div className="flex items-center">
+                              <Clock className="h-3 w-3 mr-1" />
+                              Uploaded {document.uploadedAt ? formatDate(document.uploadedAt) : 'Invalid Date'}
+                            </div>
+                            {document.fileSize && (
+                              <div className="flex items-center">
+                                <FileText className="h-3 w-3 mr-1" />
+                                {(document.fileSize / 1024 / 1024).toFixed(2)} MB
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handlePreview(document.id)}
-                        title="Preview document"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDownload(document.id, document.originalName)}
-                        title="Download document"
-                      >
-                        <Download className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => window.open(`/editor/${jobId}?mode=tagging`, '_blank')}
-                        title="Tag document"
-                      >
-                        <Tag className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-gray-100 text-gray-700 text-xs">
+                          Original
+                        </Badge>
+                        <div className="flex items-center space-x-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handlePreview(document.id)}
+                            title="Preview document"
+                            className="h-8 w-8 p-0 border-[#002A5C] text-[#002A5C] hover:bg-[#002A5C]/5"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDownload(document.id, document.originalName)}
+                            title="Download document"
+                            className="h-8 w-8 p-0 border-[#002A5C] text-[#002A5C] hover:bg-[#002A5C]/5"
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => window.open(`/editor/${jobId}?mode=tagging`, '_blank')}
+                            title="Tag document"
+                            className="h-8 w-8 p-0 border-[#002A5C] text-[#002A5C] hover:bg-[#002A5C]/5"
+                          >
+                            <Tag className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="text-center py-6 text-gray-500">
-                <FileText className="h-10 w-10 mx-auto mb-3 opacity-50" />
-                <p className="text-sm">No documents uploaded yet</p>
+              <div className="text-center py-8 text-gray-500">
+                <FileText className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                <p className="text-sm font-medium">No documents uploaded yet</p>
+                <p className="text-xs mt-1">Documents will appear here once uploaded to the job</p>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Completed Documents */}
-        <Card className="border-none shadow-none">
-          <CardHeader className="py-3">
-            <CardTitle className="flex items-center text-base">
-              <FileCheck className="h-5 w-5 mr-2 text-blue-600" />
-              Completed Documents ({completedDocuments.length})
+        {/* Completed Documents Section */}
+        <Card className="border border-gray-200 hover:shadow-sm transition-all duration-200">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between text-lg font-semibold text-gray-900">
+              <div className="flex items-center">
+                <FileCheck className="h-5 w-5 mr-2 text-gray-700" />
+                Completed Documents ({completedDocuments.length})
+              </div>
+              <Badge variant="outline" className="text-xs">
+                {completedDocuments.length} signed
+              </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
             {completedDocuments.length > 0 ? (
-              <div className="divide-y divide-green-200 border-t border-b">
+              <div className="space-y-3">
                 {completedDocuments.map((document: any) => (
-                  <div key={document.id} className="py-3 flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <FileCheck className="h-6 w-6 text-blue-600" />
-                      <div>
-                        <p className="font-medium text-green-900 text-sm">{document.fileName || `job_${jobId}_signed.pdf`}</p>
-                        <p className="text-xs text-green-700">
-                          Completed: {formatDate(document.completedAt || document.createdAt)}
-                        </p>
-                        {document.fileSize && (
-                          <p className="text-[11px] text-blue-600">
-                            Size: {(document.fileSize / 1024 / 1024).toFixed(2)} MB
-                          </p>
-                        )}
+                  <div key={document.id} className="border border-[#002A5C]/20 rounded-lg p-4 hover:shadow-sm transition-all duration-200 bg-[#002A5C]/5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        <div className="p-2 bg-[#002A5C]/20 rounded-lg">
+                          <FileCheck className="h-6 w-6 text-[#002A5C]" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-900 text-sm">{document.fileName || `job_${jobId}_signed.pdf`}</p>
+                          <div className="flex items-center gap-4 text-xs text-gray-600 mt-1">
+                            <div className="flex items-center">
+                              <CheckCircle className="h-3 w-3 mr-1 text-[#002A5C]" />
+                              Completed: {formatDate(document.completedAt || document.createdAt)}
+                            </div>
+                            {document.fileSize && (
+                              <div className="flex items-center">
+                                <FileText className="h-3 w-3 mr-1" />
+                                {(document.fileSize / 1024 / 1024).toFixed(2)} MB
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Badge className="bg-green-100 text-green-800 border-green-200"> 
-                        <CheckCircle className="h-3 w-3 mr-1" />
-                        Signed & Completed
-                      </Badge>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const downloadUrl = `/api/documents/signed/${encodeURIComponent(document.fileName)}`;
-                          window.open(downloadUrl, '_blank');
-                        }}
-                        title="Download signed document"
-                        className="text-green-700 border-green-300 hover:bg-green-100"
-                      >
-                        <Download className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-[#002A5C]/15 text-[#002A5C] border-[#002A5C]/30 text-xs">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Signed & Completed
+                        </Badge>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const downloadUrl = `/api/documents/signed/${encodeURIComponent(document.fileName)}`;
+                            window.open(downloadUrl, '_blank');
+                          }}
+                          title="Download signed document"
+                          className="h-8 w-8 p-0 border-[#002A5C] text-[#002A5C] hover:bg-[#002A5C]/10"
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="text-center py-6 text-gray-500">
-                <FileCheck className="h-10 w-10 mx-auto mb-3 opacity-50" />
-                <p className="text-sm">No completed documents yet</p>
-                <p className="text-xs">Documents will appear here after signing sessions</p>
+              <div className="text-center py-8 text-gray-500">
+                <FileCheck className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                <p className="text-sm font-medium">No completed documents yet</p>
+                <p className="text-xs mt-1">Documents will appear here after signing sessions</p>
               </div>
             )}
           </CardContent>

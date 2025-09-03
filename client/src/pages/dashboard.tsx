@@ -547,6 +547,13 @@ function SignerDashboard() {
                       <Button 
                         size="sm"
                         onClick={() => setLocation(`/editor/${job.id}?mode=signing`)}
+                        disabled={job.jobStatus === 'completed'}
+                        className={job.jobStatus === 'completed' ? 'opacity-50 cursor-not-allowed' : ''}
+                        title={
+                          job.jobStatus === 'completed'
+                            ? 'Cannot sign documents for completed job'
+                            : 'Sign documents'
+                        }
                       >
                         <PenTool className="h-4 w-4 mr-2" />
                         Sign Documents
