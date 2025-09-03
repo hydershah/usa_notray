@@ -95,13 +95,15 @@ export const requireNotaryOrAdmin = (req: any, res: Response, next: NextFunction
 /**
  * Generate JWT token with user info and privileges
  */
-export const generateToken = (user: { id: number; email: string; role: string; privileges?: string[] }): string => {
+export const generateToken = (user: { id: number; email: string; role: string; privileges?: string[] | null }): string => {
+  // Ensure privileges is always a proper array
+  const userPrivileges = Array.isArray(user.privileges) ? user.privileges : (user.privileges ? [user.privileges] : []);
   return jwt.sign(
     { 
       id: user.id, 
       email: user.email, 
       role: user.role,
-      privileges: user.privileges || []
+      privileges: userPrivileges
     },
     JWT_SECRET,
     { expiresIn: '24h' }

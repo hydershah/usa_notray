@@ -921,6 +921,43 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
     }
   };
 
+  // Helper function to scroll to first error field
+  const scrollToFirstError = () => {
+    setTimeout(() => {
+      // Find the first element with an error (has error class or aria-invalid)
+      const errorElement = document.querySelector(
+        '[aria-invalid="true"], .border-red-500, .border-red-300, [data-error="true"], .text-red-600'
+      );
+      if (errorElement) {
+        errorElement.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'center' 
+        });
+        // Focus the element if it's an input
+        if (errorElement instanceof HTMLInputElement || errorElement instanceof HTMLTextAreaElement || errorElement instanceof HTMLSelectElement) {
+          errorElement.focus();
+        }
+        // If it's an error message, try to focus the related input
+        else if (errorElement.classList.contains('text-red-600')) {
+          const parentContainer = errorElement.closest('.space-y-6, .grid, .flex, div');
+          const relatedInput = parentContainer?.querySelector('input, textarea, select, [role="combobox"]');
+          if (relatedInput instanceof HTMLElement) {
+            relatedInput.focus();
+          }
+        }
+      } else {
+        // Fallback: scroll to top of form
+        const formElement = document.querySelector('form');
+        if (formElement) {
+          formElement.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'start' 
+          });
+        }
+      }
+    }, 100); // Small delay to ensure DOM is updated
+  };
+
   const handleSubmit = async (data: JobFormData) => {
     // Prevent double submission
     if (isSubmitting) return;
@@ -932,6 +969,14 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
     
     // Validate all steps before submitting
     let allValid = true;
+    let firstErrorStep = null;
+    
+    // First validate the main form fields
+    const formValid = await form.trigger();
+    if (!formValid) {
+      allValid = false;
+      firstErrorStep = 1; // Basic info step
+    }
     
     // Validate signers
     if (signers.length === 0) {
@@ -940,7 +985,11 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
         title: "No Participants",
         description: "Please add at least one participant (signer or witness).",
       });
-      setCurrentStep(2);
+      if (singlePage) {
+        scrollToFirstError();
+      } else {
+        setCurrentStep(2);
+      }
       return;
     }
     
@@ -948,17 +997,22 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
     signers.forEach((signer, index) => {
       if (!validateSigner(signer, index)) {
         allValid = false;
+        if (firstErrorStep === null) firstErrorStep = 2;
         invalidSigners.push(index + 1);
       }
     });
     
-    if (!allValid) {
+    if (!allValid && invalidSigners.length > 0) {
       toast({
         variant: "destructive",
         title: "Invalid Participant Information",
         description: `Please fix participant information errors for participant(s): ${invalidSigners.join(', ')}`,
       });
-      setCurrentStep(2);
+      if (singlePage) {
+        scrollToFirstError();
+      } else {
+        setCurrentStep(2);
+      }
       return;
     }
     
@@ -969,7 +1023,21 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
         title: "No Documents",
         description: "Please upload at least one document.",
       });
-      setCurrentStep(4);
+      if (singlePage) {
+        scrollToFirstError();
+      } else {
+        setCurrentStep(4);
+      }
+      return;
+    }
+
+    // If we have validation errors, scroll to first error
+    if (!allValid) {
+      if (singlePage) {
+        scrollToFirstError();
+      } else if (firstErrorStep) {
+        setCurrentStep(firstErrorStep);
+      }
       return;
     }
     
@@ -1590,6 +1658,8 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                     className={`${singlePage ? 'h-10' : 'h-12'} mt-2 border-gray-200 focus:border-gray-500 focus:ring-gray-500 ${signerErrors[index]?.signerName ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
                                     disabled={autoPopulatedSigners[index] && !isAdmin}
+                                    aria-invalid={!!signerErrors[index]?.signerName}
+                                    data-error={!!signerErrors[index]?.signerName}
                                   />
                                   {signerErrors[index]?.signerName && (
                                     <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerName}</p>
@@ -1607,6 +1677,8 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                     placeholder="Enter email address (will auto-populate if user exists)"
                                     className={`${singlePage ? 'h-10' : 'h-12'} mt-2 border-gray-200 focus:border-gray-500 focus:ring-gray-500 ${signerErrors[index]?.signerEmail ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
+                                    aria-invalid={!!signerErrors[index]?.signerEmail}
+                                    data-error={!!signerErrors[index]?.signerEmail}
                                   />
                                   {signerErrors[index]?.signerEmail && (
                                     <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerEmail}</p>
@@ -1630,6 +1702,8 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                     className={`${singlePage ? 'h-10' : 'h-12'} mt-2 border-gray-200 focus:border-gray-500 focus:ring-gray-500 ${signerErrors[index]?.signerPhoneNumber ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
                                     onBlur={() => validateSigner(signer, index)}
                                     disabled={autoPopulatedSigners[index] && !isAdmin}
+                                    aria-invalid={!!signerErrors[index]?.signerPhoneNumber}
+                                    data-error={!!signerErrors[index]?.signerPhoneNumber}
                                   />
                                   {signerErrors[index]?.signerPhoneNumber && (
                                     <p className="text-sm text-red-600 mt-1">{signerErrors[index].signerPhoneNumber}</p>
@@ -1647,7 +1721,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                       validateSigner({ ...signer, signerRole: value }, index);
                                     }}
                                   >
-                                    <SelectTrigger className={`${singlePage ? 'h-10' : 'h-12'} mt-2 border-gray-200 focus:border-gray-500 focus:ring-gray-500 ${signerErrors[index]?.signerRole ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}>
+                                    <SelectTrigger className={`${singlePage ? 'h-10' : 'h-12'} mt-2 border-gray-200 focus:border-gray-500 focus:ring-gray-500 ${signerErrors[index]?.signerRole ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`} aria-invalid={!!signerErrors[index]?.signerRole} data-error={!!signerErrors[index]?.signerRole}>
                                       <SelectValue placeholder="Select role" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -1877,7 +1951,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                       </SelectTrigger>
                                     </FormControl>
                                     <SelectContent>
-                                      {notaries.filter(notary => notary.notaryType === 'contractor').map((notary: any) => (
+                                      {notaries.filter(notary => notary.notaryType === 'contractor' || notary.notaryType === 'both').map((notary: any) => (
                                         <SelectItem key={notary.id} value={notary.id.toString()}>
                                           <div className="flex items-center justify-between w-full">
                                             <span className="font-medium">{notary.fullName}</span>

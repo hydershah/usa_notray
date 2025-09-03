@@ -41,7 +41,7 @@ export const users = pgTable("users", {
   disclosure: text("disclosure"),
   signatureData: text("signature_data"), // Base64 encoded signature image (GIF)
   initialData: text("initial_data"), // Base64 encoded initial image (GIF)
-  notaryType: text("notary_type"), // 'contractor' or 'subscriber' for notary role
+  notaryType: text("notary_type"), // 'contractor', 'subscriber', or 'both' for notary role
   notaryIdCode: text("notary_id_code"), // System-generated ID code for notaries (CY0001, CY0002, etc.)
   isActive: boolean("is_active").default(true), // For admin to activate/deactivate users
   

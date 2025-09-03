@@ -1487,22 +1487,26 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
             Job #{job.id} • Last updated: {new Date().toLocaleDateString()}
           </div>
           <div className="flex items-center gap-3">
-            {/* Hide Start Tagging and Live Session buttons for signers when job is completed and title companies */}
+            {/* Start Tagging button - Hidden from signers and title companies */}
             {(job.jobStatus === 'open' || job.jobStatus === 'pending') && 
-             !(user?.role === 'signer' && job.jobStatus === 'completed') && 
+             user?.role !== 'signer' && 
              !(user?.role === 'title_company' || user?.role === 'company_manager' || user?.role === 'client') && (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    window.open(`/editor/${job.id}?mode=tagging`, '_blank');
-                  }}
-                  className="bg-[#002A5C]/5 text-[#002A5C] border-[#002A5C] hover:bg-[#002A5C]/10 transition-colors duration-150"
-                >
-                  <Tag className="h-4 w-4 mr-2" />
-                  Start Tagging
-                </Button>
-                <Button
+              <Button
+                variant="outline"
+                onClick={() => {
+                  window.open(`/editor/${job.id}?mode=tagging`, '_blank');
+                }}
+                className="bg-[#002A5C]/5 text-[#002A5C] border-[#002A5C] hover:bg-[#002A5C]/10 transition-colors duration-150"
+              >
+                <Tag className="h-4 w-4 mr-2" />
+                Start Tagging
+              </Button>
+            )}
+            
+            {/* Live Session button - Available to all roles except title companies for open/pending jobs */}
+            {(job.jobStatus === 'open' || job.jobStatus === 'pending') && 
+             !(user?.role === 'title_company' || user?.role === 'company_manager' || user?.role === 'client') && (
+              <Button
                   onClick={async () => {
                     if (isStartingLiveSession) return; // Prevent double clicks
                     
@@ -1567,7 +1571,6 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
                     </>
                   )}
                 </Button>
-              </>
             )}
             
             {/* Show Download Package button for completed jobs */}

@@ -29,7 +29,7 @@ interface NotarySignupData {
   specializations: string;
   workingHours: string;
   bio: string;
-  notaryType: 'contractor' | 'subscriber';
+  notaryType: 'contractor' | 'subscriber' | 'both';
 }
 
 interface FormErrors {
@@ -473,13 +473,14 @@ export default function SignupNotary() {
 
                 <div className="space-y-2">
                   <Label htmlFor="notaryType">Notary Type</Label>
-                  <Select value={formData.notaryType} onValueChange={(value) => handleSelectChange('notaryType', value as 'contractor' | 'subscriber')}>
+                  <Select value={formData.notaryType} onValueChange={(value) => handleSelectChange('notaryType', value as 'contractor' | 'subscriber' | 'both')}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="contractor">Contractor</SelectItem>
-                      <SelectItem value="subscriber">Subscriber</SelectItem>
+                      <SelectItem value="contractor">Contractor - Get assigned jobs</SelectItem>
+                      <SelectItem value="subscriber">Subscriber - Can create jobs</SelectItem>
+                      <SelectItem value="both">Both - Can create and get assigned jobs</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

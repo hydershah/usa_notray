@@ -97,7 +97,8 @@ class CertificateService {
         email: user.email,
         state: user.commissionState || user.state || 'Unknown',
         notaryCommission: user.nameOnCommission || 'Digital Notary',
-        organizationUnit: user.notaryType === 'contractor' ? 'Contractor Notary' : 'Subscriber Notary',
+        organizationUnit: user.notaryType === 'contractor' ? 'Contractor Notary' : 
+                          user.notaryType === 'both' ? 'Contractor & Subscriber Notary' : 'Subscriber Notary',
         keySize: 2048, // Smaller key size for better performance
         validityDays: 1095 // 3 years
       };

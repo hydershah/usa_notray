@@ -188,6 +188,8 @@ export function UserForm({ user, isOpen, onClose, onSubmit, isLoading = false, d
       case 'notary':
         if (notaryType === 'subscriber') {
           return ['dashboard', 'jobs', 'create_job', 'notarization_logs'];
+        } else if (notaryType === 'both') {
+          return ['dashboard', 'jobs', 'create_job', 'notarization_logs'];
         } else {
           // contractor
           return ['dashboard', 'jobs', 'notarization_logs'];
@@ -352,7 +354,8 @@ export function UserForm({ user, isOpen, onClose, onSubmit, isLoading = false, d
                             </FormControl>
                             <SelectContent>
                               <SelectItem value="contractor">Contractor - Jobs assigned by admin only</SelectItem>
-                              <SelectItem value="subscriber">Subscriber - Can create and get assigned jobs</SelectItem>
+                              <SelectItem value="subscriber">Subscriber - Can create jobs</SelectItem>
+                              <SelectItem value="both">Both - Can create and get assigned jobs</SelectItem>
                             </SelectContent>
                           </Select>
                           <FormMessage />

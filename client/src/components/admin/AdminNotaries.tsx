@@ -455,6 +455,8 @@ export function AdminNotaries() {
         return 'bg-blue-100 text-blue-800';
       case 'contractor':
         return 'bg-green-100 text-green-800';
+      case 'both':
+        return 'bg-purple-100 text-purple-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
@@ -611,11 +613,14 @@ export function AdminNotaries() {
                           </TableCell>
                           <TableCell>
                             <Badge className={getTypeColor(notary.notaryType || 'contractor')}>
-                              {notary.notaryType === 'subscriber' ? 'Subscriber' : 'Contractor'}
+                              {notary.notaryType === 'subscriber' ? 'Subscriber' : 
+                               notary.notaryType === 'both' ? 'Both' : 'Contractor'}
                             </Badge>
                             <div className="text-xs text-gray-500 mt-1">
                               {notary.notaryType === 'subscriber' 
                                 ? 'Can create jobs' 
+                                : notary.notaryType === 'both'
+                                ? 'Can create and get assigned jobs'
                                 : 'Admin assigns jobs'
                               }
                             </div>

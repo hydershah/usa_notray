@@ -26,7 +26,7 @@ const notaryRegistrationSchema = z.object({
   specializations: z.string().optional(),
   workingHours: z.string().optional(),
   bio: z.string().optional(),
-  notaryType: z.enum(['contractor', 'subscriber']).default('contractor'),
+  notaryType: z.enum(['contractor', 'subscriber', 'both']).default('contractor'),
 });
 
 export function registerNotaryRoutes(app: Express): void {

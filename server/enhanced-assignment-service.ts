@@ -1,4 +1,4 @@
-import { eq, and, not, inArray, sql } from "drizzle-orm";
+import { eq, and, or, not, inArray, sql } from "drizzle-orm";
 import { db } from "./db";
 import { 
   users, 
@@ -138,8 +138,8 @@ export class EnhancedAssignmentService {
       return { success: false, error: 'Notary user not found or inactive' };
     }
 
-    // Subscriber notaries auto-assign themselves
-    if (notary.notaryType === 'subscriber') {
+    // Subscriber notaries and hybrid notaries can auto-assign themselves
+    if (notary.notaryType === 'subscriber' || notary.notaryType === 'both') {
       return {
         success: true,
         notaryId: notary.id,
@@ -149,7 +149,7 @@ export class EnhancedAssignmentService {
       };
     }
 
-    // Contractor notaries can't assign themselves directly
+    // Pure contractor notaries can't assign themselves directly
     return { success: false, error: 'Contractor notaries cannot self-assign. Please use admin assignment.' };
   }
 
@@ -251,7 +251,7 @@ export class EnhancedAssignmentService {
       notaryId: notary.id,
       notaryName: `${notary.firstName} ${notary.lastName}`,
       assignmentType: 'manual',
-      requiresApproval: notary.notaryType === 'contractor' // Contractors need approval
+      requiresApproval: notary.notaryType === 'contractor' || notary.notaryType === 'both' // Contractors and hybrid notaries need approval for title company jobs
     };
   }
 
@@ -341,7 +341,7 @@ export class EnhancedAssignmentService {
       .from(users)
       .where(and(
         eq(users.role, 'notary'),
-        eq(users.notaryType, 'contractor'),
+        or(eq(users.notaryType, 'contractor'), eq(users.notaryType, 'both')),
         eq(users.isActive, true),
         ...(rejectedIds.length > 0 ? [not(inArray(users.id, rejectedIds.map(id => parseInt(id))))] : [])
       ))

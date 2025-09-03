@@ -239,7 +239,8 @@ export function NotaryDashboard() {
           Welcome back, {profile?.fullName || 'Notary'}
         </h1>
         <p className="text-gray-600 mt-2">
-          {profile?.notaryType === 'contractor' ? 'Sharp Note Contractor' : 'Subscriber Notary'} • {profile?.state}
+          {profile?.notaryType === 'contractor' ? 'Sharp Note Contractor' : 
+           profile?.notaryType === 'both' ? 'Contractor & Subscriber' : 'Subscriber Notary'} • {profile?.state}
         </p>
         
         {/* Status Alert */}

@@ -36,7 +36,7 @@ interface AccountSummary {
   pendingBalance: number;
   totalEarnings: number;
   totalSpent: number;
-  notaryType: 'subscriber' | 'contractor';
+  notaryType: 'subscriber' | 'contractor' | 'both';
   role: string;
   canTakeJobs: boolean;
   recentTransactions: Transaction[];
@@ -124,12 +124,12 @@ export default function FinancialDashboard() {
 
   const { data: transactions = [], isLoading: transactionsLoading } = useQuery<Transaction[]>({
     queryKey: ['/api/account/transactions'],
-    enabled: accountSummary?.notaryType === 'subscriber'
+    enabled: accountSummary?.notaryType === 'subscriber' || accountSummary?.notaryType === 'both'
   });
 
   const { data: contractorPayments = [], isLoading: paymentsLoading } = useQuery<ContractorPayment[]>({
     queryKey: ['/api/contractor/payments'],
-    enabled: accountSummary?.notaryType === 'contractor'
+    enabled: accountSummary?.notaryType === 'contractor' || accountSummary?.notaryType === 'both'
   });
 
   const [feeCalculation, setFeeCalculation] = useState<FeeCalculation | null>(null);

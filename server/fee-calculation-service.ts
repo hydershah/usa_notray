@@ -147,7 +147,7 @@ export class FeeCalculationService {
   // Calculate complete fee breakdown for a job
   async calculateJobFees(
     jobId: number,
-    notaryType: 'subscriber' | 'contractor',
+    notaryType: 'subscriber' | 'contractor' | 'both',
     options: {
       closingType: string;
       signerCount?: number;
@@ -156,12 +156,21 @@ export class FeeCalculationService {
       idVerificationCount?: number;
       witnessProvided?: boolean;
       clientProvidesWitness?: boolean;
+      jobType?: 'title_company' | 'subscriber_personal'; // Add job type to determine billing for 'both' type
     }
   ): Promise<FeeCalculationResult> {
     
     const breakdown: FeeCalculationResult['breakdown'] = [];
     
-    if (notaryType === 'subscriber') {
+    // For hybrid notaries ('both'), determine billing based on job type
+    let effectiveNotaryType = notaryType;
+    if (notaryType === 'both') {
+      // If job type is subscriber_personal, bill as subscriber
+      // If job type is title_company, pay as contractor
+      effectiveNotaryType = options.jobType === 'subscriber_personal' ? 'subscriber' : 'contractor';
+    }
+    
+    if (effectiveNotaryType === 'subscriber') {
       const subscriberFees = await this.calculateSubscriberFees(
         jobId,
         options.sessionDuration,
@@ -202,7 +211,7 @@ export class FeeCalculationService {
       
       return { subscriberFees, breakdown };
       
-    } else { // contractor
+    } else { // contractor or 'both' acting as contractor
       const contractorFees = await this.calculateContractorFees(
         jobId,
         options.closingType,

@@ -135,6 +135,7 @@ export function JobRequestManager() {
   const isAdminAvailableAsNotary = currentUser?.role === 'admin' && (
     currentUser?.notaryType === 'subscriber' || 
     currentUser?.notaryType === 'contractor' ||
+    currentUser?.notaryType === 'both' ||
     currentUser?.isNotary === true ||
     currentUser?.canNotarize === true
   );

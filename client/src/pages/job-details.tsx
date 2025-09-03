@@ -385,8 +385,8 @@ export default function JobDetailsPage() {
           </div>
           
           <div className="flex items-center gap-3">
-            {/* Action Buttons - Professional Style */}
-            {!(user?.role === 'signer' && job.jobStatus === 'completed') && 
+            {/* Edit and Tag Buttons - Hidden from signers */}
+            {user?.role !== 'signer' && 
              !(user?.role === 'title_company' || user?.role === 'company_manager' || user?.role === 'client') && (
               <>
                 <Button 
@@ -433,31 +433,35 @@ export default function JobDetailsPage() {
                   <Tag className="h-4 w-4 mr-2" />
                   Tag
                 </Button>
-                <Button 
-                  onClick={handleStartLiveSession} 
-                  disabled={
-                    job.jobStatus === 'completed' ||
-                    Boolean(certificateVerification && !certificateVerification.canStartJob)
-                  }
-                  className={`transition-colors duration-150 ${
-                    job.jobStatus === 'completed' ||
-                    (certificateVerification && !certificateVerification.canStartJob)
-                      ? 'bg-gray-400 hover:bg-gray-500 cursor-not-allowed'
-                      : 'bg-[#002A5C] hover:bg-[#002A5C]/90'
-                  }`}
-                  title={
-                    job.jobStatus === 'completed'
-                      ? 'Cannot start live session for completed job'
-                      : certificateVerification && !certificateVerification.canStartJob
-                      ? 'All participants need valid digital certificates to start'
-                      : 'Start the live signing session'
-                  }
-                  size="sm"
-                >
-                  <Video className="h-4 w-4 mr-2" />
-                  Live Session
-                </Button>
               </>
+            )}
+            
+            {/* Live Session Button - Available to all roles except title companies for open jobs */}
+            {!(user?.role === 'title_company' || user?.role === 'company_manager' || user?.role === 'client') && (
+              <Button 
+                onClick={handleStartLiveSession} 
+                disabled={
+                  job.jobStatus === 'completed' ||
+                  Boolean(certificateVerification && !certificateVerification.canStartJob)
+                }
+                className={`transition-colors duration-150 ${
+                  job.jobStatus === 'completed' ||
+                  (certificateVerification && !certificateVerification.canStartJob)
+                    ? 'bg-gray-400 hover:bg-gray-500 cursor-not-allowed'
+                    : 'bg-[#002A5C] hover:bg-[#002A5C]/90'
+                }`}
+                title={
+                  job.jobStatus === 'completed'
+                    ? 'Cannot start live session for completed job'
+                    : certificateVerification && !certificateVerification.canStartJob
+                    ? 'All participants need valid digital certificates to start'
+                    : 'Start the live signing session'
+                }
+                size="sm"
+              >
+                <Video className="h-4 w-4 mr-2" />
+                Live Session
+              </Button>
             )}
             
             {/* Show Download Package button for completed jobs */}
@@ -709,15 +713,17 @@ export default function JobDetailsPage() {
                           >
                             <Download className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => window.open(`/editor/${jobId}?mode=tagging`, '_blank')}
-                            title="Tag document"
-                            className="h-8 w-8 p-0 border-[#002A5C] text-[#002A5C] hover:bg-[#002A5C]/5"
-                          >
-                            <Tag className="h-4 w-4" />
-                          </Button>
+                          {user?.role !== 'signer' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => window.open(`/editor/${jobId}?mode=tagging`, '_blank')}
+                              title="Tag document"
+                              className="h-8 w-8 p-0 border-[#002A5C] text-[#002A5C] hover:bg-[#002A5C]/5"
+                            >
+                              <Tag className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </div>
                     </div>

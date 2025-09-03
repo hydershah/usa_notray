@@ -5,6 +5,7 @@ import bcrypt from 'bcrypt';
 import { verifyToken, hasAdminPrivileges } from './auth.js';
 import { emailService } from './lib/email-service';
 import { validateEmailUniqueness } from './middleware/email-validation';
+import { redisCache } from './services/redis-cache';
 
 export function registerCompanyRoutes(app: Express) {
   
@@ -336,6 +337,16 @@ export function registerCompanyRoutes(app: Express) {
         console.error(`❌ Failed to send approval welcome email for company ${updatedCompany.id}:`, emailError);
       }
 
+      // Invalidate companies cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`admin:*`); // Clear admin caches
+        await redisCache.delPattern(`api:*companies*`); // Clear companies API cache
+        console.log(`🧹 Invalidated company caches after approving company ${companyId}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after company approval:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+
       res.json({
         message: 'Company approved successfully',
         company: updatedCompany
@@ -387,6 +398,16 @@ export function registerCompanyRoutes(app: Express) {
 
       // TODO: Send email notification to company manager about rejection
 
+      // Invalidate companies cache to ensure fresh data on next request
+      try {
+        await redisCache.delPattern(`admin:*`); // Clear admin caches
+        await redisCache.delPattern(`api:*companies*`); // Clear companies API cache
+        console.log(`🧹 Invalidated company caches after rejecting company ${companyId}`);
+      } catch (cacheError) {
+        console.error('Failed to invalidate cache after company rejection:', cacheError);
+        // Don't fail the request if cache invalidation fails
+      }
+
       res.json({
         message: 'Company rejected successfully',
         company: updatedCompany
@@ -403,7 +424,7 @@ export function registerCompanyRoutes(app: Express) {
 
   /**
    * GET /api/companies
-   * Get all companies (admin only)
+   * Get all companies (admin only) with optional status filtering
    */
   app.get('/api/companies', verifyToken, async (req: any, res) => {
     try {
@@ -411,7 +432,17 @@ export function registerCompanyRoutes(app: Express) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
-      const companies = await storage.getCompanies();
+      const { status } = req.query;
+      let companies;
+      
+      if (status && typeof status === 'string') {
+        // Filter by status if provided
+        companies = await storage.getCompaniesByStatus(status);
+      } else {
+        // Get all companies if no status filter
+        companies = await storage.getCompanies();
+      }
+      
       res.json(companies);
     } catch (error) {
       console.error('Get companies error:', error);
