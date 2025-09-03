@@ -249,6 +249,17 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
   const { data: closingTypes = [] } = useQuery<ClosingType[]>({
     queryKey: ['/api/closing-types/active'],
     enabled: !!currentUser, // Only fetch when user is loaded
+    queryFn: async () => {
+      const response = await fetch('/api/closing-types/active', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch closing types');
+      }
+      return response.json();
+    }
   });
 
   const { data: participantRoles = [] } = useQuery<any[]>({

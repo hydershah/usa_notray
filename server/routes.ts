@@ -6664,6 +6664,174 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   app.use(dailyVideoRoutes.default);
   
   // ==========================================
+  // CLOSING TYPES MANAGEMENT ROUTES
+  // ==========================================
+  
+  // Get all closing types (admin only)
+  app.get('/api/closing-types', verifyToken, cacheAdminData(600), async (req: any, res) => {
+    try {
+      const closingTypes = await storage.getClosingTypes();
+      res.json(closingTypes);
+    } catch (error) {
+      console.error('Get closing types error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Get active closing types (all authenticated users)
+  app.get('/api/closing-types/active', verifyToken, async (req: any, res) => {
+    try {
+      const closingTypes = await storage.getActiveClosingTypes();
+      res.json(closingTypes);
+    } catch (error) {
+      console.error('Get active closing types error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Create closing type (admin only)
+  app.post('/api/closing-types', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const closingType = await storage.createClosingType(req.body);
+      res.json(closingType);
+    } catch (error) {
+      console.error('Create closing type error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Update closing type (admin only)
+  app.put('/api/closing-types/:id', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const closingTypeId = parseInt(req.params.id);
+      const closingType = await storage.updateClosingType(closingTypeId, req.body);
+      
+      if (!closingType) {
+        return res.status(404).json({ message: 'Closing type not found' });
+      }
+      
+      res.json(closingType);
+    } catch (error) {
+      console.error('Update closing type error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Delete closing type (admin only)
+  app.delete('/api/closing-types/:id', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const closingTypeId = parseInt(req.params.id);
+      const deleted = await storage.deleteClosingType(closingTypeId);
+      
+      if (!deleted) {
+        return res.status(404).json({ message: 'Closing type not found' });
+      }
+      
+      res.json({ message: 'Closing type deleted successfully' });
+    } catch (error) {
+      console.error('Delete closing type error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+  
+  // ==========================================
+  // PARTICIPANT ROLES MANAGEMENT ROUTES
+  // ==========================================
+  
+  // Get all participant roles (admin only)
+  app.get('/api/participant-roles', verifyToken, cacheAdminData(600), async (req: any, res) => {
+    try {
+      const roles = await storage.getParticipantRoles();
+      res.json(roles);
+    } catch (error) {
+      console.error('Get participant roles error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Get active participant roles (all authenticated users)
+  app.get('/api/participant-roles/active', verifyToken, async (req: any, res) => {
+    try {
+      const roles = await storage.getActiveParticipantRoles();
+      res.json(roles);
+    } catch (error) {
+      console.error('Get active participant roles error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Create participant role (admin only)
+  app.post('/api/participant-roles', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const roleData = req.body;
+      const role = await storage.createParticipantRole(roleData);
+      res.status(201).json(role);
+    } catch (error) {
+      console.error('Create participant role error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Update participant role (admin only)
+  app.put('/api/participant-roles/:id', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const roleId = parseInt(req.params.id);
+      const roleData = req.body;
+      const role = await storage.updateParticipantRole(roleId, roleData);
+      
+      if (!role) {
+        return res.status(404).json({ message: 'Participant role not found' });
+      }
+      
+      res.json(role);
+    } catch (error) {
+      console.error('Update participant role error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Delete participant role (admin only)
+  app.delete('/api/participant-roles/:id', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const roleId = parseInt(req.params.id);
+      const deleted = await storage.deleteParticipantRole(roleId);
+      
+      if (!deleted) {
+        return res.status(404).json({ message: 'Participant role not found' });
+      }
+      
+      res.json({ message: 'Participant role deleted successfully' });
+    } catch (error) {
+      console.error('Delete participant role error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+  
+  // ==========================================
   // ADMIN VERIFICATION ROUTES (Missing endpoints for dashboard)
   // ==========================================
   
