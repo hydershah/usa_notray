@@ -1862,11 +1862,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         req.user.role === 'title_company' ||
         (req.user.role === 'notary' && req.user.notaryType === 'subscriber');
 
+      console.log(`🔐 Job Creation Permission Check - User ${req.user.id}:`, {
+        hasAdminAccess,
+        userRole: req.user.role,
+        notaryType: req.user.notaryType,
+        userCanCreateJob,
+        email: req.user.email
+      });
+
       if (!userCanCreateJob) {
         return res.status(403).json({ 
           message: 'Access denied. Only administrators, title companies, and subscriber notaries can create jobs.' 
         });
       }
+
+      // Safely parse signers count for logging
+      let signersCount = 0;
+      try {
+        signersCount = req.body.signers ? JSON.parse(req.body.signers).length : 0;
+      } catch (signersParseError) {
+        console.error(`❌ Failed to parse signers JSON for user ${req.user.id}:`, signersParseError);
+        return res.status(400).json({ 
+          message: 'Invalid signers data format',
+          error: 'Signers data must be valid JSON'
+        });
+      }
+
+      console.log(`📝 Processing job data for user ${req.user.id}:`, {
+        bodyKeys: Object.keys(req.body),
+        filesCount: req.files ? req.files.length : 0,
+        hasSigners: !!req.body.signers,
+        signersCount: signersCount
+      });
 
       const jobData = {
         ...req.body,
@@ -1924,7 +1951,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // 🚀 PERFORMANCE OPTIMIZATION: Parallel Core Operations
       const jobCreationStartTime = Date.now();
-      console.log('🚀 Starting parallel job creation operations...');
+      console.log(`🚀 Starting parallel job creation operations for user ${req.user.id}...`);
 
       // Step 1: Prepare operations that can run in parallel
       const parallelOperations = [
@@ -1934,12 +1961,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Add signer preparation if signers exist
       if (req.body.signers) {
-        parallelOperations.push(prepareSignerDataForParallel(req.body.signers));
+        try {
+          const signersArray = JSON.parse(req.body.signers);
+          console.log(`📋 Adding signer preparation for ${signersArray.length} signers`);
+          parallelOperations.push(prepareSignerDataForParallel(req.body.signers));
+        } catch (signersParseError) {
+          console.error(`❌ Failed to parse signers for parallel processing:`, signersParseError);
+          throw new Error('Invalid signers data format - must be valid JSON');
+        }
       }
 
+      console.log(`🔄 Executing ${parallelOperations.length} parallel operations...`);
       const results = await Promise.all(parallelOperations);
       const job = results[0];
       const preparedSignerData = results[1] || null;
+      
+      console.log(`✅ Job created with ID: ${job?.id}, prepared signers: ${preparedSignerData ? 'yes' : 'no'}`);
+      
+      if (!job || !job.id) {
+        throw new Error('Job creation returned invalid result - no job ID generated');
+      }
       
       console.log(`✅ Parallel job creation completed in ${Date.now() - jobCreationStartTime}ms`);
 
@@ -2437,8 +2478,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
     } catch (error) {
-      console.error('Create job error:', error);
-      res.status(500).json({ message: 'Internal server error' });
+      console.error('❌ JOB CREATION ERROR - Full Details:', {
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        } : error,
+        userId: req.user?.id,
+        userRole: req.user?.role,
+        userEmail: req.user?.email,
+        requestBody: {
+          ...req.body,
+          // Redact sensitive data but keep structure
+          signers: req.body.signers ? (() => {
+            try {
+              return `${JSON.parse(req.body.signers).length} signers`;
+            } catch {
+              return 'invalid signers JSON';
+            }
+          })() : 'none',
+          documents: req.files ? `${req.files.length} files` : 'none'
+        },
+        timestamp: new Date().toISOString(),
+        userAgent: req.headers['user-agent'],
+        ip: req.ip || req.connection.remoteAddress
+      });
+
+      // Return more specific error information for debugging
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      const errorCode = error instanceof Error && error.name ? error.name : 'UNKNOWN_ERROR';
+      
+      res.status(500).json({ 
+        message: 'Failed to create job',
+        error: errorMessage,
+        errorCode: errorCode,
+        timestamp: new Date().toISOString(),
+        // Include user ID for tracking (safe to expose to the user themselves)
+        userId: req.user?.id
+      });
     }
   });
 
