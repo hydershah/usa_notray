@@ -2,7 +2,7 @@ name: Deploy to VPS
 
 on:
   push:
-    branches: [main, master, staging-9.2]
+    branches: [main, master, staging-9.2, staging-v9.3]
   workflow_dispatch:
 
 env:
