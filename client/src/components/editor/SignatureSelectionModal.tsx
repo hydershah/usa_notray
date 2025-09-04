@@ -19,7 +19,8 @@ import {
   Save,
   X,
   Loader2,
-  FileImage
+  FileImage,
+  RefreshCw
 } from "lucide-react";
 
 interface UserSignature {
@@ -117,16 +118,23 @@ export const SignatureSelectionModal: React.FC<SignatureSelectionModalProps> = (
       if (!token) {
         console.error('❌ No authentication token found');
         setSignatures([]);
+        setLoading(false); // Ensure loading is set to false
         return;
       }
+      
+      // Add timeout to prevent infinite loading
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
       
       const response = await fetch(`/api/users/${userId}/signatures`, {
         headers: { 
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        signal: controller.signal
       });
 
+      clearTimeout(timeoutId);
       console.log('📡 Signatures API response status:', response.status);
 
       if (response.ok) {
@@ -162,12 +170,21 @@ export const SignatureSelectionModal: React.FC<SignatureSelectionModalProps> = (
     } catch (error) {
       console.error('❌ Error loading signatures:', error);
       
-      // Show error message to user
-      toast({
-        title: "Network Error",
-        description: "Failed to connect to the server. Please check your connection.",
-        variant: "destructive"
-      });
+      // Handle timeout specifically
+      if (error instanceof Error && error.name === 'AbortError') {
+        toast({
+          title: "Request Timeout",
+          description: "Loading signatures took too long. Please try again.",
+          variant: "destructive"
+        });
+      } else {
+        // Show error message to user
+        toast({
+          title: "Network Error",
+          description: "Failed to connect to the server. Please check your connection.",
+          variant: "destructive"
+        });
+      }
       
       setSignatures([]);
     } finally {
@@ -586,6 +603,17 @@ export const SignatureSelectionModal: React.FC<SignatureSelectionModalProps> = (
                 <div className="flex flex-col items-center justify-center py-12">
                   <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
                   <p className="text-gray-600 mt-4">Loading your signatures...</p>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="mt-4"
+                    onClick={() => {
+                      setLoading(false);
+                      setActiveTab('upload');
+                    }}
+                  >
+                    Skip Loading & Create New
+                  </Button>
                 </div>
               ) : signatures.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -642,13 +670,22 @@ export const SignatureSelectionModal: React.FC<SignatureSelectionModalProps> = (
                   <Pencil className="h-16 w-16 mx-auto mb-6 text-gray-300" />
                   <p className="text-xl font-medium mb-2">No signatures found</p>
                   <p className="text-gray-400 mb-6">Create your first signature using the tabs above</p>
-                  <Button
-                    onClick={() => setActiveTab('upload')}
-                    className="bg-blue-600 hover:bg-blue-700 text-white"
-                  >
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload Signature
-                  </Button>
+                  <div className="flex gap-3 justify-center">
+                    <Button
+                      onClick={() => setActiveTab('upload')}
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload Signature
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      onClick={() => loadSignatures()}
+                    >
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Retry Loading
+                    </Button>
+                  </div>
                 </div>
               )}
             </TabsContent>

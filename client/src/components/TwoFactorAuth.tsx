@@ -166,7 +166,7 @@ export default function TwoFactorAuth({ onStatusChange }: TwoFactorAuthProps) {
         },
         body: JSON.stringify({
           token: disableCode || undefined,
-          currentPassword: disablePassword || undefined
+          password: disablePassword || undefined
         })
       });
 

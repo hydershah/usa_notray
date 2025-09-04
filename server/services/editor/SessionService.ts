@@ -19,6 +19,7 @@ export interface EditorSessionData {
   status: 'preparing' | 'active' | 'completed' | 'cancelled';
   notaryId: number;
   videoSessionId?: string;
+  isLiveSession?: boolean;
   createdAt: Date;
   startedAt?: Date;
   completedAt?: Date;
@@ -381,6 +382,7 @@ export class SessionService {
       status: session.status,
       notaryId: session.notaryId,
       videoSessionId: session.videoSessionId,
+      isLiveSession: session.isLiveSession,
       createdAt: session.createdAt,
       startedAt: session.startedAt,
       completedAt: session.completedAt
