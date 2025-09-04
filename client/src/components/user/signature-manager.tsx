@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
 import { 
   Upload, 
@@ -23,7 +24,10 @@ import {
   Save,
   X,
   Shield,
-  Calendar
+  Calendar,
+  CheckCircle,
+  AlertCircle,
+  Loader2
 } from "lucide-react";
 
 interface UserSignature {
@@ -61,14 +65,18 @@ export function SignatureManager({ userId, onSignatureSelect }: SignatureManager
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('upload');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [dragActive, setDragActive] = useState(false);
   
   // Upload states
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadPreview, setUploadPreview] = useState<string>('');
   const [uploadName, setUploadName] = useState('');
+  const [uploadError, setUploadError] = useState('');
   
   // Draw states
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [brushSize, setBrushSize] = useState(3);
   const [drawName, setDrawName] = useState('');

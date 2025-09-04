@@ -3,7 +3,6 @@ import { MainLayout } from '@/components/layout/main-layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { NotaryStampManager } from '@/components/user/notary-stamp-manager';
 import { SignatureManager } from '@/components/user/signature-manager';
 import { NotaryProfileDocumentManager } from '@/components/notary/NotaryProfileDocumentManager';
@@ -452,36 +451,8 @@ export default function Profile() {
           </div>
 
         <Card>
-          <Tabs defaultValue="overview" className="w-full">
-            <CardHeader className="pb-0">
-              {(() => {
-                const canSeeDocuments = currentUser?.role === 'notary' || currentUser?.role === 'admin' || currentUser?.role === 'title_company';
-                const canSeeStamps = currentUser?.role === 'notary' || currentUser?.role === 'admin';
-                const canSeeSignatures = currentUser?.role !== 'title_company';
-                const showAssets = canSeeStamps || canSeeSignatures;
-                const cols = (canSeeDocuments && showAssets) ? 'grid-cols-3' : ((canSeeDocuments || showAssets) ? 'grid-cols-2' : 'grid-cols-1');
-                return (
-                  <TabsList className={`grid ${cols} gap-2 w-full`}>
-                    <TabsTrigger value="overview" className="h-10 text-sm">
-                      <User className="w-4 h-4 mr-2" /> Overview
-                    </TabsTrigger>
-                    {canSeeDocuments && (
-                      <TabsTrigger value="documents" className="h-10 text-sm">
-                        <FileText className="w-4 h-4 mr-2" /> Documents
-                      </TabsTrigger>
-                    )}
-                    {showAssets && (
-                      <TabsTrigger value="assets" className="h-10 text-sm">
-                        <Hash className="w-4 h-4 mr-2" /> Assets
-                      </TabsTrigger>
-                    )}
-                  </TabsList>
-                );
-              })()}
-            </CardHeader>
-
-            <CardContent className="pt-6">
-              <TabsContent value="overview" className="space-y-6">
+          <CardContent className="pt-6">
+            <div className="space-y-6">
                 {/* Personal Information */}
                 <Card>
                   <CardHeader>
@@ -672,34 +643,48 @@ export default function Profile() {
                         </div>
                   </CardContent>
                 </Card>
-                </TabsContent>
-
+              {/* Documents Section */}
               {(() => {
                 const canSeeDocuments = currentUser?.role === 'notary' || currentUser?.role === 'admin' || currentUser?.role === 'title_company';
                 return canSeeDocuments ? (
-                  <TabsContent value="documents">
-                    <NotaryProfileDocumentManager notaryId={currentUser.id} onDocumentsChange={loadUserProfile} />
-                  </TabsContent>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <FileText className="w-4 h-4" /> Documents
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <NotaryProfileDocumentManager notaryId={currentUser.id} onDocumentsChange={loadUserProfile} />
+                    </CardContent>
+                  </Card>
                 ) : null;
               })()}
 
+              {/* Assets Section */}
               {(() => {
                 const canSeeStamps = currentUser?.role === 'notary' || currentUser?.role === 'admin';
                 const canSeeSignatures = currentUser?.role !== 'title_company';
                 const showAssets = canSeeStamps || canSeeSignatures;
                 return showAssets ? (
-                  <TabsContent value="assets" className="space-y-6">
-                    {canSeeStamps && (
-                      <NotaryStampManager notaryId={currentUser.id} />
-                    )}
-                    {canSeeSignatures && (
-                      <SignatureManager userId={currentUser.id} />
-                    )}
-                  </TabsContent>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Hash className="w-4 h-4" /> Assets
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      {canSeeStamps && (
+                        <NotaryStampManager notaryId={currentUser.id} />
+                      )}
+                      {canSeeSignatures && (
+                        <SignatureManager userId={currentUser.id} />
+                      )}
+                    </CardContent>
+                  </Card>
                 ) : null;
               })()}
-            </CardContent>
-            </Tabs>
+            </div>
+          </CardContent>
         </Card>
       </div>
     </MainLayout>

@@ -3654,14 +3654,120 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Secure file retrieval
-  app.get('/api/uploads/:type/:fileId', verifyToken, getUploadedFile);
+  // Secure file retrieval - handles both local and Vultr files
+  app.get('/api/uploads/:type/*', verifyToken, async (req: any, res) => {
+    try {
+      const { type } = req.params;
+      const fileId = req.params[0]; // Get the full path after the type
+      console.log(`🔍 File request: type=${type}, fileId=${fileId}`);
+      console.log(`👤 User: ${req.user?.id} (${req.user?.role})`);
+      
+      // For Vultr-stored files (stamps, signatures, documents)
+      if (['notary-stamp', 'signature', 'document', 'signer-document'].includes(type)) {
+        console.log(`📡 Serving Vultr file: ${fileId}`);
+        const { cloudStorage } = await import('./lib/cloud-storage-service');
+        
+        try {
+          // Use signed URL with 24 hours expiration (within 7-day limit)
+          const signedUrl = await cloudStorage.getSignedUrl(fileId, 86400); // 24 hours
+          console.log(`✅ Generated signed URL for ${type}: ${signedUrl.substring(0, 100)}...`);
+          
+          // Redirect to Vultr signed URL
+          res.redirect(302, signedUrl);
+          return;
+        } catch (signedError) {
+          console.error(`❌ Failed to generate signed URL for ${fileId}:`, signedError);
+          throw signedError;
+        }
+      }
+      
+      // Fallback to local file serving for other types
+      console.log(`📁 Using local file serving for type: ${type}`);
+      await getUploadedFile(req, res);
+      
+    } catch (error) {
+      console.error('File retrieval error:', error);
+      res.status(404).json({ error: 'File not found' });
+    }
+  });
+
+  // Placeholder image endpoints to prevent 404 errors
+  app.get('/api/placeholder/:type', (req, res) => {
+    const { type } = req.params;
+    
+    // Return a simple SVG placeholder based on type
+    const placeholderSvg = type === 'notary-stamp' 
+      ? `<svg width="80" height="80" xmlns="http://www.w3.org/2000/svg"><rect width="80" height="80" fill="#f3f4f6"/><text x="40" y="45" text-anchor="middle" font-size="10" fill="#9ca3af">Stamp</text></svg>`
+      : `<svg width="80" height="80" xmlns="http://www.w3.org/2000/svg"><rect width="80" height="80" fill="#f3f4f6"/><text x="40" y="45" text-anchor="middle" font-size="10" fill="#9ca3af">Image</text></svg>`;
+    
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+    res.send(placeholderSvg);
+  });
 
   // Legacy local file serving routes - REMOVED
   // All stamps and signatures are now stored in Vultr cloud storage
   // Use /api/uploads/:type/:fileId with proper Vultr URLs instead
 
   // ===== NOTARY STAMP MANAGEMENT ROUTES =====
+
+  // Get notary stamps for a specific notary
+  app.get('/api/notary/:notaryId/stamps', verifyToken, async (req: any, res) => {
+    try {
+      const notaryId = parseInt(req.params.notaryId);
+      
+      // Check if user is a notary or admin
+      if (req.user.role !== 'admin' && req.user.role !== 'notary') {
+        return res.status(403).json({ message: 'Access denied - notary access required' });
+      }
+      
+      // Check if user can access this notary's stamps
+      if (req.user.role !== 'admin' && req.user.id !== notaryId) {
+        return res.status(403).json({ message: 'Access denied - you can only view your own stamps' });
+      }
+      
+      if (isNaN(notaryId)) {
+        return res.status(400).json({ message: 'Invalid notary ID' });
+      }
+
+      // Get stamps from database
+      const stamps = await db.execute(sql`
+        SELECT 
+          id,
+          notary_id as "notaryId",
+          stamp_type as "stampType",
+          stamp_data as "stampData",
+          is_active as "isActive",
+          created_at as "createdAt",
+          updated_at as "updatedAt"
+        FROM notary_stamps 
+        WHERE notary_id = ${notaryId}
+        ORDER BY created_at DESC
+      `);
+
+      // Transform stamps to include proper image URLs
+      const stampsWithUrls = stamps.rows.map((stamp: any) => {
+        const imageUrl = `/api/uploads/notary-stamp/${stamp.stampData}`;
+        console.log(`🖼️ Generated stamp image URL for stamp ${stamp.id}:`, imageUrl);
+        console.log(`📁 Vultr key: ${stamp.stampData}`);
+        
+        return {
+          id: stamp.id.toString(),
+          imageUrl: imageUrl,
+          isActive: stamp.isActive,
+          uploadedAt: new Date(stamp.createdAt).toISOString().split('T')[0],
+          createdAt: stamp.createdAt,
+          updatedAt: stamp.updatedAt
+        };
+      });
+
+      console.log(`📋 Returning ${stampsWithUrls.length} stamps for notary ${notaryId}`);
+      res.json(stampsWithUrls);
+    } catch (error) {
+      console.error('Get notary stamps error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
 
   // Set active notary stamp
   app.put('/api/notary/stamps/:stampId/activate', verifyToken, async (req: any, res) => {

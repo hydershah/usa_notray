@@ -1508,7 +1508,7 @@ export class DatabaseStorage implements IStorage {
                 }
 
                 if (key) {
-                  const access = await VultrUploadHandler.getFileUrl(key, 24 * 30); // 30 days
+                  const access = await VultrUploadHandler.getFileUrl(key, 24 * 7); // 7 days (max allowed)
                   resolvedUrl = access.url || resolvedUrl;
                 }
               }

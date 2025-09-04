@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
@@ -11,11 +10,7 @@ import {
   FileText, 
   Download, 
   Eye, 
-  Edit, 
-  Trash2,
-  CheckCircle, 
   X,
-  AlertCircle,
   Plus,
   Shield,
   Lock,
@@ -53,45 +48,30 @@ const DOCUMENT_TYPES = [
     key: 'notaryCommissionFile',
     label: 'Commission Certificate',
     icon: FileText,
-    color: 'text-blue-500',
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-blue-200',
     required: true
   },
   {
     key: 'eoInsuranceFile',
     label: 'E&O Insurance',
     icon: Shield,
-    color: 'text-green-500',
-    bgColor: 'bg-green-50',
-    borderColor: 'border-green-200',
     required: true
   },
   {
     key: 'publicCertificateFile',
     label: 'Digital Certificate',
     icon: Lock,
-    color: 'text-purple-500',
-    bgColor: 'bg-purple-50',
-    borderColor: 'border-purple-200',
     required: true
   },
   {
     key: 'bondFile',
     label: 'Bond Certificate',
     icon: FileText,
-    color: 'text-orange-500',
-    bgColor: 'bg-orange-50',
-    borderColor: 'border-orange-200',
     required: true
   },
   {
     key: 'signingAgentFile',
     label: 'NSA Certificate',
     icon: Award,
-    color: 'text-teal-500',
-    bgColor: 'bg-teal-50',
-    borderColor: 'border-teal-200',
     required: false
   }
 ];
@@ -373,34 +353,31 @@ export function NotaryProfileDocumentManager({
     const Icon = docType.icon;
 
     return (
-      <Card key={docType.key} className={`${docType.bgColor} ${docType.borderColor} border-2`}>
+      <Card key={docType.key} className="border border-gray-200">
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${hasFile ? 'bg-green-500' : 'bg-gray-400'}`}>
-                {hasFile ? (
-                  <CheckCircle className="w-5 h-5 text-white" />
-                ) : (
-                  <Icon className={`w-5 h-5 text-white`} />
-                )}
+              <div className={`w-8 h-8 rounded flex items-center justify-center ${hasFile ? 'bg-gray-900' : 'bg-gray-300'}`}>
+                <Icon className="w-4 h-4 text-white" />
               </div>
               <div>
-                <h4 className="font-semibold text-gray-900">{docType.label}</h4>
-                <p className={`text-sm ${hasFile ? 'text-blue-600' : 'text-gray-600'}`}>
+                <h4 className="font-medium text-gray-900">{docType.label}</h4>
+                <p className="text-sm text-gray-500">
                   {hasFile ? 'Uploaded' : 'Not uploaded'}
                   {docType.required && !hasFile && ' (Required)'}
                 </p>
               </div>
             </div>
             
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               {hasFile ? (
                 <>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => handlePreview(docType.key)}
-                    title="Preview document"
+                    title="Preview"
+                    className="h-8 w-8 p-0"
                   >
                     <Eye className="w-4 h-4" />
                   </Button>
@@ -408,7 +385,8 @@ export function NotaryProfileDocumentManager({
                     variant="ghost"
                     size="sm"
                     onClick={() => handleDownload(docType.key)}
-                    title="Download document"
+                    title="Download"
+                    className="h-8 w-8 p-0"
                   >
                     <Download className="w-4 h-4" />
                   </Button>
@@ -416,7 +394,8 @@ export function NotaryProfileDocumentManager({
                     variant="ghost"
                     size="sm"
                     onClick={() => handleReupload(docType.key)}
-                    title="Replace document"
+                    title="Replace"
+                    className="h-8 w-8 p-0"
                   >
                     <RefreshCw className="w-4 h-4" />
                   </Button>
@@ -429,9 +408,8 @@ export function NotaryProfileDocumentManager({
                     setSelectedDocumentType(docType.key);
                     setIsUploadDialogOpen(true);
                   }}
-                  className="flex items-center gap-2"
+                  className="h-8 px-3"
                 >
-                  <Plus className="w-4 h-4" />
                   Upload
                 </Button>
               )}
@@ -452,42 +430,34 @@ export function NotaryProfileDocumentManager({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gray-500 rounded-xl flex items-center justify-center">
-            <FileText className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h3 className="text-2xl font-bold text-gray-900">Document Management</h3>
-            <p className="text-gray-600">View, download, and manage your notary documents</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          {hasLocalDocuments && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleMigrateDocuments}
-              disabled={isMigrating}
-              className="flex items-center gap-2"
-            >
-              {isMigrating ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-              ) : (
-                <RefreshCw className="w-4 h-4" />
-              )}
-              {isMigrating ? 'Migrating...' : 'Migrate to Cloud'}
-            </Button>
-          )}
-          <Badge className="bg-gray-100 text-gray-800">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900">Documents</h3>
+          <p className="text-sm text-gray-500">
             {documentStatus ? Object.values(documentStatus).filter(Boolean).length : 0} / {DOCUMENT_TYPES.length} Files
-          </Badge>
+          </p>
         </div>
+        {hasLocalDocuments && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleMigrateDocuments}
+            disabled={isMigrating}
+            className="flex items-center gap-2"
+          >
+            {isMigrating ? (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+            {isMigrating ? 'Migrating...' : 'Migrate to Cloud'}
+          </Button>
+        )}
       </div>
 
       {/* Document Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="space-y-3">
         {DOCUMENT_TYPES.map(renderDocumentCard)}
       </div>
 

@@ -230,13 +230,32 @@ export class CloudStorageService {
         Key: key,
       });
 
-      const signedUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
-      console.log(`✅ Generated Vultr signed URL: ${signedUrl.substring(0, 100)}...`);
+      // AWS S3/Vultr has a maximum expiration of 7 days (604800 seconds)
+      // Ensure expiresIn is within valid range
+      const maxExpiration = 604800; // 7 days
+      const validExpiresIn = Math.min(expiresIn, maxExpiration);
+      
+      const signedUrl = await getSignedUrl(this.s3Client, command, { expiresIn: validExpiresIn });
+      console.log(`✅ Generated Vultr signed URL (expires in ${validExpiresIn}s): ${signedUrl.substring(0, 100)}...`);
       return signedUrl;
     } catch (error) {
       console.error('Failed to generate signed URL:', error);
       throw new Error(`Failed to generate signed URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  /**
+   * Get a permanent public URL for a file (no expiration)
+   * This assumes the bucket/file is publicly accessible
+   */
+  getPublicUrl(key: string): string {
+    if (!this.isEnabled) {
+      return `/dev-storage/${key}`;
+    }
+    
+    // Construct direct Vultr Object Storage URL
+    const baseUrl = `https://${this.bucketName}.${this.endpoint.replace('https://', '')}`;
+    return `${baseUrl}/${key}`;
   }
 
   /**
