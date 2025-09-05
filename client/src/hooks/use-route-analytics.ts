@@ -22,7 +22,7 @@ export function useRouteAnalytics() {
       userAgent: navigator.userAgent,
       referrer: document.referrer,
       userRole: user?.role,
-      userId: user?.id,
+      userId: user?.id?.toString(),
     };
 
     // Log to console in development
