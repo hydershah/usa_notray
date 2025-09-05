@@ -113,24 +113,51 @@ export function ClientDashboard() {
       setJobs(jobsData);
 
       // Fetch payment data
-      const paymentsRes = await fetch(`/api/payments/user/${user.id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      if (paymentsRes.ok) {
-        const paymentsData = await paymentsRes.json();
-        // Calculate payment summaries for client (money spent, not earned)
-        const totalSpent = paymentsData.reduce((sum: number, payment: any) => 
-          payment.payerId === user.id && payment.status === 'completed' ? sum + payment.amount : sum, 0) / 100;
+      try {
+        const paymentsRes = await fetch(`/api/payments/user/${user.id}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
         
+        if (paymentsRes.ok) {
+          const paymentsData = await paymentsRes.json();
+          // Ensure paymentsData is an array
+          const paymentsArray = Array.isArray(paymentsData) ? paymentsData : [];
+          
+          // Calculate payment summaries for client (money spent, not earned)
+          const totalSpent = paymentsArray.reduce((sum: number, payment: any) => 
+            payment.payerId === user.id && payment.status === 'completed' ? sum + payment.amount : sum, 0) / 100;
+          
+          const completedJobs = jobsData.filter((job: any) => job.jobStatus === 'completed').length;
+          
+          setPayments({
+            totalSpent,
+            monthlySpent: totalSpent, // TODO: Calculate current month
+            pendingPayments: paymentsArray.filter((p: any) => p.payerId === user.id && p.status === 'pending').length,
+            completedJobs,
+            averageCost: completedJobs > 0 ? totalSpent / completedJobs : 0
+          });
+        } else {
+          console.log('Payments API not available:', paymentsRes.status);
+          // Set default values when payments API is not available
+          const completedJobs = jobsData.filter((job: any) => job.jobStatus === 'completed').length;
+          setPayments({
+            totalSpent: 0,
+            monthlySpent: 0,
+            pendingPayments: 0,
+            completedJobs,
+            averageCost: 0
+          });
+        }
+      } catch (paymentsError) {
+        console.log('Payments API not available:', paymentsError);
+        // Set default values when payments API fails
         const completedJobs = jobsData.filter((job: any) => job.jobStatus === 'completed').length;
-        
         setPayments({
-          totalSpent,
-          monthlySpent: totalSpent, // TODO: Calculate current month
-          pendingPayments: paymentsData.filter((p: any) => p.payerId === user.id && p.status === 'pending').length,
+          totalSpent: 0,
+          monthlySpent: 0,
+          pendingPayments: 0,
           completedJobs,
-          averageCost: completedJobs > 0 ? totalSpent / completedJobs : 0
+          averageCost: 0
         });
       }
 

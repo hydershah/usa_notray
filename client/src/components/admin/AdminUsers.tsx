@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { UserDetailsModal } from './UserDetailsModal';
+import { EnhancedUserDetailsModal } from './EnhancedUserDetailsModal';
 import { 
   Users, 
   UserCheck, 
@@ -590,8 +590,8 @@ export function AdminUsers() {
         onRejectUser={handleRejectUser}
       />
 
-      {/* User Details Modal */}
-      <UserDetailsModal
+      {/* Enhanced User Details Modal */}
+      <EnhancedUserDetailsModal
         user={selectedUser}
         isOpen={isUserDetailsModalOpen}
         onClose={handleCloseModal}

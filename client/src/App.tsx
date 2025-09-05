@@ -8,6 +8,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
 import { useAccountCompletion } from "@/hooks/use-account-completion";
 import { useNotaryProfileCompletion } from "@/hooks/use-notary-profile-completion";
+import { useRouteChangeTracking } from "@/hooks/use-route-analytics";
 import { MainLayout } from "@/components/layout/main-layout";
 import { AccountCompletionOverlay } from "@/components/ui/account-completion-overlay";
 import { NotaryProfileCompletionOverlay } from "@/components/ui/notary-profile-completion-overlay";
@@ -723,6 +724,9 @@ function Router() {
 }
 
 function App() {
+  // Track route changes for analytics
+  useRouteChangeTracking();
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

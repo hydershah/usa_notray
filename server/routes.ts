@@ -722,7 +722,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Admin access required' });
       }
       const users = await storage.getUsers();
-      res.json(users);
+      
+      // 🔐 SECURITY: Convert to safe DTOs to exclude sensitive data
+      const { toSafeUserDTO } = await import('../shared/types');
+      const safeUsers = users.map(user => toSafeUserDTO(user));
+      
+      res.json(safeUsers);
     } catch (error) {
       console.error('Get users error:', error);
       res.status(500).json({ message: 'Internal server error' });
@@ -1506,7 +1511,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Don't fail the request if cache invalidation fails
       }
 
-      res.json(updatedUser);
+      // 🔐 SECURITY: Convert to safe DTO to exclude sensitive data
+      const { toSafeUserDTO } = await import('../shared/types');
+      const safeUpdatedUser = toSafeUserDTO(updatedUser);
+      
+      res.json(safeUpdatedUser);
     } catch (error) {
       console.error('Update user profile error:', error);
       res.status(500).json({ message: 'Internal server error' });
@@ -3038,7 +3047,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Admin access required' });
       }
       const users = await storage.getUsers();
-      res.json(users);
+      
+      // 🔐 SECURITY: Convert to safe DTOs to exclude sensitive data
+      const { toSafeUserDTO } = await import('../shared/types');
+      const safeUsers = users.map(user => toSafeUserDTO(user));
+      
+      res.json(safeUsers);
     } catch (error) {
       console.error('Get users error:', error);
       res.status(500).json({ message: 'Internal server error' });
@@ -7159,6 +7173,10 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   registerFeeRoutes(app);
   registerAdminVerificationRoutes(app);
   
+  // Register participant payment routes
+  const { registerParticipantPaymentRoutes } = await import('./routes/participant-payment-routes');
+  registerParticipantPaymentRoutes(app);
+  
   // Register video session routes for Daily.co integration
   app.use('/api', videoSessionRoutes);
   
@@ -7398,7 +7416,11 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         return res.status(404).json({ error: 'User not found' });
       }
 
-      res.json(userData);
+      // 🔐 SECURITY: Convert to safe DTO to exclude sensitive data  
+      const { toSafeUserDTO } = await import('../shared/types');
+      const safeUserData = toSafeUserDTO(userData);
+      
+      res.json(safeUserData);
     } catch (error) {
       console.error('Error fetching user verification data:', error);
       res.status(500).json({ error: 'Failed to fetch user verification data' });

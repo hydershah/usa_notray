@@ -56,9 +56,9 @@ export const TYPOGRAPHY = {
     xl: '1.25rem',     // 20px
     
     // Specific use cases
-    label: '0.875rem',   // 14px - for labels and secondary text
+    label: '1rem',       // 16px - for labels and secondary text (increased for readability)
     content: '1rem',     // 16px - for main content
-    tag: '0.75rem',      // 12px - for tag text
+    tag: '0.875rem',     // 14px - for tag text (increased for readability)
     title: '1.125rem'    // 18px - for titles
   },
   fontWeight: {
@@ -148,7 +148,7 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     color: PROFESSIONAL_COLORS.signature,
     borderColor: PROFESSIONAL_COLORS.borderActive,
     defaultWidth: 160,  // Keep larger for signatures
-    defaultHeight: 40,  // Keep larger for signatures
+    defaultHeight: 28,  // Reduced height for signatures
     minWidth: 1,
     minHeight: 1,
     allowResize: true,
@@ -212,8 +212,8 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Seal',
     color: PROFESSIONAL_COLORS.primary,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 80,   // Keep larger for seals
-    defaultHeight: 80,  // Keep larger square shape for seals
+    defaultWidth: 120,  // Wider for better seal visibility
+    defaultHeight: 80,  // Keep current height for seals
     minWidth: 1,
     minHeight: 1,
     allowResize: true,

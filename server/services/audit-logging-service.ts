@@ -140,11 +140,17 @@ class AuditLoggingService {
     duration: number,
     responseData?: any
   ): Promise<void> {
-    if (this.shouldSkipLogging(req.path)) {
+    if (this.shouldSkipLogging(req.path, req.method)) {
       return;
     }
 
     const action = this.categorizeApiAction(req);
+    
+    // Skip if no meaningful action was categorized
+    if (!action) {
+      return;
+    }
+
     const actionDescription = this.generateActionDescription(req, res, action);
     
     await this.createLog({
@@ -169,9 +175,46 @@ class AuditLoggingService {
     }, req, res);
   }
 
-  private shouldSkipLogging(path: string): boolean {
-    const skipPaths = ['/health', '/ping', '/favicon.ico', '/api/auth/verify', '/assets/', '/static/', '/public/'];
-    return skipPaths.some(skipPath => path.startsWith(skipPath));
+  private shouldSkipLogging(path: string, method?: string): boolean {
+    const skipPaths = [
+      '/health', 
+      '/ping', 
+      '/favicon.ico', 
+      '/assets/', 
+      '/static/', 
+      '/public/',
+      '/api/auth/verify'
+    ];
+    
+    // Always skip these paths regardless of method
+    if (skipPaths.some(skipPath => path.startsWith(skipPath))) {
+      return true;
+    }
+    
+    // Skip most GET requests as they are usually just data fetching
+    if (method === 'GET') {
+      const meaningfulGetPaths = [
+        '/api/auth/login',
+        '/api/auth/logout', 
+        '/api/admin/logs', // Keep admin log access
+        '/api/user/download', // Keep file downloads
+        '/api/jobs/', // Keep specific job access (with ID)
+        '/api/users/', // Keep specific user access (with ID)
+        '/api/documents/download', // Keep document downloads
+        '/api/certificates/download' // Keep certificate downloads
+      ];
+      
+      // Only log GET requests to meaningful endpoints
+      const isMeaningfulGet = meaningfulGetPaths.some(meaningfulPath => 
+        path.startsWith(meaningfulPath) && path !== meaningfulPath
+      );
+      
+      if (!isMeaningfulGet) {
+        return true; // Skip this GET request
+      }
+    }
+    
+    return false;
   }
 
   private categorizeApiAction(req: Request & { user?: User }): {
@@ -183,10 +226,11 @@ class AuditLoggingService {
     jobId?: number;
     companyId?: number;
     additionalDetails?: Record<string, any>;
-  } {
+  } | null {
     const { method, path } = req;
     const pathSegments = path.split('/').filter(Boolean);
 
+    // Authentication actions
     if (path.includes('/auth/login')) {
       return { action: LOG_ACTIONS.LOGIN, category: LOG_CATEGORIES.AUTHENTICATION };
     }
@@ -195,6 +239,24 @@ class AuditLoggingService {
       return { action: LOG_ACTIONS.LOGOUT, category: LOG_CATEGORIES.AUTHENTICATION };
     }
 
+    // Session actions
+    if (path.includes('/session') && method === 'POST') {
+      return { 
+        action: 'session_join', 
+        category: 'session_management',
+        targetType: 'session'
+      };
+    }
+
+    if (path.includes('/session') && method === 'DELETE') {
+      return { 
+        action: 'session_leave', 
+        category: 'session_management',
+        targetType: 'session'
+      };
+    }
+
+    // Job management actions
     if (path.includes('/api/jobs')) {
       const jobId = this.extractIdFromPath(pathSegments, 'jobs');
       
@@ -227,6 +289,7 @@ class AuditLoggingService {
       }
     }
 
+    // User management actions
     if (path.includes('/api/users') || path.includes('/api/admin/users')) {
       const userId = this.extractIdFromPath(pathSegments, 'users');
 
@@ -246,8 +309,19 @@ class AuditLoggingService {
           targetType: 'user'
         };
       }
+
+      // Profile updates
+      if (method === 'PUT' && path.includes('/profile')) {
+        return {
+          action: 'profile_updated',
+          category: LOG_CATEGORIES.USER_MANAGEMENT,
+          targetType: 'user',
+          targetId: userId
+        };
+      }
     }
 
+    // Company management actions
     if (path.includes('/api/companies')) {
       const companyId = this.extractIdFromPath(pathSegments, 'companies');
 
@@ -270,10 +344,29 @@ class AuditLoggingService {
       }
     }
 
-    return {
-      action: `${method.toLowerCase()}_${pathSegments[1] || 'unknown'}`,
-      category: LOG_CATEGORIES.SYSTEM_ADMIN
-    };
+    // Document actions
+    if (path.includes('/documents') && (method === 'POST' || method === 'PUT' || method === 'DELETE')) {
+      const docId = this.extractIdFromPath(pathSegments, 'documents');
+      return {
+        action: method === 'POST' ? 'document_uploaded' : 
+                method === 'PUT' ? 'document_updated' : 'document_deleted',
+        category: 'document_management',
+        targetType: 'document',
+        targetId: docId
+      };
+    }
+
+    // Payment actions
+    if (path.includes('/payments') && method === 'POST') {
+      return {
+        action: 'payment_processed',
+        category: 'payment',
+        targetType: 'payment'
+      };
+    }
+
+    // Return null for unrecognized patterns - they will be filtered out
+    return null;
   }
 
   private extractIdFromPath(pathSegments: string[], entityType: string): number | undefined {

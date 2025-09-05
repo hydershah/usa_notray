@@ -9,6 +9,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   User,
   Mail,
@@ -22,8 +25,19 @@ import {
   RefreshCw,
   CheckCircle,
   XCircle,
-  AlertTriangle
+  AlertTriangle,
+  Globe,
+  Monitor,
+  Clock,
+  MapPin as LocationIcon,
+  Smartphone,
+  Wifi,
+  Eye,
+  LogIn,
+  LogOut,
+  Users as UsersIcon
 } from 'lucide-react';
+import { format } from 'date-fns';
 
 interface UserData {
   id: number;
@@ -58,6 +72,41 @@ interface CertificateStatus {
   error?: string;
 }
 
+interface UserActivityLog {
+  id: number;
+  action: string;
+  actionDescription: string;
+  ipAddress?: string;
+  userAgent?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  timezone?: string;
+  latitude?: number;
+  longitude?: number;
+  createdAt: string;
+  isSuccessful: boolean;
+  sessionId?: string;
+}
+
+interface UserActivityData {
+  recentActivity: UserActivityLog[];
+  loginSessions: {
+    totalSessions: number;
+    uniqueIPs: number;
+    uniqueLocations: number;
+    lastLogin?: string;
+    mostCommonLocation?: string;
+    mostCommonDevice?: string;
+  };
+  securityInfo: {
+    suspiciousActivity: number;
+    failedLogins: number;
+    multipleLocations: boolean;
+    deviceCount: number;
+  };
+}
+
 interface UserDetailsModalProps {
   user: UserData | null;
   isOpen: boolean;
@@ -71,12 +120,16 @@ export const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
 }) => {
   const [certificateStatus, setCertificateStatus] = useState<CertificateStatus | null>(null);
   const [certificateLoading, setCertificateLoading] = useState(false);
+  const [activityData, setActivityData] = useState<UserActivityData | null>(null);
+  const [activityLoading, setActivityLoading] = useState(false);
 
   useEffect(() => {
     if (user && isOpen) {
       fetchCertificateStatus(user.id);
+      fetchUserActivity(user.id);
     } else {
       setCertificateStatus(null);
+      setActivityData(null);
     }
   }, [user, isOpen]);
 
@@ -116,6 +169,78 @@ export const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
       });
     } finally {
       setCertificateLoading(false);
+    }
+  };
+
+  const fetchUserActivity = async (userId: number) => {
+    try {
+      setActivityLoading(true);
+      const response = await fetch(`/api/admin/logs/user/${userId}?limit=10`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Process the activity data
+        const logs = data.logs || [];
+        const loginLogs = logs.filter((log: any) => log.action === 'login');
+        const uniqueIPs = new Set(logs.map((log: any) => log.ipAddress).filter(Boolean));
+        const uniqueLocations = new Set(
+          logs.map((log: any) => `${log.city || 'Unknown'}, ${log.country || 'Unknown'}`)
+            .filter(loc => !loc.includes('Unknown'))
+        );
+        
+        // Extract browser info from user agent
+        const getBrowserInfo = (userAgent: string) => {
+          if (!userAgent) return 'Unknown';
+          if (userAgent.includes('Chrome')) return 'Chrome';
+          if (userAgent.includes('Firefox')) return 'Firefox';
+          if (userAgent.includes('Safari')) return 'Safari';
+          if (userAgent.includes('Edge')) return 'Edge';
+          return 'Unknown';
+        };
+        
+        const deviceCounts = new Set(logs.map((log: any) => getBrowserInfo(log.userAgent)));
+        const failedLogins = logs.filter((log: any) => 
+          log.action === 'login' && !log.isSuccessful
+        );
+        
+        const activityData: UserActivityData = {
+          recentActivity: logs.slice(0, 10),
+          loginSessions: {
+            totalSessions: loginLogs.length,
+            uniqueIPs: uniqueIPs.size,
+            uniqueLocations: uniqueLocations.size,
+            lastLogin: loginLogs[0]?.createdAt,
+            mostCommonLocation: logs.find((log: any) => log.city && log.country)?.city && logs.find((log: any) => log.city && log.country)?.country 
+              ? `${logs.find((log: any) => log.city && log.country)?.city}, ${logs.find((log: any) => log.city && log.country)?.country}` 
+              : 'Unknown',
+            mostCommonDevice: logs.find((log: any) => log.userAgent) 
+              ? getBrowserInfo(logs.find((log: any) => log.userAgent)?.userAgent) 
+              : 'Unknown'
+          },
+          securityInfo: {
+            suspiciousActivity: 0, // This would need more sophisticated analysis
+            failedLogins: failedLogins.length,
+            multipleLocations: uniqueLocations.size > 1,
+            deviceCount: deviceCounts.size
+          }
+        };
+        
+        setActivityData(activityData);
+      } else {
+        console.error('Failed to fetch user activity');
+        setActivityData(null);
+      }
+    } catch (error) {
+      console.error('Error fetching user activity:', error);
+      setActivityData(null);
+    } finally {
+      setActivityLoading(false);
     }
   };
 
@@ -220,7 +345,7 @@ export const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <div className="h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center">
@@ -234,7 +359,7 @@ export const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
             </div>
           </DialogTitle>
           <DialogDescription>
-            View detailed information about this user
+            Comprehensive user information including activity tracking and security details
           </DialogDescription>
         </DialogHeader>
 

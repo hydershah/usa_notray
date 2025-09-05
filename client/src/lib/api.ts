@@ -3,6 +3,8 @@
  * Matches the existing pattern used throughout the application
  */
 
+import { locationService } from './location-service';
+
 interface ApiRequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
   body?: any;
@@ -125,6 +127,25 @@ export async function apiRequest(method: string, url: string, data?: any, option
           ...(token && { 'Authorization': `Bearer ${token}` })
         }
       };
+
+      // Add location headers for tracking (only for authenticated requests)
+      if (token) {
+        try {
+          const location = await locationService.getLocationForLogging();
+          if (location.latitude) requestOptions.headers!['x-latitude'] = location.latitude.toString();
+          if (location.longitude) requestOptions.headers!['x-longitude'] = location.longitude.toString();
+          if (location.accuracy) requestOptions.headers!['x-location-accuracy'] = location.accuracy.toString();
+          if (location.city) requestOptions.headers!['x-city'] = location.city;
+          if (location.state) requestOptions.headers!['x-state'] = location.state;
+          if (location.country) requestOptions.headers!['x-country'] = location.country;
+          if (location.timezone) requestOptions.headers!['x-timezone'] = location.timezone;
+          if (location.ispName) requestOptions.headers!['x-isp-name'] = location.ispName;
+          if (location.connectionType) requestOptions.headers!['x-connection-type'] = location.connectionType;
+        } catch (error) {
+          // Silently fail location tracking - don't block API requests
+          console.debug('Location tracking failed for API request:', error);
+        }
+      }
 
       if (data && (method.toUpperCase() === 'POST' || method.toUpperCase() === 'PUT' || method.toUpperCase() === 'PATCH')) {
         // If data is FormData, don't set Content-Type header (let browser set it with boundary)

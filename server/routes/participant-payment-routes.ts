@@ -1,10 +1,29 @@
 import { Express } from 'express';
-import { verifyToken } from '../lib/auth';
+import { verifyToken } from '../auth';
 import { ParticipantPaymentService } from '../services/participant-payment-service';
 
 const participantPaymentService = new ParticipantPaymentService();
 
 export function registerParticipantPaymentRoutes(app: Express) {
+  
+  // Legacy payments endpoint for backward compatibility
+  app.get('/api/payments/user/:userId', verifyToken, async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      // Verify user can access this data (only their own or admin)
+      if (req.user.id !== userId && req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // For now, return empty array - this will be replaced with actual payment data later
+      console.log('Payments API not available: returning empty array for user', userId);
+      res.json([]);
+    } catch (error) {
+      console.error('Error fetching payments for user:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
   
   // Get participant payment summary
   app.get('/api/participant-payments/summary/:userId', verifyToken, async (req: any, res) => {
