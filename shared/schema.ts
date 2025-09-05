@@ -362,6 +362,8 @@ export const jobs = pgTable("jobs", {
   jobType: text("job_type").default("title_company"), // 'title_company', 'subscriber_personal'
   completionReportPath: text('completion_report_path'),
   completionReportGeneratedAt: timestamp('completion_report_generated_at'),
+  auditTrailReportPath: text('audit_trail_report_path'),
+  auditTrailGeneratedAt: timestamp('audit_trail_generated_at'),
   // Signer request fields
   isSignerRequest: boolean("is_signer_request").default(false), // Indicates if this job was initiated by a signer
   signerRequestNotes: text("signer_request_notes"), // Additional notes from signer about the request
@@ -1590,16 +1592,47 @@ export const notaryLogEntries = pgTable("notary_log_entries", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Audit Trail table - for tracking all actions in the session
+// Enhanced Audit Trail table - for comprehensive RON platform audit requirements
 export const auditTrail = pgTable("audit_trail", {
-  id: serial("id").primaryKey(),
-  sessionId: integer("session_id").references(() => editorSessions.id).notNull(),
-  userId: integer("user_id").references(() => users.id).notNull(),
-  action: text("action").notNull(), // 'tag_placed', 'tag_completed', 'signature_placed', 'seal_placed', etc.
-  details: jsonb("details"), // JSON object with action details
-  documentId: integer("document_id").references(() => jobDocuments.id),
-  pageNumber: integer("page_number"),
-  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  // Session Context
+  id: serial("id").primaryKey(), // Audit ID - Unique identifier for the record entry
+  sessionId: integer("session_id").references(() => editorSessions.id).notNull(), // Session ID - Links all audit entries to a specific RON session
+  documentId: integer("document_id").references(() => jobDocuments.id), // Document ID - Links the entry to a specific document being signed
+  timestamp: timestamp("timestamp").defaultNow().notNull(), // Timestamp (UTC) - Exact time of the event in standardized format
+  userId: integer("user_id").references(() => users.id).notNull(), // Actor/User ID - Who performed the action (notary, signer, witness, system)
+  userRole: text("user_role").notNull(), // Role - Role of the actor (Notary, Signer, Witness, System)
+  ipAddress: text("ip_address"), // IP Address / Device Fingerprint - Source of the action, helps confirm location/device
+  deviceFingerprint: text("device_fingerprint"), // Device fingerprint for additional security
+  
+  // Event/Action
+  eventType: text("event_type").notNull(), // Event Type - Type of event (login, signature, seal applied, video start, etc.)
+  eventDetails: text("event_details"), // Event Details - Detailed description of the event or action taken
+  coordinatesPageReference: text("coordinates_page_reference"), // Coordinates/Page Reference - Page number and coordinates if action involves a document
+  previousState: jsonb("previous_state"), // Previous vs. New State - If something was changed (moved tag, deleted tag, etc.)
+  newState: jsonb("new_state"), // New state after the action
+  
+  // Verification
+  authenticationMethod: text("authentication_method"), // Authentication Method - How the actor was authenticated (KBA, ID, biometric, etc.)
+  verificationResult: text("verification_result"), // Verification Result - Pass/fail outcome of KBA, credential analysis, or biometric check
+  credentialReference: text("credential_reference"), // Credential Reference - ID of the ID verification session or token
+  
+  // Notarial Actions
+  sealApplied: jsonb("seal_applied"), // Seal Applied - Details of notary seal use (image hash, location, time)
+  notaryCertificateReference: text("notary_certificate_reference"), // Notary Certificate Reference - Digital certificate or PFX used for final signature
+  digitalSignatureHash: text("digital_signature_hash"), // Digital Signature Hash - Cryptographic proof of integrity for the signed document
+  
+  // System/Compliance
+  systemSource: text("system_source"), // System Source - Which subsystem logged the event (signing module, video server)
+  auditLogIntegrityHash: text("audit_log_integrity_hash"), // Audit Log Integrity Hash - Cryptographic hash chain linking audit entries together
+  retentionMetadata: jsonb("retention_metadata"), // Retention Metadata - WORM storage reference or retention policy tag (e.g., 10 years)
+  
+  // Legacy fields for backward compatibility
+  action: text("action"), // Legacy action field
+  details: jsonb("details"), // Legacy details field
+  pageNumber: integer("page_number"), // Legacy page number field
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 // Document Versions table - for tracking document versions

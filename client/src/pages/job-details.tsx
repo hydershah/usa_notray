@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { getStatusColor, formatDate, isMobileDevice } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-import { JobCompletionReport } from '@/components/job/JobCompletionReport';
+import { AuditTrail } from '@/components/job/AuditTrail';
 import { NotaryAssignmentCard } from '@/components/job/NotaryAssignmentCard';
 import { SessionRecordingCard } from '@/components/job/SessionRecordingCard';
 import { ActivityTimelineCard } from '@/components/job/ActivityTimelineCard';
@@ -492,10 +492,10 @@ export default function JobDetailsPage() {
 
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Left Column - Assigned Notary & Completion Report */}
+          {/* Left Column - Assigned Notary & Audit Trail */}
           <div className="lg:col-span-1 space-y-4">
             <NotaryAssignmentCard jobId={job.id} />
-            <JobCompletionReport 
+            <AuditTrail 
               jobId={job.id} 
               jobStatus={job.jobStatus}
               minimal

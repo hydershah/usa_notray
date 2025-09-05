@@ -43,7 +43,7 @@ const menuItems: MenuItem[] = [
   // Primary actions
   {
     id: 'create-job',
-    label: 'Create job',
+    label: 'create job',
     icon: Plus,
     path: '/create-job',
     roles: ['admin', 'title_company', 'notary'],
@@ -277,8 +277,8 @@ export function Sidebar() {
             "group flex items-center justify-between w-full p-3 text-sm font-medium rounded-xl transition-all duration-300 hover:shadow-md",
             level > 0 && "ml-6 border-l-2 border-gray-200 pl-4",
             isActive && !hasSubsections
-              ? "bg-gray-100 text-gray-900 shadow-sm border border-gray-200"
-              : "text-gray-700 hover:bg-gray-50 hover:text-gray-900",
+              ? "bg-gradient-to-r from-blue-50 to-blue-100 text-blue-700 shadow-sm border border-blue-200/50"
+              : "text-gray-700 hover:bg-gradient-to-r hover:from-gray-50 hover:to-gray-100 hover:text-gray-900",
             hasSubsections && isExpanded && "bg-gray-50"
           )}
           title={item.description}
@@ -287,8 +287,8 @@ export function Sidebar() {
             <div className={cn(
               "p-2 rounded-lg transition-all duration-300",
               isActive && !hasSubsections
-                ? "bg-primary text-primary-foreground shadow-md" 
-                : "bg-gray-100 text-gray-500 group-hover:bg-primary/10 group-hover:text-primary group-hover:shadow-sm",
+                ? "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-md transform scale-110" 
+                : "bg-gray-100 text-gray-500 group-hover:bg-white group-hover:text-gray-700 group-hover:shadow-sm",
               level > 0 && "p-1.5"
             )}>
               <Icon className={cn("h-4 w-4", level > 0 && "h-3 w-3")} />
@@ -303,7 +303,7 @@ export function Sidebar() {
           
           <div className="flex items-center gap-2">
             {item.badge && (
-              <span className="bg-primary text-primary-foreground text-xs font-bold px-2 py-1 rounded-full shadow-sm">
+              <span className="bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-sm">
                 {item.badge}
               </span>
             )}
@@ -313,7 +313,7 @@ export function Sidebar() {
                 isExpanded && "rotate-180"
               )} />
             ) : isActive && (
-              <ChevronRight className="h-4 w-4 text-gray-600" />
+              <ChevronRight className="h-4 w-4 text-blue-600 animate-pulse" />
             )}
           </div>
         </button>

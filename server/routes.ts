@@ -296,6 +296,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           accountSetupComplete: loginAccountSetupComplete
         }
       });
+
+      // 🛡️ LOG COMPREHENSIVE LOGIN AUDIT ENTRY
+      try {
+        const { ComprehensiveAuditService } = await import('./services/comprehensive-audit-service');
+        await ComprehensiveAuditService.logUserLogin({
+          userId: user.id,
+          userRole: user.role,
+          ipAddress: ComprehensiveAuditService.getClientIP(req),
+          userAgent: ComprehensiveAuditService.getUserAgent(req),
+          authenticationMethod: user.mfaEnabled ? 'email_password_2fa' : 'email_password',
+          mfaUsed: Boolean(user.mfaEnabled)
+        });
+        console.log(`🛡️ Comprehensive login audit entry logged for user ${user.id}`);
+      } catch (auditError) {
+        console.warn('Failed to log login audit entry:', auditError);
+      }
     } catch (error) {
       console.error('Login error:', error);
       res.status(500).json({ message: 'Internal server error' });
@@ -3171,6 +3187,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
           storageType: 'vultr',
           documentType
         });
+
+        // 🛡️ LOG COMPREHENSIVE DOCUMENT UPLOAD AUDIT ENTRY
+        try {
+          const { ComprehensiveAuditService } = await import('./services/comprehensive-audit-service');
+          await ComprehensiveAuditService.logDocumentUpload({
+            sessionId: sessionId ? parseInt(sessionId) : 1,
+            userId: req.user.id,
+            userRole: req.user.role,
+            documentId: uploadResult.documentId || undefined,
+            fileName: req.file.originalname,
+            fileSize: req.file.size,
+            documentType: documentType,
+            ipAddress: ComprehensiveAuditService.getClientIP(req),
+            userAgent: ComprehensiveAuditService.getUserAgent(req)
+          });
+          console.log(`🛡️ Comprehensive document upload audit entry logged for ${req.file.originalname}`);
+        } catch (auditError) {
+          console.warn('Failed to log document upload audit entry:', auditError);
+        }
       } catch (error) {
         console.error('Document upload error:', error);
         res.status(500).json({ error: 'Document upload failed' });
@@ -5663,7 +5698,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     }
   });
 
-  // Get job completion report
+  // Get job completion report (legacy)
   app.get('/api/jobs/:id/completion-report', verifyToken, async (req: any, res) => {
     try {
       const jobId = parseInt(req.params.id);
@@ -5715,6 +5750,62 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       
     } catch (error) {
       console.error('Get completion report error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Get job audit trail
+  app.get('/api/jobs/:id/audit-trail', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      
+      if (isNaN(jobId)) {
+        return res.status(400).json({ message: 'Invalid job ID' });
+      }
+
+      const job = await storage.getJob(jobId);
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      // Check if user has access to this job
+      let hasAccess = req.user.role === 'admin' || 
+                     job.userId === req.user.id || 
+                     job.selectedNotary === req.user.id.toString();
+      
+      // For title company users, also check if job is assigned to their company
+      if (!hasAccess && (req.user.role === 'title_company' || req.user.role === 'company_manager' || req.user.role === 'client')) {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasAccess = true;
+            console.log(`✅ AUDIT TRAIL: Title company user ${req.user.id} accessing job for ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for audit trail:', companyCheckError);
+        }
+      }
+
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { AuditTrailService } = await import('./services/audit-trail-service');
+      const auditInfo = await AuditTrailService.getAuditTrailReport(jobId);
+      
+      res.json(auditInfo);
+      
+    } catch (error) {
+      console.error('Get audit trail error:', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   });
@@ -5825,6 +5916,167 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       
     } catch (error) {
       console.error('Download completion report error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Download job audit trail
+  app.get('/api/jobs/:id/audit-trail/download', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      
+      if (isNaN(jobId)) {
+        return res.status(400).json({ message: 'Invalid job ID' });
+      }
+
+      const job = await storage.getJob(jobId);
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      // Check if user has access to this job
+      let hasAccess = req.user.role === 'admin' || 
+                     job.userId === req.user.id || 
+                     job.selectedNotary === req.user.id.toString();
+      
+      // For title company users, also check if job is assigned to their company
+      if (!hasAccess && (req.user.role === 'title_company' || req.user.role === 'company_manager' || req.user.role === 'client')) {
+        try {
+          // Get user's company information
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+          
+          // Check if job is assigned to their company
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasAccess = true;
+            console.log(`✅ AUDIT TRAIL DOWNLOAD: Title company user ${req.user.id} accessing job for ${userWithCompany.companyName}`);
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for audit trail download:', companyCheckError);
+        }
+      }
+
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { AuditTrailService } = await import('./services/audit-trail-service');
+      const auditInfo = await AuditTrailService.getAuditTrailReport(jobId);
+      
+      if (!auditInfo.exists || !auditInfo.reportPath) {
+        return res.status(404).json({ message: 'Audit trail not found. Please generate the audit trail first.', canRegenerate: true });
+      }
+
+      // Check if file exists - handle both absolute and relative paths
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      
+      let fullPath = auditInfo.reportPath;
+      if (!path.isAbsolute(auditInfo.reportPath)) {
+        fullPath = path.resolve(auditInfo.reportPath);
+      }
+      
+      try {
+        await fs.access(fullPath);
+        
+        // Set headers for PDF download
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="job_${jobId}_audit_trail.pdf"`);
+        
+        // Stream the file
+        const fileBuffer = await fs.readFile(fullPath);
+        res.send(fileBuffer);
+        
+        console.log(`✅ Audit trail downloaded for job ${jobId}`);
+        
+      } catch (fileError) {
+        console.error('Audit trail file not found:', fileError);
+        return res.status(404).json({ 
+          message: 'Audit trail file not found on disk. The file may have been moved or deleted.',
+          canRegenerate: true 
+        });
+      }
+      
+    } catch (error) {
+      console.error('Download audit trail error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Generate audit trail manually
+  app.post('/api/jobs/:id/generate-audit-trail', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      
+      if (isNaN(jobId)) {
+        return res.status(400).json({ message: 'Invalid job ID' });
+      }
+
+      // Check access permissions
+      const job = await storage.getJob(jobId);
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      // Allow admins, job creators, assigned notary, and title company users
+      let hasAccess = req.user.role === 'admin' || 
+                     job.userId === req.user.id || 
+                     job.selectedNotary === req.user.id.toString();
+      
+      if (!hasAccess && (req.user.role === 'title_company' || req.user.role === 'company_manager' || req.user.role === 'client')) {
+        try {
+          const [userWithCompany] = await db.select({
+            companyName: companies.companyName
+          })
+          .from(users)
+          .leftJoin(companies, eq(users.companyId, companies.id))
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+          
+          if (userWithCompany?.companyName && job.titleCompany === userWithCompany.companyName) {
+            hasAccess = true;
+          }
+        } catch (companyCheckError) {
+          console.error('Error checking company access for audit trail generation:', companyCheckError);
+        }
+      }
+
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { AuditTrailService } = await import('./services/audit-trail-service');
+      const auditResult = await AuditTrailService.generateAuditTrailReport(jobId);
+      
+      // Invalidate audit trail cache after manual generation
+      if (auditResult.success) {
+        try {
+          const { redisCache } = await import('./services/redis-cache');
+          const cachePatterns = [
+            `*audit-trail*${jobId}*`,
+            `*jobs*${jobId}*audit*`,
+            `response:*/api/jobs/${jobId}/audit-trail:*`
+          ];
+          
+          for (const pattern of cachePatterns) {
+            await redisCache.delPattern(pattern);
+          }
+          
+          console.log(`🧹 Invalidated audit trail cache for job ${jobId} (manual generation)`);
+        } catch (cacheError) {
+          console.warn('Failed to invalidate audit trail cache:', cacheError);
+        }
+      }
+      
+      res.json(auditResult);
+      
+    } catch (error) {
+      console.error('Generate audit trail error:', error);
       res.status(500).json({ message: 'Internal server error' });
     }
   });
@@ -8608,6 +8860,31 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         completedAt: new Date()
       });
 
+      // 🛡️ LOG COMPREHENSIVE SESSION COMPLETION AUDIT ENTRY
+      try {
+        const { ComprehensiveAuditService } = await import('./services/comprehensive-audit-service');
+        
+        // Calculate session duration if possible
+        let duration;
+        if (session.startedAt) {
+          duration = Math.round((new Date().getTime() - new Date(session.startedAt).getTime()) / (1000 * 60));
+        }
+        
+        await ComprehensiveAuditService.logSessionCompletion({
+          sessionId: session.id,
+          userId: req.user.id,
+          userRole: req.user.role,
+          sessionType: session.sessionType || 'notarization',
+          jobId: session.jobId,
+          duration: duration,
+          ipAddress: ComprehensiveAuditService.getClientIP(req),
+          userAgent: ComprehensiveAuditService.getUserAgent(req)
+        });
+        console.log(`🛡️ Comprehensive session completion audit entry logged for session ${actualSessionId}`);
+      } catch (auditError) {
+        console.warn('Failed to log session completion audit entry:', auditError);
+      }
+
       // Also update all related signers' signing_status to completed
       try {
         if (session.jobId) {
@@ -8620,7 +8897,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         console.warn('Failed to update signers signing_status on completion:', signerUpdateError);
       }
 
-      // 🆕 GENERATE JOB COMPLETION REPORT
+      // 🆕 GENERATE JOB COMPLETION REPORT (LEGACY)
       if (session.jobId) {
         try {
           console.log(`📊 Generating completion report for job ${session.jobId}`);
@@ -8654,6 +8931,41 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         } catch (reportError) {
           console.error('Error generating completion report:', reportError);
           // Don't fail the session completion if report generation fails
+        }
+
+        // 🆕 GENERATE COMPREHENSIVE AUDIT TRAIL
+        try {
+          console.log(`🛡️ Generating comprehensive audit trail for job ${session.jobId}`);
+          
+          const { AuditTrailService } = await import('./services/audit-trail-service');
+          const auditResult = await AuditTrailService.generateAuditTrailReport(session.jobId);
+          
+          if (auditResult.success) {
+            console.log(`✅ Comprehensive audit trail generated: ${auditResult.reportPath}`);
+            
+            // 🔥 INVALIDATE AUDIT TRAIL CACHE
+            try {
+              const { redisCache } = await import('./services/redis-cache');
+              const cachePatterns = [
+                `*audit-trail*${session.jobId}*`,
+                `*jobs*${session.jobId}*audit*`,
+                `response:*/api/jobs/${session.jobId}/audit-trail:*`
+              ];
+              
+              for (const pattern of cachePatterns) {
+                await redisCache.delPattern(pattern);
+              }
+              
+              console.log(`🧹 Invalidated audit trail cache for job ${session.jobId}`);
+            } catch (cacheError) {
+              console.warn('Failed to invalidate audit trail cache:', cacheError);
+            }
+          } else {
+            console.error(`❌ Failed to generate audit trail: ${auditResult.error}`);
+          }
+        } catch (auditError) {
+          console.error('Error generating audit trail:', auditError);
+          // Don't fail the session completion if audit trail generation fails
         }
 
         // 🆕 SEND JOB COMPLETION EMAIL NOTIFICATIONS

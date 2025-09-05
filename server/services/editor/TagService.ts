@@ -126,6 +126,27 @@ export class TagService {
       
       console.log(`✅ Tag placed: ${request.tagType} for ${assignedUser.firstName} ${assignedUser.lastName} at page ${request.coordinates.pageNumber}`);
       
+      // 🛡️ LOG COMPREHENSIVE TAG PLACEMENT AUDIT ENTRY
+      try {
+        const { ComprehensiveAuditService } = await import('../comprehensive-audit-service');
+        await ComprehensiveAuditService.logTagPlacement({
+          sessionId: session.id,
+          userId: request.placedBy,
+          userRole: 'notary', // Tag placement is typically done by notary
+          documentId: parseInt(request.documentId),
+          tagType: request.tagType,
+          assignedUserId: parseInt(request.assignedUserId),
+          assignedUserName: `${assignedUser.firstName} ${assignedUser.lastName}`,
+          pageNumber: request.coordinates.pageNumber,
+          coordinates: request.coordinates,
+          ipAddress: 'session-based', // Will be enhanced with actual IP in API routes
+          userAgent: 'editor-session'
+        });
+        console.log(`🛡️ Tag placement audit entry logged: ${request.tagType}`);
+      } catch (auditError) {
+        console.warn('Failed to log tag placement audit entry:', auditError);
+      }
+      
       // 🚀 SMART: Run targeted cache invalidation in background to avoid blocking the response
       (async () => {
         try {
@@ -549,6 +570,29 @@ export class TagService {
       }
       
       console.log(`✅ Tag updated: ${tagId}`);
+      
+      // 🛡️ LOG COMPREHENSIVE TAG COMPLETION AUDIT ENTRY (if tag was completed)
+      if (updates.isCompleted === true && updates.content) {
+        try {
+          const { ComprehensiveAuditService } = await import('../comprehensive-audit-service');
+          await ComprehensiveAuditService.logTagCompletion({
+            sessionId: updatedTag.sessionId,
+            userId: updates.completedBy || 1, // Should be passed in updates
+            userRole: 'signer', // Tag completion is typically done by signer
+            documentId: updatedTag.documentId,
+            tagId: numericTagId,
+            tagType: updatedTag.tagType,
+            content: updates.content,
+            pageNumber: updatedTag.pageNumber,
+            coordinates: { x: updatedTag.xPosition, y: updatedTag.yPosition },
+            ipAddress: 'session-based', // Will be enhanced with actual IP in API routes
+            userAgent: 'editor-session'
+          });
+          console.log(`🛡️ Tag completion audit entry logged: ${tagId} with content`);
+        } catch (auditError) {
+          console.warn('Failed to log tag completion audit entry:', auditError);
+        }
+      }
       
       // Smart cache invalidation - only clear what actually changed
       if (session) {
