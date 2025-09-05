@@ -797,7 +797,19 @@ export class DatabaseStorage implements IStorage {
                   LIMIT 1
                 ),
                 ''
-              ) AS first_signer_name
+              ) AS first_signer_name,
+              CASE 
+                WHEN j.notary_id IS NOT NULL THEN 
+                  COALESCE(
+                    (
+                      SELECT CONCAT(u.first_name, ' ', u.last_name)
+                      FROM users u 
+                      WHERE u.id = j.notary_id
+                    ),
+                    CONCAT('Notary #', j.notary_id)
+                  )
+                ELSE NULL
+              END AS notary_name
             FROM jobs j
             ORDER BY j.created_at DESC
             LIMIT ${limit}
@@ -829,7 +841,19 @@ export class DatabaseStorage implements IStorage {
                   LIMIT 1
                 ),
                 ''
-              ) AS first_signer_name
+              ) AS first_signer_name,
+              CASE 
+                WHEN j.notary_id IS NOT NULL THEN 
+                  COALESCE(
+                    (
+                      SELECT CONCAT(u.first_name, ' ', u.last_name)
+                      FROM users u 
+                      WHERE u.id = j.notary_id
+                    ),
+                    CONCAT('Notary #', j.notary_id)
+                  )
+                ELSE NULL
+              END AS notary_name
             FROM jobs j
             WHERE j.user_id = ${userId}
                OR j.selected_notary = CAST(${userId} AS TEXT)
@@ -898,7 +922,19 @@ export class DatabaseStorage implements IStorage {
                   LIMIT 1
                 ),
                 ''
-              ) AS first_signer_name
+              ) AS first_signer_name,
+              CASE 
+                WHEN j.notary_id IS NOT NULL THEN 
+                  COALESCE(
+                    (
+                      SELECT CONCAT(u.first_name, ' ', u.last_name)
+                      FROM users u 
+                      WHERE u.id = j.notary_id
+                    ),
+                    CONCAT('Notary #', j.notary_id)
+                  )
+                ELSE NULL
+              END AS notary_name
             FROM jobs j
             WHERE j.user_id = ${userId}
                OR (${user.companyName ? sql`j.title_company = ${user.companyName}` : sql`FALSE`})
@@ -1472,7 +1508,7 @@ export class DatabaseStorage implements IStorage {
                 }
 
                 if (key) {
-                  const access = await VultrUploadHandler.getFileUrl(key, 24 * 30); // 30 days
+                  const access = await VultrUploadHandler.getFileUrl(key, 24 * 7); // 7 days (max allowed)
                   resolvedUrl = access.url || resolvedUrl;
                 }
               }

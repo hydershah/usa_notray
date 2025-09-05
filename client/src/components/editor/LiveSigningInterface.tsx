@@ -299,6 +299,16 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
 
   // Session completion with retry logic and status polling
   const completeSessionWithRetry = async (targetSessionId: string) => {
+    // Helper: poll until the server reports completed
+    const waitUntilCompleted = async (maxTries: number = 15, intervalMs: number = 1000) => {
+      for (let i = 0; i < maxTries; i++) {
+        const done = await checkSessionStatus(targetSessionId);
+        if (done) return true;
+        await new Promise((r) => setTimeout(r, intervalMs));
+      }
+      return false;
+    };
+
     let attempt = 1;
     const maxAttempts = 3;
     
@@ -322,7 +332,16 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         
         if (response.ok) {
           const result = await response.json();
-          console.log('✅ Session completion successful:', result);
+          console.log('✅ Session completion response:', result);
+          // If server reports completion already in progress, poll until done
+          if (result?.inProgress === true || /already in progress/i.test(result?.message || '')) {
+            const finished = await waitUntilCompleted();
+            return finished ? { success: true, message: 'Session completed successfully' } : { success: true, message: 'Completion in progress' };
+          }
+          // If already completed, just return success
+          if (result?.alreadyCompleted) {
+            return { success: true, message: 'Session already completed' };
+          }
           return result;
         } else {
           const errorData = await response.json();

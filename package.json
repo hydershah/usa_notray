@@ -44,6 +44,12 @@
     "url:test": "npx tsx scripts/test-url-config.ts",
     "evs:test": "npx tsx scripts/test-evs-real-integration.ts",
 
+    "test:registration": "npx tsx scripts/test-registration-issues.ts",
+    "test:files": "npx tsx scripts/test-file-operations.ts",
+    "test:database": "npx tsx scripts/test-database-operations.ts",
+    "test:manual": "chmod +x scripts/test-manual-checks.sh && ./scripts/test-manual-checks.sh",
+    "test:all": "npm run test:registration && npm run test:files && npm run test:database",
+
     "job:fix": "npx tsx run-job-integrity-fix.ts",
     "job:validate": "npx tsx scripts/validate-job-integrity.ts",
     "job:stats": "npx tsx scripts/show-job-stats.ts",

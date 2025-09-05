@@ -301,8 +301,25 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
         clearTimeout(timeoutId);
         
         if (!response.ok) {
-          const errorData = await response.text();
-          throw new Error(errorData || 'Failed to create job');
+          let errorMessage = 'Failed to create job';
+          try {
+            const errorData = await response.json();
+            // Use the specific error message from our enhanced server response
+            if (errorData.error) {
+              errorMessage = errorData.error;
+            } else if (errorData.message) {
+              errorMessage = errorData.message;
+            }
+          } catch (parseError) {
+            // Fallback to text if JSON parsing fails
+            try {
+              const errorText = await response.text();
+              errorMessage = errorText || errorMessage;
+            } catch (textError) {
+              // Keep default message if both JSON and text parsing fail
+            }
+          }
+          throw new Error(errorMessage);
         }
         
         return response.json();
@@ -322,10 +339,31 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
     },
     onError: (error: any) => {
       console.error('Create job mutation error:', error);
+      
+      // Determine appropriate title and description based on error type
+      let title = "Error";
+      let description = error.message || "Failed to create job.";
+      
+      // Check if this is a validation error (like signer role mismatch)
+      if (error.message && (
+        error.message.includes('cannot add') || 
+        error.message.includes('different role') ||
+        error.message.includes('as a signer') ||
+        error.message.includes('Invalid') ||
+        error.message.includes('must be')
+      )) {
+        title = "Validation Error";
+        // Keep the specific error message as is since it's already user-friendly
+      } else if (error.message && error.message.includes('timeout')) {
+        title = "Request Timeout";
+      } else if (error.message && error.message.includes('permission')) {
+        title = "Permission Error";
+      }
+      
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error.message || "Failed to create job.",
+        title: title,
+        description: description,
       });
     },
   });

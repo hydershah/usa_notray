@@ -54,7 +54,28 @@ export class ProfileAutoFillService {
   static async getUserProfileData(userId: number): Promise<UserProfileData | null> {
     try {
       const [user] = await db
-        .select()
+        .select({
+          id: users.id,
+          username: users.username,
+          email: users.email,
+          role: users.role,
+          privileges: users.privileges,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          fullName: users.fullName,
+          phoneNumber: users.phoneNumber,
+          nameOnCommission: users.nameOnCommission,
+          commissionNumber: users.commissionNumber,
+          commissionExpiration: users.commissionExpiration,
+          commissionState: users.commissionState,
+          commissionCounty: users.commissionCounty,
+          disclosure: users.disclosure,
+          signatureImage: users.signatureImage,
+          initialsImage: users.initialsImage,
+          signatureTyped: users.signatureTyped,
+          initialsTyped: users.initialsTyped,
+          defaultSignatureType: users.defaultSignatureType
+        })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
@@ -90,12 +111,45 @@ export class ProfileAutoFillService {
         role: user.role || '',
         userType: user.role || '', // Use role as userType for now
         
-        // Notary stamps (fetch if user is a notary)
-        stamps: user.role === 'notary' ? await this.getNotaryStamps(userId) : []
+        // Notary stamps (fetch if user is a notary or has notary privileges)
+        stamps: await this.determineAndFetchStamps(user, userId)
       };
     } catch (error) {
       console.error('Failed to get user profile data:', error);
       return null;
+    }
+  }
+
+  /**
+   * Determine if user should have stamps and fetch them
+   */
+  private static async determineAndFetchStamps(user: any, userId: number): Promise<Array<{ id: number; stampType: string; stampData: string; isActive: boolean; }>> {
+    try {
+      // Check if user has notary role or notary privileges
+      const hasNotaryRole = user.role === 'notary';
+      const hasNotaryPrivileges = user.privileges && Array.isArray(user.privileges) && user.privileges.includes('notary');
+      const shouldFetchStamps = hasNotaryRole || hasNotaryPrivileges;
+      
+      console.log('🔍 Stamp fetching decision for user:', {
+        userId,
+        role: user.role,
+        privileges: user.privileges,
+        hasNotaryRole,
+        hasNotaryPrivileges,
+        shouldFetchStamps
+      });
+      
+      if (shouldFetchStamps) {
+        const stamps = await this.getNotaryStamps(userId);
+        console.log(`📸 Fetched ${stamps.length} stamps for user ${userId}`);
+        return stamps;
+      } else {
+        console.log(`❌ User ${userId} does not have notary role or privileges, skipping stamp fetch`);
+        return [];
+      }
+    } catch (error) {
+      console.error(`Failed to determine/fetch stamps for user ${userId}:`, error);
+      return [];
     }
   }
 
@@ -200,7 +254,7 @@ export class ProfileAutoFillService {
     tagType: string, 
     userId: number, 
     sessionId: string,
-    options?: { allowInTagging?: boolean }
+    options?: { allowInTagging?: boolean; userWithPrivileges?: any }
   ): Promise<AutoFillResult> {
     try {
       // 🔒 CRITICAL: Verify this is a signing session, not tagging
@@ -229,7 +283,7 @@ export class ProfileAutoFillService {
       }
       
       // Map tag type to profile data (now async)
-      return await this.mapTagTypeToProfileData(tagType, profile);
+      return await this.mapTagTypeToProfileData(tagType, profile, options?.userWithPrivileges);
       
     } catch (error) {
       console.error('Failed to get tag auto-fill data:', error);
@@ -280,8 +334,16 @@ export class ProfileAutoFillService {
   /**
    * Map tag types to specific profile data
    */
-  private static async mapTagTypeToProfileData(tagType: string, profile: UserProfileData): Promise<AutoFillResult> {
-    const isNotary = profile.role === 'notary';
+  private static async mapTagTypeToProfileData(tagType: string, profile: UserProfileData, userWithPrivileges?: any): Promise<AutoFillResult> {
+    // Import auth functions for proper privilege checking
+    const { hasNotaryPrivileges } = await import('../auth');
+    
+    // Check for notary privileges using the user object with privileges if available
+    let isNotary = profile.role === 'notary';
+    
+    if (userWithPrivileges && hasNotaryPrivileges) {
+      isNotary = isNotary || hasNotaryPrivileges(userWithPrivileges);
+    }
     
     // Fetch user signatures once for all signature-related cases
     const userSignatures = await this.getUserSignatures(profile.id);

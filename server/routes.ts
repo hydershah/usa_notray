@@ -23,6 +23,7 @@ import videoSessionRoutes from "./routes/video-session-routes";
 import { auditLoggingService } from "./services/audit-logging-service";
 import { notificationService } from "./notification-service";
 import { verifyToken, hasAdminPrivileges, hasNotaryPrivileges, type AuthUser } from "./auth";
+import type { EditorSessionData } from "./services/editor/SessionService";
 import { cacheAdminData, cacheUserData, cacheCompanyData, cacheJobData } from "./middleware/cache-middleware";
 import { tagAutoFillDeduplication, tagUpdateDeduplication, tagPositionDeduplication } from "./middleware/request-deduplication";
 import { responseCacheMiddleware } from "./middleware/response-cache";
@@ -94,7 +95,6 @@ import {
   jobNotifications,
   userSignatures,
   documentTags,
-  signers,
 } from "@shared/schema";
 
 // Import enhanced upload handlers
@@ -320,24 +320,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/auth/register', registrationLimiter, sanitizeHtml, preventSqlInjection, async (req, res) => {
     try {
-      const userData = insertUserSchema.parse(req.body);
-      // Normalize email/username to enforce case-insensitive uniqueness
-      userData.email = String(userData.email).trim().toLowerCase();
-      userData.username = String(userData.username || userData.email).trim().toLowerCase();
+      // Create properly typed user data following the pattern from user-management-routes.ts
+      const email = String(req.body.email || '').trim().toLowerCase();
+      const userData = {
+        username: String(req.body.username || email),
+        email: email,
+        password: String(req.body.password || ''),
+        role: String(req.body.role || 'client'),
+        firstName: req.body.firstName,
+        lastName: req.body.lastName,
+        fullName: req.body.fullName,
+        phoneNumber: req.body.phoneNumber,
+        address1: req.body.address1,
+        address2: req.body.address2,
+        city: req.body.city,
+        state: req.body.state,
+        zipCode: req.body.zipCode,
+        // Set default values for required fields
+        isActive: true,
+        approvalStatus: 'approved',
+        isNotificationsEnabled: true,
+        mfaEnabled: false,
+        foreignLanguages: []
+      };
       
       // Check if user already exists
-      const existingUser = await storage.getUserByEmail(userData.email.trim().toLowerCase());
+      const existingUser = await storage.getUserByEmail(userData.email);
       if (existingUser) {
         return res.status(400).json({ message: 'User already exists' });
       }
 
-      // Hash password
-      const hashedPassword = await bcrypt.hash(userData.password, 10);
-      
-      const user = await storage.createUser({
-        ...userData,
-        password: hashedPassword
-      });
+      // Create user (password will be hashed by storage layer)
+      const user = await storage.createUser(userData as any);
 
       // Invalidate users cache to ensure fresh data on next request
       try {
@@ -923,23 +937,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get user signatures endpoint
-  app.get('/api/users/:id/signatures', verifyToken, async (req: any, res) => {
+  // Debug endpoint for signature loading issues
+  app.get('/api/users/:id/signatures/debug', verifyToken, async (req: any, res) => {
     try {
       const userId = parseInt(req.params.id);
+      
+      console.log(`🐛 DEBUG: Getting signature debug info for user ${userId}`);
       
       // Check if user can access these signatures
       if (!req.user || (!hasAdminPrivileges(req.user) && req.user.id !== userId)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Get signatures from storage (in production, this would be a database query)
+      const debugInfo = {
+        userId,
+        requestingUser: req.user?.id,
+        timestamp: new Date().toISOString(),
+        storageStatus: 'checking...',
+        databaseConnection: 'checking...',
+        signatureCount: 0,
+        errors: []
+      };
+
+      try {
+        // Test database connection
+        const testQuery = await storage.executeQuery('SELECT 1 as test');
+        debugInfo.databaseConnection = testQuery ? 'connected' : 'disconnected';
+      } catch (dbError) {
+        debugInfo.databaseConnection = `error: ${(dbError as Error).message}`;
+        debugInfo.errors.push(`Database error: ${(dbError as Error).message}`);
+      }
+
+      try {
+        // Test signature retrieval
+        const signatures = await storage.getUserSignatures(userId);
+        debugInfo.signatureCount = signatures.length;
+        debugInfo.storageStatus = 'working';
+      } catch (storageError) {
+        debugInfo.storageStatus = `error: ${(storageError as Error).message}`;
+        debugInfo.errors.push(`Storage error: ${(storageError as Error).message}`);
+      }
+
+      res.json({
+        success: true,
+        debug: debugInfo
+      });
+    } catch (error) {
+      console.error('❌ Debug endpoint error:', error);
+      res.status(500).json({ 
+        message: 'Debug endpoint failed',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Get user signatures endpoint
+  app.get('/api/users/:id/signatures', verifyToken, async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      
+      console.log(`🔍 Getting signatures for user ${userId}, requested by user ${req.user?.id}`);
+      
+      // Check if user can access these signatures
+      if (!req.user || (!hasAdminPrivileges(req.user) && req.user.id !== userId)) {
+        console.log(`❌ Access denied for user ${req.user?.id} trying to access signatures for user ${userId}`);
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Get signatures from storage
+      console.log(`📡 Fetching signatures from storage for user ${userId}...`);
       const signatures = await storage.getUserSignatures(userId);
+      
+      console.log(`✅ Retrieved ${signatures.length} signatures for user ${userId}:`, {
+        signatureIds: signatures.map(s => s.id),
+        signatureNames: signatures.map(s => s.name),
+        signatureTypes: signatures.map(s => s.type)
+      });
       
       res.json(signatures);
     } catch (error) {
-      console.error('Get user signatures error:', error);
-      res.status(500).json({ message: 'Internal server error' });
+      console.error('❌ Get user signatures error:', error);
+      res.status(500).json({ 
+        message: 'Internal server error',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
@@ -1504,7 +1585,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error('Debug user error:', error);
-      res.status(500).json({ message: 'Internal server error', error: error.message });
+      res.status(500).json({ 
+        message: 'Internal server error', 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
@@ -1531,8 +1615,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           username: companyData.primaryUserEmail,
           email: companyData.primaryUserEmail,
           password: tempPassword,
-          firstName: companyData.primaryUserName?.split(' ')[0] || companyData.primaryUserName || '',
-          lastName: companyData.primaryUserName?.split(' ').slice(1).join(' ') || '',
+          firstName: String(companyData.primaryUserName || '').split(' ')[0] || String(companyData.primaryUserName || ''),
+          lastName: String(companyData.primaryUserName || '').split(' ').slice(1).join(' ') || '',
           fullName: companyData.primaryUserName || '',
           phoneNumber: companyData.phoneNumber,
           role: 'title_company',
@@ -1546,10 +1630,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const adminCreatedCompanyData = {
           ...companyData,
           status: 'active', // Admin-created companies are auto-approved and active
-          approvedBy: req.user.id, // Track who approved it
+          approvedBy: Number(req.user.id), // Track who approved it
           approvedAt: new Date(),
           approvalNotes: 'Auto-approved: Created by admin',
-          createdBy: req.user.id // Track who created it
+          createdBy: Number(req.user.id) // Track who created it
         };
         
         const result = await storage.registerCompany(adminCreatedCompanyData, managerData);
@@ -1878,11 +1962,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         req.user.role === 'title_company' ||
         (req.user.role === 'notary' && req.user.notaryType === 'subscriber');
 
+      console.log(`🔐 Job Creation Permission Check - User ${req.user.id}:`, {
+        hasAdminAccess,
+        userRole: req.user.role,
+        notaryType: req.user.notaryType,
+        userCanCreateJob,
+        email: req.user.email
+      });
+
       if (!userCanCreateJob) {
         return res.status(403).json({ 
           message: 'Access denied. Only administrators, title companies, and subscriber notaries can create jobs.' 
         });
       }
+
+      // Safely parse signers count for logging
+      let signersCount = 0;
+      try {
+        signersCount = req.body.signers ? JSON.parse(req.body.signers).length : 0;
+      } catch (signersParseError) {
+        console.error(`❌ Failed to parse signers JSON for user ${req.user.id}:`, signersParseError);
+        return res.status(400).json({ 
+          message: 'Invalid signers data format',
+          error: 'Signers data must be valid JSON'
+        });
+      }
+
+      console.log(`📝 Processing job data for user ${req.user.id}:`, {
+        bodyKeys: Object.keys(req.body),
+        filesCount: req.files ? req.files.length : 0,
+        hasSigners: !!req.body.signers,
+        signersCount: signersCount
+      });
 
       const jobData = {
         ...req.body,
@@ -1940,7 +2051,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // 🚀 PERFORMANCE OPTIMIZATION: Parallel Core Operations
       const jobCreationStartTime = Date.now();
-      console.log('🚀 Starting parallel job creation operations...');
+      console.log(`🚀 Starting parallel job creation operations for user ${req.user.id}...`);
 
       // Step 1: Prepare operations that can run in parallel
       const parallelOperations = [
@@ -1950,12 +2061,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Add signer preparation if signers exist
       if (req.body.signers) {
-        parallelOperations.push(prepareSignerDataForParallel(req.body.signers));
+        try {
+          const signersArray = JSON.parse(req.body.signers);
+          console.log(`📋 Adding signer preparation for ${signersArray.length} signers`);
+          parallelOperations.push(prepareSignerDataForParallel(req.body.signers));
+        } catch (signersParseError) {
+          console.error(`❌ Failed to parse signers for parallel processing:`, signersParseError);
+          throw new Error('Invalid signers data format - must be valid JSON');
+        }
       }
 
+      console.log(`🔄 Executing ${parallelOperations.length} parallel operations...`);
       const results = await Promise.all(parallelOperations);
       const job = results[0];
       const preparedSignerData = results[1] || null;
+      
+      console.log(`✅ Job created with ID: ${job?.id}, prepared signers: ${preparedSignerData ? 'yes' : 'no'}`);
+      
+      if (!job || !job.id) {
+        throw new Error('Job creation returned invalid result - no job ID generated');
+      }
       
       console.log(`✅ Parallel job creation completed in ${Date.now() - jobCreationStartTime}ms`);
 
@@ -2453,8 +2578,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
     } catch (error) {
-      console.error('Create job error:', error);
-      res.status(500).json({ message: 'Internal server error' });
+      console.error('❌ JOB CREATION ERROR - Full Details:', {
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        } : error,
+        userId: req.user?.id,
+        userRole: req.user?.role,
+        userEmail: req.user?.email,
+        requestBody: {
+          ...req.body,
+          // Redact sensitive data but keep structure
+          signers: req.body.signers ? (() => {
+            try {
+              return `${JSON.parse(req.body.signers).length} signers`;
+            } catch {
+              return 'invalid signers JSON';
+            }
+          })() : 'none',
+          documents: req.files ? `${req.files.length} files` : 'none'
+        },
+        timestamp: new Date().toISOString(),
+        userAgent: req.headers['user-agent'],
+        ip: req.ip || req.connection.remoteAddress
+      });
+
+      // Return more specific error information for debugging
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      const errorCode = error instanceof Error && error.name ? error.name : 'UNKNOWN_ERROR';
+      
+      res.status(500).json({ 
+        message: 'Failed to create job',
+        error: errorMessage,
+        errorCode: errorCode,
+        timestamp: new Date().toISOString(),
+        // Include user ID for tracking (safe to expose to the user themselves)
+        userId: req.user?.id
+      });
     }
   });
 
@@ -2597,21 +2758,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/auth/register', registrationLimiter, sanitizeHtml, preventSqlInjection, async (req, res) => {
     try {
-      const userData = insertUserSchema.parse(req.body);
+      // Create properly typed user data following the pattern from user-management-routes.ts
+      const email = String(req.body.email || '').trim().toLowerCase();
+      const userData = {
+        username: String(req.body.username || email),
+        email: email,
+        password: String(req.body.password || ''),
+        role: String(req.body.role || 'client'),
+        firstName: req.body.firstName,
+        lastName: req.body.lastName,
+        fullName: req.body.fullName,
+        phoneNumber: req.body.phoneNumber,
+        address1: req.body.address1,
+        address2: req.body.address2,
+        city: req.body.city,
+        state: req.body.state,
+        zipCode: req.body.zipCode,
+        // Set default values for required fields
+        isActive: true,
+        approvalStatus: 'approved',
+        isNotificationsEnabled: true,
+        mfaEnabled: false,
+        foreignLanguages: []
+      };
       
       // Check if user already exists
-      const existingUser = await storage.getUserByEmail(userData.email.trim().toLowerCase());
+      const existingUser = await storage.getUserByEmail(userData.email);
       if (existingUser) {
         return res.status(400).json({ message: 'User already exists' });
       }
 
-      // Hash password
-      const hashedPassword = await bcrypt.hash(userData.password, 10);
-      
-      const user = await storage.createUser({
-        ...userData,
-        password: hashedPassword
-      });
+      // Create user (password will be hashed by storage layer)
+      const user = await storage.createUser(userData as any);
 
       // Invalidate users cache to ensure fresh data on next request
       try {
@@ -3612,14 +3790,120 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Secure file retrieval
-  app.get('/api/uploads/:type/:fileId', verifyToken, getUploadedFile);
+  // Secure file retrieval - handles both local and Vultr files
+  app.get('/api/uploads/:type/*', verifyToken, async (req: any, res) => {
+    try {
+      const { type } = req.params;
+      const fileId = req.params[0]; // Get the full path after the type
+      console.log(`🔍 File request: type=${type}, fileId=${fileId}`);
+      console.log(`👤 User: ${req.user?.id} (${req.user?.role})`);
+      
+      // For Vultr-stored files (stamps, signatures, documents)
+      if (['notary-stamp', 'signature', 'document', 'signer-document'].includes(type)) {
+        console.log(`📡 Serving Vultr file: ${fileId}`);
+        const { cloudStorage } = await import('./lib/cloud-storage-service');
+        
+        try {
+          // Use signed URL with 24 hours expiration (within 7-day limit)
+          const signedUrl = await cloudStorage.getSignedUrl(fileId, 86400); // 24 hours
+          console.log(`✅ Generated signed URL for ${type}: ${signedUrl.substring(0, 100)}...`);
+          
+          // Redirect to Vultr signed URL
+          res.redirect(302, signedUrl);
+          return;
+        } catch (signedError) {
+          console.error(`❌ Failed to generate signed URL for ${fileId}:`, signedError);
+          throw signedError;
+        }
+      }
+      
+      // Fallback to local file serving for other types
+      console.log(`📁 Using local file serving for type: ${type}`);
+      await getUploadedFile(req, res);
+      
+    } catch (error) {
+      console.error('File retrieval error:', error);
+      res.status(404).json({ error: 'File not found' });
+    }
+  });
+
+  // Placeholder image endpoints to prevent 404 errors
+  app.get('/api/placeholder/:type', (req, res) => {
+    const { type } = req.params;
+    
+    // Return a simple SVG placeholder based on type
+    const placeholderSvg = type === 'notary-stamp' 
+      ? `<svg width="80" height="80" xmlns="http://www.w3.org/2000/svg"><rect width="80" height="80" fill="#f3f4f6"/><text x="40" y="45" text-anchor="middle" font-size="10" fill="#9ca3af">Stamp</text></svg>`
+      : `<svg width="80" height="80" xmlns="http://www.w3.org/2000/svg"><rect width="80" height="80" fill="#f3f4f6"/><text x="40" y="45" text-anchor="middle" font-size="10" fill="#9ca3af">Image</text></svg>`;
+    
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+    res.send(placeholderSvg);
+  });
 
   // Legacy local file serving routes - REMOVED
   // All stamps and signatures are now stored in Vultr cloud storage
   // Use /api/uploads/:type/:fileId with proper Vultr URLs instead
 
   // ===== NOTARY STAMP MANAGEMENT ROUTES =====
+
+  // Get notary stamps for a specific notary
+  app.get('/api/notary/:notaryId/stamps', verifyToken, async (req: any, res) => {
+    try {
+      const notaryId = parseInt(req.params.notaryId);
+      
+      // Check if user is a notary or admin
+      if (req.user.role !== 'admin' && req.user.role !== 'notary') {
+        return res.status(403).json({ message: 'Access denied - notary access required' });
+      }
+      
+      // Check if user can access this notary's stamps
+      if (req.user.role !== 'admin' && req.user.id !== notaryId) {
+        return res.status(403).json({ message: 'Access denied - you can only view your own stamps' });
+      }
+      
+      if (isNaN(notaryId)) {
+        return res.status(400).json({ message: 'Invalid notary ID' });
+      }
+
+      // Get stamps from database
+      const stamps = await db.execute(sql`
+        SELECT 
+          id,
+          notary_id as "notaryId",
+          stamp_type as "stampType",
+          stamp_data as "stampData",
+          is_active as "isActive",
+          created_at as "createdAt",
+          updated_at as "updatedAt"
+        FROM notary_stamps 
+        WHERE notary_id = ${notaryId}
+        ORDER BY created_at DESC
+      `);
+
+      // Transform stamps to include proper image URLs
+      const stampsWithUrls = stamps.rows.map((stamp: any) => {
+        const imageUrl = `/api/uploads/notary-stamp/${stamp.stampData}`;
+        console.log(`🖼️ Generated stamp image URL for stamp ${stamp.id}:`, imageUrl);
+        console.log(`📁 Vultr key: ${stamp.stampData}`);
+        
+        return {
+          id: stamp.id.toString(),
+          imageUrl: imageUrl,
+          isActive: stamp.isActive,
+          uploadedAt: new Date(stamp.createdAt).toISOString().split('T')[0],
+          createdAt: stamp.createdAt,
+          updatedAt: stamp.updatedAt
+        };
+      });
+
+      console.log(`📋 Returning ${stampsWithUrls.length} stamps for notary ${notaryId}`);
+      res.json(stampsWithUrls);
+    } catch (error) {
+      console.error('Get notary stamps error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
 
   // Set active notary stamp
   app.put('/api/notary/stamps/:stampId/activate', verifyToken, async (req: any, res) => {
@@ -8577,10 +8861,30 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       // If Redis is available and lock failed, another completion is in progress
       if (lockResult === false && !redisCache.isRedisDisabled()) {
         console.log(`🔒 Session ${sessionId} completion already in progress`);
-        return res.status(409).json({
-          success: false,
+        // Be idempotent: treat duplicate clicks as success and report in-progress state
+        try {
+          const [current] = await db
+            .select({ status: editorSessions.status, completedAt: editorSessions.completedAt, signingState: editorSessions.signingState })
+            .from(editorSessions)
+            .where(eq(editorSessions.sessionId, sessionId))
+            .limit(1);
+
+          if (current?.status === 'completed') {
+            return res.status(200).json({
+              success: true,
+              message: 'Session was already completed',
+              sessionId,
+              alreadyCompleted: true,
+              completedAt: current.completedAt
+            });
+          }
+        } catch {}
+
+        return res.status(200).json({
+          success: true,
           message: 'Session completion already in progress',
-          error: 'completion_in_progress'
+          sessionId,
+          inProgress: true
         });
       }
       
@@ -8594,7 +8898,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         const { SessionService } = await import('./services/editor/SessionService');
         const { LiveSigningSessionService } = await import('./services/session/LiveSigningSessionService');
         
-        let session;
+        let session: EditorSessionData | null = null;
         let actualSessionId = sessionId;
         
         try {
@@ -8627,14 +8931,15 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
               session = {
                 id: sessionData.sessionId,
                 jobId: sessionData.jobId,
-                sessionType: sessionData.sessionType,
-                status: sessionData.status,
+                sessionType: sessionData.sessionType as 'tagging' | 'notary',
+                status: sessionData.status as 'preparing' | 'active' | 'completed' | 'cancelled',
                 notaryId: sessionData.notaryId,
                 videoSessionId: sessionData.videoSessionId,
+                isLiveSession: sessionData.isLiveSession,
                 createdAt: sessionData.createdAt,
                 startedAt: sessionData.startedAt,
                 completedAt: sessionData.completedAt
-              };
+              } as EditorSessionData;
               actualSessionId = sessionData.sessionId;
               console.log(`✅ Found session by jobId: ${actualSessionId}`);
             }
@@ -8691,6 +8996,15 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
 
       // For live signing sessions, handle completion
       if (session.sessionType === 'notary' || session.sessionType === 'tagging') {
+        // Mark session as moving into completing state to signal the UI and avoid duplicate work
+        try {
+          await db
+            .update(editorSessions)
+            .set({ signingState: 'completing', updatedAt: new Date() })
+            .where(eq(editorSessions.sessionId, actualSessionId));
+        } catch (stateErr) {
+          console.warn('Failed to set signingState to completing:', stateErr);
+        }
         try {
           // Get all tags for validation - use getJobTags to find tags across all sessions
           const { TagService } = await import('./services/editor/TagService');
@@ -8743,7 +9057,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
                         completedAt: new Date(),
                         updatedAt: new Date()
                       })
-                      .where(eq(documentTags.id, tag.id));
+                      .where(eq(documentTags.id, parseInt(tag.id)));
                   }
                 }
                 console.log(`✅ Ensured tags with content are marked as completed`);
@@ -9783,16 +10097,22 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       const { TagService } = await import('./services/editor/TagService');
       const { ProfileAutoFillService } = await import('./services/ProfileAutoFillService');
       const { users, documentTags, editorSessions } = await import('../shared/schema');
+      const { hasNotaryPrivileges } = await import('./auth');
       
-      // Validate that user is a notary
+      // Validate that user has notary privileges (either role or privileges)
+      if (!hasNotaryPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Only notaries can configure seals' });
+      }
+      
+      // Get user data for notary information
       const [notary] = await db
         .select()
         .from(users)
         .where(eq(users.id, req.user.id))
         .limit(1);
       
-      if (!notary || notary.role !== 'notary') {
-        return res.status(403).json({ message: 'Only notaries can configure seals' });
+      if (!notary) {
+        return res.status(404).json({ message: 'User not found' });
       }
       
       // Get tag details first
@@ -9838,6 +10158,10 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         } as any;
       }
       
+      if (!tag) {
+        return res.status(404).json({ message: 'Tag not found' });
+      }
+      
       if (tag.tagType !== 'E') {
         return res.status(400).json({ message: 'This endpoint is only for seal tags' });
       }
@@ -9847,7 +10171,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         'E', 
         req.user.id, 
         sessionId,
-        { allowInTagging: true }
+        { allowInTagging: true, userWithPrivileges: req.user }
       );
       
       if (!autoFillResult.success) {
@@ -10311,15 +10635,32 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
               // Write the signed PDF
               await fs.writeFile(signedFilePath, processedDoc.buffer);
             
+              // Ensure sessionId is a valid number
+              const sessionIdNum = parseInt(sessionId);
+              if (isNaN(sessionIdNum)) {
+                throw new Error(`Invalid sessionId: ${sessionId}`);
+              }
+
+              // Ensure we have a valid originalDocumentId
+              if (!processedDoc.originalDocumentId) {
+                throw new Error(`Missing originalDocumentId for processed document ${i + 1}`);
+              }
+
+              // Ensure originalDocumentId is a valid number
+              const originalDocumentIdNum = parseInt(processedDoc.originalDocumentId);
+              if (isNaN(originalDocumentIdNum)) {
+                throw new Error(`Invalid originalDocumentId: ${processedDoc.originalDocumentId}`);
+              }
+
               // Create document version record
               const [documentVersion] = await db.insert(documentVersions).values({
-                originalDocumentId: processedDoc.originalDocumentId || session.jobId,
-                sessionId: parseInt(sessionId),
+                originalDocumentId: originalDocumentIdNum,
+                sessionId: sessionIdNum,
                 versionNumber: 1,
                 fileName: signedFileName,
                 filePath: signedFilePath,
                 fileSize: processedDoc.fileSize,
-                status: 'completed',
+                status: 'completed' as const,
                 digitalCertificateApplied: processedDoc.isDigitallySigned || false
               }).returning();
               

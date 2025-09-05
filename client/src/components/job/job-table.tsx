@@ -569,10 +569,26 @@ export function JobTable({ onCreateJob }: JobTableProps) {
 
   const getAssignedNotary = (job: Job): string => {
     // Check if we have assignedNotary data with the name
+    if ((job as any).assignedNotary?.name) {
+      return (job as any).assignedNotary.name;
+    }
+    
+    // Check if we have notary name from backend join (snake_case from SQL)
+    if ((job as any).notary_name) {
+      return (job as any).notary_name;
+    }
+    
+    // Check if we have notary name from backend join (camelCase)
+    if ((job as any).notaryName) {
+      return (job as any).notaryName;
+    }
+    
+    // Fallback to ID if we have it but no name
     if ((job as any).notaryId || (job as any).notary_id) {
       const notaryId = (job as any).notaryId ?? (job as any).notary_id;
-      return `Notary #${job.notaryId}`;
+      return `Notary #${notaryId}`;
     }
+    
     const selected = (job as any).selectedNotary ?? (job as any).selected_notary;
     if (selected) {
       return selected as string;

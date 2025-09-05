@@ -68,38 +68,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
         </div>
       )}
       
-      {/* Participant Info Overlay */}
-      <div className="absolute bottom-2 left-2 right-2">
-        <div className="bg-black bg-opacity-75 px-3 py-2 rounded-md text-white text-sm backdrop-blur-sm">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 min-w-0 flex-1">
-              <span className="truncate font-medium">
-                {displayName}
-              </span>
-              
-              {/* Role Badges */}
-              {isNotary && (
-                <div className="flex items-center space-x-1 bg-blue-500 px-2 py-0.5 rounded text-xs font-medium">
-                  <Crown className="w-3 h-3" />
-                  <span>NOTARY</span>
-                </div>
-              )}
-              
-              {isLocal && (
-                <span className="bg-green-500 px-2 py-0.5 rounded text-xs font-medium">
-                  YOU
-                </span>
-              )}
-              
-              {isOwner && !isLocal && (
-                <span className="bg-yellow-500 px-2 py-0.5 rounded text-xs font-medium">
-                  HOST
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Participant Info Overlay - REMOVED to hide names and labels */}
 
       {/* Audio/Video Status Icons */}
       <div className="absolute top-2 right-2 flex space-x-1">
