@@ -98,6 +98,8 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   const [videoSessionError, setVideoSessionError] = useState<string | null>(null);
   const [hasInitializedVideoSession, setHasInitializedVideoSession] = useState(false);
   const completionHandledRef = useRef(false);
+  // Resolved non-numeric editor session id for websockets/tags
+  const [resolvedSessionId, setResolvedSessionId] = useState<string | null>(null);
 
   const [unfilledTagsError, setUnfilledTagsError] = useState<{
     unfilledTags: any[];
@@ -174,11 +176,11 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   }, [jobData?.id, hasInitializedVideoSession, memoizedParticipants.length]);
 
   // Compute the correct editor session ID for editor/WebSocket usage
-  // Prefer non-numeric session IDs (e.g., video_..., live_...). If numeric (jobId), fall back to real sessionId prop
+  // Prefer resolved non-numeric session IDs (e.g., live_...), then provided liveSessionId, then sessionId
   const editorSessionId = useMemo(() => {
-    const candidate = (liveSessionId || sessionId) as string;
-    return /^\d+$/.test(candidate || '') ? (sessionId as string) : candidate;
-  }, [liveSessionId, sessionId]);
+    const prefer = (resolvedSessionId || liveSessionId || sessionId) as string;
+    return prefer as string;
+  }, [resolvedSessionId, liveSessionId, sessionId]);
 
   // Memoize WebSocket configuration to prevent reconnections
   const webSocketConfig = useMemo(() => ({
@@ -258,6 +260,11 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
       if (response.ok) {
         const data = await response.json();
         const sessionState = data.success ? data.data : data;
+        // Capture the authoritative non-numeric editor session id from server
+        const serverSessionId: string | undefined = sessionState?.sessionId || sessionState?.id;
+        if (serverSessionId && !/^\d+$/.test(serverSessionId) && serverSessionId !== resolvedSessionId) {
+          setResolvedSessionId(serverSessionId);
+        }
         
         // Check if we recently made an optimistic update (within 3 seconds)
         const timeSinceOptimisticUpdate = Date.now() - optimisticUpdateTimeRef.current;
@@ -295,7 +302,7 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
     } catch (error) {
       console.error('Failed to load live session state:', error);
     }
-  }, [liveSessionId, sessionId]);
+  }, [liveSessionId, sessionId, resolvedSessionId]);
 
   // Session completion with retry logic and status polling
   const completeSessionWithRetry = async (targetSessionId: string) => {
@@ -515,6 +522,16 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         clearTimeout(timeoutId);
 
         if (response.ok) {
+          // If starting, capture actual editor session id returned by server
+          if (action === 'start') {
+            try {
+              const json = await response.clone().json();
+              const actual = json?.data?.actualSessionId || json?.data?.sessionId || json?.sessionId;
+              if (actual && !/^\d+$/.test(actual)) {
+                setResolvedSessionId(actual);
+              }
+            } catch {}
+          }
           const messages = {
             start: 'Session started successfully',
             pause: 'Session paused',

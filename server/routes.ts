@@ -1917,6 +1917,162 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Session access control for live signing
+  app.get('/api/jobs/:id/session-access', verifyToken, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      const userId = req.user.id;
+      const user = req.user;
+
+      if (isNaN(jobId)) {
+        return res.status(400).json({ message: 'Invalid job ID' });
+      }
+
+      // Get job details including KBA requirement
+      const [job] = await db
+        .select()
+        .from(jobs)
+        .where(eq(jobs.id, jobId))
+        .limit(1);
+
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      let hasAccess = false;
+      let accessReason = '';
+
+      // Admin access - always allowed
+      if (user.role === 'admin' || user.isAdmin) {
+        hasAccess = true;
+        accessReason = 'admin';
+      }
+      // Job creator access
+      else if (job.userId === userId) {
+        hasAccess = true;
+        accessReason = 'job_creator';
+      }
+      // Assigned notary access
+      else if (job.notaryId === userId || job.selectedNotary === userId.toString()) {
+        hasAccess = true;
+        accessReason = 'assigned_notary';
+      }
+      // Signer access - check via signers table
+      else if (user.role === 'signer' || user.role === 'witness') {
+        const [signer] = await db
+          .select()
+          .from(signers)
+          .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, user.email)))
+          .limit(1);
+
+        if (signer) {
+          // 🔧 FIX: Get fresh user data from database instead of stale JWT token data
+          const [freshUser] = await db
+            .select()
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+
+          if (!freshUser) {
+            return res.json({
+              hasAccess: false,
+              message: 'User data not found',
+              errorType: 'user_not_found'
+            });
+          }
+
+          // Check if account setup is complete using fresh data - be flexible with address formats
+          const hasBasicInfo = freshUser.firstName && freshUser.lastName && freshUser.phoneNumber;
+          const hasAddress = (freshUser.address1 && freshUser.city && freshUser.state && freshUser.zipCode) || freshUser.address;
+          const isAccountSetupComplete = hasBasicInfo && hasAddress;
+          
+          if (!isAccountSetupComplete) {
+            return res.json({
+              hasAccess: false,
+              message: 'Please complete your account setup first',
+              errorType: 'account_setup_required',
+              requirements: [
+                ...(!hasBasicInfo ? ['Complete personal information (name, phone)'] : []),
+                ...(!hasAddress ? ['Complete address information'] : [])
+              ]
+            });
+          }
+
+          // **NEW KBA LOGIC** - Check KBA requirement for this job
+          if (job.kbaRequired) {
+            // Check if KBA verification is completed OR bypassed using fresh user data
+            const hasKBAVerification = freshUser.kbaVerified || 
+                                     freshUser.isVerificationBypassed || 
+                                     freshUser.notaryVerificationBypassed;
+
+            if (!hasKBAVerification) {
+              return res.json({
+                hasAccess: false,
+                message: 'KBA (Knowledge-Based Authentication) verification required for this job',
+                errorType: 'kba_verification_required',
+                requirements: ['Complete KBA verification in your dashboard'],
+                kbaRequired: true
+              });
+            }
+
+            console.log(`✅ KBA verification passed for user ${userId} on KBA-required job ${jobId}`);
+          } else {
+            // For non-KBA jobs, use regular ID verification check with fresh user data
+            if (!freshUser.isVerified && !freshUser.isVerificationBypassed && !freshUser.notaryVerificationBypassed) {
+              return res.json({
+                hasAccess: false,
+                message: 'ID verification required before joining sessions',
+                errorType: 'verification_required',
+                requirements: ['Complete ID verification in your dashboard']
+              });
+            }
+          }
+
+          hasAccess = true;
+          accessReason = 'invited_signer';
+          console.log(`🎉 ACCESS GRANTED for user ${userId} as invited signer`);
+        } else {
+          console.log(`❌ User ${userId} not found in signers table for job ${jobId}`);
+        }
+      } else {
+        console.log(`❌ User ${userId} role check failed:`, {
+          userRole: user.role,
+          expectedRoles: ['signer', 'witness']
+        });
+      }
+
+      if (hasAccess) {
+        console.log(`✅ FINAL ACCESS GRANTED:`, {
+          hasAccess: true,
+          accessReason,
+          userId,
+          jobId
+        });
+        return res.json({
+          hasAccess: true,
+          accessReason,
+          message: 'Session access granted'
+        });
+      } else {
+        console.log(`❌ FINAL ACCESS DENIED:`, {
+          hasAccess: false,
+          userId,
+          jobId,
+          userRole: user.role
+        });
+        return res.json({
+          hasAccess: false,
+          message: 'You are not authorized to access this session',
+          errorType: 'not_authorized'
+        });
+      }
+
+    } catch (error) {
+      console.error('Session access check error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
   // 🚀 OPTIMIZATION: Helper function for parallel signer data preparation
   async function prepareSignerDataForParallel(signersJson: string) {
     const signers = JSON.parse(signersJson);
