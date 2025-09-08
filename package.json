@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
-  "_comment": "Trigger CI/CD - 2025-09-02 - Node.js v20.19.4 update",
+  "_comment": "Trigger CI/CD - 2025-09-08 - staging-v9.5 with session-access fix",
   "engines": {
     "node": "20.19.4",
     "npm": "10.8.2"
