@@ -2052,18 +2052,23 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
       currentDocumentUrlRef.current = url;
 
-      // Fetch PDF as ArrayBuffer
+      // Stream PDF directly via PDF.js so it can use HTTP Range requests for faster first-page render
       const token = localStorage.getItem('token');
       const fetchUrl = url.includes('{{TOKEN}}') ? url.replace('{{TOKEN}}', token || '') : url;
-      const response = await fetch(fetchUrl, { headers: { 'Authorization': `Bearer ${token}` }, credentials: 'same-origin' });
-      if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText || 'Failed to fetch PDF'}`);
-      const contentType = response.headers.get('content-type') || '';
-      if (contentType.includes('application/json') || contentType.includes('text/html')) {
-        throw new Error('Server returned non-PDF content while fetching document');
-      }
-      const pdfData = await response.arrayBuffer();
-
-      const loadingTask = pdfjsLib.getDocument({ data: pdfData, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true, verbosity: 0, cMapPacked: true });
+      const loadingTask = pdfjsLib.getDocument({
+        url: fetchUrl,
+        // Include auth header for the preview endpoint; the endpoint redirects to a signed Vultr URL
+        httpHeaders: token ? { 'Authorization': `Bearer ${token}` } : undefined,
+        withCredentials: false,
+        // Performance/compat options
+        disableStream: false,
+        disableRange: false,
+        rangeChunkSize: 1048576, // 1MB chunks
+        isEvalSupported: false,
+        useSystemFonts: true,
+        cMapPacked: true,
+        verbosity: 0
+      });
       loadingTaskRef.current = loadingTask;
       const pdf = await loadingTask.promise;
       if (!isMountedRef.current) return;

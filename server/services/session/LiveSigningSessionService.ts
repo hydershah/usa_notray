@@ -57,15 +57,14 @@ export class LiveSigningSessionService {
         return;
       }
 
-      // If the current session already has tags, do nothing
-      const existingCountRows = await db
-        .select({ count: count() })
+      // Always attempt to merge missing tags from the latest tagging session
+      // even if the live session already has some tags. This fixes the case
+      // where a new tag is placed first in the live session and prevents the
+      // original tagging-session tags from being copied over.
+      const existingLiveTags = await db
+        .select()
         .from(documentTags)
         .where(eq(documentTags.sessionId, session.id));
-      const existingCount = Number(existingCountRows?.[0]?.count || 0);
-      if (existingCount > 0) {
-        return;
-      }
 
       // Find the latest tagging session for this job
       const [taggingSession] = await db
@@ -94,34 +93,52 @@ export class LiveSigningSessionService {
         return;
       }
 
-      // Copy tags to the live session. Preserve geometry and assignment, reset completion state.
-      const now = new Date();
-      const tagsToInsert = sourceTags.map((t: any) => ({
-        sessionId: session.id,
-        documentId: t.documentId,
-        tagType: t.tagType,
-        assignedUserId: t.assignedUserId,
-        pageNumber: t.pageNumber,
-        xPosition: t.xPosition,
-        yPosition: t.yPosition,
-        width: t.width,
-        height: t.height,
-        // Preserve any placeholder text or styling, but mark as not completed for live fill
-        content: t.content || null,
-        contentType: t.contentType || null,
-        contentData: t.contentData || null,
-        isCompleted: false,
-        completedBy: null,
-        completedAt: null,
-        createdBy: createdByUserId || t.createdBy, // Use provided user ID or fallback to original creator
-        createdAt: now,
-        updatedAt: now,
-      }));
+      // Build a quick lookup for existing live tags using a stable key to avoid duplicates
+      const makeKey = (t: any) => [
+        t.documentId,
+        t.tagType,
+        t.pageNumber,
+        t.xPosition,
+        t.yPosition,
+        t.width,
+        t.height,
+        t.assignedUserId || '0'
+      ].join(':');
 
-      await db.insert(documentTags).values(tagsToInsert);
+      const existingKeys = new Set(existingLiveTags.map(makeKey));
+
+      // Copy only missing tags to the live session. Preserve geometry and assignment, reset completion state.
+      const now = new Date();
+      const tagsToInsert = sourceTags
+        .filter((t: any) => !existingKeys.has(makeKey(t)))
+        .map((t: any) => ({
+          sessionId: session.id,
+          documentId: t.documentId,
+          tagType: t.tagType,
+          assignedUserId: t.assignedUserId,
+          pageNumber: t.pageNumber,
+          xPosition: t.xPosition,
+          yPosition: t.yPosition,
+          width: t.width,
+          height: t.height,
+          // Preserve any placeholder text or styling, but mark as not completed for live fill
+          content: t.content || null,
+          contentType: t.contentType || null,
+          contentData: t.contentData || null,
+          isCompleted: false,
+          completedBy: null,
+          completedAt: null,
+          createdBy: createdByUserId || t.createdBy,
+          createdAt: now,
+          updatedAt: now,
+        }));
+
+      if (tagsToInsert.length > 0) {
+        await db.insert(documentTags).values(tagsToInsert);
+      }
 
       console.log(
-        `✅ Copied ${tagsToInsert.length} tag(s) from tagging session ${taggingSession.sessionId} to live session ${session.sessionId}`
+        `✅ Ensured live session tags: copied ${tagsToInsert.length} missing tag(s) from tagging session ${taggingSession.sessionId} to live session ${session.sessionId}`
       );
     } catch (copyError) {
       console.warn('⚠️ Failed to ensure tags for live session:', copyError);

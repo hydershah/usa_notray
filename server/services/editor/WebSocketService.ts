@@ -409,6 +409,35 @@ export class WebSocketService {
     
     // Broadcast to all users in session
     this.broadcastToSession(user.sessionId, message, user.userId);
+
+    // Also mirror to sibling sessions for the same job (e.g., tagging <-> live)
+    // so both rooms stay in sync during live signing.
+    try {
+      const sessionId = user.sessionId;
+      // Look up the DB session to get jobId
+      db
+        .select({ id: editorSessions.id, jobId: editorSessions.jobId })
+        .from(editorSessions)
+        .where(eq(editorSessions.sessionId, sessionId))
+        .limit(1)
+        .then(async (rows) => {
+          const session = rows?.[0];
+          if (!session?.jobId) return;
+          // Find other sessions for the same job (exclude current session)
+          const siblings = await db
+            .select({ sId: editorSessions.sessionId })
+            .from(editorSessions)
+            .where(and(eq(editorSessions.jobId, session.jobId), sql`${editorSessions.sessionId} <> ${sessionId}`));
+          for (const sib of siblings) {
+            if (sib?.sId) {
+              this.broadcastToSession(sib.sId, message, user.userId);
+            }
+          }
+        })
+        .catch(() => {});
+    } catch {
+      // Non-fatal if sibling broadcast fails
+    }
   }
   
   /**
@@ -420,6 +449,32 @@ export class WebSocketService {
     
     // Broadcast to all users in session
     this.broadcastToSession(user.sessionId, message, user.userId);
+
+    // Also mirror to sibling sessions for the same job (e.g., tagging <-> live)
+    try {
+      const sessionId = user.sessionId;
+      db
+        .select({ id: editorSessions.id, jobId: editorSessions.jobId })
+        .from(editorSessions)
+        .where(eq(editorSessions.sessionId, sessionId))
+        .limit(1)
+        .then(async (rows) => {
+          const session = rows?.[0];
+          if (!session?.jobId) return;
+          const siblings = await db
+            .select({ sId: editorSessions.sessionId })
+            .from(editorSessions)
+            .where(and(eq(editorSessions.jobId, session.jobId), sql`${editorSessions.sessionId} <> ${sessionId}`));
+          for (const sib of siblings) {
+            if (sib?.sId) {
+              this.broadcastToSession(sib.sId, message, user.userId);
+            }
+          }
+        })
+        .catch(() => {});
+    } catch {
+      // Non-fatal if sibling broadcast fails
+    }
   }
   
   /**

@@ -21,6 +21,7 @@ export default function SignPage() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isSettingUp, setIsSettingUp] = useState(false);
   const [accountExists, setAccountExists] = useState<boolean | null>(null);
+  const [redirecting, setRedirecting] = useState(false);
 
   // Query to validate invitation token and get signer info
   const { data: invitationData, isLoading: invitationLoading, error: invitationError } = useQuery({
@@ -53,14 +54,9 @@ export default function SignPage() {
       if (isAuthenticated && user) {
         // Check if this is the correct user
         if (user.email === invitationData.signer?.signerEmail || user.id === invitationData.signer?.userId) {
-          // User is logged in and has access - redirect to signing session
-          toast({
-            title: "Welcome back!",
-            description: "Redirecting to your signing session...",
-          });
-          setTimeout(() => {
-            setLocation(`/editor/${invitationData.job.id}?mode=signing`);
-          }, 1000);
+          // User is logged in and has access - redirect to signing session immediately
+          setRedirecting(true);
+          setLocation(`/editor/${invitationData.job.id}?mode=signing`);
         } else {
           // Wrong user is logged in
           toast({
@@ -145,18 +141,16 @@ export default function SignPage() {
     }
   };
 
+  // Removed blocking validation screen for invited signers
   if (invitationLoading || authLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600" />
-          <p className="mt-2 text-gray-600">Validating invitation...</p>
-        </div>
-      </div>
-    );
+    return null;
   }
 
-  if (invitationError || !invitationData) {
+  if (redirecting) {
+    return null;
+  }
+
+  if (!invitationLoading && (invitationError || !invitationData)) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <Card className="max-w-md w-full">

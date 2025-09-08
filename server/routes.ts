@@ -9906,8 +9906,19 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         // Get tags for specific document
         tags = await TagService.getDocumentTags(sessionId, documentId);
       } else {
-        // Get all tags for session
+        // Get all tags for session; if none, fall back to job-level tags to handle
+        // cases where live session was created without copying tags yet
         tags = await TagService.getSessionTags(sessionId);
+        if (!tags || tags.length === 0) {
+          try {
+            const jobTags = await TagService.getJobTags(sessionId);
+            if (jobTags && jobTags.length > 0) {
+              tags = jobTags;
+            }
+          } catch (e) {
+            // Non-fatal fallback failure
+          }
+        }
       }
       
       res.json({
@@ -10175,7 +10186,13 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       const { TagService } = await import('./services/editor/TagService');
       
       // Get tag details and generate default content
-      const tags = await TagService.getSessionTags(sessionId);
+      let tags = await TagService.getSessionTags(sessionId);
+      // Fallback: if current session has no tags (e.g., live session), look across job sessions
+      if (!tags || tags.length === 0) {
+        try {
+          tags = await TagService.getJobTags(sessionId);
+        } catch {}
+      }
       const tag = tags.find(t => t.id === tagId);
       
       if (!tag) {
@@ -10293,51 +10310,42 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         return res.status(404).json({ message: 'User not found' });
       }
       
-      // Get tag details first
+      // Get tag details first (current session only)
       const tags = await TagService.getSessionTags(sessionId);
-      let tag = tags.find(t => t.id === tagId);
-      
-      // Fallback: Direct DB lookup to avoid false 404 when cache/state is out of sync
-      if (!tag) {
-        const [sessionRow] = await db
-          .select()
-          .from(editorSessions)
-          .where(eq(editorSessions.sessionId, sessionId))
-          .limit(1);
-        
-        if (!sessionRow) {
-          return res.status(404).json({ message: 'Session not found' });
-        }
-        
-        const numericTagId = parseInt(tagId);
-        if (isNaN(numericTagId) || numericTagId <= 0) {
-          return res.status(400).json({ message: 'Invalid tag ID' });
-        }
-        
-        const [rawTag] = await db
-          .select()
-          .from(documentTags)
-          .where(eq(documentTags.id, numericTagId))
-          .limit(1);
-        
-        if (!rawTag) {
-          return res.status(404).json({ message: 'Tag not found' });
-        }
-        
-        if (rawTag.sessionId !== sessionRow.id) {
-          return res.status(403).json({ message: 'Tag does not belong to this session' });
-        }
-        
-        // Minimal shape for downstream usage
-        tag = {
-          id: tagId,
-          tagType: rawTag.tagType,
-          coordinates: { pageNumber: rawTag.pageNumber }
-        } as any;
-      }
+      const tag = tags.find(t => t.id === tagId);
       
       if (!tag) {
         return res.status(404).json({ message: 'Tag not found' });
+      }
+      
+      // Strict validation: ensure tag belongs to this session
+      const [sessionRow] = await db
+        .select()
+        .from(editorSessions)
+        .where(eq(editorSessions.sessionId, sessionId))
+        .limit(1);
+      
+      if (!sessionRow) {
+        return res.status(404).json({ message: 'Session not found' });
+      }
+      
+      const numericTagId = parseInt(tagId);
+      if (isNaN(numericTagId) || numericTagId <= 0) {
+        return res.status(400).json({ message: 'Invalid tag ID' });
+      }
+      
+      const [rawTag] = await db
+        .select()
+        .from(documentTags)
+        .where(eq(documentTags.id, numericTagId))
+        .limit(1);
+      
+      if (!rawTag) {
+        return res.status(404).json({ message: 'Tag not found' });
+      }
+      
+      if (rawTag.sessionId !== sessionRow.id) {
+        return res.status(403).json({ message: 'Tag does not belong to this session' });
       }
       
       if (tag.tagType !== 'E') {
@@ -10431,7 +10439,13 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
       const { TagService } = await import('./services/editor/TagService');
       
       // Get tag details to determine proper content structure
-      const tags = await TagService.getSessionTags(sessionId);
+      let tags = await TagService.getSessionTags(sessionId);
+      // Fallback across job sessions if tag belongs to a different session (e.g., tagging vs live)
+      if (!tags || tags.length === 0) {
+        try {
+          tags = await TagService.getJobTags(sessionId);
+        } catch {}
+      }
       const tag = tags.find(t => t.id === tagId);
       
       if (!tag) {

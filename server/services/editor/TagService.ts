@@ -237,14 +237,22 @@ export class TagService {
    */
   static async getJobTags(sessionId: string): Promise<DocumentTagData[]> {
     try {
-      // Get session first to get the job ID
-      const [session] = await db
+      // Get session first to get the job ID. If not found and input looks like a jobId,
+      // fall back to treating the input as a jobId for robustness.
+      let [session] = await db
         .select()
         .from(editorSessions)
         .where(eq(editorSessions.sessionId, sessionId))
         .limit(1);
 
-      if (!session || !session.jobId) {
+      let jobId: number | null = null;
+      if (session && session.jobId) {
+        jobId = session.jobId as number;
+      } else if (/^\d+$/.test(sessionId)) {
+        jobId = parseInt(sessionId, 10);
+      }
+
+      if (!jobId) {
         return [];
       }
 
@@ -281,14 +289,14 @@ export class TagService {
       console.log(`📋 Found ${tags.length} tags in current session ${sessionId}`);
 
       // If no tags in current session and it's a live/notary session, look for tags from tagging sessions
-      if (tags.length === 0 && (session.sessionType === 'notary' || session.sessionType === 'video')) {
+      if (tags.length === 0 && (session?.sessionType === 'notary' || session?.sessionType === 'video' || session == null)) {
         console.log(`🔍 No tags in live session, looking for tagging session tags for job ${session.jobId}`);
         
         // Get all sessions for this job
         const allSessions = await db
           .select()
           .from(editorSessions)
-          .where(eq(editorSessions.jobId, session.jobId))
+          .where(eq(editorSessions.jobId, jobId))
           .orderBy(desc(editorSessions.createdAt));
 
         console.log(`📊 Found ${allSessions.length} total sessions for job ${session.jobId}`);

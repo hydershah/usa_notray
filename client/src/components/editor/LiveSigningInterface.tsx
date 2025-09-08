@@ -176,10 +176,21 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   }, [jobData?.id, hasInitializedVideoSession, memoizedParticipants.length]);
 
   // Compute the correct editor session ID for editor/WebSocket usage
-  // Prefer resolved non-numeric session IDs (e.g., live_...), then provided liveSessionId, then sessionId
+  // Prefer the first non-numeric candidate: resolvedSessionId -> liveSessionId -> sessionId
+  // This avoids accidentally using a numeric job ID as the editor session ID
   const editorSessionId = useMemo(() => {
-    const prefer = (resolvedSessionId || liveSessionId || sessionId) as string;
-    return prefer as string;
+    const candidates = [resolvedSessionId, liveSessionId, sessionId].filter(Boolean) as string[];
+    for (const id of candidates) {
+      if (!/^\d+$/.test(id)) {
+        // If we're ignoring a numeric liveSessionId in favor of a valid non-numeric id, log once
+        if (liveSessionId && /^\d+$/.test(liveSessionId) && id !== liveSessionId) {
+          console.warn('⚠️ Ignoring numeric liveSessionId as it appears to be a job ID:', liveSessionId);
+        }
+        return id;
+      }
+    }
+    // Fallback: last candidate (may be numeric); downstream guards will prevent misuse
+    return candidates[candidates.length - 1] as string;
   }, [resolvedSessionId, liveSessionId, sessionId]);
 
   // Memoize WebSocket configuration to prevent reconnections
