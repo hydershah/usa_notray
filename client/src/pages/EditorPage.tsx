@@ -141,42 +141,77 @@ const EditorPage: React.FC<EditorPageProps> = () => {
                 const specificSession = existingSessions.sessions?.find((s: any) => s.id === sessionId);
                 if (specificSession) {
                   console.log('✅ Found specific session from URL parameter:', specificSession.id);
+                  // CRITICAL FIX: Ensure session has proper sessionId field for WebSocket
                   sessionResult = {
                     success: true,
-                    session: specificSession,
+                    session: {
+                      ...specificSession,
+                      sessionId: specificSession.sessionId || specificSession.id // Ensure sessionId field exists
+                    },
                     message: 'Using specific session from URL parameter'
                   };
                 }
               }
               
-              // If no specific session found, use the existing logic
+              // CRITICAL FIX: Improved session identification logic
               if (!sessionResult) {
-                // Look for active live signing session first
+                console.log(`🔍 Looking for best session for ${user?.role} (found ${existingSessions.sessions?.length || 0} sessions)`);
+                
+                // Priority 1: Active notary/live session
                 const liveSession = existingSessions.sessions?.find((s: any) => 
-                  s.sessionType === 'notary' && s.status === 'active' && s.isLiveSession
+                  (s.sessionType === 'notary' || s.isLiveSession) && s.status === 'active'
                 );
                 
                 if (liveSession) {
-                  console.log('✅ Found existing live session:', liveSession.id);
+                  console.log(`✅ Found active live session: ${liveSession.sessionId || liveSession.id} (ID: ${liveSession.id})`);
+                  // CRITICAL FIX: Ensure session has proper sessionId field for WebSocket
                   sessionResult = {
                     success: true,
-                    session: liveSession,
+                    session: {
+                      ...liveSession,
+                      sessionId: liveSession.sessionId || liveSession.id // Ensure sessionId field exists
+                    },
                     message: 'Using existing live session'
                   };
-                } else {
-                  // Look for completed tagging session to use as base
-                  const taggedSession = existingSessions.sessions?.find((s: any) => 
-                    s.sessionType === 'tagging' && s.status === 'completed'
+                }
+                
+                // Priority 2: Any session with tags (including transitioned sessions)
+                if (!sessionResult) {
+                  // Look for ANY session that likely has tags
+                  const sessionWithTags = existingSessions.sessions?.find((s: any) => 
+                    s.sessionType === 'tagging' || 
+                    s.sessionType === 'notary' ||
+                    s.status === 'completed' ||
+                    s.signingState === 'active'
                   );
                   
-                  if (taggedSession) {
-                    console.log('✅ Found existing tagged session:', taggedSession.id);
+                  if (sessionWithTags) {
+                    console.log(`✅ Found session with tags: ${sessionWithTags.sessionId || sessionWithTags.id} (type: ${sessionWithTags.sessionType})`);
+                    // CRITICAL FIX: Ensure session has proper sessionId field for WebSocket
                     sessionResult = {
                       success: true,
-                      session: taggedSession,
-                      message: 'Using existing tagged session for signing'
+                      session: {
+                        ...sessionWithTags,
+                        sessionId: sessionWithTags.sessionId || sessionWithTags.id // Ensure sessionId field exists
+                      },
+                      message: 'Using existing session with tags'
                     };
                   }
+                }
+                
+                // Priority 3: Most recent session as fallback
+                if (!sessionResult && existingSessions.sessions?.length > 0) {
+                  const mostRecentSession = existingSessions.sessions[0];
+                  console.log(`⚠️ Using most recent session as fallback: ${mostRecentSession.sessionId || mostRecentSession.id}`);
+                  // CRITICAL FIX: Ensure session has proper sessionId field for WebSocket
+                  sessionResult = {
+                    success: true,
+                    session: {
+                      ...mostRecentSession,
+                      sessionId: mostRecentSession.sessionId || mostRecentSession.id // Ensure sessionId field exists
+                    },
+                    message: 'Using most recent session'
+                  };
                 }
               }
             }
@@ -212,8 +247,12 @@ const EditorPage: React.FC<EditorPageProps> = () => {
           throw new Error(sessionResult.message || 'Failed to initialize session');
         }
 
+        // CRITICAL FIX: Use sessionId (string) not id (integer) for API calls
+        const sessionIdToUse = sessionResult.session.sessionId || sessionResult.session.id;
+        console.log(`🔍 Using session identifier: ${sessionIdToUse} (type: ${typeof sessionIdToUse})`);
+        
         // Get session data with documents and participants
-        const dataResponse = await authenticatedFetch(`/api/editor/session/${sessionResult.session.id}`);
+        const dataResponse = await authenticatedFetch(`/api/editor/session/${sessionIdToUse}`);
         
         if (!dataResponse.ok) {
           throw new Error(`Failed to load session data: ${dataResponse.status}`);
@@ -227,12 +266,19 @@ const EditorPage: React.FC<EditorPageProps> = () => {
           fileUrl: doc.fileUrl.startsWith('http') ? doc.fileUrl : `${window.location.origin}${doc.fileUrl}`
         }));
 
-        setSessionData({
+        // CRITICAL FIX: Ensure we have the correct sessionId for WebSocket
+        const finalSessionData = {
           ...data,
-          documents: documentsWithUrls
-        });
+          documents: documentsWithUrls,
+          session: {
+            ...data.session,
+            id: data.session.sessionId || data.session.id // Ensure sessionId is used
+          }
+        };
 
-        console.log(`✅ ${mode} session initialized:`, data.session.id);
+        setSessionData(finalSessionData);
+
+        console.log(`✅ ${mode} session initialized: ${finalSessionData.session.id} (WebSocket will use: ${data.session.sessionId || data.session.id})`);
         
       } catch (error) {
         console.error('Failed to initialize editor session:', error);
@@ -412,12 +458,18 @@ const EditorPage: React.FC<EditorPageProps> = () => {
     );
   }
 
+  // CRITICAL DEBUG: Log session data being passed to components
+  console.log(`🎯 Rendering editor - mode: ${mode}, sessionId to pass: ${sessionData.session.id}, type: ${typeof sessionData.session.id}`);
+  if (sessionData.session.sessionId) {
+    console.log(`📌 Session also has explicit sessionId field: ${sessionData.session.sessionId}`);
+  }
+  
   // Render appropriate editor based on mode
   return (
     <div className="h-screen bg-gray-100">
       {mode === 'signing' ? (
         <LiveSigningInterface
-          sessionId={sessionData.session.id}
+          sessionId={sessionData.session.sessionId || sessionData.session.id}
           liveSessionId={sessionId || undefined}
           documents={sessionData.documents}
           participants={sessionData.participants}
@@ -428,7 +480,7 @@ const EditorPage: React.FC<EditorPageProps> = () => {
         />
       ) : (
         <PDFTaggingEditor
-          sessionId={sessionData.session.id}
+          sessionId={sessionData.session.sessionId || sessionData.session.id}
           mode={mode as 'tagging' | 'notary'}
           documents={sessionData.documents}
           participants={sessionData.participants}

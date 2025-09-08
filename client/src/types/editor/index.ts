@@ -2,6 +2,7 @@
 
 export interface EditorSession {
   id: string;
+  sessionId?: string; // CRITICAL: Explicit sessionId field for WebSocket compatibility
   jobId: string;
   notaryId: string;
   sessionType: 'tagging' | 'notary' | 'signing';

@@ -565,6 +565,35 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
             console.log(`🏷️  Tags loaded successfully - session appears to be a continuation of previous work`);
           } else {
             console.log(`📝 No existing tags found - starting fresh tagging session`);
+            
+            // CRITICAL FIX: For signing mode with no tags, force a reload to ensure server copies tags
+            if (mode === 'signing') {
+              console.log(`⚠️ No tags in signing mode - forcing reload to ensure tags are copied from tagging session`);
+              // Wait a moment for server to process tag copying
+              setTimeout(async () => {
+                const retryResponse = await fetch(`/api/editor/session/${sessionId}/tags?t=${Date.now()}`, {
+                  headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                    'Cache-Control': 'no-cache'
+                  }
+                });
+                
+                if (retryResponse.ok) {
+                  const { tags: retryTags } = await retryResponse.json();
+                  if (retryTags.length > 0) {
+                    console.log(`✅ Retry successful - loaded ${retryTags.length} tags after server processing`);
+                    const validRetryTags = retryTags.filter((tag: any) => 
+                      !tag.id?.toString().startsWith('temp_')
+                    );
+                    setTags(validRetryTags);
+                    const retryDocTags = validRetryTags.filter((tag: any) => 
+                      tag.documentId === documents[0]?.id
+                    );
+                    loadTextInputsFromTags(retryDocTags);
+                  }
+                }
+              }, 1000);
+            }
           }
         } else {
           console.error(`❌ Failed to load existing tags:`, response.status, response.statusText);
@@ -1848,6 +1877,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
                       authIsNotary
                     );
                   })()}
+                  isLoading={isSyncLoading}
                   className="h-full"
                 />
               </div>

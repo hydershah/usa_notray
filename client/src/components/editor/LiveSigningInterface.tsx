@@ -181,13 +181,21 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
   }, [liveSessionId, sessionId]);
 
   // Memoize WebSocket configuration to prevent reconnections
-  const webSocketConfig = useMemo(() => ({
-    sessionId: editorSessionId,
-    userId: currentUserId,
-    autoReconnect: true,
-    reconnectInterval: 3000,
-    maxReconnectAttempts: 10
-  }), [editorSessionId, currentUserId]);
+  const webSocketConfig = useMemo(() => {
+    // CRITICAL DEBUG: Log the exact sessionId being used for WebSocket
+    console.log(`🔍 WebSocket Config - sessionId: ${editorSessionId}, type: ${typeof editorSessionId}, userId: ${currentUserId}`);
+    if (/^\d+$/.test(editorSessionId)) {
+      console.error('❌ CRITICAL: WebSocket is using numeric ID instead of session string!', editorSessionId);
+    }
+    
+    return {
+      sessionId: editorSessionId,
+      userId: currentUserId,
+      autoReconnect: true,
+      reconnectInterval: 3000,
+      maxReconnectAttempts: 10
+    };
+  }, [editorSessionId, currentUserId]);
 
   // WebSocket connection for real-time sync
   const webSocket = useWebSocket(webSocketConfig);

@@ -1,6 +1,6 @@
 import { db } from "../../db";
 import { documentTags, editorSessions, users } from "../../../shared/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 export interface PlaceTagRequest {
@@ -178,8 +178,11 @@ export class TagService {
         .limit(1);
 
       if (!session) {
+        console.warn(`⚠️ Session not found: ${sessionId}`);
         return [];
       }
+
+      console.log(`📋 Getting tags for session ${sessionId} (ID: ${session.id}, type: ${session.sessionType}, job: ${session.jobId})`);
 
       // Optimized query with JOIN to get user information in one query
       const tags = await db
@@ -280,24 +283,44 @@ export class TagService {
 
       console.log(`📋 Found ${tags.length} tags in current session ${sessionId}`);
 
-      // If no tags in current session and it's a live/notary session, look for tags from tagging sessions
-      if (tags.length === 0 && (session.sessionType === 'notary' || session.sessionType === 'video')) {
-        console.log(`🔍 No tags in live session, looking for tagging session tags for job ${session.jobId}`);
+      // CRITICAL FIX: Always check for more tags in other sessions if current has very few
+      // This handles cases where tag copying failed or sessions were recreated
+      if (tags.length < 3 || (session.sessionType === 'notary' || session.sessionType === 'video')) {
+        console.log(`🔍 Checking for additional tags in other sessions for job ${session.jobId} (current has ${tags.length} tags)`);
         
         // Get all sessions for this job
         const allSessions = await db
-          .select()
+          .select({
+            session: editorSessions,
+            tagCount: sql<number>`(SELECT COUNT(*) FROM ${documentTags} WHERE ${documentTags.sessionId} = ${editorSessions.id})`
+          })
           .from(editorSessions)
           .where(eq(editorSessions.jobId, session.jobId))
           .orderBy(desc(editorSessions.createdAt));
 
         console.log(`📊 Found ${allSessions.length} total sessions for job ${session.jobId}`);
 
-        // Look for tags in any session, prioritizing tagging sessions
-        for (const jobSession of allSessions) {
-          if (jobSession.id === session.id) continue; // Skip current session since we already checked
+        // Find the session with the most tags
+        let bestSession = null;
+        let maxTagCount = tags.length;
+        
+        for (const row of allSessions) {
+          if (row.session.id === session.id) continue; // Skip current session
+          
+          const tagCount = Number(row.tagCount || 0);
+          console.log(`  - Session ${row.session.sessionId} (${row.session.sessionType}): ${tagCount} tags`);
+          
+          if (tagCount > maxTagCount) {
+            bestSession = row.session;
+            maxTagCount = tagCount;
+          }
+        }
 
-          const sessionTags = await db
+        // If we found a better session with more tags, use those instead
+        if (bestSession) {
+          console.log(`✅ Found better session ${bestSession.sessionId} with ${maxTagCount} tags (vs current ${tags.length})`);
+          
+          const betterTags = await db
             .select({
               id: documentTags.id,
               sessionId: documentTags.sessionId,
@@ -322,12 +345,11 @@ export class TagService {
             })
             .from(documentTags)
             .leftJoin(users, eq(documentTags.assignedUserId, users.id))
-            .where(eq(documentTags.sessionId, jobSession.id));
-
-          if (sessionTags.length > 0) {
-            console.log(`✅ Found ${sessionTags.length} tags in ${jobSession.sessionType} session ${jobSession.sessionId}`);
-            tags = sessionTags;
-            break; // Use the first session with tags (most recent due to orderBy)
+            .where(eq(documentTags.sessionId, bestSession.id));
+          
+          if (betterTags.length > tags.length) {
+            tags = betterTags;
+            console.log(`🔄 Using tags from session ${bestSession.sessionId} instead`);
           }
         }
       }

@@ -4,7 +4,7 @@ import type { TagType, SessionParticipant, SessionDocument } from '../../types/e
 import { TAG_TYPE_INFO, USER_COLORS } from '../../types/editor';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
-import { FileText, ChevronDown } from 'lucide-react';
+import { FileText, ChevronDown, Loader2 } from 'lucide-react';
 
 interface TaggingToolbarProps {
   participants?: SessionParticipant[];
@@ -16,6 +16,7 @@ interface TaggingToolbarProps {
   liveSessionState?: any;
   onSetActiveUser?: (userId: number) => void;
   canControlSession?: boolean;
+  isLoading?: boolean;
 }
 
 interface TagTypeButtonProps {
@@ -77,6 +78,7 @@ interface UserTagSectionProps {
   liveSessionState?: any;
   onSetActiveUser?: (userId: number) => void;
   canControlSession?: boolean;
+  isLoading?: boolean;
 }
 
 const UserTagSection: React.FC<UserTagSectionProps> = ({
@@ -89,7 +91,8 @@ const UserTagSection: React.FC<UserTagSectionProps> = ({
   onTagSelect,
   liveSessionState,
   onSetActiveUser,
-  canControlSession
+  canControlSession,
+  isLoading = false
 }) => {
   const isCurrentUser = currentUser?.userId === user.userId;
   const getUserColor = (u: SessionParticipant): string => {
@@ -146,8 +149,12 @@ const UserTagSection: React.FC<UserTagSectionProps> = ({
               size="sm"
               variant="default"
               onClick={() => onSetActiveUser(parseInt(user.userId))}
-              className="text-xs h-7 px-3 bg-blue-600 hover:bg-blue-700 text-white"
+              className="text-xs h-7 px-3 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-400 disabled:cursor-not-allowed"
+              disabled={isLoading}
             >
+              {isLoading ? (
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              ) : null}
               Make Active
             </Button>
           )}
@@ -187,7 +194,8 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
   mode: propMode,
   liveSessionState,
   onSetActiveUser,
-  canControlSession
+  canControlSession,
+  isLoading = false
 }) => {
   const {
     mode,
@@ -400,6 +408,7 @@ export const TaggingToolbar: React.FC<TaggingToolbarProps> = ({
                 liveSessionState={liveSessionState}
                 onSetActiveUser={onSetActiveUser}
                 canControlSession={canControlSession}
+                isLoading={isLoading}
               />
             );
           })}

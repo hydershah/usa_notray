@@ -18,7 +18,8 @@ import {
   Mic,
   MicOff,
   Video,
-  VideoOff
+  VideoOff,
+  Loader2
 } from 'lucide-react';
 import type { SessionParticipant } from '@/types/editor';
 
@@ -39,6 +40,7 @@ interface ParticipantPanelProps {
   currentUserId: string;
   onSetActiveUser: (userId: number) => void;
   canControlSession: boolean;
+  isLoading?: boolean;
 }
 
 export const ParticipantPanel: React.FC<ParticipantPanelProps> = ({
@@ -46,7 +48,8 @@ export const ParticipantPanel: React.FC<ParticipantPanelProps> = ({
   liveSession,
   currentUserId,
   onSetActiveUser,
-  canControlSession
+  canControlSession,
+  isLoading = false
 }) => {
   
   const getParticipantStatusIcon = (participant: SessionParticipant) => {
@@ -220,8 +223,13 @@ export const ParticipantPanel: React.FC<ParticipantPanelProps> = ({
                             variant="outline"
                             onClick={() => onSetActiveUser(parseInt(participant.userId))}
                             className="w-full text-xs h-7"
+                            disabled={isLoading}
                           >
-                            <UserCheck className="h-3 w-3 mr-1" />
+                            {isLoading ? (
+                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            ) : (
+                              <UserCheck className="h-3 w-3 mr-1" />
+                            )}
                             Make Active
                           </Button>
                         </TooltipTrigger>

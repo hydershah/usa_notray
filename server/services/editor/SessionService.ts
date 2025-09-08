@@ -14,6 +14,7 @@ export interface CreateSessionRequest {
 
 export interface EditorSessionData {
   id: string;
+  sessionId: string; // CRITICAL: Explicit sessionId field for WebSocket compatibility
   jobId: number;
   sessionType: 'tagging' | 'notary';
   status: 'preparing' | 'active' | 'completed' | 'cancelled';
@@ -112,6 +113,12 @@ export class SessionService {
         // For notary sessions: Only return if in progress
         if (request.sessionType === 'notary' && session.status === 'active') {
           console.log(`🔄 Returning existing notary session: ${session.sessionId}`);
+          
+          // CRITICAL FIX: Ensure tags are available for ALL users accessing the notary session
+          // This is essential for signers who join after the notary
+          const { LiveSigningSessionService } = await import('../session/LiveSigningSessionService');
+          await (LiveSigningSessionService as any).ensureTagsForLiveSession(session, request.notaryId);
+          
           return this.convertToEditorSessionData(session);
         }
         
@@ -140,6 +147,13 @@ export class SessionService {
       
       console.log(`✅ Created ${request.sessionType} session: ${sessionId} for job ${request.jobId}`);
       
+      // CRITICAL FIX: For notary sessions, ensure tags are copied from tagging session
+      if (request.sessionType === 'notary') {
+        const { LiveSigningSessionService } = await import('../session/LiveSigningSessionService');
+        await (LiveSigningSessionService as any).ensureTagsForLiveSession(createdSession, request.notaryId);
+        console.log(`🏷️ Ensured tags are available for new notary session ${sessionId}`);
+      }
+      
       return this.convertToEditorSessionData(createdSession);
       
     } catch (error) {
@@ -161,6 +175,14 @@ export class SessionService {
       
       if (!session) {
         return null;
+      }
+      
+      // CRITICAL FIX: For notary/signing sessions, ensure tags are available
+      // This handles page refreshes and direct session access
+      if (session.sessionType === 'notary' && session.status === 'active') {
+        console.log(`🔄 Ensuring tags for notary session ${sessionId} (refresh/direct access)`);
+        const { LiveSigningSessionService } = await import('../session/LiveSigningSessionService');
+        await (LiveSigningSessionService as any).ensureTagsForLiveSession(session, session.notaryId);
       }
       
       return this.convertToEditorSessionData(session);
@@ -375,8 +397,13 @@ export class SessionService {
   // Helper methods
   
   private static convertToEditorSessionData(session: any): EditorSessionData {
+    // CRITICAL FIX: Always ensure we return the string sessionId, not the numeric database ID
+    const sessionIdToReturn = session.sessionId || session.id;
+    console.log(`🔍 Converting session data - DB ID: ${session.id}, sessionId: ${session.sessionId}, returning: ${sessionIdToReturn}`);
+    
     return {
-      id: session.sessionId,
+      id: sessionIdToReturn, // This MUST be the string sessionId for WebSocket to work
+      sessionId: sessionIdToReturn, // Add explicit sessionId field as well
       jobId: session.jobId,
       sessionType: session.sessionType,
       status: session.status,

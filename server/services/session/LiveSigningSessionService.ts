@@ -54,44 +54,72 @@ export class LiveSigningSessionService {
     try {
       // Safety: require a valid session id and job id
       if (!session?.id || !session?.jobId) {
+        console.warn('⚠️ Cannot ensure tags: missing session id or job id');
         return;
       }
 
-      // If the current session already has tags, do nothing
+      // Check if the current session already has tags
       const existingCountRows = await db
         .select({ count: count() })
         .from(documentTags)
         .where(eq(documentTags.sessionId, session.id));
       const existingCount = Number(existingCountRows?.[0]?.count || 0);
-      if (existingCount > 0) {
+      
+      // CRITICAL FIX: Allow re-copying tags if session has no tags or very few tags (less than 3)
+      // This handles cases where tag copying failed partially or session was recreated
+      if (existingCount >= 3) {
+        console.log(`✅ Session ${session.sessionId} already has ${existingCount} tags, skipping copy`);
         return;
       }
 
-      // Find the latest tagging session for this job
-      const [taggingSession] = await db
-        .select()
+      console.log(`🔍 Looking for source tags for job ${session.jobId} (current session has ${existingCount} tags)`);
+
+      // CRITICAL FIX: Find ANY session with tags for this job, not just 'tagging' type
+      // Sessions may have transitioned from 'tagging' to 'notary' and we need to find them
+      const sourceSessions = await db
+        .select({
+          session: editorSessions,
+          tagCount: sql<number>`(SELECT COUNT(*) FROM ${documentTags} WHERE ${documentTags.sessionId} = ${editorSessions.id})`
+        })
         .from(editorSessions)
-        .where(
-          and(
-            eq(editorSessions.jobId, session.jobId),
-            eq(editorSessions.sessionType, 'tagging' as any)
-          )
-        )
-        .orderBy(desc(editorSessions.createdAt))
-        .limit(1);
+        .where(eq(editorSessions.jobId, session.jobId))
+        .orderBy(desc(editorSessions.createdAt));
 
-      if (!taggingSession || taggingSession.id === session.id) {
+      // Find the session with the most tags that isn't the current session
+      let sourceSession = null;
+      for (const row of sourceSessions) {
+        if (row.session.id !== session.id && Number(row.tagCount) > 0) {
+          sourceSession = row.session;
+          console.log(`✅ Found source session ${row.session.sessionId} with ${row.tagCount} tags (type: ${row.session.sessionType})`);
+          break;
+        }
+      }
+
+      if (!sourceSession) {
+        console.log(`ℹ️ No source session with tags found for job ${session.jobId}`);
         return;
       }
 
-      // Load tags from the tagging session
+      // Load tags from the source session
       const sourceTags = await db
         .select()
         .from(documentTags)
-        .where(eq(documentTags.sessionId, taggingSession.id));
+        .where(eq(documentTags.sessionId, sourceSession.id));
 
       if (!sourceTags || sourceTags.length === 0) {
+        console.log(`⚠️ Source session ${sourceSession.sessionId} has no tags in database`);
         return;
+      }
+
+      console.log(`📋 Found ${sourceTags.length} tags to copy from session ${sourceSession.sessionId}`);
+
+      // CRITICAL FIX: Clear any existing tags in the target session before copying
+      // This prevents duplicate or conflicting tags
+      if (existingCount > 0) {
+        console.log(`🧹 Clearing ${existingCount} existing tags from target session before copying`);
+        await db
+          .delete(documentTags)
+          .where(eq(documentTags.sessionId, session.id));
       }
 
       // Copy tags to the live session. Preserve geometry and assignment, reset completion state.
@@ -106,13 +134,15 @@ export class LiveSigningSessionService {
         yPosition: t.yPosition,
         width: t.width,
         height: t.height,
-        // Preserve any placeholder text or styling, but mark as not completed for live fill
+        // CRITICAL FIX: Preserve completion state for signing sessions
+        // Don't reset completed tags - keep them as-is from tagging session
         content: t.content || null,
         contentType: t.contentType || null,
         contentData: t.contentData || null,
-        isCompleted: false,
-        completedBy: null,
-        completedAt: null,
+        isCompleted: t.isCompleted || false,
+        completedBy: t.completedBy || null,
+        completedAt: t.completedAt || null,
+        isRequired: t.isRequired !== false, // Default to required unless explicitly false
         createdBy: createdByUserId || t.createdBy, // Use provided user ID or fallback to original creator
         createdAt: now,
         updatedAt: now,
@@ -121,7 +151,7 @@ export class LiveSigningSessionService {
       await db.insert(documentTags).values(tagsToInsert);
 
       console.log(
-        `✅ Copied ${tagsToInsert.length} tag(s) from tagging session ${taggingSession.sessionId} to live session ${session.sessionId}`
+        `✅ Successfully copied ${tagsToInsert.length} tag(s) from session ${sourceSession.sessionId} to live session ${session.sessionId}`
       );
     } catch (copyError) {
       console.warn('⚠️ Failed to ensure tags for live session:', copyError);
