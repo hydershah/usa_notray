@@ -16,6 +16,7 @@ interface MainLayoutProps {
 const breadcrumbMap: Record<string, { label: string; parent?: string }> = {
   '/dashboard': { label: 'Dashboard' },
   '/jobs': { label: 'My Jobs' },
+  '/signing-jobs': { label: 'Signing Jobs' },
   '/create-job': { label: 'New Job' },
   '/calendar': { label: 'Calendar' },
   '/profile': { label: 'My Profile' },

@@ -17,10 +17,32 @@ export function useNotaryProfileCompletion(): NotaryProfileStatus {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
+  // Check if we're in a dual role scenario - notaries acting as signers should skip profile completion
+  const isOnSigningJobsPage = window.location.pathname === '/signing-jobs';
+  const isInSigningSession = window.location.pathname.startsWith('/editor/') && 
+                             window.location.search.includes('mode=signing');
+  const isDualRoleContext = isOnSigningJobsPage || isInSigningSession;
+
   const checkProfileStatus = async () => {
     if (!user || user.role !== 'notary' || !isAuthenticated) {
       return {
         isComplete: true, // Non-notaries don't need profile completion
+        needsProfileCompletion: false,
+        showOverlay: false,
+        isLoading: false
+      };
+    }
+
+    // Skip profile completion check in dual role contexts - notaries acting as signers should only do ID verification
+    if (isDualRoleContext) {
+      console.log('🚫 Skipping notary profile completion check in dual role context - notaries acting as signers use ID verification flow', {
+        isOnSigningJobsPage,
+        isInSigningSession,
+        pathname: window.location.pathname,
+        search: window.location.search
+      });
+      return {
+        isComplete: true, // Skip profile completion for dual role scenarios
         needsProfileCompletion: false,
         showOverlay: false,
         isLoading: false
@@ -144,6 +166,16 @@ export function useNotaryProfileCompletion(): NotaryProfileStatus {
     const isNotary = user.role === 'notary';
     
     if (!isNotary) {
+      return {
+        isComplete: true,
+        needsProfileCompletion: false,
+        showOverlay: false,
+        isLoading: false
+      };
+    }
+
+    // Skip profile completion in dual role contexts - notaries acting as signers should only do ID verification
+    if (isDualRoleContext) {
       return {
         isComplete: true,
         needsProfileCompletion: false,

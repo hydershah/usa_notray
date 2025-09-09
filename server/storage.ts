@@ -706,12 +706,18 @@ export class DatabaseStorage implements IStorage {
 
   // Job operations
   async getJob(id: number): Promise<Job | undefined> {
+    // Validate the ID parameter
+    if (isNaN(id) || !isFinite(id) || id <= 0) {
+      console.warn(`Invalid job ID provided to getJob: ${id}`);
+      return undefined;
+    }
+
     const [job] = await db.select().from(jobs).where(eq(jobs.id, id));
     if (!job) return undefined;
 
     // If a notary is assigned, fetch their details
     let assignedNotary = null;
-    const notaryId = job.notaryId || (job.selectedNotary ? parseInt(job.selectedNotary) : null);
+    const notaryId = job.notaryId || (job.selectedNotary && !isNaN(parseInt(job.selectedNotary)) ? parseInt(job.selectedNotary) : null);
     
     if (notaryId) {
       const [notary] = await db
@@ -827,57 +833,153 @@ export class DatabaseStorage implements IStorage {
           hasMore
         };
       } else if (role === 'notary') {
-        // Include first signer name and filter by notary involvement
-        const [jobsResult, countResult] = await Promise.all([
-          db.execute(sql`
-            SELECT 
-              j.*,
-              COALESCE(
-                (
-                  SELECT s.signer_name 
-                  FROM signers s 
-                  WHERE s.job_id = j.id 
-                  ORDER BY s.created_at ASC NULLS LAST, s.id ASC 
-                  LIMIT 1
-                ),
-                ''
-              ) AS first_signer_name,
-              CASE 
-                WHEN j.notary_id IS NOT NULL THEN 
-                  COALESCE(
-                    (
-                      SELECT CONCAT(u.first_name, ' ', u.last_name)
-                      FROM users u 
-                      WHERE u.id = j.notary_id
-                    ),
-                    CONCAT('Notary #', j.notary_id)
-                  )
-                ELSE NULL
-              END AS notary_name
-            FROM jobs j
-            WHERE j.user_id = ${userId}
-               OR j.selected_notary = CAST(${userId} AS TEXT)
-               OR j.notary_id = ${userId}
-            ORDER BY j.created_at DESC
+        // DUAL ROLE SUPPORT: Include jobs where notary acts as signer/participant
+        const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+        
+        if (user) {
+          // Use UNION query to get all relevant jobs for notary (similar to signer logic)
+          const combinedJobsQuery = sql`
+            (
+              SELECT DISTINCT 
+                j.*,
+                COALESCE(
+                  (
+                    SELECT s.signer_name 
+                    FROM signers s 
+                    WHERE s.job_id = j.id 
+                    ORDER BY s.created_at ASC NULLS LAST, s.id ASC 
+                    LIMIT 1
+                  ),
+                  ''
+                ) AS first_signer_name,
+                CASE 
+                  WHEN j.notary_id IS NOT NULL THEN 
+                    COALESCE(
+                      (
+                        SELECT CONCAT(u.first_name, ' ', u.last_name)
+                        FROM users u 
+                        WHERE u.id = j.notary_id
+                      ),
+                      CONCAT('Notary #', j.notary_id)
+                    )
+                  ELSE NULL
+                END AS notary_name
+              FROM jobs j
+              WHERE j.user_id = ${userId}
+                 OR j.selected_notary = CAST(${userId} AS TEXT)
+                 OR j.notary_id = ${userId}
+            )
+            UNION
+            (
+              SELECT DISTINCT 
+                j.*,
+                COALESCE(
+                  (
+                    SELECT s2.signer_name 
+                    FROM signers s2 
+                    WHERE s2.job_id = j.id 
+                    ORDER BY s2.created_at ASC NULLS LAST, s2.id ASC 
+                    LIMIT 1
+                  ),
+                  ''
+                ) AS first_signer_name,
+                CASE 
+                  WHEN j.notary_id IS NOT NULL THEN 
+                    COALESCE(
+                      (
+                        SELECT CONCAT(u.first_name, ' ', u.last_name)
+                        FROM users u 
+                        WHERE u.id = j.notary_id
+                      ),
+                      CONCAT('Notary #', j.notary_id)
+                    )
+                  ELSE NULL
+                END AS notary_name
+              FROM jobs j
+              INNER JOIN signers s ON s.job_id = j.id
+              WHERE s.signer_email = ${user.email}
+            )
+            UNION
+            (
+              SELECT DISTINCT 
+                j.*,
+                COALESCE(
+                  (
+                    SELECT s3.signer_name 
+                    FROM signers s3 
+                    WHERE s3.job_id = j.id 
+                    ORDER BY s3.created_at ASC NULLS LAST, s3.id ASC 
+                    LIMIT 1
+                  ),
+                  ''
+                ) AS first_signer_name,
+                CASE 
+                  WHEN j.notary_id IS NOT NULL THEN 
+                    COALESCE(
+                      (
+                        SELECT CONCAT(u.first_name, ' ', u.last_name)
+                        FROM users u 
+                        WHERE u.id = j.notary_id
+                      ),
+                      CONCAT('Notary #', j.notary_id)
+                    )
+                  ELSE NULL
+                END AS notary_name
+              FROM jobs j
+              INNER JOIN job_participants jp ON jp.job_id = j.id
+              WHERE jp.user_id = ${userId}
+            )
+            ORDER BY created_at DESC
             LIMIT ${limit}
             OFFSET ${offset}
-          `),
-          db.select({ count: count() }).from(jobs).where(
-            or(
-              eq(jobs.userId, userId),
-              eq(jobs.selectedNotary, userId.toString()),
-              eq(jobs.notaryId, userId)
-            )
-          )
-        ]);
+          `;
+          
+          // Get total count for pagination
+          const countQuery = sql`
+            SELECT COUNT(*) as count FROM (
+              (
+                SELECT DISTINCT j.id FROM jobs j 
+                WHERE j.user_id = ${userId}
+                   OR j.selected_notary = CAST(${userId} AS TEXT)
+                   OR j.notary_id = ${userId}
+              )
+              UNION
+              (
+                SELECT DISTINCT j.id FROM jobs j
+                INNER JOIN signers s ON s.job_id = j.id
+                WHERE s.signer_email = ${user.email}
+              )
+              UNION
+              (
+                SELECT DISTINCT j.id FROM jobs j
+                INNER JOIN job_participants jp ON jp.job_id = j.id
+                WHERE jp.user_id = ${userId}
+              )
+            ) as combined_jobs
+          `;
+          
+          const [jobsResult, countResult] = await Promise.all([
+            db.execute(combinedJobsQuery),
+            db.execute(countQuery)
+          ]);
+          
+          const totalCount = countResult.rows[0].count as number;
+          const hasMore = offset + limit < totalCount;
+          
+          console.log(`🔄 DUAL ROLE: Found ${jobsResult.rows.length} jobs for notary ${user.email} (page ${page}, total: ${totalCount})`);
+          
+          return {
+            jobs: (jobsResult.rows as unknown as Job[]),
+            totalCount,
+            hasMore
+          };
+        }
         
-        const totalCount = countResult[0].count;
-        const hasMore = offset + limit < totalCount;
-        
+        // Fallback: return empty result for notary without user record
         return {
-          jobs: (jobsResult.rows as unknown as Job[]),
-          totalCount,
-          hasMore
+          jobs: [],
+          totalCount: 0,
+          hasMore: false
         };
       } else if (role === 'title_company' || role === 'company_manager' || role === 'client') {
         // Title company, company manager, and client users see jobs they created OR jobs assigned to their company
@@ -1097,57 +1199,100 @@ export class DatabaseStorage implements IStorage {
   }
 
   async verifySessionAccess(jobId: number, userId: number): Promise<boolean> {
-    // First check job_participants table
+    // Get user details for all checks
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    if (!user) return false;
+    
+    // DUAL ROLE SUPPORT: First check if user is linked through signers table
+    // This allows dual role users (notary/title_company acting as signers) to access without formal invitation
+    const [signer] = await db
+      .select({
+        id: signers.id,
+        signerEmail: signers.signerEmail,
+        primaryUserRole: signers.primaryUserRole,
+        requiresIdVerification: signers.requiresIdVerification,
+        idVerificationCompleted: signers.idVerificationCompleted
+      })
+      .from(signers)
+      .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, user.email)));
+    
+    if (signer) {
+      console.log(`✅ DUAL ROLE: Session access check via signers table for user ${userId} (${user.email}) on job ${jobId}`);
+      
+      // Check if signer role requires verification and if it's completed
+      const requiresVerification = signer.requiresIdVerification ?? true; // Default to true for signers
+      
+      if (requiresVerification) {
+        // Check user's verification status (EVS, admin bypass, or notary bypass)
+        const isVerified = user.isVerified || user.isVerificationBypassed || user.notaryVerificationBypassed;
+        
+        if (!isVerified) {
+          console.log(`❌ Session access denied for user ${userId} - signer requires verification but not verified`);
+          return false;
+        }
+      }
+      
+      // For dual role users, skip profile setup requirements - they only need ID verification
+      console.log(`✅ DUAL ROLE: Session access granted via signers table for user ${userId}`);
+      return true;
+    }
+    
+    // Check if user is the job creator or a notary assigned to the job
+    const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId));
+    if (job?.userId === userId || (user && hasAdminPrivileges(user)) || job?.selectedNotary === user?.username) {
+      return true;
+    }
+    
+    // Finally, check job_participants table for formal invitations
     const [participant] = await db
-      .select()
+      .select({
+        id: jobParticipants.id,
+        inviteStatus: jobParticipants.inviteStatus,
+        jobSpecificRole: jobParticipants.jobSpecificRole,
+        primaryRole: jobParticipants.primaryRole,
+        requiresIdVerification: jobParticipants.requiresIdVerification,
+        idVerificationCompleted: jobParticipants.idVerificationCompleted
+      })
       .from(jobParticipants)
       .where(and(eq(jobParticipants.jobId, jobId), eq(jobParticipants.userId, userId)));
     
     if (!participant) {
-      // Get user details for further checks
-      const [user] = await db.select().from(users).where(eq(users.id, userId));
-      if (!user) return false;
-      
-      // Check if user is linked through signers table (important for invitation flow)
-      const [signer] = await db
-        .select()
-        .from(signers)
-        .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, user.email)));
-      
-      if (signer) {
-        console.log(`✅ Session access granted via signers table for user ${userId} (${user.email}) on job ${jobId}`);
-        return true; // User is a signer for this job
-      }
-      
-      // Check if user is the job creator or a notary assigned to the job
-      const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId));
-      
-      return job?.userId === userId || (user && hasAdminPrivileges(user)) || job?.selectedNotary === user?.username;
+      console.log(`❌ Session access denied for user ${userId} - no participant record found`);
+      return false;
     }
     
     // Check if participant has accepted the invitation
     if (participant.inviteStatus !== 'accepted') {
+      console.log(`❌ Session access denied for user ${userId} - invitation not accepted`);
       return false;
     }
 
-    // Get user details to check verification status
-    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    // Check verification requirements based on job-specific role
+    const jobSpecificRole = participant.jobSpecificRole || participant.primaryRole || user.role;
+    const requiresVerification = participant.requiresIdVerification ?? 
+      ['signer', 'witness'].includes(jobSpecificRole); // Default based on role
+
+    if (requiresVerification) {
+      // Check if verification is completed via job-specific tracking OR user-level verification
+      const isJobSpecificVerified = participant.idVerificationCompleted;
+      const isUserLevelVerified = user.isVerified || user.isVerificationBypassed || user.notaryVerificationBypassed;
+      
+      if (!isJobSpecificVerified && !isUserLevelVerified) {
+        console.log(`❌ Session access denied for user ${userId} - job role "${jobSpecificRole}" requires verification`);
+        return false;
+      }
+    }
+
+    // Check profile setup for roles that require it
+    const needsProfileSetup = ['signer', 'witness'].includes(jobSpecificRole) || 
+                             ['signer', 'witness'].includes(user.role);
     
-    if (!user) {
+    if (needsProfileSetup && !user.accountSetupComplete) {
+      console.log(`❌ Session access denied for user ${userId} - profile setup incomplete`);
       return false;
     }
 
-    // For signers and witnesses, require ID verification (either EVS, admin bypass, or notary bypass) before session access
-    if ((user.role === 'signer' || user.role === 'witness') && 
-        !(user.isVerified || user.isVerificationBypassed || user.notaryVerificationBypassed)) {
-      return false;
-    }
-
-    // Also check if user has completed their profile setup
-    if ((user.role === 'signer' || user.role === 'witness') && !user.accountSetupComplete) {
-      return false;
-    }
-
+    console.log(`✅ Session access granted for user ${userId} with job role "${jobSpecificRole}"`);
     return true;
   }
 

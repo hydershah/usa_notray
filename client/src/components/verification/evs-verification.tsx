@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -42,6 +42,48 @@ export function EVSVerification({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [showSelfieCapture, setShowSelfieCapture] = useState(false);
+  const [videoLoading, setVideoLoading] = useState(false);
+
+  // Cleanup effect to properly handle stream cleanup
+  useEffect(() => {
+    return () => {
+      // Cleanup camera stream when component unmounts
+      if (cameraStream) {
+        console.log('🧹 Cleaning up camera stream on unmount');
+        cameraStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [cameraStream]);
+
+  // Check device and browser compatibility
+  const checkCameraSupport = () => {
+    const issues = [];
+    
+    // Check if getUserMedia is supported
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      issues.push('Your browser does not support camera access');
+    }
+    
+    // Check if we're on HTTPS or localhost
+    if (location.protocol !== 'https:' && !location.hostname.includes('localhost') && location.hostname !== '127.0.0.1') {
+      issues.push('Camera access requires HTTPS connection');
+    }
+    
+    // Check user agent for known problematic browsers
+    const userAgent = navigator.userAgent.toLowerCase();
+    if (userAgent.includes('chrome') && userAgent.includes('mobile')) {
+      // Mobile Chrome is generally good
+    } else if (userAgent.includes('safari') && !userAgent.includes('chrome')) {
+      // Safari can be tricky with camera permissions
+      issues.push('Safari may require additional permission steps');
+    } else if (userAgent.includes('firefox')) {
+      // Firefox is generally good
+    } else if (!userAgent.includes('chrome') && !userAgent.includes('firefox') && !userAgent.includes('safari')) {
+      issues.push('Consider using Chrome, Firefox, or Safari for better camera support');
+    }
+    
+    return issues;
+  };
 
   const handleFileUpload = (type: 'front' | 'back', file: File) => {
     if (!file) return;
@@ -79,49 +121,188 @@ export function EVSVerification({
 
   const startCamera = async () => {
     try {
+      // Check compatibility first
+      const compatibilityIssues = checkCameraSupport();
+      if (compatibilityIssues.length > 0) {
+        throw new Error(compatibilityIssues[0]);
+      }
+
+      console.log('🎥 Requesting camera access for ID verification...');
+      setVideoLoading(true);
+      
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { 
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
           facingMode: 'user'
         } 
       });
+      
+      console.log('✅ Camera access granted');
       setCameraStream(stream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      
+      // Show the modal first so video element exists
       setShowSelfieCapture(true);
-    } catch (error) {
+      
+      // Use setTimeout to ensure the video element is rendered
+      setTimeout(() => {
+        if (videoRef.current && stream) {
+          console.log('📺 Assigning stream to video element');
+          videoRef.current.srcObject = stream;
+          
+          // Wait for video to load metadata
+          videoRef.current.onloadedmetadata = () => {
+            console.log('✅ Video metadata loaded and ready');
+            setVideoLoading(false);
+          };
+          
+          // Add error handler for video element
+          videoRef.current.onerror = (e) => {
+            console.error('Video element error:', e);
+            toast({
+              title: "Video Error",
+              description: "Failed to display camera feed. Please try again.",
+              variant: "destructive",
+            });
+          };
+          
+          // Ensure video plays
+          videoRef.current.play().catch(playError => {
+            console.warn('Video play failed:', playError);
+            // This is usually fine for camera streams
+          });
+        } else {
+          console.error('Video ref or stream not available after timeout');
+          setVideoLoading(false);
+        }
+      }, 100); // Small delay to ensure DOM is ready
+      
+      // Fallback timeout in case video metadata never loads
+      setTimeout(() => {
+        if (videoLoading) {
+          console.warn('Video loading timeout - forcing ready state');
+          setVideoLoading(false);
+        }
+      }, 5000); // 5 second timeout
+      
+    } catch (error: any) {
       console.error('Camera access error:', error);
+      setVideoLoading(false);
+      
+      let title = "Camera Access Error";
+      let description = "Please allow camera access to complete verification";
+      
+      // Handle specific error types
+      if (error.name === 'NotAllowedError') {
+        title = "Camera Permission Denied";
+        description = "Please click the camera icon in your browser address bar and allow camera access, then try again.";
+      } else if (error.name === 'NotFoundError') {
+        title = "No Camera Found";
+        description = "Please connect a camera device and try again.";
+      } else if (error.name === 'NotReadableError') {
+        title = "Camera Already in Use";
+        description = "Please close other applications using your camera and try again.";
+      } else if (error.name === 'OverconstrainedError') {
+        title = "Camera Configuration Error";
+        description = "Your camera doesn't support the required settings. Please try with a different camera.";
+      } else if (error.message.includes('HTTPS') || error.message.includes('secure')) {
+        title = "Secure Connection Required";
+        description = "Camera access requires HTTPS. Please ensure you're accessing the site securely.";
+      } else if (error.message.includes('browser')) {
+        title = "Browser Not Supported";
+        description = error.message;
+      }
+      
       toast({
-        title: "Camera Access Denied",
-        description: "Please allow camera access to complete verification",
+        title,
+        description,
         variant: "destructive",
       });
     }
   };
 
   const capturePhoto = () => {
-    if (!videoRef.current || !canvasRef.current) return;
+    if (!videoRef.current || !canvasRef.current) {
+      console.error('Video or canvas ref not available for capture');
+      toast({
+        title: "Capture Error",
+        description: "Camera not ready. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
     
-    ctx?.drawImage(video, 0, 0);
-    
-    const imageData = canvas.toDataURL('image/jpeg', 0.8);
-    setState(prev => ({ ...prev, selfieData: imageData }));
-    
-    // Stop camera
-    if (cameraStream) {
-      cameraStream.getTracks().forEach(track => track.stop());
-      setCameraStream(null);
+    // Check if video is ready and has valid dimensions
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      console.error('Video not ready - no dimensions');
+      toast({
+        title: "Camera Not Ready",
+        description: "Please wait for the camera to initialize, then try again.",
+        variant: "destructive",
+      });
+      return;
     }
-    setShowSelfieCapture(false);
+    
+    // Check if video is playing
+    if (video.paused || video.ended) {
+      console.error('Video is not playing');
+      toast({
+        title: "Camera Not Active",
+        description: "Camera feed is not active. Please restart the camera.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        throw new Error('Unable to get canvas context');
+      }
+
+      // Set canvas dimensions to match video
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      console.log(`📸 Capturing photo: ${canvas.width}x${canvas.height}`);
+      
+      // Draw the video frame to canvas
+      ctx.drawImage(video, 0, 0);
+      
+      // Convert to image data
+      const imageData = canvas.toDataURL('image/jpeg', 0.8);
+      
+      // Validate image data
+      if (!imageData || imageData === 'data:,') {
+        throw new Error('Failed to capture image data');
+      }
+      
+      console.log('✅ Photo captured successfully');
+      setState(prev => ({ ...prev, selfieData: imageData }));
+      
+      // Stop camera
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        setCameraStream(null);
+      }
+      setShowSelfieCapture(false);
+      
+      toast({
+        title: "Photo Captured",
+        description: "Selfie captured successfully!",
+      });
+      
+    } catch (error) {
+      console.error('Photo capture error:', error);
+      toast({
+        title: "Capture Failed",
+        description: "Failed to capture photo. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleSelfieUpload = (file: File) => {
@@ -770,6 +951,29 @@ export function EVSVerification({
                         Upload
                       </Button>
                     </div>
+                    
+                    {/* Camera Troubleshooting Help */}
+                    <details className="mt-2">
+                      <summary className="text-sm text-blue-600 cursor-pointer hover:underline">
+                        📋 Camera not working? Click here for help
+                      </summary>
+                      <div className="mt-3 p-4 bg-gray-50 rounded-lg text-sm">
+                        <h4 className="font-medium mb-2">Camera Troubleshooting Steps:</h4>
+                        <ol className="list-decimal list-inside space-y-2 text-gray-700">
+                          <li><strong>Check browser permissions:</strong> Click the camera icon in your browser's address bar and allow camera access</li>
+                          <li><strong>Close other apps:</strong> Make sure no other applications are using your camera (Zoom, Teams, etc.)</li>
+                          <li><strong>Try a different browser:</strong> Chrome, Firefox, and Safari work best</li>
+                          <li><strong>Refresh the page:</strong> Sometimes a simple refresh fixes camera issues</li>
+                          <li><strong>Check your device:</strong> Make sure your camera is connected and working</li>
+                          <li><strong>Use HTTPS:</strong> Camera access requires a secure connection</li>
+                        </ol>
+                        <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded">
+                          <p className="text-blue-800 text-xs">
+                            <strong>Still having issues?</strong> You can always use the "Upload" button to select a selfie photo from your device instead.
+                          </p>
+                        </div>
+                      </div>
+                    </details>
                   </div>
                 )}
                 <input
@@ -785,20 +989,67 @@ export function EVSVerification({
             {/* Camera Capture Modal */}
             {showSelfieCapture && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-                  <h3 className="text-lg font-medium mb-4">Take Your Selfie</h3>
+                <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
+                  <h3 className="text-lg font-medium mb-4 flex items-center">
+                    <Camera className="h-5 w-5 mr-2 text-blue-600" />
+                    Take Your Selfie
+                  </h3>
+                  
                   <div className="space-y-4">
-                    <video 
-                      ref={videoRef}
-                      autoPlay 
-                      playsInline
-                      className="w-full rounded border"
-                    />
+                    {/* Video Container with Status Indicator */}
+                    <div className="relative">
+                      <video 
+                        ref={videoRef}
+                        autoPlay 
+                        playsInline
+                        muted
+                        className="w-full rounded border bg-gray-100"
+                        style={{ minHeight: '240px' }}
+                      />
+                      
+                      {/* Loading Overlay */}
+                      {videoLoading && (
+                        <div className="absolute inset-0 bg-gray-100 rounded border flex items-center justify-center">
+                          <div className="text-center">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                            <p className="text-sm text-gray-600">Initializing camera...</p>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Camera Status Overlay */}
+                      {!videoLoading && (
+                        <div className="absolute top-2 right-2">
+                          <div className="bg-green-500 w-3 h-3 rounded-full animate-pulse"></div>
+                        </div>
+                      )}
+                      
+                      {/* Center Guide Circle */}
+                      {!videoLoading && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <div className="w-48 h-48 border-2 border-white border-dashed rounded-full opacity-50"></div>
+                        </div>
+                      )}
+                    </div>
+                    
                     <canvas ref={canvasRef} className="hidden" />
+                    
+                    {/* Instructions */}
+                    <div className="bg-blue-50 p-3 rounded-lg">
+                      <p className="text-sm text-blue-800 text-center">
+                        📸 Position your face within the circle and look directly at the camera
+                      </p>
+                    </div>
+                    
+                    {/* Action Buttons */}
                     <div className="flex space-x-2">
-                      <Button onClick={capturePhoto} className="flex-1">
+                      <Button 
+                        onClick={capturePhoto} 
+                        disabled={videoLoading}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                      >
                         <Camera className="h-4 w-4 mr-2" />
-                        Capture
+                        {videoLoading ? 'Camera Loading...' : 'Capture Photo'}
                       </Button>
                       <Button 
                         variant="outline" 
@@ -808,11 +1059,17 @@ export function EVSVerification({
                             setCameraStream(null);
                           }
                           setShowSelfieCapture(false);
+                          setVideoLoading(false);
                         }}
                         className="flex-1"
                       >
                         Cancel
                       </Button>
+                    </div>
+                    
+                    {/* Troubleshooting */}
+                    <div className="text-xs text-gray-500 text-center">
+                      <p>Camera not working? Try refreshing the page or check your browser permissions.</p>
                     </div>
                   </div>
                 </div>

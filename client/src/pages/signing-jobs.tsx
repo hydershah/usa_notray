@@ -1,198 +1,136 @@
 import React, { useState } from 'react';
-import { MainLayout } from '@/components/layout/main-layout';
-import { useAuth } from '@/hooks/use-auth';
-import { useLocation } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AccountSetupModal } from '@/components/ui/account-setup-modal';
-import { useAccountCompletion } from '@/hooks/use-account-completion';
-import { 
-  PenTool,
-  FileText,
-  Calendar,
-  MapPin,
-  AlertCircle,
-  Eye,
-  Download,
-  Video,
-  User,
-  Loader2,
-  RefreshCw
-} from 'lucide-react';
-import { isMobileDevice } from '@/lib/utils';
+import { Calendar, Clock, FileText, User, AlertCircle, CheckCircle, XCircle, Shield } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
+import { Alert, AlertDescription } from '../components/ui/alert';
+import { useAuth } from '../hooks/use-auth';
+import { apiRequest } from '../lib/api';
+import { MainLayout } from '../components/layout/main-layout';
 
 interface SigningJob {
   id: number;
   titleCompany: string;
   closingType: string;
-  signerRole: string;
-  signingStatus: string;
-  propertyAddressOne?: string;
-  propertyCity?: string;
-  propertyState?: string;
-  selectedDate?: string;
-  selectedTime?: string;
-  invitationSentAt?: string;
+  selectedDate: string;
+  selectedTime: string;
   jobStatus: string;
-  notaryApprovalStatus: string;
+  propertyAddressOne: string;
+  propertyCity: string;
+  propertyState: string;
+  createdAt: string;
+  
+  // Dual role specific fields
+  userPrimaryRole: string;
+  jobSpecificRole: string;
+  requiresIdVerification: boolean;
+  idVerificationCompleted: boolean;
+  idVerificationStatus: 'pending' | 'completed' | 'bypassed';
+  canJoinSigning: boolean;
+  blockingReason?: 'verification_required' | 'other';
+  
+  // Participant info
+  totalParticipants: number;
+  verifiedParticipants: number;
+  
+  // Additional metadata
+  firstSignerName?: string;
+  notaryName?: string;
 }
 
-export default function SigningJobs() {
+interface SigningJobsResponse {
+  jobs: SigningJob[];
+  totalCount: number;
+  hasMore: boolean;
+}
+
+const SigningJobs: React.FC = () => {
   const { user } = useAuth();
-  const { showOverlay: hasAccountCompletionOverlay } = useAccountCompletion();
-  const [, setLocation] = useLocation();
+  const [selectedJob, setSelectedJob] = useState<SigningJob | null>(null);
+  const [showVerificationPrompt, setShowVerificationPrompt] = useState(false);
 
-  const [loading, setLoading] = useState(false);
-  const [downloadingPackage, setDownloadingPackage] = useState(false);
-  const [accountSetupModal, setAccountSetupModal] = useState<{
-    isOpen: boolean;
-    requirements: string[];
-  }>({
-    isOpen: false,
-    requirements: []
+  const { data: signingJobsData, isLoading, error, refetch } = useQuery({
+    queryKey: ['signing-jobs'],
+    queryFn: async (): Promise<SigningJobsResponse> => {
+      const response = await apiRequest('GET', '/api/jobs/signing-assignments');
+      const data = await response.json();
+      return data;
+    },
   });
 
-  // Fetch invited jobs
-  const { 
-    data: signingJobs = [], 
-    isLoading, 
-    error, 
-    refetch 
-  } = useQuery<SigningJob[]>({
-    queryKey: ['/api/jobs/invited'],
-    refetchInterval: 30000, // Refresh every 30 seconds
-  });
-
-
-
-  const handleJoinSession = async (job: SigningJob) => {
-    setLoading(true);
-    try {
-      const isMobile = isMobileDevice();
-      let newWindow: Window | null = null;
-      
-      if (!isMobile) {
-        newWindow = window.open('about:blank', '_blank');
-      }
-
-      // Check session access
-      const token = localStorage.getItem('token');
-      const sessionAccessResponse = await fetch(`/api/jobs/${job.id}/session-access`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (!sessionAccessResponse.ok) {
-        throw new Error('Access denied');
-      }
-
-      const accessData = await sessionAccessResponse.json();
-      
-      if (!accessData.hasAccess) {
-        if (newWindow) newWindow.close();
-        
-        // Handle account setup required case with professional modal
-        // Only show the setup modal if the main overlay is not already shown
-        if (accessData.errorType === 'account_setup_required' && !hasAccountCompletionOverlay) {
-          setAccountSetupModal({
-            isOpen: true,
-            requirements: accessData.requirements || []
-          });
-          return;
-        }
-        
-        // Show a clearer message if the session has been completed
-        const message = accessData.errorType === 'session_completed'
-          ? 'This signing session has been completed. You can download your documents from the job details.'
-          : (accessData.message || 'Access denied to this session');
-        alert(message);
+  const handleJoinSigning = async (job: SigningJob) => {
+    if (!job.canJoinSigning) {
+      // For signers, only ID verification is required
+      if (job.blockingReason === 'verification_required') {
+        setSelectedJob(job);
+        setShowVerificationPrompt(true);
         return;
       }
-
-      // Navigate to signing session
-      const sessionUrl = `/jobs/${job.id}/sign`;
       
-      if (isMobile) {
-        setLocation(sessionUrl);
-      } else if (newWindow) {
-        newWindow.location.href = sessionUrl;
-        newWindow.focus();
-      }
-    } catch (error) {
-      console.error('Error joining session:', error);
-      alert('Failed to join session. Please try again.');
-    } finally {
-      setLoading(false);
+      // Other blocking reasons
+      alert('Cannot join signing session at this time. Please check job requirements.');
+      return;
+    }
+
+    // Redirect to signing session via editor with signing mode
+    window.location.href = `/editor/${job.id}?mode=signing`;
+  };
+
+  const handleCompleteVerification = () => {
+    // Redirect to ID verification flow
+    window.location.href = `/id-verification`;
+  };
+
+  const getJobStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'open': return 'bg-green-100 text-green-800';
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
+      case 'completed': return 'bg-blue-100 text-blue-800';
+      case 'cancelled': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
-  const handleDownloadPackage = async (jobId: number) => {
-    setDownloadingPackage(true);
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/jobs/${jobId}/download-package`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to download package');
-      }
-
-      // Create a blob from the response
-      const blob = await response.blob();
-      
-      // Create a download link
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `job-${jobId}-completion-package.zip`;
-      document.body.appendChild(a);
-      a.click();
-      
-      // Clean up
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
-    } catch (error) {
-      console.error('Error downloading package:', error);
-      alert('Failed to download package. Please try again.');
-    } finally {
-      setDownloadingPackage(false);
+  const getVerificationStatusIcon = (job: SigningJob) => {
+    if (!job.requiresIdVerification) {
+      return <CheckCircle className="h-4 w-4 text-green-600" />;
     }
+    
+    if (job.idVerificationCompleted || job.idVerificationStatus === 'bypassed') {
+      return <CheckCircle className="h-4 w-4 text-green-600" />;
+    }
+    
+    return <AlertCircle className="h-4 w-4 text-yellow-600" />;
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">Pending</Badge>;
-      case 'in_progress':
-        return <Badge variant="secondary" className="bg-blue-100 text-blue-800">In Progress</Badge>;
-      case 'completed':
-        return <Badge variant="secondary" className="bg-green-100 text-green-800">Completed</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
+  const getRoleDisplay = (job: SigningJob) => {
+    if (job.userPrimaryRole === job.jobSpecificRole) {
+      return job.userPrimaryRole;
     }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return 'border-l-yellow-500';
-      case 'in_progress': return 'border-l-blue-500';
-      case 'completed': return 'border-l-green-500';
-      default: return 'border-l-gray-500';
-    }
+    
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-gray-600">{job.userPrimaryRole}</span>
+        <span className="text-xs text-gray-400">→</span>
+        <Badge variant="outline" className="text-xs">
+          Acting as {job.jobSpecificRole}
+        </Badge>
+      </div>
+    );
   };
 
   if (isLoading) {
     return (
       <MainLayout>
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <div className="text-center">
-            <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
-            <p className="text-gray-600">Loading your signing jobs...</p>
+        <div className="p-6">
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 bg-gray-200 rounded w-1/4"></div>
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-32 bg-gray-200 rounded"></div>
+              ))}
+            </div>
           </div>
         </div>
       </MainLayout>
@@ -202,184 +140,288 @@ export default function SigningJobs() {
   if (error) {
     return (
       <MainLayout>
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold text-gray-900">My Signing Jobs</h1>
-            <Button onClick={() => refetch()} variant="outline">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Retry
-            </Button>
+        <div className="p-6">
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold text-gray-900">Signing Jobs</h1>
+            <p className="text-gray-600 mt-1">
+              Jobs where you're assigned as a signer. Complete your profile to access signing sessions.
+            </p>
           </div>
-          <Alert className="border-red-200 bg-red-50">
-            <AlertCircle className="h-4 w-4 text-red-600" />
-            <AlertDescription className="text-red-800">
-              Failed to load signing jobs. Please check your connection and try again.
+          
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              <strong>Unable to load signing jobs.</strong> There may be a temporary issue with the service. 
+              Please try again in a few moments.
             </AlertDescription>
           </Alert>
+          
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              onClick={() => refetch()}
+            >
+              Try Again
+            </Button>
+            <Button
+              onClick={() => window.location.href = '/dashboard'}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              Back to Dashboard
+            </Button>
+          </div>
         </div>
       </MainLayout>
     );
   }
 
+  const jobs = signingJobsData?.jobs || [];
+
   return (
     <MainLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">My Signing Jobs</h1>
-            <p className="text-gray-600 mt-1">
-              Your signing assignments
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button onClick={() => refetch()} variant="outline" size="sm">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh
-            </Button>
-          </div>
+      <div className="p-6 max-w-7xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-900">Signing Jobs</h1>
+          <p className="text-gray-600 mt-1">
+            Jobs where you're assigned as a signer. Complete ID verification to access signing sessions.
+          </p>
         </div>
 
+      {/* Summary Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Total Signing Jobs</p>
+                <p className="text-2xl font-bold">{jobs.length}</p>
+              </div>
+              <FileText className="h-8 w-8 text-blue-600" />
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Ready to Sign</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {jobs.filter(job => job.canJoinSigning).length}
+                </p>
+              </div>
+              <CheckCircle className="h-8 w-8 text-green-600" />
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Need Verification</p>
+                <p className="text-2xl font-bold text-yellow-600">
+                  {jobs.filter(job => job.blockingReason === 'verification_required').length}
+                </p>
+              </div>
+              <Shield className="h-8 w-8 text-yellow-600" />
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Your Role</p>
+                <p className="text-sm font-semibold text-gray-900 capitalize">{user?.role}</p>
+              </div>
+              <User className="h-8 w-8 text-gray-600" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
-
-
-
-        {/* Jobs List */}
-        {signingJobs.length === 0 ? (
+      {/* Jobs List */}
+      <div className="space-y-4">
+        {jobs.length === 0 ? (
           <Card>
-            <CardContent className="p-12 text-center">
-              <PenTool className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                No signing jobs yet
-              </h3>
-              <p className="text-gray-600 mb-4">
-                When you're invited to sign documents, they'll appear here.
+            <CardContent className="p-8 text-center">
+              <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No Signing Jobs</h3>
+              <p className="text-gray-600">
+                You don't have any jobs where you're assigned as a signer at the moment.
               </p>
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-4">
-            {signingJobs.map((job) => (
-              <Card key={job.id} className={`border-l-4 ${getStatusColor(job.signingStatus)}`}>
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-lg font-semibold text-gray-900">
-                          {job.titleCompany}
-                        </h3>
-                        {getStatusBadge(job.signingStatus)}
+          jobs.map((job) => (
+            <Card key={job.id} className="hover:shadow-md transition-shadow">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle className="text-lg">
+                      Job #{job.id} - {job.titleCompany}
+                    </CardTitle>
+                    <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
+                      <div className="flex items-center gap-1">
+                        <Calendar className="h-4 w-4" />
+                        {new Date(job.selectedDate).toLocaleDateString()}
                       </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-gray-500" />
-                          <div>
-                            <p className="text-sm text-gray-600">Document Type</p>
-                            <p className="font-medium">{job.closingType}</p>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center gap-2">
-                          <User className="h-4 w-4 text-gray-500" />
-                          <div>
-                            <p className="text-sm text-gray-600">Your Role</p>
-                            <p className="font-medium capitalize">{job.signerRole}</p>
-                          </div>
-                        </div>
-                        
-                        {job.selectedDate && (
-                          <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4 text-gray-500" />
-                            <div>
-                              <p className="text-sm text-gray-600">Scheduled</p>
-                              <p className="font-medium">
-                                {new Date(job.selectedDate).toLocaleDateString()}
-                                {job.selectedTime && ` at ${job.selectedTime}`}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                        
-                        {job.propertyAddressOne && (
-                          <div className="flex items-center gap-2 md:col-span-2 lg:col-span-3">
-                            <MapPin className="h-4 w-4 text-gray-500" />
-                            <div>
-                              <p className="text-sm text-gray-600">Property Address</p>
-                              <p className="font-medium">
-                                {job.propertyAddressOne}
-                                {job.propertyCity && `, ${job.propertyCity}`}
-                                {job.propertyState && `, ${job.propertyState}`}
-                              </p>
-                            </div>
-                          </div>
-                        )}
+                      <div className="flex items-center gap-1">
+                        <Clock className="h-4 w-4" />
+                        {job.selectedTime}
                       </div>
                     </div>
                   </div>
+                  <div className="flex items-center gap-2">
+                    {getVerificationStatusIcon(job)}
+                    <Badge className={getJobStatusColor(job.jobStatus)}>
+                      {job.jobStatus}
+                    </Badge>
+                  </div>
+                </div>
+              </CardHeader>
+              
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Property</p>
+                    <p className="text-sm font-medium">
+                      {job.propertyAddressOne}
+                      <br />
+                      {job.propertyCity}, {job.propertyState}
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Closing Type</p>
+                    <p className="text-sm font-medium">{job.closingType}</p>
+                  </div>
+                  
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Your Role</p>
+                    <div className="text-sm font-medium">
+                      {getRoleDisplay(job)}
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Participants</p>
+                    <p className="text-sm font-medium">
+                      {job.verifiedParticipants}/{job.totalParticipants} verified
+                    </p>
+                  </div>
+                </div>
 
-                  <div className="flex items-center justify-between pt-4 border-t">
-                    <div className="text-sm text-gray-500">
-                      Invited: {job.invitationSentAt ? new Date(job.invitationSentAt).toLocaleDateString() : 'Not sent'}
-                    </div>
-                    
-                    <div className="flex gap-2">
-                      {job.signingStatus === 'pending' && job.jobStatus !== 'completed' && user?.isVerified && (
-                        <Button 
-                          size="sm" 
-                          onClick={() => handleJoinSession(job)}
-                          disabled={loading}
-                          className="bg-blue-600 hover:bg-blue-700"
-                        >
-                          {loading ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <Video className="h-4 w-4 mr-2" />
-                          )}
-                          Join Session
-                        </Button>
-                      )}
-                      
-                      {job.jobStatus === 'completed' && (
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => handleDownloadPackage(job.id)}
-                          disabled={downloadingPackage}
-                        >
-                          {downloadingPackage ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <Download className="h-4 w-4 mr-2" />
-                          )}
-                          Download Package
-                        </Button>
-                      )}
-                      
-                      <Button 
-                        size="sm" 
-                        variant="outline"
-                        onClick={() => setLocation(`/jobs/${job.id}`)}
-                      >
-                        <Eye className="h-4 w-4 mr-2" />
-                        View Details
-                      </Button>
-                    </div>
+                {/* Status Alerts */}
+                {!job.canJoinSigning && job.blockingReason === 'verification_required' && (
+                  <Alert className="mb-4">
+                    <Shield className="h-4 w-4" />
+                    <AlertDescription>
+                      <strong>ID Verification Required:</strong> You must complete identity verification 
+                      before joining this signing session as a signer.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <span>Created {new Date(job.createdAt).toLocaleDateString()}</span>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.location.href = `/jobs/${job.id}`}
+                    >
+                      View Details
+                    </Button>
+                    
+                    {job.canJoinSigning ? (
+                      <Button
+                        size="sm"
+                        onClick={() => handleJoinSigning(job)}
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        Join Signing
+                      </Button>
+                    ) : job.blockingReason === 'verification_required' ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleJoinSigning(job)}
+                        className="border-yellow-300 text-yellow-700 hover:bg-yellow-50"
+                      >
+                        Complete Verification
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        disabled
+                        variant="outline"
+                      >
+                        Cannot Join
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))
         )}
       </div>
 
-      {/* Account Setup Modal */}
-      <AccountSetupModal
-        isOpen={accountSetupModal.isOpen}
-        onClose={() => setAccountSetupModal({ isOpen: false, requirements: [] })}
-        requirements={accountSetupModal.requirements}
-        onSetupClick={() => setLocation('/profile')}
-      />
+      {/* ID Verification Prompt Modal */}
+      {showVerificationPrompt && selectedJob && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <Card className="max-w-md w-full">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5 text-yellow-600" />
+                ID Verification Required
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <p className="text-gray-600">
+                  To join the signing session for <strong>Job #{selectedJob.id}</strong>, 
+                  you need to complete identity verification first.
+                </p>
+                
+                <div className="bg-yellow-50 p-3 rounded-md">
+                  <p className="text-sm text-yellow-800">
+                    <strong>Why is this required?</strong><br />
+                    Since you're acting as a <strong>{selectedJob.jobSpecificRole}</strong> 
+                    for this job, identity verification is required by law for document signing.
+                  </p>
+                </div>
+                
+                <div className="flex items-center gap-2 pt-2">
+                  <Button
+                    onClick={() => setShowVerificationPrompt(false)}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleCompleteVerification}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700"
+                  >
+                    Complete Verification
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+      </div>
     </MainLayout>
   );
-} 
+};
+
+export default SigningJobs;

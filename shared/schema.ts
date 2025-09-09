@@ -491,6 +491,13 @@ export const signers = pgTable("signers", {
   guestVerificationStatus: text("guest_verification_status").default("pending"), // 'pending', 'verified', 'failed'
   signingStatus: text("signing_status").default("pending"), // 'pending', 'in_progress', 'completed', 'declined'
   createdAt: timestamp("created_at").defaultNow(),
+  
+  // Dual role support fields
+  primaryUserRole: text("primary_user_role"), // User's primary system role
+  requiresIdVerification: boolean("requires_id_verification").default(true), // Signers typically need ID verification
+  idVerificationCompleted: boolean("id_verification_completed").default(false),
+  idVerificationCompletedAt: timestamp("id_verification_completed_at"),
+  idVerificationMethod: text("id_verification_method"), // 'evs', 'admin_bypass', 'notary_bypass'
 });
 
 // Job participants table for session access control
@@ -499,11 +506,21 @@ export const jobParticipants = pgTable("job_participants", {
   jobId: integer("job_id").references(() => jobs.id),
   userId: integer("user_id").references(() => users.id),
   email: text("email").notNull(),
-  role: text("role").notNull(), // 'notary', 'signer', 'witness', 'title_agent'
+  role: text("role").notNull(), // 'notary', 'signer', 'witness', 'title_agent' (legacy field)
   inviteStatus: text("invite_status").notNull().default("pending"), // 'pending', 'accepted', 'declined'
   inviteToken: text("invite_token"),
   joinedAt: timestamp("joined_at"),
   createdAt: timestamp("created_at").defaultNow(),
+  
+  // Dual role support fields
+  jobSpecificRole: text("job_specific_role"), // Role for this specific job (e.g., 'signer', 'witness')
+  primaryRole: text("primary_role"), // User's primary system role (e.g., 'notary', 'title_company')
+  requiresIdVerification: boolean("requires_id_verification").default(false), // Whether this participant needs ID verification for this job
+  idVerificationCompleted: boolean("id_verification_completed").default(false), // Whether ID verification is completed
+  idVerificationCompletedAt: timestamp("id_verification_completed_at"),
+  idVerificationBypassReason: text("id_verification_bypass_reason"), // Reason if verification was bypassed
+  idVerificationBypassedBy: integer("id_verification_bypassed_by").references(() => users.id),
+  idVerificationBypassedAt: timestamp("id_verification_bypassed_at"),
 });
 
 // Job documents table for multiple document support

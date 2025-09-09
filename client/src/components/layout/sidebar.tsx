@@ -61,6 +61,14 @@ const menuItems: MenuItem[] = [
   },
   {
     id: 'signing-jobs',
+    label: 'Signing Jobs',
+    icon: PenTool,
+    path: '/signing-jobs',
+    roles: ['notary', 'title_company'],
+    description: 'Jobs where you act as a signer'
+  },
+  {
+    id: 'signer-dashboard',
     label: 'Dashboard',
     icon: Home,
     path: '/dashboard',

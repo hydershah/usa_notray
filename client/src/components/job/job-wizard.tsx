@@ -201,11 +201,22 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
   const form = useForm<JobFormData>({
     resolver: zodResolver(jobSchema),
     defaultValues: {
+      titleCompany: '',
+      closingType: '',
+      internalReference: '',
       kbaRequired: false,
+      propertyAddressOne: '',
+      propertyAddressTwo: '',
+      propertyCity: '',
+      propertyState: '',
+      propertyZipCode: '',
       notaryOption: 'auto', // Set default, will be updated in effect
+      selectedNotary: '',
+      notaryIdCode: '',
+      selectedDate: '',
+      selectedTime: '',
       requiresNSA: false,
       requiresSpanishSpeaking: false,
-      titleCompany: '', // Will be set in effect
     },
   });
 

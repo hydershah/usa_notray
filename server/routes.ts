@@ -16,6 +16,7 @@ import { registerTitleCompanyNotaryRoutes } from "./title-company-notary-routes"
 import { registerAdminVerificationRoutes } from "./routes/admin-verification-routes";
 import { registerJobEditingRoutes } from "./routes/job-editing-routes";
 import { registerWhiteoutOverlayRoutes } from "./routes/whiteout-overlay-routes";
+import { registerEnhancedParticipantRoutes } from "./routes/enhanced-participant-routes";
 import adminLogsRoutes from "./routes/admin-logs-routes";
 import notaryVerificationRoutes from "./routes/notary-verification-routes";
 import notaryJobApprovalRoutes from "./routes/notary-job-approval-routes";
@@ -1854,9 +1855,157 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // DUAL ROLE SUPPORT: Get jobs where user is assigned as signer (regardless of primary role)
+  // NOTE: This route MUST be defined BEFORE /api/jobs/:id to avoid route conflicts
+  app.get('/api/jobs/signing-assignments', verifyToken, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const userRole = req.user.role;
+      
+      console.log(`🔍 Getting signing assignments for user ${userId} (role: ${userRole})`);
+      
+      // Get user email for signer lookup
+      const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      // Query for jobs where user is assigned as signer (using Drizzle SQL templating)
+      const jobsResult = await db.execute(sql`
+        SELECT DISTINCT
+          j.id,
+          j.title_company,
+          j.closing_type,
+          j.selected_date,
+          j.selected_time,
+          j.job_status,
+          j.property_address_one,
+          j.property_city,
+          j.property_state,
+          j.created_at,
+          
+          -- User verification status (simplified)
+          COALESCE(u.is_verified, false) as user_verified,
+          COALESCE(u.account_setup_complete, false) as account_setup_complete,
+          
+          -- Additional job info
+          COALESCE(
+            (SELECT s2.signer_name FROM signers s2 WHERE s2.job_id = j.id ORDER BY s2.created_at ASC LIMIT 1),
+            ''
+          ) as first_signer_name,
+          
+          CASE 
+            WHEN j.notary_id IS NOT NULL THEN 
+              (SELECT CONCAT(nu.first_name, ' ', nu.last_name) FROM users nu WHERE nu.id = j.notary_id)
+            ELSE NULL
+          END as notary_name,
+          
+          -- Participant counts
+          (SELECT COUNT(*) FROM signers s3 WHERE s3.job_id = j.id) as total_participants,
+          (SELECT COUNT(*) FROM signers s4 WHERE s4.job_id = j.id) as verified_participants,
+          
+          -- Signer info (with fallbacks for missing columns)
+          COALESCE(s.primary_user_role, ${userRole}) as primary_user_role,
+          COALESCE(s.requires_id_verification, true) as signer_requires_verification,
+          COALESCE(s.id_verification_completed, false) as signer_verification_completed
+          
+        FROM jobs j
+        INNER JOIN signers s ON (s.job_id = j.id AND s.signer_email = ${user.email})
+        LEFT JOIN users u ON u.id = ${userId}
+        
+        WHERE j.job_status IN ('open', 'pending', 'in_progress')
+        
+        ORDER BY j.created_at DESC
+        LIMIT 50
+      `);
+      
+      // Process results and determine access status
+      const signingJobs = jobsResult.rows.map((row: any) => {
+        const requiresVerification = row.signer_requires_verification ?? true;
+        const verificationCompleted = row.signer_verification_completed ?? false;
+        const userVerified = row.user_verified ?? false;
+        const accountSetup = row.account_setup_complete ?? false;
+        
+        // Determine if user can join signing and what's blocking them
+        let canJoinSigning = true;
+        let blockingReason: 'profile_incomplete' | 'verification_required' | 'other' | undefined;
+        let verificationStatus: 'pending' | 'completed' | 'bypassed' = 'pending';
+        
+        // For signers, only check ID verification (not profile completion)
+        // Profile completion is only for notaries in their notary role
+        if (requiresVerification) {
+          if (verificationCompleted || userVerified) {
+            verificationStatus = userVerified ? 'bypassed' : 'completed';
+          } else {
+            canJoinSigning = false;
+            blockingReason = 'verification_required';
+          }
+        } else {
+          verificationStatus = 'completed';
+        }
+        
+        return {
+          id: row.id,
+          titleCompany: row.title_company,
+          closingType: row.closing_type,
+          selectedDate: row.selected_date,
+          selectedTime: row.selected_time,
+          jobStatus: row.job_status,
+          propertyAddressOne: row.property_address_one,
+          propertyCity: row.property_city,
+          propertyState: row.property_state,
+          createdAt: row.created_at,
+          
+          // Dual role info
+          userPrimaryRole: row.primary_user_role || userRole,
+          jobSpecificRole: 'signer', // Always signer for this endpoint
+          requiresIdVerification: requiresVerification,
+          idVerificationCompleted: verificationCompleted,
+          idVerificationStatus: verificationStatus,
+          canJoinSigning,
+          blockingReason,
+          
+          // Additional info
+          totalParticipants: row.total_participants || 0,
+          verifiedParticipants: row.verified_participants || 0,
+          firstSignerName: row.first_signer_name,
+          notaryName: row.notary_name
+        };
+      });
+      
+      console.log(`✅ Found ${signingJobs.length} signing jobs for user ${userId} (${user.email})`);
+      
+      // Debug: Check for invalid job IDs
+      const invalidJobs = signingJobs.filter(job => !job.id || isNaN(job.id));
+      if (invalidJobs.length > 0) {
+        console.warn(`⚠️ Found ${invalidJobs.length} jobs with invalid IDs:`, invalidJobs.map(j => ({ id: j.id, titleCompany: j.titleCompany })));
+      }
+      
+      res.json({
+        jobs: signingJobs,
+        totalCount: signingJobs.length,
+        hasMore: false
+      });
+      
+    } catch (error) {
+      console.error('Error getting signing assignments:', error);
+      res.status(500).json({ 
+        error: 'Failed to get signing assignments',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   app.get('/api/jobs/:id', verifyToken, cacheJobData(180), async (req: any, res) => {
     try {
       const jobId = parseInt(req.params.id);
+      
+      // Validate job ID
+      if (isNaN(jobId) || !isFinite(jobId) || jobId <= 0) {
+        console.warn(`Invalid job ID in request: ${req.params.id}`);
+        return res.status(400).json({ message: 'Invalid job ID' });
+      }
+      
       const job = await storage.getJob(jobId);
       
       if (!job) {
@@ -2092,12 +2241,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existingUser = existingUserMap.get(String(signerData.signerEmail).trim().toLowerCase());
       
       if (existingUser) {
-        // Validate existing user
-        if (existingUser.role === 'notary') {
-          throw new Error(`Cannot add ${signerData.signerEmail} as a signer. This user is registered as a notary.`);
+        // DUAL ROLE SUPPORT: Allow users with any primary role to be signers
+        // The dual-role system will handle verification requirements based on job-specific role
+        
+        // Only prevent inactive users
+        if (!existingUser.isActive) {
+          throw new Error(`Cannot add ${signerData.signerEmail} as a signer. This user account is inactive.`);
         }
-        if (existingUser.role !== 'signer' && existingUser.role !== 'witness') {
-          throw new Error(`Cannot add ${signerData.signerEmail} as a signer. This user has a different role.`);
+        
+        // Log dual role assignment for audit
+        if (existingUser.role !== 'signer') {
+          console.log(`🔄 DUAL ROLE ASSIGNMENT: User ${signerData.signerEmail} (primary role: ${existingUser.role}) assigned as signer`);
         }
       }
       
@@ -2627,19 +2781,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
             signerUserMapping.push({ signerData, isNew: true, index: newUsersData.length - 1 });
           } else {
-            // Validate existing user
-            if (existingUser.role === 'notary') {
-              console.error(`❌ Cannot add notary ${existingUser.email} as a signer - conflict of interest`);
+            // DUAL ROLE SUPPORT: Allow users with any primary role to be signers
+            // The dual-role system will handle verification requirements based on job-specific role
+            
+            // Only prevent inactive users
+            if (!existingUser.isActive) {
+              console.error(`❌ Cannot add inactive user ${existingUser.email} as a signer`);
               return res.status(400).json({ 
-                message: `Cannot add ${signerData.signerEmail} as a signer. This user is registered as a notary and cannot participate as a signer.` 
+                message: `Cannot add ${signerData.signerEmail} as a signer. This user account is inactive.` 
               });
             }
             
-            if (existingUser.role !== 'signer' && existingUser.role !== 'witness') {
-              console.error(`❌ Cannot add ${existingUser.role} ${existingUser.email} as a signer`);
-              return res.status(400).json({ 
-                message: `Cannot add ${signerData.signerEmail} as a signer. This user has a different role (${existingUser.role}) in the system.` 
-              });
+            // Log dual role assignment for audit
+            if (existingUser.role !== 'signer') {
+              console.log(`🔄 DUAL ROLE ASSIGNMENT: User ${existingUser.email} (primary role: ${existingUser.role}) assigned as signer for job`);
             }
             
             signerUserMapping.push({ signerData, isNew: false, userId: existingUser.id });
@@ -2675,11 +2830,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const userId = mapping.isNew ? newUsers[mapping.index].id : mapping.userId;
           const invitationToken = crypto.randomUUID();
           
+          // Get user's primary role for dual role tracking
+          let primaryUserRole = 'signer'; // Default for new users
+          if (!mapping.isNew && mapping.userId) {
+            // For existing users, get their actual role
+            const existingUser = existingUserMap.get(String(mapping.signerData.signerEmail).trim().toLowerCase());
+            primaryUserRole = existingUser?.role || 'signer';
+          }
+          
+          // DUAL ROLE SUPPORT: Track role assignments and add dual role fields
+          if (primaryUserRole !== 'signer') {
+            console.log(`🔄 DUAL ROLE ASSIGNMENT: User ${mapping.signerData.signerEmail} (primary role: ${primaryUserRole}) assigned as signer for job ${job.id}`);
+          }
+          
           signersToCreate.push({
             ...mapping.signerData,
             jobId: job.id,
             userId: userId,
-            invitationToken
+            invitationToken,
+            // DUAL ROLE SUPPORT: Add role tracking fields (now that DB migration is complete)
+            primaryUserRole: primaryUserRole,
+            requiresIdVerification: true, // Signers need verification
+            idVerificationCompleted: false,
+            idVerificationMethod: null
           });
           
           const tokenExpiry = new Date();
@@ -2693,9 +2866,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
         
-        // 🚀 STEP 5: Insert signers and tokens in parallel
+        // 🚀 STEP 5: Insert signers, job participants, and tokens in parallel
+        // Create job participant records for dual role tracking (DB migration complete!)
+        const jobParticipantsToCreate = signersToCreate.map(signer => ({
+          jobId: job.id,
+          userId: signer.userId,
+          email: signer.signerEmail,
+          role: 'signer', // Legacy field
+          jobSpecificRole: 'signer', // Job-specific role
+          primaryRole: signer.primaryUserRole, // User's system role
+          inviteStatus: 'pending',
+          inviteToken: signer.invitationToken,
+          requiresIdVerification: true, // Signers need verification
+          idVerificationCompleted: false
+        }));
+
         await Promise.all([
           Promise.all(signersToCreate.map(signer => storage.createSigner(signer))),
+          db.insert(jobParticipants).values(jobParticipantsToCreate),
           db.insert(passwordResetTokens).values(tokensToCreate)
         ]);
         
@@ -4467,8 +4655,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.error('Error checking company access for document list:', companyCheckError);
         }
       }
-      // Signer access - check via signers table
-      else if (req.user.role === 'signer' || req.user.role === 'witness') {
+      // DUAL ROLE SUPPORT: Check if user is a signer for this job (regardless of their primary role)
+      if (!hasAccess) {
         const [signer] = await db
           .select()
           .from(signers)
@@ -4477,7 +4665,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         if (signer) {
           hasAccess = true;
-          console.log(`✅ DOCUMENT LIST: Invited signer user ${req.user.id} (${req.user.email}) on job ${jobId}`);
+          console.log(`✅ DOCUMENT LIST: User ${req.user.id} (${req.user.email}, role: ${req.user.role}) acting as signer on job ${jobId}`);
         }
       }
       
@@ -4543,8 +4731,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.error('Error checking company access for document versions:', companyCheckError);
         }
       }
-      // Signer access - check via signers table
-      else if (req.user.role === 'signer' || req.user.role === 'witness') {
+      // DUAL ROLE SUPPORT: Check if user is a signer for this job (regardless of their primary role)
+      if (!hasAccess) {
         const [signer] = await db
           .select()
           .from(signers)
@@ -4553,7 +4741,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         if (signer) {
           hasAccess = true;
-          console.log(`✅ DOCUMENT VERSIONS: Invited signer user ${req.user.id} (${req.user.email}) on job ${jobId}`);
+          console.log(`✅ DOCUMENT VERSIONS: User ${req.user.id} (${req.user.email}, role: ${req.user.role}) acting as signer on job ${jobId}`);
         }
       }
       
@@ -7326,6 +7514,8 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
   registerNotaryProfileRoutes(app);
   registerJobEditingRoutes(app);
   registerWhiteoutOverlayRoutes(app);
+  registerEnhancedParticipantRoutes(app); // DUAL ROLE SUPPORT: Enhanced participant management
+
   registerFeeRoutes(app);
   registerAdminVerificationRoutes(app);
   
@@ -9564,7 +9754,11 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         return res.status(404).json({ message: 'Job not found' });
       }
       
-      // If no notary is assigned to the job, try to auto-assign based on current user
+      // DUAL ROLE SUPPORT: Handle session creation for users acting as signers
+      // Check if user has session access (includes dual role scenarios)
+      const hasSessionAccess = await storage.verifySessionAccess(jobId, req.user.id);
+      
+      // If no notary is assigned to the job, try to auto-assign based on current user or session access
       if (!job.notaryId && !job.selectedNotary) {
         console.log(`⚠️ Job ${jobId} has no notary assigned. Attempting auto-assignment...`);
         
@@ -9582,6 +9776,13 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
             .where(eq(jobs.id, jobId));
             
           console.log(`✅ Auto-assigned ${req.user.role} as notary for job ${jobId}`);
+        } else if (hasSessionAccess && sessionType === 'notary') {
+          // DUAL ROLE: For signing sessions, allow users with session access to create sessions
+          // even if they're not the job's primary notary
+          console.log(`✅ DUAL ROLE: User ${req.user.id} has session access, allowing signing session creation`);
+          
+          // For dual role scenarios, we'll use the current user as the session notary
+          // but won't update the job's primary notary assignment
         } else {
           return res.status(400).json({ 
             message: 'This job has no notary assigned. Please assign a notary before starting the tagging session.',
@@ -9589,6 +9790,12 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
             suggestion: 'Contact an administrator to assign a notary to this job.'
           });
         }
+      } else if (!hasSessionAccess) {
+        // If job has a notary but user doesn't have session access, deny
+        return res.status(403).json({
+          message: 'You do not have access to create a session for this job.',
+          error: 'access_denied'
+        });
       }
       
       // Import SessionService dynamically
@@ -9615,6 +9822,12 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
             error: 'invalid_notary_id'
           });
         }
+      }
+      
+      // DUAL ROLE SUPPORT: If no notary assigned but user has session access, use current user as session notary
+      if (!notaryId && hasSessionAccess) {
+        console.log(`✅ DUAL ROLE: Using current user ${req.user.id} as session notary for dual role scenario`);
+        notaryId = req.user.id;
       }
       
       if (!notaryId) {

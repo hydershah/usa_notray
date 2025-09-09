@@ -1,5 +1,5 @@
 import React from "react";
-import { Switch, Route, Redirect, useLocation } from "wouter";
+import { Switch, Route, Redirect, useLocation, useParams } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -78,6 +78,12 @@ const LoadingFallback = () => (
     </div>
   </div>
 );
+
+// Component to handle legacy signing-session URLs
+const SigningSessionRedirect: React.FC = () => {
+  const { jobId } = useParams<{ jobId: string }>();
+  return <Redirect to={`/editor/${jobId}?mode=signing`} />;
+};
 
 const Calendar = React.lazy(() => import("@/pages/calendar"));
 const Payments = React.lazy(() => import("@/pages/payments"));
@@ -396,6 +402,16 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      <Route path="/signing-jobs">
+        <ProtectedRoute allowedRoles={['notary', 'title_company']}>
+          <ErrorBoundary fallback={<LoadingFallback />}>
+            <React.Suspense fallback={<LoadingFallback />}>
+              {React.createElement(React.lazy(() => import("@/pages/signing-jobs")))}
+            </React.Suspense>
+          </ErrorBoundary>
+        </ProtectedRoute>
+      </Route>
+
       <Route path="/jobs/:id">
         <ProtectedRoute>
           <ErrorBoundary fallback={<LoadingFallback />}>
@@ -458,6 +474,13 @@ function Router() {
               <EditorPage />
             </React.Suspense>
           </ErrorBoundary>
+        </ProtectedRoute>
+      </Route>
+
+      {/* Redirect legacy signing-session URLs to editor with signing mode */}
+      <Route path="/signing-session/:jobId">
+        <ProtectedRoute allowedRoles={['admin', 'notary', 'signer', 'witness']}>
+          <SigningSessionRedirect />
         </ProtectedRoute>
       </Route>
 
@@ -693,7 +716,7 @@ function Router() {
       </Route>
 
       <Route path="/id-verification">
-        <ProtectedRoute allowedRoles={['signer', 'witness', 'client']}>
+        <ProtectedRoute allowedRoles={['signer', 'witness', 'client', 'notary', 'title_company']}>
           <ErrorBoundary fallback={<LoadingFallback />}>
             <React.Suspense fallback={<LoadingFallback />}>
               {React.createElement(React.lazy(() => import("@/pages/id-verification")))}

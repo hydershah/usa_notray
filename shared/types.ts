@@ -421,4 +421,78 @@ export function toSafeUserDTO(user: User): SafeUserDTO {
   };
 }
 
+// Job Participant with dual role support
+export interface JobParticipant {
+  id: number;
+  jobId: number;
+  userId: number | null;
+  email: string;
+  role: string; // Legacy role field - kept for compatibility
+  jobSpecificRole: string; // Role for this specific job (e.g., 'signer', 'witness')
+  primaryRole: string; // User's primary system role (e.g., 'notary', 'title_company')
+  inviteStatus: 'pending' | 'accepted' | 'declined';
+  inviteToken: string | null;
+  joinedAt: Date | null;
+  createdAt: Date;
+  
+  // ID Verification fields
+  requiresIdVerification: boolean;
+  idVerificationCompleted: boolean;
+  idVerificationCompletedAt: Date | null;
+  idVerificationBypassReason: string | null;
+  idVerificationBypassedBy: number | null;
+  idVerificationBypassedAt: Date | null;
+}
+
+// Enhanced Signer interface with dual role support
+export interface EnhancedSigner {
+  id: number;
+  jobId: number;
+  userId: number | null;
+  signerName: string;
+  signerEmail: string;
+  signerPhoneNumber: string;
+  signerRole: string; // 'borrower', 'co-borrower', 'seller', 'buyer'
+  primaryUserRole: string | null; // User's primary system role
+  invitationToken: string | null;
+  invitationSentAt: Date | null;
+  accessType: string;
+  guestVerificationStatus: string;
+  signingStatus: string;
+  
+  // ID Verification fields
+  requiresIdVerification: boolean;
+  idVerificationCompleted: boolean;
+  idVerificationCompletedAt: Date | null;
+  idVerificationMethod: string | null; // 'evs', 'admin_bypass', 'notary_bypass'
+  createdAt: Date;
+}
+
+// Participant role summary for easy display
+export interface ParticipantRoleSummary {
+  id: number;
+  jobId: number;
+  userId: number | null;
+  email: string;
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  userSystemRole: string; // Primary role in the system
+  jobRole: string; // Role for this specific job
+  requiresIdVerification: boolean;
+  idVerificationCompleted: boolean;
+  inviteStatus: string;
+  hasDualRole: boolean; // True if jobRole != userSystemRole
+  verificationStatus: 'verification_required' | 'verified' | 'no_verification_needed';
+}
+
+// Role assignment request for API
+export interface RoleAssignmentRequest {
+  userId?: number;
+  email: string;
+  jobSpecificRole: 'signer' | 'witness' | 'observer' | 'notary' | 'title_agent';
+  requiresIdVerification?: boolean;
+  skipVerificationReason?: string; // For admin bypass
+}
+
 // Add more types as needed... 
