@@ -105,14 +105,24 @@ const globalDebouncer = new OperationDebouncer();
 /**
  * Hook for debounced tag operations with intelligent delay based on operation type
  */
-export const useDebouncedTagOperations = (sessionId: string) => {
+export const useDebouncedTagOperations = (sessionId: string, webSocket?: any) => {
   const debouncerRef = useRef(globalDebouncer);
 
-  // Position updates - frequent, short delay
+  // Position updates - frequent, short delay with real-time WebSocket updates
   const debouncedPositionUpdate = useCallback((
     tagId: string,
     coordinates: { x?: number; y?: number; width?: number; height?: number }
   ) => {
+    // Send real-time WebSocket update immediately for smooth movement
+    if (webSocket && webSocket.tagMoving) {
+      try {
+        console.log('📡 Broadcasting real-time tag movement:', { tagId, coordinates });
+        webSocket.tagMoving(tagId, { coordinates });
+      } catch (wsError) {
+        console.warn('⚠️ Failed to broadcast real-time tag movement via WebSocket:', wsError);
+      }
+    }
+
     const operation = async () => {
       const response = await fetch(`/api/editor/session/${sessionId}/tag/${tagId}`, {
         method: 'PUT',
@@ -132,7 +142,7 @@ export const useDebouncedTagOperations = (sessionId: string) => {
 
     const key = `position_${sessionId}_${tagId}`;
     return debouncerRef.current.debounce(key, operation, 300); // 300ms for position updates
-  }, [sessionId]);
+  }, [sessionId, webSocket]);
 
   // Content updates - medium delay
   const debouncedContentUpdate = useCallback((

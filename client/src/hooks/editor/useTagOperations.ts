@@ -41,6 +41,22 @@ function debounce<T extends (...args: any[]) => any>(
   return debounced as T & { cancel: () => void; flush: () => void };
 }
 
+// Simple throttle implementation
+function throttle<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): T {
+  let lastCall = 0;
+  
+  return ((...args: any[]) => {
+    const now = Date.now();
+    if (now - lastCall >= wait) {
+      lastCall = now;
+      return func(...args);
+    }
+  }) as T;
+}
+
 interface TagOperation {
   type: 'place' | 'update' | 'delete';
   tagId?: string;
@@ -174,6 +190,30 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
         setIsProcessing(false);
       }
     }, 300) // 🔧 FIX: Increased from 100ms to 300ms to prevent rapid-fire updates
+  ).current;
+
+  // Throttled WebSocket broadcast for real-time position updates during drag
+  const throttledPositionBroadcast = useRef(
+    throttle((tagId: string, coordinates: Partial<TagCoordinates>) => {
+      if (webSocket && webSocket.tagMoving) {
+        try {
+          // Only log in development mode to reduce noise
+          if (process.env.NODE_ENV === 'development') {
+            console.log('📡 Broadcasting real-time tag movement:', { tagId, coordinates });
+          }
+          
+          webSocket.tagMoving(tagId, { coordinates });
+          
+          if (process.env.NODE_ENV === 'development') {
+            console.log('✅ Real-time tag movement broadcasted successfully');
+          }
+        } catch (wsError) {
+          console.warn('⚠️ Failed to broadcast real-time tag movement via WebSocket:', wsError);
+        }
+      } else {
+        console.warn('⚠️ WebSocket not available for real-time movement broadcast');
+      }
+    }, 16) // Throttle to 16ms (~60fps) for very smooth real-time updates
   ).current;
 
   // Single tag place API call with better error handling
@@ -484,7 +524,7 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
     debouncedSave(operation);
   }, [sessionId, selectedUser, currentDocument, addTag]);
 
-  // Update tag position with optimistic update - NO SERVER CALL DURING DRAG
+  // Update tag position with optimistic update and real-time WebSocket broadcast
   const updateTagPosition = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {
     // Validate coordinates before updating
     if (!validateCoordinates(coordinates)) {
@@ -499,9 +539,12 @@ export const useTagOperations = (sessionId: string, webSocket?: any) => {
     // Update store immediately for smooth UX
     updateTag(tagId, { coordinates: sanitizedCoordinates as TagCoordinates });
     
+    // 🚀 REAL-TIME SYNC: Broadcast position update to all participants during drag (throttled)
+    throttledPositionBroadcast(tagId, sanitizedCoordinates);
+    
     // Only save to server on mouse up / drag end
     // This will be called by the TagRenderer on dragStop
-  }, [updateTag, tags]);
+  }, [updateTag, tags, throttledPositionBroadcast]);
 
   // Update tag size with optimistic update - NO SERVER CALL DURING RESIZE
   const updateTagSize = useCallback((tagId: string, coordinates: Partial<TagCoordinates>) => {

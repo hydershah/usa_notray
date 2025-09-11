@@ -72,6 +72,9 @@ export interface DocumentTag {
   content?: string;
   contentType?: string;
   contentData?: any; // Actual content when replaced in live session
+  isBeingDragged?: boolean; // True when another user is dragging this tag
+  draggedBy?: string; // User ID of who is dragging this tag
+  draggedByName?: string; // Display name of who is dragging this tag
   createdAt: Date;
   updatedAt: Date;
 }

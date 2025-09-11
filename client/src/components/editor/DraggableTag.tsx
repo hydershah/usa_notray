@@ -8,9 +8,14 @@ interface DraggableTagProps {
   scaleFactor: number;
   containerRef: React.RefObject<HTMLDivElement>;
   onUpdate: (tagId: string, coordinates: any) => void;
+  isBeingMovedBy?: {
+    userId: string;
+    displayName: string;
+    userType: string;
+  };
 }
 
-const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, containerRef, onUpdate }) => {
+const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, containerRef, onUpdate, isBeingMovedBy }) => {
   const { setDraggedTag, selectTag, selectedTag, mode, currentUser } = useEditorStore();
   const [isDragging, setIsDragging] = useState(false);
   const offsetRef = useRef({ x: 0, y: 0 });
@@ -93,11 +98,14 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
     const newX = (e.clientX - containerRect.left - offsetRef.current.x) / scaleFactor;
     const newY = (e.clientY - containerRect.top - offsetRef.current.y) / scaleFactor;
 
-    onUpdate(tag.id, {
+    // Update with sub-pixel precision for smoother movement
+    const updatedCoordinates = {
       ...tag.coordinates,
       x: Math.round(newX),
       y: Math.round(newY),
-    });
+    };
+
+    onUpdate(tag.id, updatedCoordinates);
   };
 
   const handleDragEnd = () => {
@@ -136,6 +144,9 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
 
   // For visual feedback, also treat signer-assigned signature tags as non-interactive for notaries
   const isSignatureAssignedToSomeoneElse = tag.tagType === 'S' && currentUser?.role === 'notary' && tag.assignedUserId !== currentUser.userId;
+  
+  // Check if someone else is moving this tag
+  const isBeingMovedByOther = isBeingMovedBy && isBeingMovedBy.userId !== currentUser?.userId;
 
   // Get tag styling based on mode
   const getTagStyle = () => {
@@ -143,8 +154,16 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
     let borderColor = tag.colorCode || '#3B82F6';
     let borderStyle = 'solid';
     let cursor = 'move';
+    let boxShadow = '0 2px 6px rgba(0, 0, 0, 0.1)';
     
-    if (isInSigningMode) {
+    // Special styling when someone else is moving the tag
+    if (isBeingMovedByOther) {
+      backgroundColor = 'rgba(34, 197, 94, 0.15)'; // Green tint
+      borderColor = '#22c55e';
+      borderStyle = 'dashed';
+      cursor = 'not-allowed';
+      boxShadow = '0 0 0 2px rgba(34, 197, 94, 0.3), 0 4px 12px rgba(0, 0, 0, 0.2)';
+    } else if (isInSigningMode) {
       if (isCompleted) {
         backgroundColor = 'transparent'; // Make completed tags transparent
         borderColor = 'transparent';
@@ -165,7 +184,8 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
       backgroundColor,
       borderColor,
       borderStyle,
-      cursor
+      cursor,
+      boxShadow
     };
   };
 
@@ -240,9 +260,7 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
         // Clean shadow for depth
         boxShadow: hasContent
           ? 'none' // No shadow for tags with content
-          : isDragging || isSelected
-          ? '0 4px 12px rgba(0, 0, 0, 0.2)'
-          : '0 2px 6px rgba(0, 0, 0, 0.1)',
+          : tagStyle.boxShadow,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -287,6 +305,31 @@ const DraggableTag: React.FC<DraggableTagProps> = ({ tag, scaleFactor, container
           </div>
         )}
       </div>
+      
+      {/* Movement indicator overlay */}
+      {isBeingMovedByOther && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '-25px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: '#22c55e',
+            color: 'white',
+            padding: '2px 8px',
+            borderRadius: '12px',
+            fontSize: '10px',
+            fontWeight: '600',
+            whiteSpace: 'nowrap',
+            zIndex: 1001,
+            pointerEvents: 'none',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+            animation: 'pulse 1.5s ease-in-out infinite'
+          }}
+        >
+          {isBeingMovedBy.displayName} is moving...
+        </div>
+      )}
     </div>
   );
 };

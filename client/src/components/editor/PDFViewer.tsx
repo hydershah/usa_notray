@@ -104,6 +104,7 @@ interface TagRendererProps {
   onFontSizeChange?: (tagId: string, fontSize: number) => void;
   isHighlighted?: boolean;
   isMissing?: boolean;
+  webSocket?: WebSocketConnection | null;
 }
 
 const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
@@ -120,11 +121,13 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   onFontSizeChange,
   localFontSize,
   isHighlighted = false,
-  isMissing = false
+  isMissing = false,
+  webSocket
 }) => {
   const [imageLoadError, setImageLoadError] = React.useState(false);
   const [isDragging, setIsDragging] = React.useState(false);
   const [dragCoords, setDragCoords] = React.useState<{x: number; y: number} | null>(null);
+  const [isRealTimeMoving, setIsRealTimeMoving] = React.useState(false);
   const tagInfo = TAG_TYPE_INFO[tag.tagType];
   
   // Use local font size if available, otherwise fall back to stored font size
@@ -243,6 +246,10 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   }, [isDragging, dragCoords, tag.coordinates.x, tag.coordinates.y, tag.coordinates.width, tag.coordinates.height, tag.tagType, scaleFactor, optimalDimensions.width, optimalDimensions.height, fixedDimensions.width, fixedDimensions.height]);
 
   const hasContent = useMemo(() => !!(tag.content || tag.contentData || tag.isCompleted), [tag.content, tag.contentData, tag.isCompleted]);
+  
+  // Check if tag is being dragged by another user
+  const isBeingDragged = tag.isBeingDragged && tag.draggedBy !== currentUser?.userId;
+  const draggedByName = tag.draggedByName;
 
   // Memoized style object to prevent recalculation on every render - DocuSign Style
   const tagStyle = useMemo(() => {
@@ -277,6 +284,11 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     // Apply highlighted styling (takes precedence over missing)
     if (isHighlighted) {
       boxShadow = '0 0 0 3px #3b82f6, 0 0 12px rgba(59, 130, 246, 0.5)';
+    }
+    
+    // Apply dragging styling (takes precedence over highlighted)
+    if (isBeingDragged) {
+      boxShadow = '0 0 0 3px #f59e0b, 0 0 12px rgba(245, 158, 11, 0.5), 0 4px 20px rgba(0, 0, 0, 0.3)';
     }
     
     return {
@@ -338,7 +350,7 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
     return sanitized;
   };
 
-  // Throttle drag updates for smoother performance
+  // Throttle drag updates for smoother performance with real-time WebSocket updates
   const throttledOnUpdate = useRef<((coords: any) => void) | null>(null);
   
   useEffect(() => {
@@ -347,13 +359,34 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
       const now = Date.now();
       if (now - lastUpdate > 8) { // ~120fps throttling for smooth drag
         onUpdate(coords);
+        
+        // Send real-time WebSocket update for smooth movement
+        if (webSocket && webSocket.tagMoving) {
+          try {
+            console.log('📡 Broadcasting real-time tag movement:', { tagId: tag.id, coordinates: coords });
+            webSocket.tagMoving(tag.id, { coordinates: coords });
+            console.log('✅ Real-time tag movement broadcasted successfully');
+            setIsRealTimeMoving(true);
+            // Reset the indicator after a short delay
+            setTimeout(() => setIsRealTimeMoving(false), 100);
+          } catch (wsError) {
+            console.warn('⚠️ Failed to broadcast real-time tag movement via WebSocket:', wsError);
+          }
+        } else {
+          console.warn('⚠️ WebSocket not available for real-time movement:', { webSocket: !!webSocket, tagMoving: !!(webSocket?.tagMoving) });
+        }
+        
         lastUpdate = now;
       }
     };
-  }, [onUpdate]);
+  }, [onUpdate, webSocket, tag.id]);
 
   const handleDrag = useCallback((e: any, data: any) => {
     if (!canEdit || !throttledOnUpdate.current) return;
+    
+    // Set dragging state and coordinates for visual feedback
+    setIsDragging(true);
+    setDragCoords({ x: data.x, y: data.y });
     
     // Optimized smooth drag - minimal processing during drag for better performance
     const newCoordinates = {
@@ -599,10 +632,7 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
        position={{ x: displayCoords.x, y: displayCoords.y }}
         minWidth={Math.max(1, Math.round(((TAG_TYPE_CONFIG[tag.tagType]?.minWidth ?? fixedDimensions.minWidth ?? 1) * scaleFactor)))}
         minHeight={Math.max(1, Math.round(((TAG_TYPE_CONFIG[tag.tagType]?.minHeight ?? fixedDimensions.minHeight ?? 1) * scaleFactor)))}
-       onDrag={(e, d) => {
-         setIsDragging(true);
-         setDragCoords({ x: d.x, y: d.y });
-       }}
+       onDrag={handleDrag}
        onDragStart={handleDragStart}
        onDragStop={(e, d) => {
          setIsDragging(false);
@@ -827,6 +857,54 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
             title={tag.displayLabel.split(' - ')[1] || 'User'}
           />
         )}
+        
+        {/* Dragging indicator - shows when another user is dragging this tag */}
+        {isBeingDragged && (
+          <div 
+            style={{
+              position: 'absolute',
+              top: '-20px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              backgroundColor: '#f59e0b',
+              color: '#ffffff',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              fontSize: '10px',
+              fontWeight: 'bold',
+              whiteSpace: 'nowrap',
+              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+              zIndex: 1000
+            }}
+            title={`Being dragged by ${draggedByName}`}
+          >
+            👋 {draggedByName} is moving this
+          </div>
+        )}
+
+        {/* Real-time movement indicator */}
+        {/* {isRealTimeMoving && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '-30px',
+              right: '0',
+              backgroundColor: '#22c55e',
+              color: 'white',
+              padding: '2px 6px',
+              borderRadius: '12px',
+              fontSize: '9px',
+              fontWeight: '600',
+              whiteSpace: 'nowrap',
+              zIndex: 1002,
+              pointerEvents: 'none',
+              animation: 'pulse 0.5s ease-in-out',
+              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)'
+            }}
+          >
+            LIVE
+          </div>
+        )} */}
       </div>
     </Rnd>
   );
@@ -2473,6 +2551,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
               localFontSize={localFontSizes.get(String(tag.id))}
                           isHighlighted={highlightedTagId === tag.id}
                           isMissing={incompleteTags.includes(tag.id)}
+                          webSocket={webSocket}
                         />
                       </div>
                     );

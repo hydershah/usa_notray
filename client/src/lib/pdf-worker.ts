@@ -62,8 +62,8 @@ export const initializePDFWorker = () => {
     
     // Set additional options for production stability
     if (isProduction) {
-      // Disable some features that might cause issues in production
-      pdfjsLib.GlobalWorkerOptions.isEvalSupported = false;
+      // Additional production-specific configurations can be added here
+      // Note: isEvalSupported is no longer available in PDF.js 5.4.149
     }
     
     isWorkerInitialized = true;
@@ -72,12 +72,12 @@ export const initializePDFWorker = () => {
   } catch (error) {
     console.error('❌ Failed to initialize PDF.js worker:', error);
     
-    // Enhanced fallback: try to use inline worker
+    // Enhanced fallback: try to use inline worker with matching version
     try {
-      // Use a more reliable CDN fallback
-      const fallbackWorkerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.mjs';
+      // Use a more reliable CDN fallback with matching version
+      const fallbackWorkerUrl = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
       pdfjsLib.GlobalWorkerOptions.workerSrc = fallbackWorkerUrl;
-      console.warn('📄 Using enhanced fallback PDF.js worker from cdnjs');
+      console.warn(`📄 Using enhanced fallback PDF.js worker from unpkg: ${fallbackWorkerUrl}`);
       isWorkerInitialized = true;
     } catch (fallbackError) {
       console.error('❌ PDF.js enhanced fallback also failed:', fallbackError);

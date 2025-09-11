@@ -313,6 +313,10 @@ export class WebSocketService {
           this.handleTagUpdated(user, message);
           break;
           
+        case 'tag_moving':
+          this.handleTagMoving(user, message);
+          break;
+          
         case 'tag_saved':
           this.handleTagSaved(user, message);
           break;
@@ -409,6 +413,27 @@ export class WebSocketService {
     
     // Broadcast to all users in session
     this.broadcastToSession(user.sessionId, message, user.userId);
+  }
+  
+  /**
+   * Handle real-time tag movement during dragging
+   */
+  private handleTagMoving(user: ConnectedUser, message: WSMessage): void {
+    // Don't store in message history (too frequent during drag)
+    // Just broadcast to other users for real-time updates
+    this.broadcastToSession(user.sessionId, {
+      ...message,
+      payload: {
+        ...message.payload,
+        updatedBy: user.userId,
+        updatedByName: user.displayName,
+        userType: user.userType,
+        timestamp: Date.now()
+      }
+    }, user.userId);
+    
+    // Log real-time movement for debugging
+    console.log(`🔄 Real-time tag movement: ${message.payload?.tagId} by ${user.displayName} (${user.userType})`);
   }
   
   /**

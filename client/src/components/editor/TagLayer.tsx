@@ -5,6 +5,7 @@ import { DocumentTag, TagCoordinates } from '../../types/editor';
 import { useToast } from '../../hooks/use-toast';
 import DraggableTag from './DraggableTag';
 import { useDebouncedTagOperations } from '../../hooks/editor/useDebounced';
+import { useRealTimeMovement } from '../../hooks/editor/useRealTimeMovement';
 import { 
   getTagDimensions, 
   getTagStyle, 
@@ -23,6 +24,11 @@ interface TagRendererProps {
   onUpdate: (updates: { x: number; y: number }) => void;
   onDelete: () => void;
   onTagClick?: (tag: DocumentTag) => void;
+  isBeingMovedBy?: {
+    userId: string;
+    displayName: string;
+    userType: string;
+  };
 }
 
 interface TagLayerProps {
@@ -47,12 +53,14 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   onSelect,
   onUpdate,
   onDelete,
-  onTagClick
+  onTagClick,
+  isBeingMovedBy
 }) => {
   const { mode, selectedUser, currentUser, session } = useEditorStore();
   
-  // Use debounced operations hook
-  const { debouncedPositionUpdate } = useDebouncedTagOperations(session?.id || '');
+  // Use debounced operations hook with WebSocket for real-time updates
+  const { webSocket } = useEditorStore();
+  const { debouncedPositionUpdate } = useDebouncedTagOperations(session?.id || '', webSocket);
   
   // Check if current user can modify this tag
   const canModifyTag = canEdit && (
@@ -110,6 +118,23 @@ const TagRenderer: React.FC<TagRendererProps> = ({
   // }, [displayCoords.x, displayCoords.y, displayCoords.height, tag.tagType]);
 
 
+  // Handle drag during movement for real-time updates
+  const handleDrag = useCallback((e: any, data: any) => {
+    if (!canModifyTag || !session) return;
+    
+    const newPdfCoordinates = {
+      x: data.x / scaleFactor,
+      y: data.y / scaleFactor
+    };
+    
+    // Update local state immediately for smooth real-time movement
+    onUpdate(newPdfCoordinates);
+    
+    // Send real-time WebSocket update during drag
+    debouncedPositionUpdate(tag.id, newPdfCoordinates);
+    
+  }, [canModifyTag, scaleFactor, onUpdate, session, tag, debouncedPositionUpdate]);
+
   // Handle drag stop with snap-to-grid - DocuSign style
   const handleDragStop = useCallback((e: any, data: any) => {
     if (!canModifyTag || !session) return;
@@ -151,6 +176,15 @@ const TagRenderer: React.FC<TagRendererProps> = ({
 
   // Professional styling based on tag state
   const professionalStyle = getTagStyle(tag.tagType, isSelected, hasContent, tag.colorCode);
+  
+  // Add special styling when someone else is moving the tag
+  const isBeingMovedByOther = isBeingMovedBy && isBeingMovedBy.userId !== currentUser?.userId;
+  const movementStyle = isBeingMovedByOther ? {
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    borderColor: '#22c55e',
+    borderStyle: 'dashed',
+    boxShadow: '0 0 0 2px rgba(34, 197, 94, 0.3), 0 4px 12px rgba(0, 0, 0, 0.2)'
+  } : {};
 
   return (
     <Rnd
@@ -162,9 +196,10 @@ const TagRenderer: React.FC<TagRendererProps> = ({
         x: displayCoords.x,
         y: displayCoords.y
       }}
+      onDrag={handleDrag}
       onDragStop={handleDragStop}
-      disableDragging={!canModifyTag}
-      enableResizing={canModifyTag && Boolean(TAG_TYPE_CONFIG[tag.tagType]?.allowResize)}
+      disableDragging={!canModifyTag || isBeingMovedByOther}
+      enableResizing={canModifyTag && Boolean(TAG_TYPE_CONFIG[tag.tagType]?.allowResize) && !isBeingMovedByOther}
       bounds="parent"
       onClick={(e: React.MouseEvent) => {
         e.stopPropagation();
@@ -175,6 +210,7 @@ const TagRenderer: React.FC<TagRendererProps> = ({
       className="professional-tag"
       style={{
         ...professionalStyle,
+        ...movementStyle,
         zIndex: isSelected ? 1000 : 100
       }}
     >
@@ -235,6 +271,31 @@ const TagRenderer: React.FC<TagRendererProps> = ({
           {tag.displayLabel || TAG_TYPE_CONFIG[tag.tagType]?.label || 'Field'}
         </div>
       )}
+
+      {/* Movement indicator overlay */}
+      {isBeingMovedByOther && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '-25px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: '#22c55e',
+            color: 'white',
+            padding: '2px 8px',
+            borderRadius: '12px',
+            fontSize: '10px',
+            fontWeight: '600',
+            whiteSpace: 'nowrap',
+            zIndex: 1002,
+            pointerEvents: 'none',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+            animation: 'pulse 1.5s ease-in-out infinite'
+          }}
+        >
+          {isBeingMovedBy.displayName} is moving...
+        </div>
+      )}
     </Rnd>
   );
 };
@@ -258,6 +319,8 @@ const TagLayer: React.FC<TagLayerProps> = ({
     updateTag,
     deleteTag
   } = useEditorStore();
+  
+  const { getMovementInfo } = useRealTimeMovement();
 
   // Filter tags for current page
   const pageTags = useMemo(() => {
@@ -305,18 +368,26 @@ const TagLayer: React.FC<TagLayerProps> = ({
       onClick={handleContainerClick}
       style={{ zIndex: 50 }}
     >
-      {pageTags.map((tag) => (
-        <TagRenderer
-          key={tag.id}
-          tag={tag}
-          isSelected={tag.id === selectedTag?.id}
-          canEdit={mode.canPlaceTags}
-          scaleFactor={scaleFactor}
-          onSelect={() => handleTagSelect(tag)}
-          onUpdate={(updates) => handleTagUpdate(tag.id, updates)}
-          onDelete={() => handleTagDelete(tag.id)}
-        />
-      ))}
+      {pageTags.map((tag) => {
+        const movementInfo = getMovementInfo(tag.id);
+        return (
+          <TagRenderer
+            key={tag.id}
+            tag={tag}
+            isSelected={tag.id === selectedTag?.id}
+            canEdit={mode.canPlaceTags}
+            scaleFactor={scaleFactor}
+            onSelect={() => handleTagSelect(tag)}
+            onUpdate={(updates) => handleTagUpdate(tag.id, updates)}
+            onDelete={() => handleTagDelete(tag.id)}
+            isBeingMovedBy={movementInfo ? {
+              userId: movementInfo.userId,
+              displayName: movementInfo.displayName,
+              userType: movementInfo.userType
+            } : undefined}
+          />
+        );
+      })}
     </div>
   );
 };

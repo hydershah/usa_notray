@@ -4,6 +4,7 @@ import { useEditorStore } from './useEditorStore';
 import { getWebSocketConfig } from '@/lib/websocket-config';
 import type { CollaborationUpdate, UserCursor } from '../../types/editor';
 import type { DocumentTag } from '../../types/editor';
+import { useRealTimeMovement } from './useRealTimeMovement';
 
 export interface WebSocketConnection {
   connectionState: ConnectionState;
@@ -20,6 +21,7 @@ export interface WebSocketConnection {
   // Collaboration actions
   tagPlaced: (tag: any) => void;
   tagUpdated: (tagId: string, updates: any) => void;
+  tagMoving: (tagId: string, updates: any) => void;
   tagDeleted: (tagId: string) => void;
   tagSelected: (tagId: string, userId: string) => void;
   cursorMoved: (x: number, y: number, page: number, documentId: string) => void;
@@ -62,6 +64,7 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
   }, [config.sessionId]);
   
   const { toast } = useToast();
+  const { addMovement, removeMovement } = useRealTimeMovement();
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -336,6 +339,51 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
                 id: message.payload.tagId,
                 updates: message.payload.updates,
                 updatedBy: message.payload.updatedBy ?? message.userId
+              });
+            }
+          }
+          break;
+
+        case 'tag_moving':
+          console.log('🔄 Tag moving in real-time by', message.payload.updatedByName || message.userId);
+          try {
+            const tagIdStr = message.payload?.tagId != null ? message.payload.tagId.toString() : undefined;
+            if (!tagIdStr) {
+              console.warn('⚠️ tag_moving missing tagId');
+              break;
+            }
+            
+            // Update tag position immediately for smooth real-time movement
+            // The payload structure is { tagId, updates } so we need to access updates directly
+            const updates = message.payload.updates || message.payload;
+            updateTag(tagIdStr, updates);
+            
+            // Track movement information for visual feedback
+            if (message.payload.updatedByName && message.payload.updatedBy !== userId) {
+              console.log(`👤 ${message.payload.updatedByName} (${message.payload.userType}) is moving tag ${tagIdStr}`);
+              
+              // Add movement tracking for visual feedback
+              addMovement(tagIdStr, {
+                userId: message.payload.updatedBy || message.userId,
+                displayName: message.payload.updatedByName,
+                userType: message.payload.userType || 'user',
+                timestamp: Date.now()
+              });
+            }
+          } catch (e) {
+            console.warn('⚠️ Failed to process tag_moving message:', e);
+          }
+          
+          // 🔧 SYNC TEXT INPUTS: If it's a text tag, also update text inputs state
+          if (message.payload.tagType === 'T' || message.payload.updates?.tagType === 'T') {
+            console.log('📝 Syncing text tag real-time movement to text inputs:', message.payload.tagId);
+            if (typeof window !== 'undefined' && (window as any).textInputSyncCallback) {
+              (window as any).textInputSyncCallback('tag_moving', {
+                id: message.payload.tagId,
+                updates: message.payload.updates,
+                updatedBy: message.payload.updatedBy ?? message.userId,
+                updatedByName: message.payload.updatedByName,
+                userType: message.payload.userType
               });
             }
           }
@@ -747,102 +795,155 @@ export const useWebSocket = (config: WebSocketConfig): WebSocketConnection => {
     setConnectionStatus(false);
   }, [setConnectionStatus]);
 
-  // Force reconnection
+  // Force reconnection with exponential backoff
   const reconnect = useCallback(() => {
     disconnect();
-    setTimeout(connect, 1000);
-  }, [disconnect, connect]);
+    const delay = Math.min(1000 * Math.pow(2, connectionState.reconnectAttempts), 30000);
+    console.log(`🔄 Reconnecting in ${delay}ms (attempt ${connectionState.reconnectAttempts + 1})`);
+    setTimeout(connect, delay);
+  }, [disconnect, connect, connectionState.reconnectAttempts]);
 
-  // Send collaboration events
+  // Send collaboration events with connection status check
   const collaborationActions = {
     tagPlaced: (tag: any) => {
-      sendMessage({
-        type: 'tag_placed',
-        payload: { tag }
-      });
+      if (connectionState.isConnected) {
+        sendMessage({
+          type: 'tag_placed',
+          payload: { tag }
+        });
+      } else {
+        console.warn('⚠️ Cannot send tag_placed: WebSocket not connected');
+      }
     },
 
     tagUpdated: (tagId: string, updates: any) => {
-      sendMessage({
-        type: 'tag_updated',
-        payload: { tagId, updates }
-      });
+      if (connectionState.isConnected) {
+        sendMessage({
+          type: 'tag_updated',
+          payload: { tagId, updates }
+        });
+      } else {
+        console.warn('⚠️ Cannot send tag_updated: WebSocket not connected');
+      }
+    },
+
+    tagMoving: (tagId: string, updates: any) => {
+      if (connectionState.isConnected) {
+        console.log('🚀 Sending tag_moving WebSocket message:', { tagId, updates });
+        sendMessage({
+          type: 'tag_moving',
+          payload: { tagId, updates }
+        });
+        console.log('✅ tag_moving message sent successfully');
+      } else {
+        console.warn('⚠️ Cannot send tag_moving: WebSocket not connected');
+      }
     },
 
     tagDeleted: (tagId: string) => {
-      sendMessage({
-        type: 'tag_deleted',
-        payload: { tagId }
-      });
+      if (connectionState.isConnected) {
+        sendMessage({
+          type: 'tag_deleted',
+          payload: { tagId }
+        });
+      } else {
+        console.warn('⚠️ Cannot send tag_deleted: WebSocket not connected');
+      }
     },
 
     tagSelected: (tagId: string, userId: string) => {
-      sendMessage({
-        type: 'tag_selected',
-        payload: { tagId, userId }
-      });
+      if (connectionState.isConnected) {
+        sendMessage({
+          type: 'tag_selected',
+          payload: { tagId, userId }
+        });
+      } else {
+        console.warn('⚠️ Cannot send tag_selected: WebSocket not connected');
+      }
     },
 
     tagContentUpdated: (tagId: string, content: any, contentType: string, isCompleted: boolean, source?: string) => {
-      sendMessage({
-        type: 'tag_content_updated',
-        payload: { 
-          tagId, 
-          content, 
-          contentType, 
-          isCompleted,
-          source: source || 'manual'
-        }
-      });
+      if (connectionState.isConnected) {
+        sendMessage({
+          type: 'tag_content_updated',
+          payload: { 
+            tagId, 
+            content, 
+            contentType, 
+            isCompleted,
+            source: source || 'manual'
+          }
+        });
+      } else {
+        console.warn('⚠️ Cannot send tag_content_updated: WebSocket not connected');
+      }
     },
 
     cursorMoved: (x: number, y: number, pageNumber: number, documentId: string) => {
-      sendMessage({
-        type: 'cursor_moved',
-        payload: { x, y, pageNumber, documentId }
-      });
+      if (connectionState.isConnected) {
+        sendMessage({
+          type: 'cursor_moved',
+          payload: { x, y, pageNumber, documentId }
+        });
+      }
     },
 
     pageChanged: (pageNumber: number) => {
-      sendMessage({
-        type: 'page_changed',
-        payload: { pageNumber }
-      });
+      if (connectionState.isConnected) {
+        sendMessage({
+          type: 'page_changed',
+          payload: { pageNumber }
+        });
+      }
     },
 
     documentSwitched: (documentId: string) => {
-      sendMessage({
-        type: 'document_switched',
-        payload: { documentId }
-      });
+      if (connectionState.isConnected) {
+        sendMessage({
+          type: 'document_switched',
+          payload: { documentId }
+        });
+      }
     },
 
     documentChanged: (documentId: string) => {
-      sendMessage({
-        type: 'document_changed',
-        payload: { documentId }
-      });
+      if (connectionState.isConnected) {
+        sendMessage({
+          type: 'document_changed',
+          payload: { documentId }
+        });
+      }
     },
 
     contentReplaced: () => {
-      sendMessage({
-        type: 'content_replaced',
-        payload: {}
-      });
+      if (connectionState.isConnected) {
+        sendMessage({
+          type: 'content_replaced',
+          payload: {}
+        });
+      } else {
+        console.warn('⚠️ Cannot send content_replaced: WebSocket not connected');
+      }
     },
 
     syncUsers: (pageNumber: number, documentId?: string) => {
-      sendMessage({
-        type: 'sync_users',
-        payload: { pageNumber, documentId }
-      });
+      if (connectionState.isConnected) {
+        sendMessage({
+          type: 'sync_users',
+          payload: { pageNumber, documentId }
+        });
+      } else {
+        console.warn('⚠️ Cannot send sync_users: WebSocket not connected');
+      }
     },
 
     userTyping: (fieldId: string) => {
-      sendMessage({
-        type: 'user_typing',
-        payload: { fieldId }
-      });
+      if (connectionState.isConnected) {
+        sendMessage({
+          type: 'user_typing',
+          payload: { fieldId }
+        });
+      }
     }
   };
 
