@@ -51,18 +51,61 @@ router.post('/notary/:jobId/video-session',
       const { jobId } = req.params;
       const { participants } = req.body;
 
-      // Ensure the requesting user (admin/notary) is included as a participant (as notary/host)
+      // CRITICAL FIX: Get all participants for this job from database, not just from request
+      const { storage } = await import('../storage');
+      const job = await storage.getJob(parseInt(jobId));
+      
+      if (!job) {
+        return res.status(404).json({ 
+          message: 'Job not found',
+          error: 'JOB_NOT_FOUND'
+        });
+      }
+
+      // Get all job signers and notary from the job data
+      const finalParticipants = [];
+      
+      // Add the notary
       const user = req.user as AuthUser | undefined;
       const isAdminOrNotary = !!user && (user.role === 'admin' || user.role === 'notary' || (Array.isArray(user.privileges) && user.privileges.includes('admin')));
-      const existingIds = Array.isArray(participants) ? new Set(participants.map((p: any) => p.id?.toString())) : new Set<string>();
-      const finalParticipants = Array.isArray(participants) ? [...participants] : [];
-      if (isAdminOrNotary && user && !existingIds.has(user.id.toString())) {
+      if (isAdminOrNotary && user) {
         finalParticipants.push({
           id: user.id.toString(),
           name: (user as any).firstName && (user as any).lastName ? `${(user as any).firstName} ${(user as any).lastName}` : (user as any).username || user.email || 'Host',
           role: 'notary' as const,
           email: user.email
         });
+      }
+
+      // Add all signers from the job
+      if (job.signers && Array.isArray(job.signers)) {
+        for (const signer of job.signers) {
+          // Skip if already added (in case notary is also a signer)
+          if (!finalParticipants.find(p => p.id === signer.userId?.toString())) {
+            finalParticipants.push({
+              id: signer.userId?.toString() || signer.email || 'unknown',
+              name: signer.name || signer.email || 'Unknown Signer',
+              role: 'signer' as const,
+              email: signer.email || ''
+            });
+          }
+        }
+      }
+
+      console.log(`🎥 Creating video session with ${finalParticipants.length} participants:`, 
+        finalParticipants.map(p => `${p.name} (${p.role})`));
+      
+      // Also include participants from request body as fallback
+      const requestParticipants = Array.isArray(participants) ? participants : [];
+      for (const reqP of requestParticipants) {
+        if (!finalParticipants.find(p => p.id === reqP.id?.toString())) {
+          finalParticipants.push({
+            id: reqP.id?.toString(),
+            name: reqP.name,
+            role: reqP.role || 'signer',
+            email: reqP.email
+          });
+        }
       }
 
       // Check if database schema exists
