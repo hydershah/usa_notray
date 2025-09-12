@@ -157,25 +157,44 @@ const EditorPage: React.FC<EditorPageProps> = () => {
               if (!sessionResult) {
                 console.log(`🔍 Looking for best session for ${user?.role} (found ${existingSessions.sessions?.length || 0} sessions)`);
                 
-                // Priority 1: Active notary/live session
-                const liveSession = existingSessions.sessions?.find((s: any) => 
-                  (s.sessionType === 'notary' || s.isLiveSession) && s.status === 'active'
+                // Priority 1: FOR SIGNING MODE - Use the tagging session (where notary is) for tag sync
+                const taggingSession = existingSessions.sessions?.find((s: any) => 
+                  s.sessionType === 'tagging' && (s.status === 'completed' || s.status === 'active')
                 );
                 
-                if (liveSession) {
-                  console.log(`✅ Found active live session: ${liveSession.sessionId || liveSession.id} (ID: ${liveSession.id})`);
-                  // CRITICAL FIX: Ensure session has proper sessionId field for WebSocket
+                if (taggingSession) {
+                  console.log(`✅ Found tagging session for tag sync: ${taggingSession.sessionId || taggingSession.id} (type: ${taggingSession.sessionType})`);
+                  // CRITICAL FIX: Signer connects to tagging session for real-time tag sync with notary
                   sessionResult = {
                     success: true,
                     session: {
-                      ...liveSession,
-                      sessionId: liveSession.sessionId || liveSession.id // Ensure sessionId field exists
+                      ...taggingSession,
+                      sessionId: taggingSession.sessionId || taggingSession.id // Ensure sessionId field exists
                     },
-                    message: 'Using existing live session'
+                    message: 'Using tagging session for tag sync'
                   };
                 }
                 
-                // Priority 2: Any session with tags (including transitioned sessions)
+                // Priority 2: Fall back to active notary/live session if no tagging session
+                if (!sessionResult) {
+                  const liveSession = existingSessions.sessions?.find((s: any) => 
+                    (s.sessionType === 'notary' || s.isLiveSession) && s.status === 'active'
+                  );
+                  
+                  if (liveSession) {
+                    console.log(`✅ Fallback to live session: ${liveSession.sessionId || liveSession.id} (ID: ${liveSession.id})`);
+                    sessionResult = {
+                      success: true,
+                      session: {
+                        ...liveSession,
+                        sessionId: liveSession.sessionId || liveSession.id
+                      },
+                      message: 'Using live session as fallback'
+                    };
+                  }
+                }
+                
+                // Priority 3: Any session with tags (including transitioned sessions)
                 if (!sessionResult) {
                   // Look for ANY session that likely has tags
                   const sessionWithTags = existingSessions.sessions?.find((s: any) => 
