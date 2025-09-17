@@ -29,7 +29,7 @@ import {
   User
 } from 'lucide-react';
 import { type Job } from '@shared/types';
-import { getStatusColor } from '@/lib/utils';
+import { getStatusColor, isMobileDevice } from '@/lib/utils';
 
 interface ManagerStats {
   totalJobs: number;
@@ -44,6 +44,7 @@ interface ManagerStats {
 
 export function TitleCompanyDashboard() {
   const { user } = useAuth();
+  const [signingJobs, setSigningJobs] = useState<any[]>([]);
   
   const { data: stats, isLoading: statsLoading, error: statsError } = useQuery<ManagerStats>({
     queryKey: ['/api/dashboard/stats'],
@@ -65,6 +66,30 @@ export function TitleCompanyDashboard() {
   });
 
   const getJobStatus = (job: any): string => job?.jobStatus || job?.job_status || job?.status || 'open';
+
+  // Fetch signing assignments for dual role users
+  useEffect(() => {
+    const fetchSigningJobs = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        
+        const response = await fetch('/api/jobs/signing-assignments', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          setSigningJobs(data.jobs || []);
+        }
+      } catch (error) {
+        console.warn('Error fetching signing assignments:', error);
+        setSigningJobs([]);
+      }
+    };
+
+    fetchSigningJobs();
+  }, []);
 
   // Safely extract jobs array from response and ensure it's always an array
   const recentJobs = Array.isArray(jobsResponse?.jobs) ? jobsResponse.jobs : [];
@@ -261,6 +286,94 @@ export function TitleCompanyDashboard() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Signing Jobs (Dual Role) */}
+        {signingJobs.length > 0 && (
+          <Card className="border-0 shadow-sm border-l-4 border-l-red-500">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <User className="h-4 w-4 text-red-600" />
+                  Signing Assignments
+                  <Badge className="bg-red-100 text-red-800 text-xs">
+                    Acting as Signer
+                  </Badge>
+                </CardTitle>
+                <div className="text-xs text-gray-500">
+                  {signingJobs.length} job{signingJobs.length !== 1 ? 's' : ''}
+                </div>
+              </div>
+              <p className="text-sm text-gray-600">
+                Jobs where you are invited as a signer (not title company role)
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {signingJobs.slice(0, 3).map((job) => (
+                  <div key={job.id} className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100">
+                    <div className="flex-1">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                            Order #{job.id}
+                            <Badge className="bg-red-100 text-red-800 text-xs">
+                              Signing Job
+                            </Badge>
+                          </h4>
+                          <p className="text-sm text-gray-600">{job.titleCompany}</p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Role: {job.userPrimaryRole} → {job.jobSpecificRole}
+                          </p>
+                          {job.propertyAddressOne && (
+                            <p className="text-xs text-gray-500">
+                              {job.propertyAddressOne}
+                              {job.propertyCity && `, ${job.propertyCity}`}
+                              {job.propertyState && `, ${job.propertyState}`}
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-right flex flex-col gap-2">
+                          <Badge className={getStatusColor(getJobStatus(job))}>
+                            {getJobStatus(job)}
+                          </Badge>
+                          {job.requiresIdVerification && !job.idVerificationCompleted ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              asChild
+                              className="text-xs border-yellow-500 text-yellow-700 hover:bg-yellow-50"
+                            >
+                              <Link to={`/id-verification?jobId=${job.id}`}>
+                                Complete Verification
+                              </Link>
+                            </Button>
+                          ) : job.canJoinSigning ? (
+                            <Button
+                              size="sm"
+                              className="text-xs bg-green-600 hover:bg-green-700 text-white"
+                              onClick={() => {
+                                const signingUrl = `/editor/${job.id}?mode=signing`;
+                                if (isMobileDevice()) {
+                                  window.location.href = signingUrl;
+                                } else {
+                                  window.open(signingUrl, '_blank');
+                                }
+                              }}
+                            >
+                              Join Signing
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-gray-500">Waiting for session</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Title Company Information */}
         <Alert className="border-blue-200 bg-blue-50">

@@ -820,7 +820,7 @@ export default function JobDetailsPage() {
 
       {/* Job Editor Modal */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent className="max-w-6xl max-h-[90vh]">
+        <DialogContent className="!w-[98vw] sm:!w-[95vw] !max-w-7xl !h-[98vh] sm:!h-[95vh] !max-h-[98vh] sm:!max-h-[95vh] !p-0 !overflow-hidden !flex !flex-col sm:rounded-lg border border-gray-200">
           <JobEditor 
             jobId={job.id}
             onClose={() => setIsEditModalOpen(false)}

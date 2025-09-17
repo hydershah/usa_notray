@@ -91,15 +91,27 @@ export const DocumentSelector: React.FC<DocumentSelectorProps> = ({
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
-            className="w-full justify-between h-auto py-3 px-4"
+            className={cn(
+              "w-full justify-between h-auto px-4",
+              className?.includes('compact-height') ? "py-1.5" : "py-3"
+            )}
           >
-            <div className="flex items-center gap-3 flex-1 min-w-0">
-              <FileText className="h-5 w-5 text-blue-600 flex-shrink-0" />
+            <div className={cn(
+              "flex items-center flex-1 min-w-0",
+              className?.includes('compact-height') ? "gap-2" : "gap-3"
+            )}>
+              <FileText className={cn(
+                "text-blue-600 flex-shrink-0",
+                className?.includes('compact-height') ? "h-4 w-4" : "h-5 w-5"
+              )} />
               <div className="flex-1 min-w-0 text-left">
-                <p className="text-sm font-medium text-gray-900 truncate">
+                <p className={cn(
+                  "font-medium text-gray-900 truncate",
+                  className?.includes('compact-height') ? "text-xs" : "text-sm"
+                )}>
                   {currentDocument ? currentDocument.fileName : 'Select Document'}
                 </p>
-                {currentDocument && (
+                {currentDocument && !className?.includes('compact-height') && (
                   <p className="text-xs text-gray-500">
                     {documentProgress[currentDocument.id]?.total > 0 
                       ? `${documentProgress[currentDocument.id].completed}/${documentProgress[currentDocument.id].total} tags completed`
@@ -111,13 +123,19 @@ export const DocumentSelector: React.FC<DocumentSelectorProps> = ({
               {currentDocument && documentProgress[currentDocument.id]?.total > 0 && (
                 <Badge 
                   variant={getProgressBadgeVariant(documentProgress[currentDocument.id].percentage)} 
-                  className="text-xs flex-shrink-0"
+                  className={cn(
+                    "flex-shrink-0",
+                    className?.includes('compact-height') ? "text-xs px-1.5 py-0.5" : "text-xs"
+                  )}
                 >
                   {documentProgress[currentDocument.id].percentage}%
                 </Badge>
               )}
             </div>
-            <ChevronDown className="h-4 w-4 flex-shrink-0 ml-2" />
+            <ChevronDown className={cn(
+              "flex-shrink-0 ml-2",
+              className?.includes('compact-height') ? "h-3 w-3" : "h-4 w-4"
+            )} />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-full min-w-[400px]" align="start">

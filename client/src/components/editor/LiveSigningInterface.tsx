@@ -724,8 +724,8 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
                 button.classList.add('opacity-75');
                 handleSessionAction('start');
               }} 
-              size="lg"
-              className="text-white disabled:bg-gray-400 disabled:cursor-not-allowed px-6 py-3 text-base font-semibold transition-all duration-200" style={{backgroundColor: '#00335b'}} onMouseEnter={(e) => !e.target.disabled && (e.target.style.backgroundColor = '#002347')} onMouseLeave={(e) => !e.target.disabled && (e.target.style.backgroundColor = '#00335b')}
+              size="sm"
+              className="text-white disabled:bg-gray-400 disabled:cursor-not-allowed px-4 py-2 text-sm font-medium transition-all duration-200" style={{backgroundColor: '#00335b'}} onMouseEnter={(e) => !(e.target as HTMLButtonElement).disabled && ((e.target as HTMLButtonElement).style.backgroundColor = '#002347')} onMouseLeave={(e) => !(e.target as HTMLButtonElement).disabled && ((e.target as HTMLButtonElement).style.backgroundColor = '#00335b')}
               disabled={buttonDisabled}
               title={
                 !isWebSocketReady ? 'Waiting for connection...' : 
@@ -734,23 +734,23 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
               }
             >
               {isLoading || sessionStarting ? (
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-5 w-5 animate-spin" />
+                <div className="flex items-center gap-1.5">
+                  <Loader2 className="h-4 w-4 animate-spin" />
                   <span>Starting Session...</span>
                 </div>
               ) : wsConnectionState.isConnecting ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-yellow-400 rounded-full animate-pulse"></div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 bg-yellow-400 rounded-full animate-pulse"></div>
                   <span>Connecting...</span>
                 </div>
               ) : !isWebSocketReady ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-red-400 rounded-full"></div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 bg-red-400 rounded-full"></div>
                   <span>Not Ready</span>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <Play className="h-5 w-5" />
+                <div className="flex items-center gap-1.5">
+                  <Play className="h-4 w-4" />
                   <span>Start Session</span>
                 </div>
               )}
@@ -766,35 +766,28 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
         )}
         
         {liveSession.state === 'active' && (
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 bg-green-100 px-4 py-2 rounded-lg">
-              <CheckCircle className="h-5 w-5 text-blue-600" />
-              <span className="text-green-800 font-medium">Session Active</span>
-            </div>
-            
-            {/* Auto-Fill button removed */}
-            
+          <div className="flex items-center gap-2">
             <Button 
               onClick={() => handleSessionAction('pause')} 
-              size="lg"
+              size="sm"
               variant="outline"
-              className="px-5 py-3 text-base font-medium"
+              className="px-3 py-1.5 text-sm font-medium"
               disabled={buttonDisabled}
             >
-              <div className="flex items-center gap-2">
-                {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Pause className="h-5 w-5" />}
+              <div className="flex items-center gap-1.5">
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pause className="h-4 w-4" />}
                 <span>Pause</span>
               </div>
             </Button>
             
             <Button 
               onClick={() => handleSessionAction('complete')} 
-              size="lg"
-              className="bg-blue-600 hover:bg-blue-700 px-5 py-3 text-base font-semibold"
+              size="sm"
+              className="bg-blue-600 hover:bg-blue-700 px-3 py-1.5 text-sm font-medium"
               disabled={buttonDisabled}
             >
-              <div className="flex items-center gap-2">
-                {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle className="h-5 w-5" />}
+              <div className="flex items-center gap-1.5">
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
                 <span>Complete Session</span>
               </div>
             </Button>
@@ -849,29 +842,6 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
               <span className="font-medium">Live Signing</span>
             </div>
             
-            <Badge variant="secondary" className="text-xs">
-              {liveSession.state}
-            </Badge>
-            
-            {/* WebSocket Connection Status */}
-            <Badge 
-              variant={webSocket.connectionState.isConnected ? 'default' : 'destructive'}
-              className="text-xs"
-            >
-              {webSocket.connectionState.isConnected 
-                ? '🟢 Synced' 
-                : webSocket.connectionState.isConnecting
-                ? '🟡 Connecting...'
-                : '🔴 No Sync'
-              }
-            </Badge>
-            
-            {isSigner && (
-              <Badge variant={liveSession.activeUserId === parseInt(currentUserId) ? "default" : "outline"} className="text-xs">
-                {liveSession.activeUserId === parseInt(currentUserId) ? 'Active' : 'Waiting'}
-              </Badge>
-            )}
-            
             {liveSession.state === 'active' && (
               <div className="flex items-center gap-1 text-sm text-gray-600">
                 <Clock className="h-3 w-3" />
@@ -890,13 +860,8 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
                     useEditorStore.getState().setCurrentDocument(doc);
                   }}
                   tags={useEditorStore.getState().tags}
+                  className="compact-height"
                 />
-              </div>
-              
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <span>
-                  {useEditorStore.getState().tags.length} tags • {useEditorStore.getState().tags.filter(t => t.isCompleted).length} completed
-                </span>
               </div>
             </div>
           </div>
@@ -907,9 +872,9 @@ export const LiveSigningInterface: React.FC<LiveSigningInterfaceProps> = ({
               onClick={() => setLocation('/dashboard')}
               variant="outline"
               size="sm"
-              className="flex items-center gap-2"
+              className="flex items-center gap-1 px-3 py-1.5 text-sm"
             >
-              <Home className="h-4 w-4" />
+              <Home className="h-3 w-3" />
               <span className="hidden sm:inline">Dashboard</span>
             </Button>
             

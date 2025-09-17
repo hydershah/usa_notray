@@ -1,5 +1,5 @@
 import { db } from "../../db";
-import { documentTags, editorSessions, users } from "../../../shared/schema";
+import { documentTags, editorSessions, users, jobParticipants } from "../../../shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
@@ -97,10 +97,26 @@ export class TagService {
         console.log(`🔄 Reactivating completed tagging session: ${request.sessionId} (background)`);
       }
       
+      // Check if user has a dual role for this job
+      const dualRoleResult = await db
+        .select({ jobSpecificRole: jobParticipants.jobSpecificRole })
+        .from(jobParticipants)
+        .where(and(
+          eq(jobParticipants.userId, parseInt(request.assignedUserId)),
+          eq(jobParticipants.jobId, session.jobId)
+        ))
+        .limit(1);
+
+      const dualRoleInfo = dualRoleResult[0];
+      console.log(`🎨 Tag placement: User ${assignedUser.id} (${assignedUser.role}) ${dualRoleInfo ? `has dual role: ${dualRoleInfo.jobSpecificRole}` : 'no dual role'}`);
+
       // Generate display label and color
       const tagTypeInfo = this.getTagTypeInfo(request.tagType);
       const displayLabel = `${tagTypeInfo.icon} ${tagTypeInfo.label} - ${assignedUser.firstName} ${assignedUser.lastName}`;
-      const colorCode = this.getUserColor(assignedUser);
+      const colorCode = this.getUserColor({ 
+        ...assignedUser, 
+        jobSpecificRole: dualRoleInfo?.jobSpecificRole 
+      });
       
       // Create tag data with correct schema fields
       const tagData = {
@@ -184,7 +200,7 @@ export class TagService {
 
       console.log(`📋 Getting tags for session ${sessionId} (ID: ${session.id}, type: ${session.sessionType}, job: ${session.jobId})`);
 
-      // Optimized query with JOIN to get user information in one query
+      // Optimized query with JOIN to get user information and dual role data in one query
       const tags = await db
         .select({
           id: documentTags.id,
@@ -206,10 +222,16 @@ export class TagService {
           // User information
           firstName: users.firstName,
           lastName: users.lastName,
-          userRole: users.role
+          userRole: users.role,
+          // Dual role information
+          jobSpecificRole: jobParticipants.jobSpecificRole
         })
         .from(documentTags)
         .leftJoin(users, eq(documentTags.assignedUserId, users.id))
+        .leftJoin(jobParticipants, and(
+          eq(jobParticipants.userId, users.id),
+          eq(jobParticipants.jobId, session.jobId)
+        ))
         .where(eq(documentTags.sessionId, session.id));
 
       // Convert to DocumentTagData format
@@ -220,7 +242,11 @@ export class TagService {
         if (tag.firstName && tag.lastName) {
           const tagTypeInfo = this.getTagTypeInfo(tag.tagType);
           displayLabel = `${tagTypeInfo.icon} ${tagTypeInfo.label} - ${tag.firstName} ${tag.lastName}`;
-          colorCode = this.getUserColor({ role: tag.userRole, id: tag.assignedUserId });
+          colorCode = this.getUserColor({ 
+            role: tag.userRole, 
+            id: tag.assignedUserId, 
+            jobSpecificRole: tag.jobSpecificRole 
+          });
         }
         
         return this.convertToDocumentTagData(tag, displayLabel, colorCode);
@@ -341,10 +367,16 @@ export class TagService {
               // User information
               firstName: users.firstName,
               lastName: users.lastName,
-              userRole: users.role
+              userRole: users.role,
+              // Dual role information
+              jobSpecificRole: jobParticipants.jobSpecificRole
             })
             .from(documentTags)
             .leftJoin(users, eq(documentTags.assignedUserId, users.id))
+            .leftJoin(jobParticipants, and(
+              eq(jobParticipants.userId, users.id),
+              eq(jobParticipants.jobId, bestSession.jobId)
+            ))
             .where(eq(documentTags.sessionId, bestSession.id));
           
           if (betterTags.length > tags.length) {
@@ -362,7 +394,11 @@ export class TagService {
         if (tag.firstName && tag.lastName) {
           const tagTypeInfo = this.getTagTypeInfo(tag.tagType);
           displayLabel = `${tagTypeInfo.icon} ${tagTypeInfo.label} - ${tag.firstName} ${tag.lastName}`;
-          colorCode = this.getUserColor({ role: tag.userRole, id: tag.assignedUserId });
+          colorCode = this.getUserColor({ 
+            role: tag.userRole, 
+            id: tag.assignedUserId, 
+            jobSpecificRole: tag.jobSpecificRole 
+          });
         }
         
         return this.convertToDocumentTagData(tag, displayLabel, colorCode);
@@ -393,7 +429,7 @@ export class TagService {
         return [];
       }
 
-      // Optimized query with JOIN to get user information in one query, filtered by document
+      // Optimized query with JOIN to get user information and dual role data in one query, filtered by document
       const tags = await db
         .select({
           id: documentTags.id,
@@ -415,10 +451,16 @@ export class TagService {
           // User information
           firstName: users.firstName,
           lastName: users.lastName,
-          userRole: users.role
+          userRole: users.role,
+          // Dual role information
+          jobSpecificRole: jobParticipants.jobSpecificRole
         })
         .from(documentTags)
         .leftJoin(users, eq(documentTags.assignedUserId, users.id))
+        .leftJoin(jobParticipants, and(
+          eq(jobParticipants.userId, users.id),
+          eq(jobParticipants.jobId, session.jobId)
+        ))
         .where(and(
           eq(documentTags.sessionId, session.id),
           eq(documentTags.documentId, parseInt(documentId))
@@ -432,7 +474,11 @@ export class TagService {
         if (tag.firstName && tag.lastName) {
           const tagTypeInfo = this.getTagTypeInfo(tag.tagType);
           displayLabel = `${tagTypeInfo.icon} ${tagTypeInfo.label} - ${tag.firstName} ${tag.lastName}`;
-          colorCode = this.getUserColor({ role: tag.userRole, id: tag.assignedUserId });
+          colorCode = this.getUserColor({ 
+            role: tag.userRole, 
+            id: tag.assignedUserId, 
+            jobSpecificRole: tag.jobSpecificRole 
+          });
         }
         
         return this.convertToDocumentTagData(tag, displayLabel, colorCode);
@@ -948,7 +994,8 @@ export class TagService {
     const baseColor = USER_COLORS[user.role as keyof typeof USER_COLORS] || USER_COLORS.signer;
     
     // For signers, vary the color based on user ID to give each signer a different color
-    if (user.role === 'signer') {
+    // This also includes dual role participants (notary/title_company acting as signers)
+    if (user.role === 'signer' || user.userType === 'signer' || user.jobSpecificRole === 'signer') {
       const signerColors = [
         '#4ECDC4', // Turquoise
         '#45B7D1', // Sky Blue
@@ -957,9 +1004,26 @@ export class TagService {
         '#DDA0DD', // Plum
         '#98D8C8', // Mint
         '#F7DC6F', // Light Gold
-        '#BB8FCE'  // Lavender
+        '#BB8FCE', // Lavender
+        '#FF8A65'  // Coral Orange
       ];
       return signerColors[(user.id - 1) % signerColors.length];
+    }
+    
+    // For witnesses, also give them unique colors  
+    if (user.role === 'witness' || user.userType === 'witness' || user.jobSpecificRole === 'witness') {
+      const witnessColors = [
+        '#3b82f6', // Blue
+        '#8b5cf6', // Purple
+        '#f59e0b', // Orange
+        '#10b981', // Emerald
+        '#ef4444', // Red
+        '#6366f1', // Indigo
+        '#ec4899', // Pink
+        '#84cc16', // Lime
+        '#06b6d4'  // Cyan
+      ];
+      return witnessColors[(user.id - 1) % witnessColors.length];
     }
     
     return baseColor;

@@ -1,8 +1,7 @@
 import { db } from "../../db";
 import { editorSessions, jobs, users, jobDocuments } from "../../../shared/schema";
-import { eq, and, desc, asc } from "drizzle-orm";
+import { eq, and, desc, asc, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { sql } from "drizzle-orm";
 
 
 export interface CreateSessionRequest {
@@ -288,6 +287,8 @@ export class SessionService {
       }
       
       // Add signers from signers table
+      let signerIndex = 0; // Track signer position for color assignment
+      
       try {
         const { signers } = await import("../../../shared/schema");
         const jobSigners = await db
@@ -297,7 +298,7 @@ export class SessionService {
         
         console.log(`📝 Found ${jobSigners.length} signers for job ${jobId}`);
         
-        for (const [index, signer] of jobSigners.entries()) {
+        for (const signer of jobSigners) {
           // Find the actual user ID by email
           let actualUserId = null;
           const [signerUser] = await db
@@ -314,6 +315,7 @@ export class SessionService {
             actualUserId = signer.id.toString(); // Fallback to signer ID
           }
           
+          signerIndex++;
           participants.push({
             id: `participant_signer_${signer.id}`,
             sessionId: `session_${jobId}`,
@@ -325,12 +327,70 @@ export class SessionService {
             lastActivityAt: new Date(),
             displayName: signer.signerName,
             email: signer.signerEmail,
-            colorCode: this.getSignerColor(index + 1)
+            colorCode: this.getSignerColor(signerIndex)
           });
-          console.log(`✅ Added real signer: ${signer.signerName} with user ID ${actualUserId}`);
+          console.log(`✅ Added real signer: ${signer.signerName} with user ID ${actualUserId} (color ${signerIndex})`);
         }
       } catch (error) {
         console.error('Failed to fetch signers from database:', error);
+      }
+      
+      // Add dual role participants (notary/title_company acting as signers)
+      try {
+        const { jobParticipants } = await import("../../../shared/schema");
+        const dualRoleParticipants = await db
+          .select()
+          .from(jobParticipants)
+          .leftJoin(users, eq(jobParticipants.userId, users.id))
+          .where(and(
+            eq(jobParticipants.jobId, jobId),
+            or(
+              eq(jobParticipants.jobSpecificRole, 'signer'),
+              eq(jobParticipants.jobSpecificRole, 'witness')
+            )
+          ));
+        
+        console.log(`🎭 Found ${dualRoleParticipants.length} dual role participants for job ${jobId}`);
+        
+        for (const participant of dualRoleParticipants) {
+          const user = participant.users;
+          const jobParticipant = participant.job_participants;
+          
+          if (!user || !jobParticipant) continue;
+          
+          // Check if this user is already added as notary - if so, skip the notary entry
+          // and replace it with their dual role
+          const existingNotaryIndex = participants.findIndex(p => 
+            p.userId === user.id.toString() && p.userType === 'notary'
+          );
+          
+          if (existingNotaryIndex !== -1) {
+            // Remove the notary entry, they'll be added as signer instead
+            participants.splice(existingNotaryIndex, 1);
+            console.log(`🔄 Removed notary entry for ${user.firstName} ${user.lastName} (acting as ${jobParticipant.jobSpecificRole})`);
+          }
+          
+          signerIndex++;
+          const userType = jobParticipant.jobSpecificRole as 'signer' | 'witness';
+          const displayName = `${user.firstName} ${user.lastName} (${user.role === 'notary' ? 'Notary → ' : 'Title → '}${userType.charAt(0).toUpperCase() + userType.slice(1)})`;
+          
+          participants.push({
+            id: `participant_dual_${jobParticipant.id}`,
+            sessionId: `session_${jobId}`,
+            userId: user.id.toString(),
+            userType: userType,
+            status: 'invited',
+            currentPage: 1,
+            joinedAt: undefined,
+            lastActivityAt: new Date(),
+            displayName: displayName,
+            email: user.email,
+            colorCode: this.getSignerColor(signerIndex) // Give them unique signer color
+          });
+          console.log(`✅ Added dual role participant: ${displayName} with signer color ${signerIndex} (${this.getSignerColor(signerIndex)})`);
+        }
+      } catch (error) {
+        console.error('Failed to fetch dual role participants from database:', error);
       }
       
       // Log final participant count
@@ -449,12 +509,13 @@ export class SessionService {
     const colors = [
       '#4ECDC4', // Turquoise
       '#45B7D1', // Sky Blue
-      '#3b82f6', // Blue
+      '#96CEB4', // Sage Green
       '#FFEAA7', // Soft Yellow
       '#DDA0DD', // Plum
       '#98D8C8', // Mint
       '#F7DC6F', // Light Gold
-      '#BB8FCE'  // Lavender
+      '#BB8FCE', // Lavender
+      '#FF8A65'  // Coral Orange
     ];
     
     return colors[(signerNumber - 1) % colors.length];

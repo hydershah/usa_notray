@@ -42,7 +42,7 @@ import {
 import { JobDetailsModal } from './job-details-modal';
 import { JobEditor } from './JobEditor';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { getStatusColor, formatDate, formatDateTime } from '@/lib/utils';
+import { getStatusColor, formatDate, formatDateTime, isMobileDevice } from '@/lib/utils';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { 
@@ -75,7 +75,8 @@ import {
   Zap,
   Target,
   Settings,
-  Grid3X3
+  Grid3X3,
+  Shield
 } from 'lucide-react';
 import { type Job } from '@shared/schema';
 import { useLocation } from 'wouter';
@@ -123,6 +124,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
   const [isBulkActionOpen, setIsBulkActionOpen] = useState(false);
   const [bulkAction, setBulkAction] = useState('');
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
+  const [signingJobs, setSigningJobs] = useState<any[]>([]);
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -131,6 +133,30 @@ export function JobTable({ onCreateJob }: JobTableProps) {
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm]);
+
+  // Fetch signing assignments for dual role users
+  useEffect(() => {
+    const fetchSigningJobs = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        
+        const response = await fetch('/api/jobs/signing-assignments', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          setSigningJobs(data.jobs || []);
+        }
+      } catch (error) {
+        console.warn('Error fetching signing assignments:', error);
+        setSigningJobs([]);
+      }
+    };
+
+    fetchSigningJobs();
+  }, []);
 
   // Helpers to read fields from either camelCase (drizzle selects) or snake_case (raw SQL)
   const getValue = <T,>(obj: any, keys: string[], fallback?: T): T | undefined => {
@@ -165,7 +191,49 @@ export function JobTable({ onCreateJob }: JobTableProps) {
   });
   
   // Extract jobs array from pagination response, with fallback to empty array
-  const jobs = jobsResponse?.jobs || [];
+  const regularJobs = jobsResponse?.jobs || [];
+  
+  // Merge regular jobs with signing jobs (dual role) 
+  const jobs = useMemo(() => {
+    const mergedJobs = [...regularJobs];
+    
+    // Add signing jobs with special markers
+    signingJobs.forEach(signingJob => {
+      // Check if this signing job already exists in regular jobs to avoid duplicates
+      const existsInRegular = regularJobs.some(job => job.id === signingJob.id);
+      
+      if (!existsInRegular) {
+        // Transform signing job to match Job interface and add signing markers
+        const transformedJob = {
+          ...signingJob,
+          // Add special properties to identify as signing job
+          isSigningJob: true,
+          userPrimaryRole: signingJob.userPrimaryRole,
+          jobSpecificRole: signingJob.jobSpecificRole,
+          canJoinSigning: signingJob.canJoinSigning,
+          requiresIdVerification: signingJob.requiresIdVerification,
+          idVerificationCompleted: signingJob.idVerificationCompleted
+        };
+        mergedJobs.push(transformedJob);
+      } else {
+        // If job exists in regular jobs, mark it as dual role
+        const existingJobIndex = mergedJobs.findIndex(job => job.id === signingJob.id);
+        if (existingJobIndex !== -1) {
+          mergedJobs[existingJobIndex] = {
+            ...mergedJobs[existingJobIndex],
+            isSigningJob: true,
+            userPrimaryRole: signingJob.userPrimaryRole,
+            jobSpecificRole: signingJob.jobSpecificRole,
+            canJoinSigning: signingJob.canJoinSigning,
+            requiresIdVerification: signingJob.requiresIdVerification,
+            idVerificationCompleted: signingJob.idVerificationCompleted
+          };
+        }
+      }
+    });
+    
+    return mergedJobs;
+  }, [regularJobs, signingJobs]);
 
   // Enhanced filtering and sorting
   const filteredAndSortedJobs = useMemo(() => {
@@ -932,12 +1000,51 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                         </div>
                       </TableCell>
                       <TableCell className="py-3 px-2">
-                        <div className="origin-left">
+                        <div className="flex flex-col gap-1">
                           {getStatusBadge(getJobStatus(job))}
+                          {(job as any).isSigningJob && (
+                            <Badge className="flex items-center gap-1 bg-red-100 text-red-800 border-red-200 hover:shadow-sm transition-all duration-200 text-xs">
+                              <User className="h-3 w-3" />
+                              Signing Job
+                            </Badge>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="py-3 px-2">
-                        <div className="flex gap-1">
+                        <div className="flex gap-1 flex-wrap">
+                          {/* Signing Job Actions */}
+                          {(job as any).isSigningJob && (job as any).canJoinSigning && (
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                const signingUrl = `/editor/${job.id}?mode=signing`;
+                                if (isMobileDevice()) {
+                                  window.location.href = signingUrl;
+                                } else {
+                                  window.open(signingUrl, '_blank');
+                                }
+                              }}
+                              className="h-7 px-2 text-xs bg-green-600 hover:bg-green-700 text-white"
+                              title="Join as Signer"
+                            >
+                              <User className="h-3 w-3" />
+                            </Button>
+                          )}
+                          
+                          {/* ID Verification for Signing Jobs */}
+                          {(job as any).isSigningJob && (job as any).requiresIdVerification && !(job as any).idVerificationCompleted && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setLocation(`/id-verification?jobId=${job.id}`)}
+                              className="h-7 px-2 text-xs border-yellow-500 text-yellow-700 hover:bg-yellow-50"
+                              title="Complete ID Verification"
+                            >
+                              <Shield className="h-3 w-3" />
+                            </Button>
+                          )}
+                          
+                          {/* Regular Actions */}
                           <Button
                             variant="outline"
                             size="sm"
@@ -954,7 +1061,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                           >
                             <ExternalLink className="h-3 w-3" />
                           </Button>
-                          {canCreateJob && (
+                          {canCreateJob && !(job as any).isSigningJob && (
                             <Button
                               variant="outline"
                               size="sm"
@@ -1070,7 +1177,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
 
       {/* Job Editor Dialog */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent className="!w-[95vw] !max-w-7xl !h-[95vh] !max-h-[95vh] !p-0 !overflow-hidden !flex !flex-col sm:rounded-lg border border-gray-200">
+        <DialogContent className="!w-[98vw] sm:!w-[95vw] !max-w-7xl !h-[98vh] sm:!h-[95vh] !max-h-[98vh] sm:!max-h-[95vh] !p-0 !overflow-hidden !flex !flex-col sm:rounded-lg border border-gray-200">
           {editingJob && (
             <JobEditor
               jobId={editingJob.id}

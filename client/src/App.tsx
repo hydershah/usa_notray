@@ -402,15 +402,6 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
-      <Route path="/signing-jobs">
-        <ProtectedRoute allowedRoles={['notary', 'title_company']}>
-          <ErrorBoundary fallback={<LoadingFallback />}>
-            <React.Suspense fallback={<LoadingFallback />}>
-              {React.createElement(React.lazy(() => import("@/pages/signing-jobs")))}
-            </React.Suspense>
-          </ErrorBoundary>
-        </ProtectedRoute>
-      </Route>
 
       <Route path="/jobs/:id">
         <ProtectedRoute>

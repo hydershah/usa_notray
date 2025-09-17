@@ -5435,7 +5435,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.error('Error checking company access for document preview:', companyCheckError);
         }
       }
-      // Signer access - check via signers table (THIS WAS MISSING!)
+      // Signer access - check via signers table
       else if (user.role === 'signer' || user.role === 'witness') {
         const [signer] = await db
           .select()
@@ -5446,6 +5446,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (signer) {
           hasAccess = true;
           console.log(`✅ DOCUMENT ACCESS: Invited signer user ${user.id} (${user.email}) on job ${jobId}`);
+        }
+      }
+      
+      // DUAL ROLE ACCESS - Check if notary/title_company is acting as signer via jobParticipants
+      if (!hasAccess && (user.role === 'notary' || user.role === 'title_company')) {
+        try {
+          const [dualRoleParticipant] = await db
+            .select()
+            .from(jobParticipants)
+            .where(and(
+              eq(jobParticipants.jobId, jobId),
+              eq(jobParticipants.userId, user.id),
+              or(
+                eq(jobParticipants.jobSpecificRole, 'signer'),
+                eq(jobParticipants.jobSpecificRole, 'witness')
+              )
+            ))
+            .limit(1);
+          
+          if (dualRoleParticipant) {
+            hasAccess = true;
+            console.log(`✅ DOCUMENT ACCESS: Dual role user ${user.id} (${user.role} → ${dualRoleParticipant.jobSpecificRole}) on job ${jobId}`);
+          }
+        } catch (dualRoleError) {
+          console.error('Error checking dual role access for document preview:', dualRoleError);
         }
       }
       

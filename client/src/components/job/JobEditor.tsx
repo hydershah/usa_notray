@@ -266,7 +266,7 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
   }
 
   return (
-    <div className="w-full h-full flex flex-col bg-white">
+    <div className="w-full h-full flex flex-col bg-white overflow-hidden">
       {/* Header Section - Fixed at top */}
       <div className="flex-shrink-0 border-b bg-white z-10">
         <div className="flex items-center justify-between p-4 lg:p-6">
@@ -313,10 +313,10 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
         </div>
       </div>
 
-      {/* Tabs Section - Fixed below header */}
-      <div className="flex-shrink-0 bg-white border-b">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <div className="px-4 lg:px-6">
+      {/* Tabs Section - Flexible content area */}
+      <div className="flex-1 bg-white border-b flex flex-col min-h-0">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full flex flex-col">
+          <div className="px-4 lg:px-6 flex-shrink-0">
             <TabsList className="grid w-full grid-cols-4 bg-transparent h-12 gap-0">
               <TabsTrigger 
                 value="basic" 
@@ -356,9 +356,9 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
           </div>
 
           {/* Content Section - Scrollable */}
-          <div className="flex-1 overflow-y-auto">
-            <TabsContent value="basic" className="p-2 lg:p-3 m-0 bg-gray-50 min-h-full">
-              <div className="max-w-5xl mx-auto space-y-2">
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <TabsContent value="basic" className="p-4 lg:p-6 m-0 bg-gray-50 min-h-full pb-12">
+              <div className="max-w-5xl mx-auto space-y-4">
                 {/* Company and Job Type */}
                 <Card className="border-0 shadow-sm">
                   <CardHeader className="pb-1">
@@ -420,147 +420,156 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
                 </Card>
 
                 {/* Property Address */}
-                <div className="space-y-2">
-                  <Label className="flex items-center space-x-1 text-sm font-medium">
-                    <MapPin className="h-3 w-3" />
-                    <span>Property Address</span>
-                  </Label>
-                  
-                  <div className="grid grid-cols-1 gap-2">
-                    <div className="space-y-1">
-                      <Label htmlFor="propertyAddressOne" className="text-sm">Address Line 1</Label>
-                      <Input
-                        id="propertyAddressOne"
-                        value={formData.propertyAddressOne || ''}
-                        onChange={(e) => handleFormChange('propertyAddressOne', e.target.value)}
-                        placeholder="Street address"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label htmlFor="propertyAddressTwo" className="text-sm">Address Line 2 (Optional)</Label>
-                      <Input
-                        id="propertyAddressTwo"
-                        value={formData.propertyAddressTwo || ''}
-                        onChange={(e) => handleFormChange('propertyAddressTwo', e.target.value)}
-                        placeholder="Apartment, suite, etc."
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2">
+                <Card className="border-0 shadow-sm">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm flex items-center space-x-1">
+                      <MapPin className="h-3 w-3" />
+                      <span>Property Address</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-1 gap-3">
                       <div className="space-y-1">
-                        <Label htmlFor="propertyCity" className="text-sm">City</Label>
+                        <Label htmlFor="propertyAddressOne" className="text-sm">Address Line 1</Label>
                         <Input
-                          id="propertyCity"
-                          value={formData.propertyCity || ''}
-                          onChange={(e) => handleFormChange('propertyCity', e.target.value)}
-                          placeholder="City"
+                          id="propertyAddressOne"
+                          value={formData.propertyAddressOne || ''}
+                          onChange={(e) => handleFormChange('propertyAddressOne', e.target.value)}
+                          placeholder="Street address"
                         />
                       </div>
 
                       <div className="space-y-1">
-                        <Label htmlFor="propertyState" className="text-sm">State</Label>
+                        <Label htmlFor="propertyAddressTwo" className="text-sm">Address Line 2 (Optional)</Label>
                         <Input
-                          id="propertyState"
-                          value={formData.propertyState || ''}
-                          onChange={(e) => handleFormChange('propertyState', e.target.value)}
-                          placeholder="State"
+                          id="propertyAddressTwo"
+                          value={formData.propertyAddressTwo || ''}
+                          onChange={(e) => handleFormChange('propertyAddressTwo', e.target.value)}
+                          placeholder="Apartment, suite, etc."
                         />
                       </div>
 
-                      <div className="space-y-1">
-                        <Label htmlFor="propertyZipCode" className="text-sm">ZIP Code</Label>
-                        <Input
-                          id="propertyZipCode"
-                          value={formData.propertyZipCode || ''}
-                          onChange={(e) => handleFormChange('propertyZipCode', e.target.value)}
-                          placeholder="ZIP Code"
-                        />
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="space-y-1">
+                          <Label htmlFor="propertyCity" className="text-sm">City</Label>
+                          <Input
+                            id="propertyCity"
+                            value={formData.propertyCity || ''}
+                            onChange={(e) => handleFormChange('propertyCity', e.target.value)}
+                            placeholder="City"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label htmlFor="propertyState" className="text-sm">State</Label>
+                          <Input
+                            id="propertyState"
+                            value={formData.propertyState || ''}
+                            onChange={(e) => handleFormChange('propertyState', e.target.value)}
+                            placeholder="State"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label htmlFor="propertyZipCode" className="text-sm">ZIP Code</Label>
+                          <Input
+                            id="propertyZipCode"
+                            value={formData.propertyZipCode || ''}
+                            onChange={(e) => handleFormChange('propertyZipCode', e.target.value)}
+                            placeholder="ZIP Code"
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
 
                 {/* Scheduling */}
-                <div className="space-y-2">
-                  <Label className="flex items-center space-x-1 text-sm font-medium">
-                    <Calendar className="h-3 w-3" />
-                    <span>Scheduling</span>
-                  </Label>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label htmlFor="selectedDate" className="text-sm">Selected Date</Label>
-                      <Input
-                        id="selectedDate"
-                        type="date"
-                        value={formData.selectedDate || ''}
-                        onChange={(e) => handleFormChange('selectedDate', e.target.value)}
-                      />
-                    </div>
+                <Card className="border-0 shadow-sm">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm flex items-center space-x-1">
+                      <Calendar className="h-3 w-3" />
+                      <span>Scheduling</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label htmlFor="selectedDate" className="text-sm">Selected Date</Label>
+                        <Input
+                          id="selectedDate"
+                          type="date"
+                          value={formData.selectedDate || ''}
+                          onChange={(e) => handleFormChange('selectedDate', e.target.value)}
+                        />
+                      </div>
 
-                    <div className="space-y-1">
-                      <Label htmlFor="selectedTime" className="text-sm">Selected Time</Label>
-                      <Input
-                        id="selectedTime"
-                        type="time"
-                        value={formData.selectedTime || ''}
-                        onChange={(e) => handleFormChange('selectedTime', e.target.value)}
-                      />
+                      <div className="space-y-1">
+                        <Label htmlFor="selectedTime" className="text-sm">Selected Time</Label>
+                        <Input
+                          id="selectedTime"
+                          type="time"
+                          value={formData.selectedTime || ''}
+                          onChange={(e) => handleFormChange('selectedTime', e.target.value)}
+                        />
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
 
                 {/* Notary Assignment */}
-                <div className="space-y-2">
-                  <Label className="flex items-center space-x-1 text-sm font-medium">
-                    <User className="h-3 w-3" />
-                    <span>Notary Assignment</span>
-                  </Label>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label htmlFor="notaryOption" className="text-sm">Assignment Type</Label>
-                      <Select
-                        value={formData.notaryOption || ''}
-                        onValueChange={(value) => handleFormChange('notaryOption', value)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select assignment type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="auto">Auto Assignment</SelectItem>
-                          <SelectItem value="assign">Manual Assignment</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {formData.notaryOption === 'assign' && (
+                <Card className="border-0 shadow-sm">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm flex items-center space-x-1">
+                      <User className="h-3 w-3" />
+                      <span>Notary Assignment</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <Label htmlFor="selectedNotary" className="text-sm">Select Notary</Label>
+                        <Label htmlFor="notaryOption" className="text-sm">Assignment Type</Label>
                         <Select
-                          value={formData.selectedNotary || ''}
-                          onValueChange={(value) => handleFormChange('selectedNotary', value)}
+                          value={formData.notaryOption || ''}
+                          onValueChange={(value) => handleFormChange('notaryOption', value)}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Select notary" />
+                            <SelectValue placeholder="Select assignment type" />
                           </SelectTrigger>
                           <SelectContent>
-                            {notaries.map((notary) => (
-                              <SelectItem key={notary.id} value={notary.id.toString()}>
-                                {notary.firstName} {notary.lastName}
-                              </SelectItem>
-                            ))}
+                            <SelectItem value="auto">Auto Assignment</SelectItem>
+                            <SelectItem value="assign">Manual Assignment</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
-                    )}
-                  </div>
-                </div>
+
+                      {formData.notaryOption === 'assign' && (
+                        <div className="space-y-1">
+                          <Label htmlFor="selectedNotary" className="text-sm">Select Notary</Label>
+                          <Select
+                            value={formData.selectedNotary || ''}
+                            onValueChange={(value) => handleFormChange('selectedNotary', value)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select notary" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {notaries.map((notary) => (
+                                <SelectItem key={notary.id} value={notary.id.toString()}>
+                                  {notary.firstName} {notary.lastName}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             </TabsContent>
 
-            <TabsContent value="signers" className="h-full p-6 m-0 overflow-y-auto">
+            <TabsContent value="signers" className="h-full p-6 m-0 overflow-y-auto pb-12">
               <JobSignersManager 
                 jobId={jobId} 
                 onSignersUpdated={() => {
@@ -570,7 +579,7 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
               />
             </TabsContent>
 
-            <TabsContent value="documents" className="h-full p-6 m-0 overflow-y-auto">
+            <TabsContent value="documents" className="h-full p-6 m-0 overflow-y-auto pb-12">
               <EnhancedDocumentManager 
                 jobId={jobId}
                 userRole={user?.role || 'client'}
@@ -582,7 +591,7 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
               />
             </TabsContent>
 
-            <TabsContent value="settings" className="h-full p-4 m-0 overflow-y-auto">
+            <TabsContent value="settings" className="h-full p-4 m-0 overflow-y-auto pb-12">
               <div className="space-y-4">
                 <div className="space-y-3">
                   <Label className="text-base font-medium">Job Requirements</Label>
@@ -649,7 +658,7 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
 
 
 
-            <TabsContent value="documents" className="p-3 lg:p-4 m-0 bg-gray-50 min-h-full">
+            <TabsContent value="documents" className="p-3 lg:p-4 m-0 bg-gray-50 min-h-full pb-12">
               <div className="max-w-5xl mx-auto">
                 <EnhancedDocumentManager 
                   jobId={jobId} 
@@ -659,7 +668,7 @@ export function JobEditor({ jobId, onJobUpdated, onClose }: JobEditorProps) {
               </div>
             </TabsContent>
 
-            <TabsContent value="settings" className="p-3 lg:p-4 m-0 bg-gray-50 min-h-full">
+            <TabsContent value="settings" className="p-3 lg:p-4 m-0 bg-gray-50 min-h-full pb-12">
               <div className="max-w-5xl mx-auto">
                 <Card>
                   <CardHeader className="pb-2">

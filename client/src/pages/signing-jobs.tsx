@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { useAuth } from '../hooks/use-auth';
 import { apiRequest } from '../lib/api';
 import { MainLayout } from '../components/layout/main-layout';
+import { isMobileDevice } from '../lib/utils';
 
 interface SigningJob {
   id: number;
@@ -73,8 +74,13 @@ const SigningJobs: React.FC = () => {
       return;
     }
 
-    // Redirect to signing session via editor with signing mode
-    window.location.href = `/editor/${job.id}?mode=signing`;
+    // Open signing session in new tab (or same tab for mobile)
+    const signingUrl = `/editor/${job.id}?mode=signing`;
+    if (isMobileDevice()) {
+      window.location.href = signingUrl;
+    } else {
+      window.open(signingUrl, '_blank');
+    }
   };
 
   const handleCompleteVerification = () => {

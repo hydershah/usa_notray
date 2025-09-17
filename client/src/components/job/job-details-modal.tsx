@@ -659,7 +659,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0" aria-describedby="job-details-description">
+      <DialogContent className="w-[98vw] sm:w-auto max-w-4xl max-h-[98vh] sm:max-h-[95vh] overflow-hidden flex flex-col p-0" aria-describedby="job-details-description">
         <DialogHeader className="px-6 py-4 border-b bg-gray-50">
           <div className="flex items-center justify-between">
             <div>
@@ -726,7 +726,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-6 py-3 space-y-3">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4 min-h-0" style={{ maxHeight: 'calc(98vh - 180px)' }}>
           {/* Job Information Section */}
           <Card className="border-0 shadow-sm">
             <CardHeader 
@@ -1208,7 +1208,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onStatusUpdate }: JobDet
               </div>
             </CardHeader>
             {expandedSections.documents && (
-              <CardContent className="pt-0">
+              <CardContent className="pt-0 pb-4">
                 {loadingDocuments ? (
                   <div className="text-center py-8 text-gray-500">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
