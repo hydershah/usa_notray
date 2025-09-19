@@ -1,11 +1,13 @@
 import { Express } from 'express';
-import { insertCompanySchema, insertUserSchema } from '../shared/schema.js';
+import { insertCompanySchema, insertUserSchema, companyManagers, companies } from '../shared/schema.js';
 import { storage } from './storage';
 import bcrypt from 'bcrypt';
 import { verifyToken, hasAdminPrivileges } from './auth.js';
 import { emailService } from './lib/email-service';
 import { validateEmailUniqueness } from './middleware/email-validation';
 import { redisCache } from './services/redis-cache';
+import { db } from './db';
+import { eq, and } from 'drizzle-orm';
 
 export function registerCompanyRoutes(app: Express) {
   
@@ -118,6 +120,38 @@ export function registerCompanyRoutes(app: Express) {
         createdBy: result.manager.id,
         lastModifiedBy: result.manager.id
       });
+
+      // Create manager record in the new company managers system
+      try {
+        const { companyManagerService } = await import('./services/CompanyManagerService.js');
+        const { DEFAULT_PERMISSIONS } = await import('../shared/types/manager-types.js');
+        
+        await companyManagerService.inviteManager(
+          result.company.id,
+          result.manager.id, // Self-invitation for the primary manager
+          {
+            email: primaryUserEmail,
+            firstName: primaryUserName.split(' ')[0] || primaryUserName,
+            lastName: primaryUserName.split(' ').slice(1).join(' ') || '',
+            managerRole: 'admin',
+            permissions: DEFAULT_PERMISSIONS.admin,
+          }
+        );
+
+        // Accept the invitation immediately for the primary manager
+        const manager = await companyManagerService.getManagerByUserAndCompany(result.manager.id, result.company.id);
+        if (manager) {
+          await companyManagerService.acceptInvitation(manager.id, result.manager.id);
+          
+          // Set as primary manager
+          await companyManagerService.updateManagerPermissions(manager.id, result.manager.id, {
+            isActive: true,
+          });
+        }
+      } catch (managerError) {
+        console.error('Error creating manager record:', managerError);
+        // Don't fail the entire registration if manager creation fails
+      }
 
       // Invalidate cache to ensure fresh data on next request
       try {
@@ -473,12 +507,118 @@ export function registerCompanyRoutes(app: Express) {
   });
 
   /**
+   * GET /api/companies/my-associations
+   * Get current user's company associations (both direct companyId and manager relationships)
+   */
+  app.get('/api/companies/my-associations', verifyToken, async (req: any, res) => {
+    try {
+      console.log('🚀 /api/companies/my-associations called by user:', req.user?.id, 'role:', req.user?.role);
+      const userId = req.user.id;
+      const userRole = req.user.role;
+      
+      // Get user's direct company association
+      const user = await storage.getUser(userId);
+      console.log('🔍 User data for my-associations API:', { 
+        userId, 
+        companyId: user?.companyId, 
+        type: typeof user?.companyId,
+        hasCompanyId: !!user?.companyId,
+        isValidNumber: user?.companyId && typeof user.companyId === 'number' && user.companyId > 0
+      });
+      let directCompany = null;
+      
+      if (user?.companyId && typeof user.companyId === 'number' && user.companyId > 0) {
+        try {
+          directCompany = await storage.getCompany(user.companyId);
+        } catch (error) {
+          console.warn('Failed to fetch direct company for user:', userId, error);
+        }
+      }
+      
+      // Get user's manager relationships
+      let managerCompanies: Array<{
+        companyId: number;
+        managerRole: string;
+        status: string;
+        isActive: boolean;
+        isPrimary: boolean;
+        companyName: string;
+        permissions: any;
+      }> = [];
+      
+      if (userRole === 'title_company' || userRole === 'company_manager') {
+        try {
+          const managerRelationships = await db
+            .select({
+              companyId: companyManagers.companyId,
+              managerRole: companyManagers.managerRole,
+              status: companyManagers.status,
+              isActive: companyManagers.isActive,
+              isPrimary: companyManagers.isPrimary,
+              companyName: companies.companyName,
+              permissions: companyManagers.permissions
+            })
+            .from(companyManagers)
+            .leftJoin(companies, eq(companyManagers.companyId, companies.id))
+            .where(and(
+              eq(companyManagers.userId, userId),
+              eq(companyManagers.isActive, true)
+            ));
+          
+          managerCompanies = managerRelationships;
+        } catch (error) {
+          console.warn('Failed to fetch manager relationships for user:', userId, error);
+        }
+      }
+      
+      // Determine the primary company for manager features
+      let primaryCompany: { id: number; companyName: string } | null = null;
+      let hasManagerAccess = false;
+      
+      if (directCompany) {
+        primaryCompany = directCompany;
+        hasManagerAccess = true;
+      } else if (managerCompanies.length > 0) {
+        // Use the first active manager relationship as primary
+        const activeManager = managerCompanies.find(m => m.status === 'active') || managerCompanies[0];
+        if (activeManager) {
+          primaryCompany = {
+            id: activeManager.companyId,
+            companyName: activeManager.companyName
+          };
+          hasManagerAccess = activeManager.status === 'active';
+        }
+      }
+      
+      res.json({
+        success: true,
+        directCompany,
+        managerCompanies,
+        primaryCompany,
+        hasManagerAccess,
+        canCreateCompany: userRole === 'title_company' && !directCompany && managerCompanies.length === 0
+      });
+      
+    } catch (error) {
+      console.error('❌ Error in /api/companies/my-associations:', error);
+      console.error('❌ Stack trace:', error.stack);
+      res.status(500).json({ error: 'Failed to get company associations' });
+    }
+  });
+
+  /**
    * GET /api/companies/:id
    * Get company details
    */
   app.get('/api/companies/:id', verifyToken, async (req: any, res) => {
     try {
       const companyId = parseInt(req.params.id);
+      
+      // Validate that the ID is a valid number
+      if (isNaN(companyId) || companyId <= 0) {
+        return res.status(400).json({ message: 'Invalid company ID' });
+      }
+      
       const company = await storage.getCompany(companyId);
 
       if (!company) {

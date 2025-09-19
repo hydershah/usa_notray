@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { registerCompanyRoutes } from "./company-routes";
+import { registerCompanyManagerRoutes } from "./routes/company-manager-routes";
 import { registerUserManagementRoutes } from "./user-management-routes";
 import { registerClientRoutes } from "./client-registration-routes";
 import { registerNotaryRoutes } from "./notary-registration-routes";
@@ -34,7 +35,7 @@ interface AuthenticatedRequest extends Express.Request {
   user: AuthUser;
 }
 import { redisCache } from "./services/redis-cache";
-import { eq, and, gte, lte, desc, inArray, sql, or } from "drizzle-orm";
+import { eq, and, gte, lte, desc, inArray, sql, or, isNull } from "drizzle-orm";
 import { randomNotaryService, NotaryQualifications, TimeSlotRequest } from "./random-notary-service";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -294,7 +295,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           isVerificationBypassed: user.isVerificationBypassed || false,
           notaryVerificationBypassed: user.notaryVerificationBypassed || false,
           verificationStatus: user.verificationStatus || 'pending',
-          accountSetupComplete: loginAccountSetupComplete
+          accountSetupComplete: loginAccountSetupComplete,
+          // Include company information for title company users
+          companyId: user.companyId,
+          companyName: user.role === 'title_company' && user.companyId ? (await storage.getCompany(user.companyId))?.companyName || null : null
         }
       });
 
@@ -388,6 +392,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) {
         return res.status(404).json({ message: 'User not found' });
       }
+      
 
       // Check privileges for frontend
       const isAdmin = hasAdminPrivileges(user);
@@ -395,11 +400,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get company information for title company users
       let companyInfo = null;
-      if (user.role === 'title_company' && user.companyId) {
-        try {
-          companyInfo = await storage.getCompany(user.companyId);
-        } catch (error) {
-          console.warn('Failed to fetch company info for user:', user.id, error);
+      if (user.role === 'title_company') {
+        if (user.companyId) {
+          try {
+            companyInfo = await storage.getCompany(user.companyId);
+          } catch (error) {
+            console.warn('Failed to fetch company info for user:', user.id, error);
+          }
+        } else {
+          console.warn('Title company user without companyId:', {
+            userId: user.id,
+            email: user.email,
+            role: user.role,
+            companyId: user.companyId
+          });
         }
       }
 
@@ -451,7 +465,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      res.json({
+      const responseData = {
         id: user.id,
         username: user.username,
         email: user.email,
@@ -494,7 +508,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           isVerified,
           accountSetupComplete
         }
-      });
+      };
+      
+      
+      res.json(responseData);
     } catch (error) {
       console.error('Get user error:', error);
       res.status(500).json({ message: 'Internal server error' });
@@ -7526,6 +7543,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
 
   // Register enhanced user management and company routes
   registerUserManagementRoutes(app);
+  registerCompanyManagerRoutes(app);
   registerCompanyRoutes(app);
   
   // Register new specialized signup routes
@@ -11992,6 +12010,245 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     } catch (error) {
       console.error('Error generating download package:', error);
       res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Dashboard stats
+  app.get('/api/dashboard/stats', verifyToken, cacheUserData(300), async (req: any, res) => {
+    try {
+      const jobsResult = await storage.getRoleBasedJobs(req.user.id, req.user.role);
+      const jobs = jobsResult.jobs;
+      
+      const stats: any = {
+        totalJobs: jobs.length,
+        completedJobs: jobs.filter(job => job.jobStatus === 'completed').length,
+        pendingJobs: jobs.filter(job => job.jobStatus === 'pending').length,
+        openJobs: jobs.filter(job => job.jobStatus === 'open').length,
+        cancelledJobs: jobs.filter(job => job.jobStatus === 'cancelled').length,
+        expiredJobs: jobs.filter(job => job.jobStatus === 'expired').length,
+      };
+
+      if (hasAdminPrivileges(req.user)) {
+        const notaries = await storage.getNotaryUsers();
+        stats.activeNotaries = notaries.length;
+      }
+
+      res.json(stats);
+    } catch (error) {
+      console.error('Get dashboard stats error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // Bulk associate title company users with companies (admin only)
+  app.post('/api/admin/associate-title-company-users', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      // Get all title company users without companyId
+      const usersWithoutCompany = await db
+        .select()
+        .from(users)
+        .where(and(
+          eq(users.role, 'title_company'),
+          isNull(users.companyId)
+        ));
+
+      // Get all companies
+      const companies = await storage.getCompanies();
+
+      const associations = [];
+      const unmatched = [];
+
+      for (const user of usersWithoutCompany) {
+        // Try to match by email domain or exact email
+        const userEmailDomain = user.email.split('@')[1].toLowerCase();
+        
+        let matchedCompany = null;
+        
+        // First try: exact email match
+        matchedCompany = companies.find(c => 
+          c.email?.toLowerCase() === user.email.toLowerCase() ||
+          c.primaryUserEmail?.toLowerCase() === user.email.toLowerCase()
+        );
+
+        // Second try: domain match
+        if (!matchedCompany) {
+          matchedCompany = companies.find(c => {
+            if (c.email) {
+              const companyDomain = c.email.split('@')[1].toLowerCase();
+              return companyDomain === userEmailDomain;
+            }
+            if (c.primaryUserEmail) {
+              const companyDomain = c.primaryUserEmail.split('@')[1].toLowerCase();
+              return companyDomain === userEmailDomain;
+            }
+            return false;
+          });
+        }
+
+        // Third try: company name similarity (basic)
+        if (!matchedCompany && user.firstName && user.lastName) {
+          const fullName = `${user.firstName} ${user.lastName}`.toLowerCase();
+          matchedCompany = companies.find(c => 
+            c.contactName?.toLowerCase().includes(fullName) ||
+            c.primaryUserName?.toLowerCase().includes(fullName)
+          );
+        }
+
+        if (matchedCompany) {
+          // Update the user's companyId
+          await storage.updateUser(user.id, { companyId: matchedCompany.id });
+          
+          associations.push({
+            userId: user.id,
+            userEmail: user.email,
+            companyId: matchedCompany.id,
+            companyName: matchedCompany.companyName,
+            matchReason: 'automated'
+          });
+          
+          console.log(`✅ Associated user ${user.email} with company ${matchedCompany.companyName}`);
+        } else {
+          unmatched.push({
+            userId: user.id,
+            userEmail: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName
+          });
+        }
+      }
+
+      res.json({
+        message: 'Bulk association completed',
+        associations,
+        unmatched,
+        summary: {
+          totalUsers: usersWithoutCompany.length,
+          associated: associations.length,
+          unmatched: unmatched.length
+        }
+      });
+
+    } catch (error) {
+      console.error('Bulk association error:', error);
+      res.status(500).json({ 
+        message: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Fix user-company association (admin only)
+  app.patch('/api/admin/users/:userId/company-association', verifyToken, async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      const userId = parseInt(req.params.userId);
+      const { companyId } = req.body;
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: 'Invalid user ID' });
+      }
+
+      // Get the user to verify they exist and are a title company user
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      if (companyId) {
+        // Verify the company exists
+        const company = await storage.getCompany(companyId);
+        if (!company) {
+          return res.status(404).json({ message: 'Company not found' });
+        }
+
+        // Update the user's companyId
+        const updatedUser = await storage.updateUser(userId, { companyId });
+        if (!updatedUser) {
+          return res.status(500).json({ message: 'Failed to update user' });
+        }
+
+        console.log(`✅ Associated user ${userId} (${user.email}) with company ${companyId} (${company.companyName})`);
+        
+        res.json({
+          message: 'User successfully associated with company',
+          user: {
+            id: updatedUser.id,
+            email: updatedUser.email,
+            companyId: updatedUser.companyId
+          },
+          company: {
+            id: company.id,
+            companyName: company.companyName
+          }
+        });
+      } else {
+        // Remove company association
+        const updatedUser = await storage.updateUser(userId, { companyId: null });
+        if (!updatedUser) {
+          return res.status(500).json({ message: 'Failed to update user' });
+        }
+
+        console.log(`✅ Removed company association for user ${userId} (${user.email})`);
+        
+        res.json({
+          message: 'Company association removed',
+          user: {
+            id: updatedUser.id,
+            email: updatedUser.email,
+            companyId: null
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Fix user-company association error:', error);
+      res.status(500).json({ 
+        message: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Get dashboard revenue stats (admin only)
+  app.get('/api/admin/revenue-stats', verifyToken, cacheAdminData(300), async (req: any, res) => {
+    try {
+      if (!hasAdminPrivileges(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+
+      // Calculate revenue from payments and invoices
+      const currentMonth = new Date();
+      const firstDayOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+      
+      const revenue = await db.execute(sql`
+        SELECT 
+          COALESCE(SUM(p.amount), 0) as monthly_revenue,
+          COUNT(CASE WHEN p.status = 'pending' THEN 1 END) as pending_payments,
+          COUNT(CASE WHEN p.status = 'completed' THEN 1 END) as completed_payments
+        FROM payments p
+        WHERE p.created_at >= ${firstDayOfMonth.toISOString()}
+      `);
+
+      // Ensure we return the proper data structure
+      const result = revenue.rows[0] || {
+        monthly_revenue: 0,
+        pending_payments: 0,
+        completed_payments: 0
+      };
+
+      res.json(result);
+    } catch (error) {
+      console.error('Get revenue stats error:', error);
+      res.status(500).json({ 
+        message: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 

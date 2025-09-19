@@ -559,7 +559,7 @@ class EmailService {
     inviteToken: string;
     invitedBy: string;
   }): Promise<void> {
-    const invitationLink = `${this.getClientUrl()}/register?token=${data.inviteToken}`;
+    const invitationLink = `${this.getClientUrl()}/set-password?token=${data.inviteToken}`;
     
     const content = `
         <h2 style="color: #1e40af; margin-bottom: 20px;">Platform Access Invitation</h2>
@@ -588,13 +588,13 @@ class EmailService {
                       font-weight: 600;
                       margin: 20px 0;
                       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-                🚀 Complete Registration
+                🔑 Set Up Password
             </a>
         </div>
         
         <p><strong>Security Note:</strong> This invitation expires in 48 hours for security purposes.</p>
         
-        <p>Once registered, you'll have access to our professional notarization platform with all the tools needed for your role.</p>
+        <p>Once you set up your password, you'll have access to our professional notarization platform with all the tools needed for your role.</p>
         
         <p style="margin-top: 30px;">
             Best regards,<br>
@@ -606,7 +606,7 @@ class EmailService {
       to: data.userEmail,
       subject: `🏛️ Platform Access Invitation - ${data.role}`,
       html: this.getBaseTemplate(content),
-              text: `You have been invited to join Sharp Note as ${data.role}. Complete registration: ${invitationLink}`
+              text: `You have been invited to join Sharp Note as ${data.role}. Set up your password: ${invitationLink}`
     });
   }
 

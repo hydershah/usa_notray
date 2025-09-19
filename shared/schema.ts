@@ -272,6 +272,69 @@ export const titleCompanies = pgTable("title_companies", {
   migratedToCompaniesTable: boolean("migrated_to_companies_table").default(false),
 });
 
+// Company Managers table - Multiple managers per title company with granular permissions
+export const companyManagers = pgTable("company_managers", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  
+  // Manager role within the company
+  managerRole: text("manager_role").notNull().default("manager"), // 'admin', 'manager', 'limited'
+  
+  // Granular permissions for this manager
+  permissions: jsonb("permissions").notNull().default({}),
+  
+  // Status and metadata
+  isActive: boolean("is_active").notNull().default(true),
+  isPrimary: boolean("is_primary").notNull().default(false), // Only one primary manager per company
+  
+  // Invitation and approval system
+  invitedBy: integer("invited_by").references(() => users.id),
+  invitedAt: timestamp("invited_at"),
+  acceptedAt: timestamp("accepted_at"),
+  status: text("status").notNull().default("pending"), // 'pending', 'active', 'suspended', 'removed'
+  
+  // Audit fields
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: integer("created_by").references(() => users.id),
+  lastModifiedBy: integer("last_modified_by").references(() => users.id),
+}, (table) => ({
+  // Ensure unique manager per company
+  companyManagerUnique: unique().on(table.companyId, table.userId),
+}));
+
+// Manager Permission Templates table - Predefined permission sets
+export const managerPermissionTemplates = pgTable("manager_permission_templates", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  templateName: text("template_name").notNull(),
+  description: text("description"),
+  permissions: jsonb("permissions").notNull().default({}),
+  isDefault: boolean("is_default").default(false),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: integer("created_by").references(() => users.id),
+}, (table) => ({
+  // Ensure unique template name per company
+  companyTemplateUnique: unique().on(table.companyId, table.templateName),
+}));
+
+// Manager Activity Log table - Track manager actions
+export const managerActivityLog = pgTable("manager_activity_log", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  managerId: integer("manager_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  action: text("action").notNull(),
+  targetType: text("target_type"), // 'job', 'user', 'company', 'settings'
+  targetId: integer("target_id"),
+  details: jsonb("details"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Title Company Notary Assignments - Many-to-Many relationship
 export const titleCompanyNotaryAssignments = pgTable("title_company_notary_assignments", {
   id: serial("id").primaryKey(),
@@ -603,6 +666,21 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   // Title company notary assignments
   titleCompanyAssignments: many(titleCompanyNotaryAssignments),
   legacyTitleCompanyAssignments: many(legacyTitleCompanyNotaryAssignments),
+  // Company manager relationships
+  managerRoles: many(companyManagers),
+  invitedManagers: many(companyManagers, {
+    relationName: "ManagerInviter"
+  }),
+  createdManagerRoles: many(companyManagers, {
+    relationName: "ManagerCreator"
+  }),
+  modifiedManagerRoles: many(companyManagers, {
+    relationName: "ManagerModifier"
+  }),
+  createdPermissionTemplates: many(managerPermissionTemplates, {
+    relationName: "TemplateCreator"
+  }),
+  managerActivityLogs: many(managerActivityLog),
   // Approval relationships
   approvedUsers: many(users, {
     relationName: "ApprovedBy"
@@ -642,6 +720,61 @@ export const companiesRelations = relations(companies, ({ one, many }) => ({
   }),
   users: many(users),
   notaryAssignments: many(titleCompanyNotaryAssignments),
+  managers: many(companyManagers),
+  permissionTemplates: many(managerPermissionTemplates),
+  activityLogs: many(managerActivityLog),
+}));
+
+// Company Managers Relations
+export const companyManagersRelations = relations(companyManagers, ({ one }) => ({
+  company: one(companies, {
+    fields: [companyManagers.companyId],
+    references: [companies.id],
+  }),
+  user: one(users, {
+    fields: [companyManagers.userId],
+    references: [users.id],
+  }),
+  invitedByUser: one(users, {
+    fields: [companyManagers.invitedBy],
+    references: [users.id],
+    relationName: "ManagerInviter"
+  }),
+  createdByUser: one(users, {
+    fields: [companyManagers.createdBy],
+    references: [users.id],
+    relationName: "ManagerCreator"
+  }),
+  lastModifiedByUser: one(users, {
+    fields: [companyManagers.lastModifiedBy],
+    references: [users.id],
+    relationName: "ManagerModifier"
+  }),
+}));
+
+// Manager Permission Templates Relations
+export const managerPermissionTemplatesRelations = relations(managerPermissionTemplates, ({ one }) => ({
+  company: one(companies, {
+    fields: [managerPermissionTemplates.companyId],
+    references: [companies.id],
+  }),
+  createdByUser: one(users, {
+    fields: [managerPermissionTemplates.createdBy],
+    references: [users.id],
+    relationName: "TemplateCreator"
+  }),
+}));
+
+// Manager Activity Log Relations
+export const managerActivityLogRelations = relations(managerActivityLog, ({ one }) => ({
+  company: one(companies, {
+    fields: [managerActivityLog.companyId],
+    references: [companies.id],
+  }),
+  manager: one(users, {
+    fields: [managerActivityLog.managerId],
+    references: [users.id],
+  }),
 }));
 
 export const titleCompaniesRelations = relations(titleCompanies, ({ one, many }) => ({
