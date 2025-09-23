@@ -1869,7 +1869,7 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
       <HotkeyHandler
         onUserSwitch={handleUserSwitch}
         onTagTypeSelect={handleTagTypeSelect}
-        enabled={mode === 'tagging' || mode === 'signing'}
+        enabled={(mode === 'tagging') || (mode === 'signing' && currentUser?.userType !== 'signer')}
       />
     </div>
   );

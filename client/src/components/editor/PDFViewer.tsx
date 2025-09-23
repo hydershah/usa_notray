@@ -365,8 +365,9 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
   }, [canEdit, scaleFactor]);
 
   const handleDragStart = useCallback(() => {
+    if (!canEdit) return;
     setIsDragging(true);
-  }, []);
+  }, [canEdit]);
 
   const handleDragStop = useCallback((e: any, data: any) => {
     setIsDragging(false);
@@ -599,7 +600,9 @@ const TagRenderer: React.FC<TagRendererProps & { localFontSize?: number }> = ({
        position={{ x: displayCoords.x, y: displayCoords.y }}
         minWidth={Math.max(1, Math.round(((TAG_TYPE_CONFIG[tag.tagType]?.minWidth ?? fixedDimensions.minWidth ?? 1) * scaleFactor)))}
         minHeight={Math.max(1, Math.round(((TAG_TYPE_CONFIG[tag.tagType]?.minHeight ?? fixedDimensions.minHeight ?? 1) * scaleFactor)))}
+       disableDragging={!canEdit}
        onDrag={(e, d) => {
+         if (!canEdit) return;
          setIsDragging(true);
          setDragCoords({ x: d.x, y: d.y });
        }}
@@ -889,12 +892,11 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     setLastUsedFontSize
   } = store;
 
-  // Determine if user can edit/place tags (respecting mode and store permissions)
+  // Determine if user can edit/place tags (respecting mode and user permissions)
   const canEditTags = useMemo(() => {
-    // Always allow tag interaction in both tagging and signing modes
-    // canPlaceTags controls NEW tag placement, but we want existing tag interaction
-    return mode === 'tagging' || mode === 'signing';
-  }, [mode]);
+    // Allow edits in tagging mode for staff; in signing mode, block signers from dragging/resizing
+    return mode === 'tagging' || (mode === 'signing' && currentUser?.userType !== 'signer');
+  }, [mode, currentUser?.userType]);
 
   // Debug: Log store functions to ensure they exist
   if ((window as any).__DEBUG_EDITOR__) {
