@@ -514,7 +514,7 @@ export function TitleCompanyDashboard() {
                           <Badge className={getStatusColor(getJobStatus(job))}>
                             {getJobStatus(job)}
                           </Badge>
-                          {job.requiresIdVerification && !job.idVerificationCompleted ? (
+                          {job.requiresIdVerification && !job.idVerificationCompleted && job.idVerificationStatus !== 'bypassed' ? (
                             <Button
                               size="sm"
                               variant="outline"

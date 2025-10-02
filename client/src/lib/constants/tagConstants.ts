@@ -147,10 +147,10 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Sign',
     color: PROFESSIONAL_COLORS.signature,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 160,  // Keep larger for signatures
-    defaultHeight: 28,  // Reduced height for signatures
-    minWidth: 1,
-    minHeight: 1,
+    defaultWidth: 200,  // Increased width for better signature visibility
+    defaultHeight: 60,  // Increased height for proper signature proportions
+    minWidth: 100,      // Minimum width to ensure readability
+    minHeight: 40,      // Minimum height to ensure signature is visible
     allowResize: true,
     allowTextInput: false
   },
@@ -212,10 +212,10 @@ export const TAG_TYPE_CONFIG: Record<TagType, {
     placeholder: 'Seal',
     color: PROFESSIONAL_COLORS.primary,
     borderColor: PROFESSIONAL_COLORS.borderActive,
-    defaultWidth: 120,  // Wider for better seal visibility
-    defaultHeight: 80,  // Keep current height for seals
-    minWidth: 1,
-    minHeight: 1,
+    defaultWidth: 140,  // Increased for better seal visibility
+    defaultHeight: 100, // Increased for proper seal proportions
+    minWidth: 80,       // Minimum width to ensure seal is readable
+    minHeight: 60,      // Minimum height to ensure seal is visible
     allowResize: true,
     allowTextInput: false
   },

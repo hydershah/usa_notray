@@ -1067,62 +1067,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let imageUrl = '';
       let metadata = {};
 
-      // VULTR ONLY - All signatures are stored in Vultr cloud storage
+      // Convert signatures to base64 for reliable storage (no URL expiration issues)
       const { VultrUploadHandler } = await import('./vultr-upload-handler');
 
       if (type === 'uploaded' && req.file) {
-        // Handle uploaded signature
-        const uploadResult = await VultrUploadHandler.handleSignatureUpload(
-          req.file.buffer,
-          req.file.originalname,
-          `user-${userId}`,
-          userId,
-          'signature'
-        );
-
-        if (!uploadResult.success) {
-          return res.status(500).json({ 
-            message: `Failed to upload signature: ${uploadResult.error}`,
-            error: 'vultr_upload_failed'
-          });
-        }
-
-        imageUrl = uploadResult.fileUrl || uploadResult.signedUrl || uploadResult.fileKey || '';
-        metadata = { originalName: req.file.originalname, vultrKey: uploadResult.fileKey };
+        // Handle uploaded signature - convert to base64
+        const mimeType = req.file.mimetype || 'image/png';
+        const base64Data = req.file.buffer.toString('base64');
+        imageUrl = `data:${mimeType};base64,${base64Data}`;
         
-      } else if (type === 'drawn') {
-        // Handle drawn signature from canvas
-        const { imageData } = req.body;
-        if (!imageData) {
-          return res.status(400).json({ message: 'Image data is required for drawn signatures' });
-        }
-        
-        const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
-        const buffer = Buffer.from(base64Data, 'base64');
-        
-        const filename = `drawn_${Date.now()}.png`;
-        const uploadResult = await VultrUploadHandler.handleSignatureUpload(
-          buffer,
-          filename,
-          `user-${userId}`,
-          userId,
-          'signature'
-        );
-
-        if (!uploadResult.success) {
-          return res.status(500).json({ 
-            message: `Failed to upload drawn signature: ${uploadResult.error}`,
-            error: 'vultr_upload_failed'
-          });
-        }
-
-        imageUrl = uploadResult.signedUrl || uploadResult.fileKey || '';
-        metadata = { style: 'handwritten', vultrKey: uploadResult.fileKey };
-        
-      } else if (type === 'generated') {
-        // Handle generated signature (now sent as image file from client)
-        if (req.file) {
-          // Client-generated signature image (preferred method)
+        // Still upload to Vultr as backup for potential future use
+        try {
           const uploadResult = await VultrUploadHandler.handleSignatureUpload(
             req.file.buffer,
             req.file.originalname,
@@ -1130,29 +1085,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
             userId,
             'signature'
           );
-
-          if (!uploadResult.success) {
-            return res.status(500).json({ 
-              message: `Failed to upload generated signature: ${uploadResult.error}`,
-              error: 'vultr_upload_failed'
-            });
-          }
-
-          imageUrl = uploadResult.signedUrl || uploadResult.fileKey || '';
+          
+          metadata = { 
+            originalName: req.file.originalname, 
+            vultrKey: uploadResult.success ? uploadResult.fileKey : null,
+            vultrUrl: uploadResult.success ? uploadResult.fileUrl : null
+          };
+        } catch (vultrError) {
+          console.warn('Vultr backup upload failed (non-critical):', vultrError);
+          metadata = { originalName: req.file.originalname };
+        }
+        
+      } else if (type === 'drawn') {
+        // Handle drawn signature from canvas - already base64
+        const { imageData } = req.body;
+        if (!imageData) {
+          return res.status(400).json({ message: 'Image data is required for drawn signatures' });
+        }
+        
+        // Store as base64 directly
+        imageUrl = imageData;
+        
+        // Optional: Upload to Vultr as backup
+        try {
+          const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+          const buffer = Buffer.from(base64Data, 'base64');
+          const filename = `drawn_${Date.now()}.png`;
+          
+          const uploadResult = await VultrUploadHandler.handleSignatureUpload(
+            buffer,
+            filename,
+            `user-${userId}`,
+            userId,
+            'signature'
+          );
+          
+          metadata = { 
+            style: 'handwritten', 
+            vultrKey: uploadResult.success ? uploadResult.fileKey : null,
+            vultrUrl: uploadResult.success ? uploadResult.fileUrl : null
+          };
+        } catch (vultrError) {
+          console.warn('Vultr backup upload failed (non-critical):', vultrError);
+          metadata = { style: 'handwritten' };
+        }
+        
+      } else if (type === 'generated') {
+        // Handle generated signature (now sent as image file from client)
+        if (req.file) {
+          // Client-generated signature image - convert to base64
+          const mimeType = req.file.mimetype || 'image/png';
+          const base64Data = req.file.buffer.toString('base64');
+          imageUrl = `data:${mimeType};base64,${base64Data}`;
           
           // Parse metadata if provided
           try {
             const metadataFromBody = req.body.metadata ? JSON.parse(req.body.metadata) : {};
             metadata = { 
               type: 'generated',
-              vultrKey: uploadResult.fileKey,
               ...metadataFromBody
-            };
+            } as any;
           } catch (e) {
-            metadata = { 
-              type: 'generated',
-              vultrKey: uploadResult.fileKey
-            };
+            metadata = { type: 'generated' } as any;
+          }
+          
+          // Optional: Upload to Vultr as backup
+          try {
+            const uploadResult = await VultrUploadHandler.handleSignatureUpload(
+              req.file.buffer,
+              req.file.originalname,
+              `user-${userId}`,
+              userId,
+              'signature'
+            );
+            
+            if (uploadResult.success) {
+              (metadata as any).vultrKey = uploadResult.fileKey;
+              (metadata as any).vultrUrl = uploadResult.fileUrl;
+            }
+          } catch (vultrError) {
+            console.warn('Vultr backup upload failed (non-critical):', vultrError);
           }
           
         } else {
@@ -1164,66 +1176,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
           try {
             let buffer: Buffer;
             let filename: string;
+            let mimeType: string;
             
             try {
               // Try to generate signature image using canvas (server-side)
-            const { createCanvas } = await import('canvas');
-            const canvas = createCanvas(400, 100);
-            const ctx = canvas.getContext('2d');
-            
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, 400, 100);
-            
-            ctx.fillStyle = 'black';
-            ctx.font = `${fontSize || 48}px ${fontFamily || 'serif'}`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(text, 200, 50);
-            
+              const { createCanvas } = await import('canvas');
+              const canvas = createCanvas(400, 100);
+              const ctx = canvas.getContext('2d');
+              
+              ctx.fillStyle = 'white';
+              ctx.fillRect(0, 0, 400, 100);
+              
+              ctx.fillStyle = 'black';
+              ctx.font = `${fontSize || 48}px ${fontFamily || 'serif'}`;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(text, 200, 50);
+              
               buffer = canvas.toBuffer('image/png');
               filename = `generated_${Date.now()}.png`;
+              mimeType = 'image/png';
               
               console.log(`✅ Successfully generated signature canvas for: ${text}`);
             
-          } catch (canvasError) {
+            } catch (canvasError) {
               console.warn('Canvas generation failed, using SVG fallback:', canvasError);
-            
-            // Fallback: Create a simple SVG-based signature
-            const svgContent = `
-              <svg width="400" height="100" xmlns="http://www.w3.org/2000/svg">
-                <rect width="400" height="100" fill="white"/>
-                <text x="200" y="55" font-family="${fontFamily || 'serif'}" font-size="${fontSize || 48}" 
-                      text-anchor="middle" fill="black">${text}</text>
-              </svg>
-            `;
-            
+              
+              // Fallback: Create a simple SVG-based signature
+              const svgContent = `
+                <svg width="400" height="100" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="400" height="100" fill="white"/>
+                  <text x="200" y="55" font-family="${fontFamily || 'serif'}" font-size="${fontSize || 48}" 
+                        text-anchor="middle" fill="black">${text}</text>
+                </svg>
+              `;
+              
               filename = `generated_${Date.now()}.svg`;
               buffer = Buffer.from(svgContent, 'utf8');
+              mimeType = 'image/svg+xml';
             }
             
-            const uploadResult = await VultrUploadHandler.handleSignatureUpload(
-              buffer,
-              filename,
-              `user-${userId}`,
-              userId,
-              'signature'
-            );
-
-            if (!uploadResult.success) {
-              return res.status(500).json({ 
-                message: `Failed to upload generated signature: ${uploadResult.error}`,
-                error: 'vultr_upload_failed'
-              });
-            }
-
-            imageUrl = uploadResult.signedUrl || uploadResult.fileKey || '';
+            // Convert to base64
+            const base64Data = buffer.toString('base64');
+            imageUrl = `data:${mimeType};base64,${base64Data}`;
+            
             metadata = { 
               type: 'generated', 
               text, 
               fontFamily, 
-              fontSize,
-              vultrKey: uploadResult.fileKey 
-            };
+              fontSize
+            } as any;
+            
+            // Optional: Upload to Vultr as backup
+            try {
+              const uploadResult = await VultrUploadHandler.handleSignatureUpload(
+                buffer,
+                filename,
+                `user-${userId}`,
+                userId,
+                'signature'
+              );
+              
+              if (uploadResult.success) {
+                (metadata as any).vultrKey = uploadResult.fileKey;
+                (metadata as any).vultrUrl = uploadResult.fileUrl;
+              }
+            } catch (vultrError) {
+              console.warn('Vultr backup upload failed (non-critical):', vultrError);
+            }
             
           } catch (error) {
             console.error('Generate signature error:', error);
@@ -1901,8 +1921,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           j.property_state,
           j.created_at,
           
-          -- User verification status (simplified)
+          -- User verification status (including bypass flags)
           COALESCE(u.is_verified, false) as user_verified,
+          COALESCE(u.is_verification_bypassed, false) as user_verification_bypassed,
+          COALESCE(u.notary_verification_bypassed, false) as user_notary_verification_bypassed,
           COALESCE(u.account_setup_complete, false) as account_setup_complete,
           
           -- Additional job info
@@ -1927,7 +1949,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           COALESCE(s.id_verification_completed, false) as signer_verification_completed
           
         FROM jobs j
-        INNER JOIN signers s ON (s.job_id = j.id AND s.signer_email = ${user.email})
+        INNER JOIN signers s ON (s.job_id = j.id AND LOWER(s.signer_email) = LOWER(${user.email}))
         LEFT JOIN users u ON u.id = ${userId}
         
         WHERE j.job_status IN ('open', 'pending', 'in_progress')
@@ -1941,6 +1963,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const requiresVerification = row.signer_requires_verification ?? true;
         const verificationCompleted = row.signer_verification_completed ?? false;
         const userVerified = row.user_verified ?? false;
+        const userVerificationBypassed = row.user_verification_bypassed ?? false;
+        const userNotaryVerificationBypassed = row.user_notary_verification_bypassed ?? false;
         const accountSetup = row.account_setup_complete ?? false;
         
         // Determine if user can join signing and what's blocking them
@@ -1951,8 +1975,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // For signers, only check ID verification (not profile completion)
         // Profile completion is only for notaries in their notary role
         if (requiresVerification) {
-          if (verificationCompleted || userVerified) {
-            verificationStatus = userVerified ? 'bypassed' : 'completed';
+          // Check if verification is completed through any method
+          if (verificationCompleted || userVerified || userVerificationBypassed || userNotaryVerificationBypassed) {
+            // Determine the verification method for status
+            if (userVerificationBypassed || userNotaryVerificationBypassed) {
+              verificationStatus = 'bypassed';
+            } else if (userVerified) {
+              verificationStatus = 'completed';
+            } else {
+              verificationStatus = 'completed';
+            }
           } else {
             canJoinSigning = false;
             blockingReason = 'verification_required';
@@ -1977,7 +2009,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           userPrimaryRole: row.primary_user_role || userRole,
           jobSpecificRole: 'signer', // Always signer for this endpoint
           requiresIdVerification: requiresVerification,
-          idVerificationCompleted: verificationCompleted,
+          // Consider verification completed if done through any method (EVS, bypass, or job-specific)
+          idVerificationCompleted: verificationCompleted || userVerified || userVerificationBypassed || userNotaryVerificationBypassed,
           idVerificationStatus: verificationStatus,
           canJoinSigning,
           blockingReason,
@@ -2123,13 +2156,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hasAccess = true;
         accessReason = 'assigned_notary';
       }
-      // Signer access - check via signers table
-      else if (user.role === 'signer' || user.role === 'witness') {
+      
+      // If not admin/creator/notary, check if user is a signer (dual role support)
+      // This check applies to ALL roles - not just signer/witness
+      if (!hasAccess) {
+        console.log(`🔍 Checking signer access for user:`, {
+          userId,
+          email: user.email,
+          role: user.role,
+          jobId
+        });
+        
         const [signer] = await db
           .select()
           .from(signers)
-          .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, user.email)))
+          .where(and(eq(signers.jobId, jobId), sql`LOWER(${signers.signerEmail}) = ${user.email.toLowerCase()}`))
           .limit(1);
+
+        console.log(`📋 Signer table lookup result:`, {
+          found: !!signer,
+          signerEmail: signer?.signerEmail,
+          idVerificationCompleted: signer?.idVerificationCompleted,
+          requiresIdVerification: signer?.requiresIdVerification
+        });
 
         if (signer) {
           // 🔧 FIX: Get fresh user data from database instead of stale JWT token data
@@ -2148,11 +2197,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           // Check if account setup is complete using fresh data - be flexible with address formats
+          // Exception: title_company and company_user roles may have different profile requirements
           const hasBasicInfo = freshUser.firstName && freshUser.lastName && freshUser.phoneNumber;
           const hasAddress = (freshUser.address1 && freshUser.city && freshUser.state && freshUser.zipCode) || freshUser.address;
           const isAccountSetupComplete = hasBasicInfo && hasAddress;
+          const isTitleCompanyRole = ['title_company', 'company_user'].includes(freshUser.role);
           
-          if (!isAccountSetupComplete) {
+          // Only enforce account setup for regular signer/witness roles, not for dual-role title company users
+          if (!isAccountSetupComplete && !isTitleCompanyRole) {
             return res.json({
               hasAccess: false,
               message: 'Please complete your account setup first',
@@ -2163,6 +2215,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ]
             });
           }
+          
+          console.log(`✅ Account setup check:`, {
+            isAccountSetupComplete,
+            isTitleCompanyRole,
+            userId,
+            role: freshUser.role
+          });
 
           // **NEW KBA LOGIC** - Check KBA requirement for this job
           if (job.kbaRequired) {
@@ -2184,7 +2243,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.log(`✅ KBA verification passed for user ${userId} on KBA-required job ${jobId}`);
           } else {
             // For non-KBA jobs, use regular ID verification check with fresh user data
-            if (!freshUser.isVerified && !freshUser.isVerificationBypassed && !freshUser.notaryVerificationBypassed) {
+            // Check user-level verification OR job-specific verification from signers table
+            const isUserLevelVerified = freshUser.isVerified || 
+                                       freshUser.isVerificationBypassed || 
+                                       freshUser.notaryVerificationBypassed;
+            const isJobSpecificVerified = signer.idVerificationCompleted;
+            
+            if (!isUserLevelVerified && !isJobSpecificVerified) {
               return res.json({
                 hasAccess: false,
                 message: 'ID verification required before joining sessions',
@@ -2192,19 +2257,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 requirements: ['Complete ID verification in your dashboard']
               });
             }
+            
+            console.log(`✅ Verification check passed:`, {
+              isUserLevelVerified,
+              isJobSpecificVerified,
+              userId,
+              jobId
+            });
           }
 
           hasAccess = true;
           accessReason = 'invited_signer';
-          console.log(`🎉 ACCESS GRANTED for user ${userId} as invited signer`);
+          console.log(`🎉 ACCESS GRANTED for user ${userId} as invited signer (dual role support enabled)`);
         } else {
           console.log(`❌ User ${userId} not found in signers table for job ${jobId}`);
         }
-      } else {
-        console.log(`❌ User ${userId} role check failed:`, {
-          userRole: user.role,
-          expectedRoles: ['signer', 'witness']
-        });
       }
 
       if (hasAccess) {
@@ -3779,65 +3846,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ error: 'notaryId is required' });
         }
 
-        // Upload notary stamp to Vultr
+        // Convert notary stamp to base64 for reliable storage
         const { VultrUploadHandler } = await import('./vultr-upload-handler');
         
-        const uploadResult = await VultrUploadHandler.handleNotaryStampUpload(
-          req.file.buffer,
-          req.file.originalname,
-          parseInt(notaryId),
-          {
-            state,
-            commission,
-            uploadedBy: req.user.id,
-            uploadType: 'notary_stamp'
+        // Convert to base64
+        const mimeType = req.file.mimetype || 'image/png';
+        const base64Data = req.file.buffer.toString('base64');
+        const stampDataUrl = `data:${mimeType};base64,${base64Data}`;
+        
+        // Optional: Upload to Vultr as backup
+        let vultrKey = null;
+        let vultrUrl = null;
+        
+        try {
+          const uploadResult = await VultrUploadHandler.handleNotaryStampUpload(
+            req.file.buffer,
+            req.file.originalname,
+            parseInt(notaryId),
+            {
+              state,
+              commission,
+              uploadedBy: req.user.id,
+              uploadType: 'notary_stamp'
+            }
+          );
+
+          if (uploadResult.success && uploadResult.fileKey) {
+            vultrKey = uploadResult.fileKey;
+            vultrUrl = uploadResult.signedUrl || uploadResult.fileUrl;
+            console.log(`✅ Backed up notary stamp to Vultr: ${req.file.originalname} → ${uploadResult.fileKey}`);
           }
-        );
-
-        if (!uploadResult.success) {
-          return res.status(500).json({ 
-            error: `Failed to upload notary stamp: ${uploadResult.error}`,
-            code: 'vultr_upload_failed'
-          });
+        } catch (vultrError) {
+          console.warn('Vultr backup upload failed (non-critical):', vultrError);
         }
 
-        // Create notary stamp record in database using correct column names
-        if (!uploadResult.fileKey) {
-          return res.status(500).json({ 
-            error: 'Failed to get file key from upload result',
-            code: 'missing_file_key'
-          });
-        }
-
+        // Create notary stamp record in database using base64 data
         try {
           const insertResult = await db.execute(sql`
             INSERT INTO notary_stamps (notary_id, stamp_type, stamp_data, is_active, created_at, updated_at)
-            VALUES (${parseInt(notaryId)}, 'notary', ${uploadResult.fileKey}, false, NOW(), NOW())
+            VALUES (${parseInt(notaryId)}, 'notary', ${stampDataUrl}, false, NOW(), NOW())
             RETURNING id
           `);
 
-          console.log(`✅ Uploaded notary stamp to Vultr: ${req.file.originalname} → ${uploadResult.fileKey}`);
-          console.log(`✅ Created database record with ID:`, insertResult.rows[0]?.id);
+          console.log(`✅ Saved notary stamp as base64 with ID:`, insertResult.rows[0]?.id);
 
           res.json({
             success: true,
-            message: 'Notary stamp uploaded successfully to Vultr',
-            fileKey: uploadResult.fileKey,
-            fileUrl: uploadResult.signedUrl || '',
-            size: uploadResult.size || 0,
-            storageType: 'vultr',
+            message: 'Notary stamp uploaded successfully',
+            stampData: stampDataUrl,
+            size: req.file.size,
+            storageType: 'base64',
             stampId: insertResult.rows[0]?.id,
+            vultrKey: vultrKey,
+            vultrUrl: vultrUrl,
             note: 'Stamp requires admin approval before activation'
           });
         } catch (dbError) {
           console.error('Database insertion failed:', dbError);
           // Try to clean up the uploaded file if database insertion fails
-          try {
-            const { cloudStorage } = await import('./lib/cloud-storage-service');
-            await cloudStorage.deleteFile(uploadResult.fileKey);
-            console.log(`🧹 Cleaned up orphaned file: ${uploadResult.fileKey}`);
-          } catch (cleanupError) {
-            console.error('Failed to cleanup orphaned file:', cleanupError);
+          if (vultrKey) {
+            try {
+              const { cloudStorage } = await import('./lib/cloud-storage-service');
+              await cloudStorage.deleteFile(vultrKey);
+              console.log(`🧹 Cleaned up orphaned file: ${vultrKey}`);
+            } catch (cleanupError) {
+              console.error('Failed to cleanup orphaned file:', cleanupError);
+            }
           }
           
           return res.status(500).json({ 
@@ -4257,11 +4331,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       `);
 
       // Transform stamps to include proper image URLs
-      const stampsWithUrls = stamps.rows.map((stamp: any) => {
-        const imageUrl = `/api/uploads/notary-stamp/${stamp.stampData}`;
-        console.log(`🖼️ Generated stamp image URL for stamp ${stamp.id}:`, imageUrl);
-        console.log(`📁 Vultr key: ${stamp.stampData}`);
+      const { cloudStorage } = await import('./lib/cloud-storage-service');
+      
+      const stampsWithUrls = await Promise.all(stamps.rows.map(async (stamp: any) => {
+        let imageUrl = '';
         
+        if (stamp?.stampData && typeof stamp.stampData === 'string') {
+          // Check if it's base64 data or Vultr key
+          if (stamp.stampData.startsWith('data:image/')) {
+            // Already base64 data, use directly
+            imageUrl = stamp.stampData;
+            console.log(`✅ Stamp ${stamp.id}: Using base64 data`);
+          } else {
+            // Vultr key, generate signed URL
+            try {
+              const fileExists = await cloudStorage.fileExists(stamp.stampData);
+              if (fileExists) {
+                const signedUrl = await cloudStorage.getSignedUrl(stamp.stampData, 3600); // 1 hour expiry
+                imageUrl = signedUrl || '';
+                console.log(`✅ Stamp ${stamp.id}: Generated Vultr signed URL`);
+              } else {
+                console.warn(`⚠️ Stamp image not found in Vultr: ${stamp.stampData}`);
+              }
+            } catch (vultrError) {
+              console.warn(`❌ Failed to get Vultr URL for stamp ${stamp.id}:`, vultrError);
+            }
+          }
+        }
+
         return {
           id: stamp.id.toString(),
           imageUrl: imageUrl,
@@ -4270,7 +4367,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           createdAt: stamp.createdAt,
           updatedAt: stamp.updatedAt
         };
-      });
+      }));
 
       console.log(`📋 Returning ${stampsWithUrls.length} stamps for notary ${notaryId}`);
       res.json(stampsWithUrls);
@@ -4677,7 +4774,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const [signer] = await db
           .select()
           .from(signers)
-          .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, req.user.email)))
+          .where(and(eq(signers.jobId, jobId), sql`LOWER(${signers.signerEmail}) = ${req.user.email.toLowerCase()}`))
           .limit(1);
         
         if (signer) {
@@ -4753,7 +4850,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const [signer] = await db
           .select()
           .from(signers)
-          .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, req.user.email)))
+          .where(and(eq(signers.jobId, jobId), sql`LOWER(${signers.signerEmail}) = ${req.user.email.toLowerCase()}`))
           .limit(1);
         
         if (signer) {
@@ -5080,7 +5177,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const [signer] = await db
           .select()
           .from(signers)
-          .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, user.email)))
+          .where(and(eq(signers.jobId, jobId), sql`LOWER(${signers.signerEmail}) = ${user.email.toLowerCase()}`))
           .limit(1);
         
         if (signer) {
@@ -5205,7 +5302,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const [signer] = await db
           .select()
           .from(signers)
-          .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, req.user.email)))
+          .where(and(eq(signers.jobId, jobId), sql`LOWER(${signers.signerEmail}) = ${req.user.email.toLowerCase()}`))
           .limit(1);
         
         if (signer) {
@@ -5452,22 +5549,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.error('Error checking company access for document preview:', companyCheckError);
         }
       }
-      // Signer access - check via signers table
-      else if (user.role === 'signer' || user.role === 'witness') {
+      
+      // If no access yet, check if user is invited as signer (dual role support)
+      // This check applies to ALL roles - not just signer/witness
+      if (!hasAccess) {
         const [signer] = await db
           .select()
           .from(signers)
-          .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, user.email)))
+          .where(and(eq(signers.jobId, jobId), sql`LOWER(${signers.signerEmail}) = ${user.email.toLowerCase()}`))
           .limit(1);
         
         if (signer) {
           hasAccess = true;
-          console.log(`✅ DOCUMENT ACCESS: Invited signer user ${user.id} (${user.email}) on job ${jobId}`);
+          console.log(`✅ DOCUMENT ACCESS: Invited signer user ${user.id} (${user.email}) on job ${jobId} (dual role support)`);
         }
       }
       
-      // DUAL ROLE ACCESS - Check if notary/title_company is acting as signer via jobParticipants
-      if (!hasAccess && (user.role === 'notary' || user.role === 'title_company')) {
+      // DUAL ROLE ACCESS - Check if user is acting as signer via jobParticipants
+      if (!hasAccess) {
         try {
           const [dualRoleParticipant] = await db
             .select()

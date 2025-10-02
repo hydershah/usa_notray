@@ -176,6 +176,8 @@ export class ProfileAutoFillService {
   private static async getNotaryStamps(userId: number): Promise<Array<{ id: number; stampType: string; stampData: string; isActive: boolean; }>> {
     try {
       // Use raw SQL query to match the correct database column names (like routes.ts does)
+      console.log(`🔍 Querying stamps for notary ID: ${userId}`);
+      
       const stampRecords = await db.execute(sql`
         SELECT 
           id,
@@ -191,6 +193,8 @@ export class ProfileAutoFillService {
         ORDER BY created_at DESC
       `);
       
+      console.log(`📊 Database returned ${stampRecords.rows?.length || 0} stamp records for notary ${userId}`);
+      
       // Process stamps to include proper image URLs (like routes.ts does)
       const { cloudStorage } = await import('../lib/cloud-storage-service');
       
@@ -198,24 +202,24 @@ export class ProfileAutoFillService {
         let imageUrl = '';
         
         if (stamp?.stampData && typeof stamp.stampData === 'string') {
-          // Check if it's a Vultr key (no base64 prefix) or base64 data
+          // Check if it's base64 data or Vultr key
           if (stamp.stampData.startsWith('data:image/')) {
             // Already base64 data, use directly
             imageUrl = stamp.stampData;
+            console.log(`✅ Stamp ${stamp.id}: Using base64 data directly`);
           } else {
-            // Vultr key, generate signed URL
+            // Vultr key, generate signed URL - try without fileExists check first
             try {
-              const fileExists = await cloudStorage.fileExists(stamp.stampData);
-              if (fileExists) {
-                const signedUrl = await cloudStorage.getSignedUrl(stamp.stampData, 3600); // 1 hour expiry
-                imageUrl = signedUrl || '';
+              console.log(`🔍 Stamp ${stamp.id}: Generating Vultr signed URL for key: ${stamp.stampData.substring(0, 50)}...`);
+              const signedUrl = await cloudStorage.getSignedUrl(stamp.stampData, 3600); // 1 hour expiry
+              if (signedUrl) {
+                imageUrl = signedUrl;
+                console.log(`✅ Stamp ${stamp.id}: Generated signed URL successfully`);
               } else {
-                console.warn(`Stamp image not found in Vultr: ${stamp.stampData}`);
-                imageUrl = '';
+                console.warn(`⚠️ Stamp ${stamp.id}: getSignedUrl returned null/empty`);
               }
             } catch (vultrError) {
-              console.warn(`Failed to get Vultr URL for stamp ${stamp.id}:`, vultrError);
-              imageUrl = '';
+              console.error(`❌ Stamp ${stamp.id}: Failed to generate Vultr URL:`, vultrError);
             }
           }
         }
@@ -224,12 +228,14 @@ export class ProfileAutoFillService {
           id: stamp?.id || 0,
           stampType: stamp?.stampType || 'notary',
           stampData: imageUrl,
-          isActive: stamp?.isActive || false
+          isActive: stamp?.isActive || false,
+          hasError: imageUrl === '' && stamp?.stampData ? true : false
         };
       }));
       
-      // Filter out stamps with no valid image data
-      const validStamps = stamps.filter(stamp => stamp.stampData && stamp.stampData.trim() !== '');
+      // Don't filter out stamps - return all active stamps even if URL generation failed
+      // The client can show a "reload" option for stamps with errors
+      const validStamps = stamps.filter(stamp => stamp.isActive);
       
       console.log(`📸 Found ${validStamps.length} active stamps with valid data for notary ID ${userId}:`, validStamps.map(s => ({
         id: s.id,

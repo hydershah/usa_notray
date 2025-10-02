@@ -566,7 +566,7 @@ export class PDFProcessorService {
       const imgDims = image.scale(1);
       const scaleX = width / imgDims.width;
       const scaleY = height / imgDims.height;
-      const scale = Math.min(scaleX, scaleY) * 0.9; // 90% to add some padding
+      const scale = Math.min(scaleX, scaleY) * 1.0; // Use full bounds for signatures (no padding reduction)
       
       const scaledWidth = imgDims.width * scale;
       const scaledHeight = imgDims.height * scale;

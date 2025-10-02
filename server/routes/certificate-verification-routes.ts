@@ -3,7 +3,7 @@ import { verifyToken } from '../auth';
 import { CertificateVerificationService } from '../services/certificate-verification-service';
 import { db } from '../db';
 import { jobs, users, signers, jobParticipants, companies } from '../../shared/schema';
-import { eq, and, or } from 'drizzle-orm';
+import { eq, and, or, sql } from 'drizzle-orm';
 
 export function registerCertificateVerificationRoutes(app: Express) {
   const certificateVerificationService = CertificateVerificationService.getInstance();
@@ -54,12 +54,16 @@ export function registerCertificateVerificationRoutes(app: Express) {
     }
 
     // Check if user is a participant (signer) in this job
+    // DUAL ROLE SUPPORT: Check both by userId AND by email (case-insensitive)
     const participantCheck = await db
       .select()
       .from(signers)
       .where(and(
         eq(signers.jobId, jobId),
-        eq(signers.userId, user.id)
+        or(
+          eq(signers.userId, user.id),
+          sql`LOWER(${signers.signerEmail}) = ${user.email.toLowerCase()}`
+        )
       ))
       .limit(1);
 

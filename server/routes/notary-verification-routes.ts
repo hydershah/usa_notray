@@ -135,12 +135,21 @@ router.post('/revoke-kyc/:userId/:jobId', verifyToken, requireNotaryOrAdmin, asy
     }
 
     // Check if notary can revoke verification for this participant
-    const canRevoke = await db.execute(sql`
-      SELECT can_notary_bypass_verification(${notaryId}, ${userId}, ${jobId}) as can_revoke
-    `);
+    // Admins can always revoke, notaries can only revoke for their assigned jobs
+    if (!hasAdminPrivileges(req.user)) {
+      const job = await db
+        .select()
+        .from(jobs)
+        .where(eq(jobs.id, jobId))
+        .limit(1);
 
-    if (!canRevoke.rows[0]?.can_revoke && !hasAdminPrivileges(req.user)) {
-      return res.status(403).json({ error: 'You do not have permission to revoke KYC verification for this participant' });
+      if (job.length === 0) {
+        return res.status(404).json({ error: 'Job not found' });
+      }
+
+      if (job[0].notaryId !== notaryId) {
+        return res.status(403).json({ error: 'You do not have permission to revoke KYC verification for this participant' });
+      }
     }
 
     // Check if user is a participant in this job (check both job_participants and signers tables)
@@ -331,12 +340,21 @@ router.post('/bypass-verification/:userId/:jobId', verifyToken, requireNotaryOrA
     }
 
     // Check if notary can bypass verification for this participant
-    const canBypass = await db.execute(sql`
-      SELECT can_notary_bypass_verification(${notaryId}, ${userId}, ${jobId}) as can_bypass
-    `);
+    // Admins can always bypass, notaries can only bypass for their assigned jobs
+    if (!hasAdminPrivileges(req.user)) {
+      const job = await db
+        .select()
+        .from(jobs)
+        .where(eq(jobs.id, jobId))
+        .limit(1);
 
-    if (!canBypass.rows[0]?.can_bypass && !hasAdminPrivileges(req.user)) {
-      return res.status(403).json({ error: 'You do not have permission to bypass verification for this participant' });
+      if (job.length === 0) {
+        return res.status(404).json({ error: 'Job not found' });
+      }
+
+      if (job[0].notaryId !== notaryId) {
+        return res.status(403).json({ error: 'You do not have permission to bypass verification for this participant' });
+      }
     }
 
     // Check if user is a participant in this job (check both job_participants and signers tables)
@@ -990,6 +1008,94 @@ router.get('/participant/:userId/verification-image/:imageType/:jobId', verifyTo
   } catch (error) {
     console.error('Error fetching verification image:', error);
     res.status(500).json({ error: 'Failed to fetch verification image' });
+  }
+});
+
+/**
+ * POST /api/notary/signer/:signerId/bypass-verification
+ * Pre-approve a signer to skip ID verification (for signers who haven't joined yet)
+ */
+router.post('/signer/:signerId/bypass-verification', verifyToken, requireNotaryOrAdmin, async (req: any, res: Response) => {
+  try {
+    const signerId = parseInt(req.params.signerId);
+    const { reason } = req.body;
+    const currentUserId = req.user.id;
+
+    if (isNaN(signerId)) {
+      return res.status(400).json({ error: 'Invalid signer ID' });
+    }
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ error: 'Reason is required for pre-approval' });
+    }
+
+    // Get signer details
+    const [signer] = await db
+      .select()
+      .from(signers)
+      .where(eq(signers.id, signerId))
+      .limit(1);
+
+    if (!signer) {
+      return res.status(404).json({ error: 'Signer not found' });
+    }
+
+    // Check if signer already has a user account
+    if (signer.userId) {
+      return res.status(400).json({ 
+        error: 'Signer already has an account. Use the regular bypass verification endpoint instead.' 
+      });
+    }
+
+    // Check if current user has permission for this job
+    const [job] = await db
+      .select()
+      .from(jobs)
+      .where(eq(jobs.id, signer.jobId))
+      .limit(1);
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Admins can bypass anyone, notaries can only bypass for their own jobs
+    const isAdmin = hasAdminPrivileges(req.user);
+    const isNotary = req.user.role === 'notary';
+    const isAssignedNotary = job.notaryId === currentUserId;
+
+    if (!isAdmin && !(isNotary && isAssignedNotary)) {
+      return res.status(403).json({ 
+        error: 'You do not have permission to pre-approve this signer' 
+      });
+    }
+
+    // Update signer to mark as not requiring verification
+    await db
+      .update(signers)
+      .set({
+        requiresIdVerification: false,
+        idVerificationCompleted: true,
+        idVerificationCompletedAt: new Date(),
+        idVerificationMethod: isAdmin ? 'admin_bypass' : 'notary_bypass'
+      })
+      .where(eq(signers.id, signerId));
+
+    // Log the pre-approval
+    console.log(`${isAdmin ? 'Admin' : 'Notary'} ${currentUserId} pre-approved signer ${signerId} for job ${signer.jobId}:`, {
+      reason: reason.trim(),
+      signerEmail: signer.signerEmail,
+      signerName: signer.signerName
+    });
+
+    res.json({ 
+      success: true, 
+      message: 'Signer pre-approved successfully',
+      signerName: signer.signerName,
+      jobId: signer.jobId
+    });
+  } catch (error) {
+    console.error('Error pre-approving signer:', error);
+    res.status(500).json({ error: 'Failed to pre-approve signer' });
   }
 });
 

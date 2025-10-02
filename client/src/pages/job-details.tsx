@@ -37,6 +37,7 @@ import { NotaryAssignmentCard } from '@/components/job/NotaryAssignmentCard';
 import { SessionRecordingCard } from '@/components/job/SessionRecordingCard';
 import { ActivityTimelineCard } from '@/components/job/ActivityTimelineCard';
 import { JobEditor } from '@/components/job/JobEditor';
+import { SignerVerificationManager } from '@/components/job/SignerVerificationManager';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 
 export default function JobDetailsPage() {
@@ -634,6 +635,27 @@ export default function JobDetailsPage() {
                         <Badge className={signer.invitationSentAt ? 'bg-[#002A5C]/10 text-[#002A5C]' : 'bg-gray-100 text-gray-700'}>
                           {signer.invitationSentAt ? 'Invitation Sent' : 'Pending'}
                         </Badge>
+                      </div>
+                      
+                      {/* Verification Status */}
+                      <div className="mt-4 pt-4 border-t border-gray-200">
+                        <h5 className="text-sm font-medium text-gray-700 mb-3">Verification Status</h5>
+                        <SignerVerificationManager
+                          jobId={job.id}
+                          signer={{
+                            id: signer.id,
+                            signerName: signer.signerName,
+                            signerEmail: signer.signerEmail,
+                            signerPhoneNumber: signer.signerPhoneNumber || signer.signerPhone,
+                            signerRole: signer.signerRole,
+                            userId: signer.userId
+                          }}
+                          currentUserRole={user?.role || 'user'}
+                          onVerificationUpdate={() => {
+                            // Refresh job data after verification update
+                            window.location.reload();
+                          }}
+                        />
                       </div>
                     </div>
                   ))}

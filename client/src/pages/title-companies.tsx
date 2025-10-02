@@ -96,6 +96,12 @@ export default function TitleCompanies() {
   const [assignCompany, setAssignCompany] = useState<UICompany | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [companyToDelete, setCompanyToDelete] = useState<UICompany | null>(null);
+  const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
+  const [companyToApprove, setCompanyToApprove] = useState<UICompany | null>(null);
+  const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
+  const [companyToView, setCompanyToView] = useState<UICompany | null>(null);
+  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
+  const [companyToReject, setCompanyToReject] = useState<UICompany | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [paymentFilter, setPaymentFilter] = useState('all');
@@ -352,6 +358,11 @@ export default function TitleCompanies() {
     setIsAssignmentsOpen(true);
   };
 
+  const handleViewDetails = (company: UICompany) => {
+    setCompanyToView(company);
+    setIsDetailsDialogOpen(true);
+  };
+
   const handleFormSubmit = (data: any) => {
     if (selectedCompany) {
       updateCompanyMutation.mutate({ id: selectedCompany.id, data });
@@ -404,21 +415,28 @@ export default function TitleCompanies() {
 
   const getStatusBadge = (status: string) => {
     const config = {
-      active: { variant: 'default' as const, icon: CheckCircle, color: 'text-blue-600' },
-      inactive: { variant: 'secondary' as const, icon: XCircle, color: 'text-gray-600' },
-      suspended: { variant: 'destructive' as const, icon: XCircle, color: 'text-red-600' },
-      pending: { variant: 'secondary' as const, icon: AlertCircle, color: 'text-yellow-600' },
+      active: { variant: 'default' as const, icon: CheckCircle, color: 'text-blue-600', bg: 'bg-blue-50' },
+      inactive: { variant: 'secondary' as const, icon: XCircle, color: 'text-gray-600', bg: 'bg-gray-50' },
+      suspended: { variant: 'destructive' as const, icon: XCircle, color: 'text-red-600', bg: 'bg-red-50' },
+      pending: { variant: 'secondary' as const, icon: AlertCircle, color: 'text-yellow-600', bg: 'bg-yellow-50' },
+      approved: { variant: 'default' as const, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
+      rejected: { variant: 'destructive' as const, icon: XCircle, color: 'text-red-600', bg: 'bg-red-50' },
     };
 
-    const { variant, icon: Icon, color } = config[status as keyof typeof config] || config.active;
+    const { variant, icon: Icon, color, bg } = config[status as keyof typeof config] || config.active;
 
     return (
-      <Badge variant={variant} className="flex items-center gap-1">
+      <Badge variant={variant} className={`flex items-center gap-1 ${bg} ${color} font-semibold`}>
         <Icon className={`w-3 h-3 ${color}`} />
-        {status}
+        {status.charAt(0).toUpperCase() + status.slice(1)}
       </Badge>
     );
   };
+
+  // Calculate pending companies count
+  const pendingCount = useMemo(() => {
+    return companies?.filter(c => c.status === 'pending').length || 0;
+  }, [companies]);
 
   const getCompanyCompletion = (company: UICompany): number => {
     let completion = 0;
@@ -458,6 +476,38 @@ export default function TitleCompanies() {
   return (
     <MainLayout>
       <TooltipProvider>
+        {/* Pending Approvals Alert Banner */}
+        {pendingCount > 0 && (
+          <div className="mb-6 bg-gradient-to-r from-yellow-50 to-orange-50 border-l-4 border-yellow-400 rounded-r-lg shadow-md">
+            <div className="p-4">
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <AlertCircle className="h-6 w-6 text-yellow-600 animate-pulse" />
+                </div>
+                <div className="ml-3 flex-1">
+                  <h3 className="text-sm font-bold text-yellow-800">
+                    {pendingCount} {pendingCount === 1 ? 'Company' : 'Companies'} Awaiting Approval
+                  </h3>
+                  <p className="mt-1 text-sm text-yellow-700">
+                    Review and take action on pending company registrations. Click the filters below to view only pending companies.
+                  </p>
+                </div>
+                <div className="ml-4 flex-shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-yellow-300 hover:bg-yellow-100 text-yellow-800"
+                    onClick={() => setStatusFilter('pending')}
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    View Pending
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-gray-50">
           <CardHeader className="pb-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
@@ -526,16 +576,38 @@ export default function TitleCompanies() {
               
               <div className="flex gap-2 flex-wrap">
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-[120px]">
+                  <SelectTrigger className="w-[180px]">
                     <Filter className="h-4 w-4 mr-2" />
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
-                    <SelectItem value="suspended">Suspended</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="all">
+                      All Status ({companies?.length || 0})
+                    </SelectItem>
+                    <SelectItem value="pending">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="h-3 w-3 text-yellow-600" />
+                        Pending {pendingCount > 0 && `(${pendingCount})`}
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="active">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="h-3 w-3 text-blue-600" />
+                        Active
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="inactive">
+                      <div className="flex items-center gap-2">
+                        <XCircle className="h-3 w-3 text-gray-600" />
+                        Inactive
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="suspended">
+                      <div className="flex items-center gap-2">
+                        <XCircle className="h-3 w-3 text-red-600" />
+                        Suspended
+                      </div>
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 
@@ -643,7 +715,14 @@ export default function TitleCompanies() {
                   </TableHeader>
                   <TableBody>
                     {paginatedCompanies.map((company) => (
-                      <TableRow key={company.id} className="hover:bg-muted/50 transition-colors">
+                      <TableRow 
+                        key={company.id} 
+                        className={`hover:bg-muted/50 transition-colors ${
+                          company.status === 'pending' 
+                            ? 'bg-yellow-50/50 border-l-4 border-l-yellow-400' 
+                            : ''
+                        }`}
+                      >
                         <TableCell>
                           <Checkbox
                             checked={selectedCompanies.includes(company.id)}
@@ -710,39 +789,109 @@ export default function TitleCompanies() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleEditCompany(company)}>
-                                <Edit className="h-4 w-4 mr-2" />
-                                Edit Company
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleManageAssignments(company)}>
-                                <UserCheck className="h-4 w-4 mr-2" />
-                                Manage Assignments
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => navigator.clipboard.writeText(company.companyName ?? '')}>
-                                <Copy className="h-4 w-4 mr-2" />
-                                Copy Name
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => navigator.clipboard.writeText(company.email ?? '')}>
-                                <Mail className="h-4 w-4 mr-2" />
-                                Copy Email
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem 
-                                onClick={() => handleDeleteCompany(company)}
-                                className="text-red-600"
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete Company
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          {company.status === 'pending' ? (
+                            <div className="flex items-center gap-2">
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      size="sm"
+                                      className="bg-green-600 hover:bg-green-700 text-white shadow-md"
+                                      onClick={() => {
+                                        setCompanyToApprove(company);
+                                        setIsApproveDialogOpen(true);
+                                      }}
+                                    >
+                                      <CheckCircle className="h-4 w-4 mr-1" />
+                                      Approve
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Approve this company and grant access</TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      className="shadow-md"
+                                      onClick={() => {
+                                        setCompanyToReject(company);
+                                        setIsRejectDialogOpen(true);
+                                      }}
+                                    >
+                                      <XCircle className="h-4 w-4 mr-1" />
+                                      Reject
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Reject this company registration</TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="sm">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => handleEditCompany(company)}>
+                                    <Eye className="h-4 w-4 mr-2" />
+                                    View Details
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem 
+                                    onClick={() => handleDeleteCompany(company)}
+                                    className="text-red-600"
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Delete Company
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          ) : (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleViewDetails(company)}>
+                                  <Eye className="h-4 w-4 mr-2" />
+                                  View Details
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => handleEditCompany(company)}>
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Edit Company
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleManageAssignments(company)}>
+                                  <UserCheck className="h-4 w-4 mr-2" />
+                                  Manage Assignments
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => navigator.clipboard.writeText(company.companyName ?? '')}>
+                                  <Copy className="h-4 w-4 mr-2" />
+                                  Copy Name
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => navigator.clipboard.writeText(company.email ?? '')}>
+                                  <Mail className="h-4 w-4 mr-2" />
+                                  Copy Email
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem 
+                                  onClick={() => handleDeleteCompany(company)}
+                                  className="text-red-600"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Delete Company
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -828,12 +977,13 @@ export default function TitleCompanies() {
           isLoading={createCompanyMutation.isPending || updateCompanyMutation.isPending}
         />
 
+        {/* Delete Confirmation Dialog */}
         <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
                 <Trash2 className="h-5 w-5 text-red-600" />
-                Are you sure?
+                Delete Company?
               </AlertDialogTitle>
               <AlertDialogDescription>
                 This action cannot be undone. This will permanently delete the title company
@@ -847,6 +997,78 @@ export default function TitleCompanies() {
                 className="bg-red-600 hover:bg-red-700"
               >
                 Delete Company
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Approve Confirmation Dialog */}
+        <AlertDialog open={isApproveDialogOpen} onOpenChange={setIsApproveDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-green-600" />
+                Approve Company Registration?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to approve "{companyToApprove?.companyName}"? 
+                This will grant them access to the platform and allow them to create jobs.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setCompanyToApprove(null)}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (companyToApprove) {
+                    updateCompanyMutation.mutate({ 
+                      id: companyToApprove.id, 
+                      data: { status: 'approved' } 
+                    });
+                    setIsApproveDialogOpen(false);
+                    setCompanyToApprove(null);
+                  }
+                }}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                Approve Company
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Reject Confirmation Dialog */}
+        <AlertDialog open={isRejectDialogOpen} onOpenChange={setIsRejectDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <XCircle className="h-5 w-5 text-red-600" />
+                Reject Company Registration?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to reject "{companyToReject?.companyName}"? 
+                They will be notified of this decision and will not be granted platform access.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setCompanyToReject(null)}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (companyToReject) {
+                    updateCompanyMutation.mutate({ 
+                      id: companyToReject.id, 
+                      data: { status: 'rejected' } 
+                    });
+                    setIsRejectDialogOpen(false);
+                    setCompanyToReject(null);
+                  }
+                }}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Reject Company
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -888,6 +1110,147 @@ export default function TitleCompanies() {
           {assignCompany && (
             <div className="mt-2">
               <TitleCompanyNotaryAssignments embedded company={{ id: assignCompany.id, companyName: assignCompany.companyName ?? '' }} />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* View Details Dialog */}
+      <Dialog open={isDetailsDialogOpen} onOpenChange={setIsDetailsDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building className="h-5 w-5" />
+              Company Details
+            </DialogTitle>
+            <DialogDescription>
+              Complete information for {companyToView?.companyName}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {companyToView && (
+            <div className="space-y-6">
+              {/* Status Badge */}
+              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-gray-700">Status:</span>
+                  <Badge variant={companyToView.status === 'active' ? 'default' : 'secondary'}>
+                    {companyToView.status === 'pending' && '⏱️ Pending Approval'}
+                    {companyToView.status === 'active' && '✓ Active'}
+                    {companyToView.status === 'inactive' && 'Inactive'}
+                    {companyToView.status === 'rejected' && '✗ Rejected'}
+                  </Badge>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setIsDetailsDialogOpen(false);
+                      handleEditCompany(companyToView);
+                    }}
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit
+                  </Button>
+                </div>
+              </div>
+              
+              {/* Company Information */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-lg flex items-center gap-2">
+                    <Building className="h-5 w-5" />
+                    Company Information
+                  </h3>
+                  
+                  <div className="space-y-3">
+                    <div>
+                      <span className="text-sm font-medium text-gray-500">Company Name</span>
+                      <p className="text-sm mt-1">{companyToView.companyName || 'N/A'}</p>
+                    </div>
+                    
+                    <div>
+                      <span className="text-sm font-medium text-gray-500">Company Type</span>
+                      <p className="text-sm mt-1">{companyToView.companyType || 'N/A'}</p>
+                    </div>
+                    
+                    <div>
+                      <span className="text-sm font-medium text-gray-500">Payment Method</span>
+                      <p className="text-sm mt-1 flex items-center gap-2">
+                        <CreditCard className="h-4 w-4" />
+                        {companyToView.paymentMethod || 'N/A'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-lg flex items-center gap-2">
+                    <Users className="h-5 w-5" />
+                    Primary Contact
+                  </h3>
+                  
+                  <div className="space-y-3">
+                    <div>
+                      <span className="text-sm font-medium text-gray-500">Contact Name</span>
+                      <p className="text-sm mt-1">{companyToView.primaryUserName || companyToView.contactName || 'N/A'}</p>
+                    </div>
+                    
+                    <div>
+                      <span className="text-sm font-medium text-gray-500">Email</span>
+                      <p className="text-sm mt-1 flex items-center gap-2">
+                        <Mail className="h-4 w-4" />
+                        {companyToView.primaryUserEmail || companyToView.email || 'N/A'}
+                      </p>
+                    </div>
+                    
+                    <div>
+                      <span className="text-sm font-medium text-gray-500">Phone</span>
+                      <p className="text-sm mt-1 flex items-center gap-2">
+                        <Phone className="h-4 w-4" />
+                        {companyToView.primaryUserPhone || companyToView.phoneNumber || 'N/A'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Address Information */}
+              {(companyToView.address1 || companyToView.city || companyToView.state) && (
+                <>
+                  <div className="border-t pt-4">
+                    <h3 className="font-semibold text-lg flex items-center gap-2 mb-3">
+                      <MapPin className="h-5 w-5" />
+                      Address
+                    </h3>
+                    
+                    <div className="text-sm space-y-1">
+                      {companyToView.address1 && <p>{companyToView.address1}</p>}
+                      {companyToView.address2 && <p>{companyToView.address2}</p>}
+                      {(companyToView.city || companyToView.state || companyToView.zipCode) && (
+                        <p>
+                          {companyToView.city}
+                          {companyToView.city && companyToView.state && ', '}
+                          {companyToView.state} {companyToView.zipCode}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+              
+              {/* Additional Details */}
+              <div className="border-t pt-4 grid grid-cols-2 gap-4 text-sm text-gray-500">
+                <div>
+                  <span className="font-medium">Created:</span>{' '}
+                  {companyToView.createdAt ? new Date(companyToView.createdAt).toLocaleDateString() : 'N/A'}
+                </div>
+                <div>
+                  <span className="font-medium">Last Updated:</span>{' '}
+                  {companyToView.updatedAt ? new Date(companyToView.updatedAt).toLocaleDateString() : 'N/A'}
+                </div>
+              </div>
             </div>
           )}
         </DialogContent>

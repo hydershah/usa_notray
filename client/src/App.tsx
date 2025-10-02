@@ -459,7 +459,7 @@ function Router() {
 
       {/* PDF Editor Routes */}
       <Route path="/editor/:jobId">
-        <ProtectedRoute allowedRoles={['admin', 'notary', 'signer', 'witness']}>
+        <ProtectedRoute allowedRoles={['admin', 'notary', 'signer', 'witness', 'title_company', 'company_user', 'client']}>
           <ErrorBoundary fallback={<LoadingFallback />}>
             <React.Suspense fallback={<LoadingFallback />}>
               <EditorPage />
@@ -470,7 +470,7 @@ function Router() {
 
       {/* Redirect legacy signing-session URLs to editor with signing mode */}
       <Route path="/signing-session/:jobId">
-        <ProtectedRoute allowedRoles={['admin', 'notary', 'signer', 'witness']}>
+        <ProtectedRoute allowedRoles={['admin', 'notary', 'signer', 'witness', 'title_company', 'company_user', 'client']}>
           <SigningSessionRedirect />
         </ProtectedRoute>
       </Route>

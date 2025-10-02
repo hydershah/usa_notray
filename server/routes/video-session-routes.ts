@@ -7,7 +7,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db';
 import { editorSessions, sessionParticipants } from '../../shared/schema';
-import { eq, desc, and, inArray } from 'drizzle-orm';
+import { eq, desc, and, inArray, sql } from 'drizzle-orm';
 import { dailyApi, type DailyParticipant } from '../lib/daily-api-service';
 import { verifyToken, type AuthUser } from '../auth';
 import { validateRequest } from '../middleware/validation';
@@ -230,24 +230,51 @@ router.get('/notary/:jobId/video-session',
           .where(eq(sessionParticipants.sessionId, session.id));
 
         // Find current user's participant data
-        const userParticipant = participants.find(p => p.userId === (req.user as AuthUser)?.id);
+        let userParticipant = participants.find(p => p.userId === (req.user as AuthUser)?.id);
         
         if (!userParticipant) {
-          // Instead of returning 403, check if user has access to the job
-          // For now, if they're an admin/notary or the job is theirs, return 404 so they can create a new session
+          // DUAL ROLE SUPPORT: Check if user is a signer via signers table
           const user = req.user as AuthUser;
-          const hasAdminAccess = user.role === 'admin' || user.role === 'notary' || 
-                                (user.privileges && (user.privileges.includes('admin') || user.privileges.includes('view_all_jobs')));
+          const { signers } = await import('../../shared/schema');
+          const { storage } = await import('../storage');
+          const job = await storage.getJob(parseInt(jobId));
           
-          if (hasAdminAccess) {
-            // Return 404 so the client can create a new session
-            return res.status(404).json({ 
-              error: 'No active video session found for this user' 
-            });
-          } else {
-            return res.status(403).json({ 
-              error: 'User not authorized for this session' 
-            });
+          if (job) {
+            const [signerRecord] = await db
+              .select()
+              .from(signers)
+              .where(and(eq(signers.jobId, job.id), sql`LOWER(${signers.signerEmail}) = ${user.email.toLowerCase()}`))
+              .limit(1);
+            
+            if (signerRecord) {
+              console.log(`✅ User ${user.id} found as signer via signers table - creating temporary participant for video session`);
+              // Create a temporary participant object for the signer
+              userParticipant = {
+                userId: user.id,
+                role: 'signer',
+                sessionId: session.id,
+                userColor: `#${Math.floor(Math.random()*16777215).toString(16)}`,
+                joinedAt: new Date()
+              };
+            }
+          }
+          
+          // If still not found, check admin access
+          if (!userParticipant) {
+            const hasAdminAccess = user.role === 'admin' || user.role === 'notary' || 
+                                  (user.privileges && (user.privileges.includes('admin') || user.privileges.includes('view_all_jobs')));
+            
+            if (hasAdminAccess) {
+              // Return 404 so the client can create a new session
+              return res.status(404).json({ 
+                error: 'No active video session found for this user' 
+              });
+            } else {
+              console.log(`❌ User ${user.id} not found as participant or signer for video session`);
+              return res.status(403).json({ 
+                error: 'User not authorized for this session' 
+              });
+            }
           }
         }
 

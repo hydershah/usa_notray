@@ -863,7 +863,8 @@ export class DatabaseStorage implements IStorage {
                       CONCAT('Notary #', j.notary_id)
                     )
                   ELSE NULL
-                END AS notary_name
+                END AS notary_name,
+                false AS is_signing_job
               FROM jobs j
               WHERE j.user_id = ${userId}
                  OR j.selected_notary = CAST(${userId} AS TEXT)
@@ -894,10 +895,11 @@ export class DatabaseStorage implements IStorage {
                       CONCAT('Notary #', j.notary_id)
                     )
                   ELSE NULL
-                END AS notary_name
+                END AS notary_name,
+                true AS is_signing_job
               FROM jobs j
               INNER JOIN signers s ON s.job_id = j.id
-              WHERE s.signer_email = ${user.email}
+              WHERE LOWER(s.signer_email) = LOWER(${user.email})
             )
             UNION
             (
@@ -924,7 +926,8 @@ export class DatabaseStorage implements IStorage {
                       CONCAT('Notary #', j.notary_id)
                     )
                   ELSE NULL
-                END AS notary_name
+                END AS notary_name,
+                true AS is_signing_job
               FROM jobs j
               INNER JOIN job_participants jp ON jp.job_id = j.id
               WHERE jp.user_id = ${userId}
@@ -947,7 +950,7 @@ export class DatabaseStorage implements IStorage {
               (
                 SELECT DISTINCT j.id FROM jobs j
                 INNER JOIN signers s ON s.job_id = j.id
-                WHERE s.signer_email = ${user.email}
+                WHERE LOWER(s.signer_email) = LOWER(${user.email})
               )
               UNION
               (
@@ -982,11 +985,15 @@ export class DatabaseStorage implements IStorage {
           hasMore: false
         };
       } else if (role === 'title_company' || role === 'company_manager' || role === 'client') {
-        // Title company, company manager, and client users see jobs they created OR jobs assigned to their company
+        // Title company, company manager, and client users see:
+        // 1. Jobs they created
+        // 2. Jobs assigned to their company 
+        // 3. Jobs where they are invited as signers (DUAL ROLE SUPPORT)
         
-        // First, get the user's company information
+        // First, get the user's company information and email
         const [user] = await db.select({
           id: users.id,
+          email: users.email,
           companyId: users.companyId,
           companyName: companies.companyName
         })
@@ -1003,17 +1010,10 @@ export class DatabaseStorage implements IStorage {
           };
         }
 
-        // Build the WHERE clause to include both user-created jobs AND jobs assigned to their company
-        const whereConditions: any[] = [eq(jobs.userId, userId)];
-        
-        // If user has a company, also include jobs where titleCompany matches their company name
-        if (user.companyName) {
-          whereConditions.push(eq(jobs.titleCompany, user.companyName));
-        }
-
-        const [jobsResult, countResult] = await Promise.all([
-          db.execute(sql`
-            SELECT 
+        // Use UNION query to get all relevant jobs (similar to notary logic)
+        const combinedJobsQuery = sql`
+          (
+            SELECT DISTINCT 
               j.*,
               COALESCE(
                 (
@@ -1036,23 +1036,111 @@ export class DatabaseStorage implements IStorage {
                     CONCAT('Notary #', j.notary_id)
                   )
                 ELSE NULL
-              END AS notary_name
+              END AS notary_name,
+              false AS is_signing_job
             FROM jobs j
             WHERE j.user_id = ${userId}
                OR (${user.companyName ? sql`j.title_company = ${user.companyName}` : sql`FALSE`})
-            ORDER BY j.created_at DESC
-            LIMIT ${limit}
-            OFFSET ${offset}
-          `),
-          db.select({ count: count() })
-            .from(jobs)
-            .where(or(...whereConditions))
+          )
+          UNION
+          (
+            SELECT DISTINCT 
+              j.*,
+              COALESCE(
+                (
+                  SELECT s2.signer_name 
+                  FROM signers s2 
+                  WHERE s2.job_id = j.id 
+                  ORDER BY s2.created_at ASC NULLS LAST, s2.id ASC 
+                  LIMIT 1
+                ),
+                ''
+              ) AS first_signer_name,
+              CASE 
+                WHEN j.notary_id IS NOT NULL THEN 
+                  COALESCE(
+                    (
+                      SELECT CONCAT(u.first_name, ' ', u.last_name)
+                      FROM users u 
+                      WHERE u.id = j.notary_id
+                    ),
+                    CONCAT('Notary #', j.notary_id)
+                  )
+                ELSE NULL
+              END AS notary_name,
+              true AS is_signing_job
+            FROM jobs j
+            INNER JOIN signers s ON s.job_id = j.id
+            WHERE LOWER(s.signer_email) = LOWER(${user.email})
+          )
+          UNION
+          (
+            SELECT DISTINCT 
+              j.*,
+              COALESCE(
+                (
+                  SELECT s3.signer_name 
+                  FROM signers s3 
+                  WHERE s3.job_id = j.id 
+                  ORDER BY s3.created_at ASC NULLS LAST, s3.id ASC 
+                  LIMIT 1
+                ),
+                ''
+              ) AS first_signer_name,
+              CASE 
+                WHEN j.notary_id IS NOT NULL THEN 
+                  COALESCE(
+                    (
+                      SELECT CONCAT(u.first_name, ' ', u.last_name)
+                      FROM users u 
+                      WHERE u.id = j.notary_id
+                    ),
+                    CONCAT('Notary #', j.notary_id)
+                  )
+                ELSE NULL
+              END AS notary_name,
+              true AS is_signing_job
+            FROM jobs j
+            INNER JOIN job_participants jp ON jp.job_id = j.id
+            WHERE jp.user_id = ${userId}
+          )
+          ORDER BY created_at DESC
+          LIMIT ${limit}
+          OFFSET ${offset}
+        `;
+        
+        // Get total count for pagination
+        const countQuery = sql`
+          SELECT COUNT(*) as count FROM (
+            (
+              SELECT DISTINCT j.id FROM jobs j 
+              WHERE j.user_id = ${userId}
+                 OR (${user.companyName ? sql`j.title_company = ${user.companyName}` : sql`FALSE`})
+            )
+            UNION
+            (
+              SELECT DISTINCT j.id FROM jobs j
+              INNER JOIN signers s ON s.job_id = j.id
+              WHERE LOWER(s.signer_email) = LOWER(${user.email})
+            )
+            UNION
+            (
+              SELECT DISTINCT j.id FROM jobs j
+              INNER JOIN job_participants jp ON jp.job_id = j.id
+              WHERE jp.user_id = ${userId}
+            )
+          ) as combined_jobs
+        `;
+        
+        const [jobsResult, countResult] = await Promise.all([
+          db.execute(combinedJobsQuery),
+          db.execute(countQuery)
         ]);
         
-        const totalCount = countResult[0].count;
+        const totalCount = countResult.rows[0].count as number;
         const hasMore = offset + limit < totalCount;
         
-        console.log(`📋 Found ${jobsResult.rows.length} jobs for ${role} user ${userId} (company: ${user.companyName}, total: ${totalCount})`);
+        console.log(`📋 DUAL ROLE: Found ${jobsResult.rows.length} jobs for ${role} user ${userId} (company: ${user.companyName}, email: ${user.email}, total: ${totalCount})`);
         
         return {
           jobs: (jobsResult.rows as unknown as Job[]),
@@ -1080,7 +1168,8 @@ export class DatabaseStorage implements IStorage {
                   LIMIT 1
                 ),
                 ''
-              ) AS first_signer_name
+              ) AS first_signer_name,
+              false AS is_signing_job
             FROM jobs j 
             WHERE j.user_id = ${userId}
           )
@@ -1097,10 +1186,11 @@ export class DatabaseStorage implements IStorage {
                   LIMIT 1
                 ),
                 ''
-              ) AS first_signer_name
+              ) AS first_signer_name,
+              true AS is_signing_job
             FROM jobs j
             INNER JOIN signers s ON s.job_id = j.id
-            WHERE s.signer_email = ${user.email}
+            WHERE LOWER(s.signer_email) = LOWER(${user.email})
           )
           ORDER BY created_at DESC
           LIMIT ${limit}
@@ -1118,7 +1208,7 @@ export class DatabaseStorage implements IStorage {
             (
               SELECT DISTINCT j.id FROM jobs j
               INNER JOIN signers s ON s.job_id = j.id
-              WHERE s.signer_email = ${user.email}
+              WHERE LOWER(s.signer_email) = LOWER(${user.email})
             )
           ) as combined_jobs
         `;
@@ -1214,7 +1304,7 @@ export class DatabaseStorage implements IStorage {
         idVerificationCompleted: signers.idVerificationCompleted
       })
       .from(signers)
-      .where(and(eq(signers.jobId, jobId), eq(signers.signerEmail, user.email)));
+      .where(and(eq(signers.jobId, jobId), sql`LOWER(${signers.signerEmail}) = ${user.email.toLowerCase()}`));
     
     if (signer) {
       console.log(`✅ DUAL ROLE: Session access check via signers table for user ${userId} (${user.email}) on job ${jobId}`);

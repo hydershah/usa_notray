@@ -2,6 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { 
   Building, 
   Clock, 
@@ -19,10 +29,12 @@ import {
   User,
   Calendar,
   MapPin,
-  Phone
+  Phone,
+  Trash2
 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { apiRequest } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 
 interface Company {
   id: number;
@@ -136,15 +148,16 @@ const CompanyTable: React.FC<{
   onViewCompany: (company: Company) => void;
   onApproveCompany: (company: Company) => void;
   onRejectCompany: (company: Company) => void;
+  onDeleteCompany: (company: Company) => void;
   onActivateCompany: (company: Company) => void;
   onDeactivateCompany: (company: Company) => void;
-}> = ({ companies, loading, onViewCompany, onApproveCompany, onRejectCompany, onActivateCompany, onDeactivateCompany }) => {
+}> = ({ companies, loading, onViewCompany, onApproveCompany, onRejectCompany, onDeleteCompany, onActivateCompany, onDeactivateCompany }) => {
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'pending': return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">Pending</Badge>;
-      case 'approved': return <Badge variant="secondary" className="bg-green-100 text-green-800">Approved</Badge>;
-      case 'rejected': return <Badge variant="secondary" className="bg-red-100 text-red-800">Rejected</Badge>;
-      case 'active': return <Badge variant="secondary" className="bg-emerald-100 text-emerald-800">Active</Badge>;
+      case 'pending': return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 font-semibold">⏱️ Pending Review</Badge>;
+      case 'approved': return <Badge variant="secondary" className="bg-green-100 text-green-800">✓ Approved</Badge>;
+      case 'rejected': return <Badge variant="secondary" className="bg-red-100 text-red-800">✗ Rejected</Badge>;
+      case 'active': return <Badge variant="secondary" className="bg-emerald-100 text-emerald-800">✓ Active</Badge>;
       case 'inactive': return <Badge variant="secondary" className="bg-gray-100 text-gray-800">Inactive</Badge>;
       default: return <Badge variant="secondary">{status}</Badge>;
     }
@@ -153,7 +166,7 @@ const CompanyTable: React.FC<{
   const getTypeBadge = (type: string) => {
     switch (type) {
       case 'title_company': return <Badge variant="outline" className="text-blue-600">Title Company</Badge>;
-             case 'lending_institution': return <Badge variant="outline" className="text-blue-600">Lending Institution</Badge>;
+      case 'lending_institution': return <Badge variant="outline" className="text-blue-600">Lending Institution</Badge>;
       case 'real_estate_agency': return <Badge variant="outline" className="text-blue-600">Real Estate Agency</Badge>;
       case 'law_firm': return <Badge variant="outline" className="text-orange-600">Law Firm</Badge>;
       case 'other': return <Badge variant="outline" className="text-gray-600">Other</Badge>;
@@ -183,91 +196,93 @@ const CompanyTable: React.FC<{
   return (
     <div className="space-y-4">
       {companies.map((company) => (
-        <Card key={company.id} className="hover:shadow-md transition-shadow">
+        <Card key={company.id} className={`hover:shadow-lg transition-all ${company.status === 'pending' ? 'border-2 border-yellow-300 bg-yellow-50/30' : ''}`}>
           <CardContent className="p-6">
-            <div className="flex items-start justify-between">
+            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
               <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
-                  <h3 className="text-lg font-semibold text-gray-900">{company.companyName}</h3>
+                <div className="flex flex-wrap items-center gap-3 mb-3">
+                  <div className="flex items-center gap-2">
+                    <Building className="h-5 w-5 text-blue-600" />
+                    <h3 className="text-xl font-bold text-gray-900">{company.companyName}</h3>
+                  </div>
                   {getStatusBadge(company.status)}
                   {getTypeBadge(company.companyType)}
                 </div>
                 
-                <div className="flex flex-wrap gap-4 text-sm text-gray-500 mb-4">
-                  <div className="flex items-center gap-1">
-                    <User className="h-4 w-4" />
-                    <span>{company.primaryUserName}</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-600 mb-4">
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-gray-400" />
+                    <span><strong>Contact:</strong> {company.primaryUserName}</span>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Mail className="h-4 w-4" />
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-gray-400" />
                     <span>{company.primaryUserEmail}</span>
                   </div>
                   {company.primaryUserPhone && (
-                    <div className="flex items-center gap-1">
-                      <Phone className="h-4 w-4" />
+                    <div className="flex items-center gap-2">
+                      <Phone className="h-4 w-4 text-gray-400" />
                       <span>{company.primaryUserPhone}</span>
                     </div>
                   )}
                   {company.city && company.state && (
-                    <div className="flex items-center gap-1">
-                      <MapPin className="h-4 w-4" />
-                      <span>{company.city}, {company.state}</span>
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-gray-400" />
+                      <span>{company.city}, {company.state} {company.zipCode}</span>
                     </div>
                   )}
                 </div>
                 
-                <div className="text-xs text-gray-400">
-                  Created: {new Date(company.createdAt).toLocaleDateString()}
+                <div className="flex items-center gap-4 text-xs text-gray-500">
+                  <div className="flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    <span>Created: {new Date(company.createdAt).toLocaleDateString()}</span>
+                  </div>
                   {company.approvedAt && (
-                    <span className="ml-4">
-                      Approved: {new Date(company.approvedAt).toLocaleDateString()}
-                    </span>
+                    <div className="flex items-center gap-1">
+                      <CheckCircle className="h-3 w-3 text-green-600" />
+                      <span>Approved: {new Date(company.approvedAt).toLocaleDateString()}</span>
+                    </div>
                   )}
                 </div>
               </div>
               
-              <div className="flex items-center gap-2 ml-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onViewCompany(company)}
-                  className="h-8"
-                >
-                  <Eye className="h-4 w-4 mr-1" />
-                  View
-                </Button>
-                
+              <div className="flex flex-col gap-2 lg:min-w-[200px]">
                 {company.status === 'pending' && (
                   <>
                     <Button
-                      variant="outline"
-                      size="sm"
                       onClick={() => onApproveCompany(company)}
-                      className="h-8 text-blue-600 border-green-200 hover:bg-green-50"
+                      className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold shadow-md"
+                      size="lg"
                     >
-                      <CheckCircle className="h-4 w-4 mr-1" />
-                      Approve
+                      <CheckCircle className="h-5 w-5 mr-2" />
+                      Approve Company
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => onRejectCompany(company)}
+                      className="w-full font-semibold shadow-md"
+                      size="lg"
+                    >
+                      <XCircle className="h-5 w-5 mr-2" />
+                      Reject
                     </Button>
                     <Button
                       variant="outline"
-                      size="sm"
-                      onClick={() => onRejectCompany(company)}
-                      className="h-8 text-red-600 border-red-200 hover:bg-red-50"
+                      onClick={() => onDeleteCompany(company)}
+                      className="w-full text-red-600 border-red-300 hover:bg-red-50"
                     >
-                      <XCircle className="h-4 w-4 mr-1" />
-                      Reject
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete
                     </Button>
                   </>
                 )}
                 
                 {company.status === 'approved' && (
                   <Button
-                    variant="outline"
-                    size="sm"
                     onClick={() => onActivateCompany(company)}
-                    className="h-8 text-emerald-600 border-emerald-200 hover:bg-emerald-50"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
                   >
-                    <CheckCircle className="h-4 w-4 mr-1" />
+                    <CheckCircle className="h-4 w-4 mr-2" />
                     Activate
                   </Button>
                 )}
@@ -275,12 +290,22 @@ const CompanyTable: React.FC<{
                 {company.status === 'active' && (
                   <Button
                     variant="outline"
-                    size="sm"
                     onClick={() => onDeactivateCompany(company)}
-                    className="h-8 text-gray-600 border-gray-200 hover:bg-gray-50"
+                    className="w-full"
                   >
-                    <AlertTriangle className="h-4 w-4 mr-1" />
+                    <AlertTriangle className="h-4 w-4 mr-2" />
                     Deactivate
+                  </Button>
+                )}
+
+                {company.status !== 'pending' && (
+                  <Button
+                    variant="outline"
+                    onClick={() => onViewCompany(company)}
+                    className="w-full"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    View Details
                   </Button>
                 )}
               </div>
@@ -294,6 +319,7 @@ const CompanyTable: React.FC<{
 
 export default function AdminCompanies() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [stats, setStats] = useState<CompanyStats>({
     total: 0,
@@ -307,6 +333,20 @@ export default function AdminCompanies() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    action: () => void;
+    actionText: string;
+    variant?: 'default' | 'destructive';
+  }>({
+    open: false,
+    title: '',
+    description: '',
+    action: () => {},
+    actionText: 'Confirm',
+  });
 
   useEffect(() => {
     // Initialize filter from URL query (e.g., ?status=pending)
@@ -355,34 +395,106 @@ export default function AdminCompanies() {
     console.log('View company:', company);
   };
 
-  const handleApproveCompany = async (company: Company) => {
-    try {
-      const response = await apiRequest("PATCH", `/api/companies/${company.id}/status`, {
-        status: 'approved',
-        notes: 'Approved by admin'
-      });
-      
-      if (response.ok) {
-        fetchCompanies(); // Refresh the list
+  const handleApproveCompany = (company: Company) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Approve Company',
+      description: `Are you sure you want to approve "${company.companyName}"? This will grant them access to the platform.`,
+      actionText: 'Approve',
+      variant: 'default',
+      action: async () => {
+        try {
+          const response = await apiRequest("PATCH", `/api/companies/${company.id}/status`, {
+            status: 'approved',
+            notes: 'Approved by admin'
+          });
+          
+          if (response.ok) {
+            toast({
+              title: "Company Approved",
+              description: `${company.companyName} has been successfully approved.`,
+            });
+            fetchCompanies();
+          } else {
+            throw new Error('Failed to approve company');
+          }
+        } catch (error) {
+          console.error('Error approving company:', error);
+          toast({
+            title: "Error",
+            description: "Failed to approve company. Please try again.",
+            variant: "destructive",
+          });
+        }
       }
-    } catch (error) {
-      console.error('Error approving company:', error);
-    }
+    });
   };
 
-  const handleRejectCompany = async (company: Company) => {
-    try {
-      const response = await apiRequest("PATCH", `/api/companies/${company.id}/status`, {
-        status: 'rejected',
-        notes: 'Rejected by admin'
-      });
-      
-      if (response.ok) {
-        fetchCompanies(); // Refresh the list
+  const handleRejectCompany = (company: Company) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Reject Company',
+      description: `Are you sure you want to reject "${company.companyName}"? They will be notified of this decision.`,
+      actionText: 'Reject',
+      variant: 'destructive',
+      action: async () => {
+        try {
+          const response = await apiRequest("PATCH", `/api/companies/${company.id}/status`, {
+            status: 'rejected',
+            notes: 'Rejected by admin'
+          });
+          
+          if (response.ok) {
+            toast({
+              title: "Company Rejected",
+              description: `${company.companyName} has been rejected.`,
+            });
+            fetchCompanies();
+          } else {
+            throw new Error('Failed to reject company');
+          }
+        } catch (error) {
+          console.error('Error rejecting company:', error);
+          toast({
+            title: "Error",
+            description: "Failed to reject company. Please try again.",
+            variant: "destructive",
+          });
+        }
       }
-    } catch (error) {
-      console.error('Error rejecting company:', error);
-    }
+    });
+  };
+
+  const handleDeleteCompany = (company: Company) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Company',
+      description: `Are you sure you want to permanently delete "${company.companyName}"? This action cannot be undone and will remove all associated data.`,
+      actionText: 'Delete Permanently',
+      variant: 'destructive',
+      action: async () => {
+        try {
+          const response = await apiRequest("DELETE", `/api/companies/${company.id}`);
+          
+          if (response.ok) {
+            toast({
+              title: "Company Deleted",
+              description: `${company.companyName} has been permanently deleted.`,
+            });
+            fetchCompanies();
+          } else {
+            throw new Error('Failed to delete company');
+          }
+        } catch (error) {
+          console.error('Error deleting company:', error);
+          toast({
+            title: "Error",
+            description: "Failed to delete company. Please try again.",
+            variant: "destructive",
+          });
+        }
+      }
+    });
   };
 
   const handleActivateCompany = async (company: Company) => {
@@ -393,26 +505,55 @@ export default function AdminCompanies() {
       });
       
       if (response.ok) {
-        fetchCompanies(); // Refresh the list
+        toast({
+          title: "Company Activated",
+          description: `${company.companyName} is now active.`,
+        });
+        fetchCompanies();
       }
     } catch (error) {
       console.error('Error activating company:', error);
+      toast({
+        title: "Error",
+        description: "Failed to activate company. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
-  const handleDeactivateCompany = async (company: Company) => {
-    try {
-      const response = await apiRequest("PATCH", `/api/companies/${company.id}/status`, {
-        status: 'inactive',
-        notes: 'Deactivated by admin'
-      });
-      
-      if (response.ok) {
-        fetchCompanies(); // Refresh the list
+  const handleDeactivateCompany = (company: Company) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Deactivate Company',
+      description: `Are you sure you want to deactivate "${company.companyName}"? This will restrict their access to the platform.`,
+      actionText: 'Deactivate',
+      variant: 'destructive',
+      action: async () => {
+        try {
+          const response = await apiRequest("PATCH", `/api/companies/${company.id}/status`, {
+            status: 'inactive',
+            notes: 'Deactivated by admin'
+          });
+          
+          if (response.ok) {
+            toast({
+              title: "Company Deactivated",
+              description: `${company.companyName} has been deactivated.`,
+            });
+            fetchCompanies();
+          } else {
+            throw new Error('Failed to deactivate company');
+          }
+        } catch (error) {
+          console.error('Error deactivating company:', error);
+          toast({
+            title: "Error",
+            description: "Failed to deactivate company. Please try again.",
+            variant: "destructive",
+          });
+        }
       }
-    } catch (error) {
-      console.error('Error deactivating company:', error);
-    }
+    });
   };
 
   // Filter companies based on search and filters
@@ -448,6 +589,22 @@ export default function AdminCompanies() {
         <p className="text-gray-600">Review and manage title company registrations and approvals</p>
       </div>
 
+      {stats.pending > 0 && (
+        <div className="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-lg">
+          <div className="flex items-center">
+            <AlertTriangle className="h-5 w-5 text-yellow-600 mr-3" />
+            <div>
+              <h3 className="text-sm font-semibold text-yellow-800">
+                {stats.pending} {stats.pending === 1 ? 'Company' : 'Companies'} Pending Approval
+              </h3>
+              <p className="text-sm text-yellow-700">
+                Review and take action on pending company registrations below.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <CompanyFilters
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
@@ -465,6 +622,7 @@ export default function AdminCompanies() {
         onViewCompany={handleViewCompany}
         onApproveCompany={handleApproveCompany}
         onRejectCompany={handleRejectCompany}
+        onDeleteCompany={handleDeleteCompany}
         onActivateCompany={handleActivateCompany}
         onDeactivateCompany={handleDeactivateCompany}
       />
@@ -478,6 +636,31 @@ export default function AdminCompanies() {
           </CardContent>
         </Card>
       )}
+
+      <AlertDialog open={confirmDialog.open} onOpenChange={(open) => setConfirmDialog({ ...confirmDialog, open })}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmDialog.title}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDialog.description}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmDialog({ ...confirmDialog, open: false })}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                confirmDialog.action();
+                setConfirmDialog({ ...confirmDialog, open: false });
+              }}
+              className={confirmDialog.variant === 'destructive' ? 'bg-red-600 hover:bg-red-700' : ''}
+            >
+              {confirmDialog.actionText}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 } 

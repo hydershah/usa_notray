@@ -823,7 +823,16 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                         Job Details
                       </Button>
                     </div>
-                    <CardTitle className="text-lg font-semibold">
+                    <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                      {/* Visual indicator for admin's own jobs */}
+                      {currentUser?.role === 'admin' && currentUser?.id === job.userId && (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Briefcase className="h-4 w-4 text-blue-600" />
+                          </TooltipTrigger>
+                          <TooltipContent>Your job</TooltipContent>
+                        </Tooltip>
+                      )}
                       {job.internalReference || `Job #${job.id}`}
                     </CardTitle>
                   </CardHeader>
@@ -957,7 +966,7 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                 <TableBody>
                   {paginatedJobs.map((job, index) => (
                     <TableRow 
-                      key={job.id} 
+                      key={`${job.id}-${(job as any).isSigningJob ? 'signing' : 'regular'}-${index}`} 
                       className={`hover:bg-gray-50 transition-colors border-b border-gray-100 ${
                         getJobStatus(job) === 'cancelled' 
                           ? 'bg-red-50' 
@@ -971,8 +980,25 @@ export function JobTable({ onCreateJob }: JobTableProps) {
                         />
                       </TableCell>
                       <TableCell className="py-4 px-2">
-                        <div className="font-semibold text-gray-900 text-base">
-                          {job.internalReference || `Job #${job.id}`}
+                        <div className="flex items-center gap-2">
+                          {/* Visual indicator for admin's own jobs */}
+                          {currentUser?.role === 'admin' && currentUser?.id === job.userId && (
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Briefcase className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                              </TooltipTrigger>
+                              <TooltipContent>Your job</TooltipContent>
+                            </Tooltip>
+                          )}
+                          <div className="font-semibold text-gray-900 text-base flex items-center gap-1">
+                            {job.internalReference || `Job #${job.id}`}
+                            {/* Debug: Show ownership info */}
+                            {currentUser?.role === 'admin' && (
+                              <span className="text-xs bg-gray-100 text-gray-600 px-1 py-0.5 rounded" title={`Current: ${currentUser?.id}, Job: ${job.userId || (job as any).user_id || 'none'}`}>
+                                {currentUser?.id === (job.userId || (job as any).user_id) ? '✓ Mine' : `U:${job.userId || (job as any).user_id || '?'}`}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell className="py-4 px-2">
