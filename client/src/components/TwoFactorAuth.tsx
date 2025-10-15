@@ -254,6 +254,7 @@ export default function TwoFactorAuth({ onStatusChange }: TwoFactorAuthProps) {
               {status.enabled ? "Enabled" : "Disabled"}
             </Badge>
             {status.enabled ? (
+              <>
               <AlertDialog open={isDisableDialogOpen} onOpenChange={setIsDisableDialogOpen}>
                 <AlertDialogTrigger asChild>
                   <Button variant="outline" size="sm">
@@ -338,13 +339,13 @@ export default function TwoFactorAuth({ onStatusChange }: TwoFactorAuthProps) {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
+              </>
             ) : (
+              <>
+              <Button onClick={startSetup} disabled={isLoading} size="sm">
+                {isLoading ? "Setting up..." : "Enable 2FA"}
+              </Button>
               <Dialog open={isSetupDialogOpen} onOpenChange={setIsSetupDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button onClick={startSetup} disabled={isLoading}>
-                    {isLoading ? "Setting up..." : "Enable 2FA"}
-                  </Button>
-                </DialogTrigger>
                 <DialogContent className="sm:max-w-md">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
@@ -458,6 +459,7 @@ export default function TwoFactorAuth({ onStatusChange }: TwoFactorAuthProps) {
                   )}
                 </DialogContent>
               </Dialog>
+              </>
             )}
           </div>
         </div>

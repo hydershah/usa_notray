@@ -30,7 +30,9 @@ interface AuditTrailProps {
 interface AuditTrailInfo {
   exists: boolean;
   reportPath?: string;
+  signedUrl?: string;
   generatedAt?: string;
+  storageType?: 'vultr' | 'local';
 }
 
 export function AuditTrail({ jobId, jobStatus, minimal = false }: AuditTrailProps) {
@@ -97,6 +99,23 @@ export function AuditTrail({ jobId, jobStatus, minimal = false }: AuditTrailProp
   const downloadAuditTrail = async () => {
     try {
       setDownloading(true);
+      
+      // If we have a signed URL from Vultr, use it directly
+      if (auditInfo?.signedUrl && auditInfo?.storageType === 'vultr') {
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = auditInfo.signedUrl;
+        a.download = `job_${jobId}_audit_trail.pdf`;
+        a.target = '_blank'; // Open in new tab as fallback
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        toast.success('Audit trail download started');
+        setDownloading(false);
+        return;
+      }
+      
+      // Fallback to API endpoint for local files or if signedUrl not available
       const response = await fetch(`/api/jobs/${jobId}/audit-trail/download`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`

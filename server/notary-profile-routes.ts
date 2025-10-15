@@ -664,6 +664,20 @@ export function registerNotaryProfileRoutes(app: Express) {
           }
         });
         
+        // If uploading digital certificate, also save expiration and password from request body
+        if (filePaths.publicCertificateFile && req.body.publicCertificateExpiration && req.body.publicCertificatePassword) {
+          const parseDate = (dateString: string) => {
+            if (!dateString) return null;
+            const date = new Date(dateString);
+            return isNaN(date.getTime()) ? null : date;
+          };
+          
+          updateData.publicCertificateExpiration = parseDate(req.body.publicCertificateExpiration);
+          updateData.publicCertificatePassword = req.body.publicCertificatePassword;
+          
+          console.log(`🔐 Saving certificate metadata: Expiration=${req.body.publicCertificateExpiration}, Password=[REDACTED]`);
+        }
+        
         // Update the user record with new file information
         await storage.updateUser(userId, updateData);
         

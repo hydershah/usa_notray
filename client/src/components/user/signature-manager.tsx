@@ -732,53 +732,70 @@ export function SignatureManager({ userId, onSignatureSelect }: SignatureManager
       </div>
 
       {signatures.length > 0 ? (
-        <div className="grid gap-4">
+        <div className="space-y-3">
           {signatures.map((signature) => (
-            <Card key={signature.id} className={signature.isDefault ? 'ring-2 ring-blue-500' : ''}>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-4">
+            <div
+              key={signature.id}
+              className={`p-4 border rounded-lg transition-all ${
+                signature.isDefault 
+                  ? 'border-blue-200 bg-blue-50/30' 
+                  : 'border-gray-200 bg-white hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-4">
+                <div className="flex-shrink-0 w-20 h-16 border rounded bg-white flex items-center justify-center p-2">
                   <img
                     src={signature.imageUrl}
                     alt={signature.name}
-                    className="w-16 h-16 object-contain border rounded"
+                    className="max-w-full max-h-full object-contain"
                   />
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{signature.name}</span>
-                      {signature.isDefault && <Badge variant="secondary">Default</Badge>}
-                      <Badge variant="outline" className="text-xs">
-                        {signature.type}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-gray-600">
-                      Created {new Date(signature.createdAt).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    {!signature.isDefault && (
-                      <Button size="sm" variant="outline" onClick={() => setDefaultSignature(signature.id)}>
-                        <Star className="w-4 h-4 mr-1" />
-                        Set Default
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => deleteSignature(signature.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
                 </div>
-              </CardContent>
-            </Card>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="font-medium text-gray-900 truncate">{signature.name}</span>
+                    {signature.isDefault && (
+                      <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">
+                        Default
+                      </span>
+                    )}
+                    <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded capitalize">
+                      {signature.type}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Created {new Date(signature.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!signature.isDefault && (
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      onClick={() => setDefaultSignature(signature.id)}
+                      className="h-9"
+                    >
+                      <Star className="w-4 h-4 mr-2" />
+                      Set Default
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => deleteSignature(signature.id)}
+                    className="h-9 w-9 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
           ))}
         </div>
       ) : (
-        <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded">
-          <Pencil className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-          <h3 className="font-medium mb-2">No signatures created</h3>
-          <p className="text-sm text-gray-600 mb-4">Create your first signature to use in documents</p>
+        <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-lg">
+          <Pencil className="w-12 h-12 mx-auto text-gray-400 mb-3" />
+          <h3 className="text-base font-medium text-gray-900 mb-1">No signatures yet</h3>
+          <p className="text-sm text-gray-500 mb-4">Create your first signature to use in documents</p>
           <Button onClick={() => setIsCreateModalOpen(true)}>
             <Plus className="w-4 h-4 mr-2" />
             Create Signature

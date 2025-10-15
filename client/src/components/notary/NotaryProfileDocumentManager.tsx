@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
@@ -94,6 +96,12 @@ export function NotaryProfileDocumentManager({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isCertificateDialogOpen, setIsCertificateDialogOpen] = useState(false);
+  const [certificateData, setCertificateData] = useState({
+    expirationDate: '',
+    password: ''
+  });
   const [confirmationDialog, setConfirmationDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -139,9 +147,25 @@ export function NotaryProfileDocumentManager({
 
   // Upload document mutation
   const uploadDocumentMutation = useMutation({
-    mutationFn: async ({ file, documentType }: { file: File; documentType: string }) => {
+    mutationFn: async ({ 
+      file, 
+      documentType, 
+      certificateExpiration, 
+      certificatePassword 
+    }: { 
+      file: File; 
+      documentType: string;
+      certificateExpiration?: string;
+      certificatePassword?: string;
+    }) => {
       const formData = new FormData();
       formData.append(documentType, file);
+      
+      // Add certificate metadata if provided
+      if (documentType === 'publicCertificateFile' && certificateExpiration && certificatePassword) {
+        formData.append('publicCertificateExpiration', certificateExpiration);
+        formData.append('publicCertificatePassword', certificatePassword);
+      }
 
       const token = localStorage.getItem('token');
       const response = await fetch('/api/notary/profile/upload-documents', {
@@ -163,7 +187,10 @@ export function NotaryProfileDocumentManager({
       setIsUploading(false);
       setUploadProgress(0);
       setIsUploadDialogOpen(false);
+      setIsCertificateDialogOpen(false);
       setSelectedDocumentType('');
+      setSelectedFile(null);
+      setCertificateData({ expirationDate: '', password: '' });
       refetch();
       onDocumentsChange?.();
       toast({
@@ -261,6 +288,15 @@ export function NotaryProfileDocumentManager({
       return;
     }
 
+    // If it's a digital certificate, show metadata dialog
+    if (selectedDocumentType === 'publicCertificateFile') {
+      setSelectedFile(file);
+      setIsUploadDialogOpen(false);
+      setIsCertificateDialogOpen(true);
+      return;
+    }
+
+    // For other documents, upload directly
     setIsUploading(true);
     setUploadProgress(0);
 
@@ -276,6 +312,38 @@ export function NotaryProfileDocumentManager({
     }, 200);
 
     uploadDocumentMutation.mutate({ file, documentType: selectedDocumentType });
+  };
+
+  const handleCertificateUpload = () => {
+    if (!selectedFile || !certificateData.expirationDate || !certificateData.password) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in both certificate expiration date and password.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    // Simulate upload progress
+    const progressInterval = setInterval(() => {
+      setUploadProgress(prev => {
+        if (prev >= 90) {
+          clearInterval(progressInterval);
+          return prev;
+        }
+        return prev + 10;
+      });
+    }, 200);
+
+    uploadDocumentMutation.mutate({ 
+      file: selectedFile, 
+      documentType: 'publicCertificateFile',
+      certificateExpiration: certificateData.expirationDate,
+      certificatePassword: certificateData.password
+    });
   };
 
   const handleDownload = async (documentType: string) => {
@@ -353,108 +421,128 @@ export function NotaryProfileDocumentManager({
     const Icon = docType.icon;
 
     return (
-      <Card key={docType.key} className="border border-gray-200">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className={`w-8 h-8 rounded flex items-center justify-center ${hasFile ? 'bg-gray-900' : 'bg-gray-300'}`}>
-                <Icon className="w-4 h-4 text-white" />
-              </div>
-              <div>
-                <h4 className="font-medium text-gray-900">{docType.label}</h4>
-                <p className="text-sm text-gray-500">
-                  {hasFile ? 'Uploaded' : 'Not uploaded'}
-                  {docType.required && !hasFile && ' (Required)'}
-                </p>
-              </div>
+      <div
+        key={docType.key}
+        className={`p-4 border rounded-lg transition-all ${
+          hasFile 
+            ? 'border-green-200 bg-green-50/30' 
+            : 'border-gray-200 bg-white hover:border-gray-300'
+        }`}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4 flex-1">
+            <div className={`p-2.5 rounded-lg ${
+              hasFile ? 'bg-green-100' : 'bg-gray-100'
+            }`}>
+              <Icon className={`w-5 h-5 ${hasFile ? 'text-green-700' : 'text-gray-400'}`} />
             </div>
-            
-            <div className="flex items-center gap-1">
-              {hasFile ? (
-                <>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handlePreview(docType.key)}
-                    title="Preview"
-                    className="h-8 w-8 p-0"
-                  >
-                    <Eye className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDownload(docType.key)}
-                    title="Download"
-                    className="h-8 w-8 p-0"
-                  >
-                    <Download className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleReupload(docType.key)}
-                    title="Replace"
-                    className="h-8 w-8 p-0"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                  </Button>
-                </>
-              ) : (
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-0.5">
+                <h4 className="text-sm font-medium text-gray-900">{docType.label}</h4>
+                {docType.required && (
+                  <span className="text-xs px-1.5 py-0.5 bg-red-50 text-red-600 rounded font-medium">
+                    Required
+                  </span>
+                )}
+                {hasFile && (
+                  <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded font-medium">
+                    Uploaded
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500">
+                {hasFile 
+                  ? 'Document uploaded and available' 
+                  : 'Upload your document to complete this requirement'
+                }
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {hasFile ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handlePreview(docType.key)}
+                  title="Preview"
+                  className="h-9 w-9 p-0"
+                >
+                  <Eye className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleDownload(docType.key)}
+                  title="Download"
+                  className="h-9 w-9 p-0"
+                >
+                  <Download className="w-4 h-4" />
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    setSelectedDocumentType(docType.key);
-                    setIsUploadDialogOpen(true);
-                  }}
-                  className="h-8 px-3"
+                  onClick={() => handleReupload(docType.key)}
+                  className="h-9"
                 >
-                  Upload
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Replace
                 </Button>
-              )}
-            </div>
+              </>
+            ) : (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setSelectedDocumentType(docType.key);
+                  setIsUploadDialogOpen(true);
+                }}
+                className="h-9"
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Upload
+              </Button>
+            )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     );
   };
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <span className="ml-2 text-gray-600">Loading documents...</span>
+      <div className="flex justify-center py-8">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-gray-200 border-t-blue-600 mx-auto mb-2"></div>
+          <p className="text-sm text-gray-500">Loading documents...</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900">Documents</h3>
-          <p className="text-sm text-gray-500">
-            {documentStatus ? Object.values(documentStatus).filter(Boolean).length : 0} / {DOCUMENT_TYPES.length} Files
-          </p>
-        </div>
-        {hasLocalDocuments && (
+      {hasLocalDocuments && (
+        <div className="flex items-center justify-end pb-2 border-b">
           <Button
             variant="outline"
             size="sm"
             onClick={handleMigrateDocuments}
             disabled={isMigrating}
-            className="flex items-center gap-2"
           >
             {isMigrating ? (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+              <>
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                Migrating...
+              </>
             ) : (
-              <RefreshCw className="w-4 h-4" />
+              <>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Migrate to Cloud
+              </>
             )}
-            {isMigrating ? 'Migrating...' : 'Migrate to Cloud'}
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Document Cards */}
       <div className="space-y-3">
@@ -463,55 +551,38 @@ export function NotaryProfileDocumentManager({
 
       {/* Upload Dialog */}
       <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <div className="flex items-center justify-between">
-              <DialogTitle>Upload Document</DialogTitle>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0"
-                onClick={() => setIsUploadDialogOpen(false)}
-              >
-                <X className="h-4 w-4" />
-                <span className="sr-only">Close</span>
-              </Button>
-            </div>
+            <DialogTitle>Upload Document</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 py-4">
             {selectedDocumentType && (
-              <div className="text-center">
-                <p className="text-sm text-gray-600 mb-4">
+              <>
+                <div className="text-sm text-gray-600">
                   Upload your {DOCUMENT_TYPES.find(d => d.key === selectedDocumentType)?.label}
-                </p>
+                </div>
                 
                 {isUploading ? (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <Progress value={uploadProgress} className="w-full" />
-                    <p className="text-sm text-gray-600">Uploading... {uploadProgress}%</p>
+                    <p className="text-sm text-center text-gray-600">Uploading... {uploadProgress}%</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 hover:border-gray-400 transition-colors">
-                      <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-                      <p className="text-sm text-gray-600 mb-2">
-                        Drag and drop or click to select
+                    <div 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border-2 border-dashed border-gray-300 rounded-lg p-8 hover:border-gray-400 hover:bg-gray-50 transition-colors cursor-pointer"
+                    >
+                      <Upload className="mx-auto h-10 w-10 text-gray-400 mb-3" />
+                      <p className="text-sm text-center text-gray-700 font-medium mb-1">
+                        Click to upload or drag and drop
                       </p>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-center text-gray-500">
                         {selectedDocumentType === 'publicCertificateFile' 
                           ? 'PFX or P12 files (max 25MB)' 
                           : 'PDF, JPG, JPEG, or PNG (max 25MB)'}
                       </p>
                     </div>
-                    
-                    <Button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full"
-                      disabled={isUploading}
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Select File
-                    </Button>
                     
                     <input
                       ref={fileInputRef}
@@ -522,7 +593,7 @@ export function NotaryProfileDocumentManager({
                     />
                   </div>
                 )}
-              </div>
+              </>
             )}
           </div>
           <DialogFooter>
@@ -532,6 +603,99 @@ export function NotaryProfileDocumentManager({
               disabled={isUploading}
             >
               Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Certificate Metadata Dialog */}
+      <Dialog open={isCertificateDialogOpen} onOpenChange={setIsCertificateDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="w-5 h-5 text-blue-600" />
+              Digital Certificate Information
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-gray-600">
+              Please provide the expiration date and password for your digital certificate.
+            </p>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="cert-expiration" className="text-sm font-medium">
+                  Certificate Expiration Date <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="cert-expiration"
+                  type="date"
+                  value={certificateData.expirationDate}
+                  onChange={(e) => setCertificateData(prev => ({ ...prev, expirationDate: e.target.value }))}
+                  className="w-full"
+                  placeholder="mm/dd/yyyy"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="cert-password" className="text-sm font-medium">
+                  Certificate Password <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="cert-password"
+                  type="password"
+                  value={certificateData.password}
+                  onChange={(e) => setCertificateData(prev => ({ ...prev, password: e.target.value }))}
+                  className="w-full"
+                  placeholder="Enter certificate password"
+                />
+                <p className="text-xs text-gray-500">
+                  This password is required to use your digital certificate for signing documents.
+                </p>
+              </div>
+            </div>
+
+            {selectedFile && (
+              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-md border border-gray-200">
+                <FileText className="w-4 h-4 text-gray-600" />
+                <span className="text-sm text-gray-700 truncate flex-1">{selectedFile.name}</span>
+              </div>
+            )}
+
+            {isUploading && (
+              <div className="space-y-3">
+                <Progress value={uploadProgress} className="w-full" />
+                <p className="text-sm text-center text-gray-600">Uploading... {uploadProgress}%</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsCertificateDialogOpen(false);
+                setSelectedFile(null);
+                setCertificateData({ expirationDate: '', password: '' });
+              }}
+              disabled={isUploading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCertificateUpload}
+              disabled={isUploading || !certificateData.expirationDate || !certificateData.password}
+            >
+              {isUploading ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload Certificate
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -3302,201 +3302,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ==========================================
-  // 2FA AUTHENTICATION ROUTES
-  // ==========================================
-
-  // Get 2FA status for current user
-  app.get('/api/auth/2fa/status', verifyToken, async (req: any, res) => {
-    try {
-      const user = await storage.getUser(req.user.id);
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-
-      res.json({
-        enabled: user.mfaEnabled || false,
-        hasSecret: !!(user.mfaSecret)
-      });
-    } catch (error) {
-      console.error('2FA status error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  });
-
-  // Setup 2FA for current user
-  app.post('/api/auth/2fa/setup', verifyToken, async (req: any, res) => {
-    try {
-      const user = await storage.getUser(req.user.id);
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-
-      // Generate secret for TOTP
-      const secret = speakeasy.generateSecret({
-        name: `USA Notary (${user.email})`,
-        issuer: 'USA Notary Platform',
-        length: 32
-      });
-
-      // Generate QR code
-      const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url || '');
-
-      // Store secret in database (not enabled yet)
-      await db.update(users)
-        .set({ 
-          mfaSecret: secret.base32 || '',
-          updatedAt: new Date()
-        })
-        .where(eq(users.id, user.id));
-
-      res.json({
-        secret: secret.base32 || '',
-        qrCode: qrCodeUrl,
-        manualEntryKey: secret.base32 || '',
-        backupCodes: [] // Could implement backup codes later
-      });
-    } catch (error) {
-      console.error('2FA setup error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  });
-
-  // Verify 2FA token and enable 2FA
-  app.post('/api/auth/2fa/verify', verifyToken, async (req: any, res) => {
-    try {
-      const { token } = req.body;
-      
-      if (!token || token.length !== 6) {
-        return res.status(400).json({ message: 'Invalid token format' });
-      }
-
-      const user = await storage.getUser(req.user.id);
-      if (!user || !user.mfaSecret) {
-        return res.status(400).json({ message: 'No 2FA secret found' });
-      }
-
-      // Verify the token
-      const verified = speakeasy.totp.verify({
-        secret: user.mfaSecret,
-        encoding: 'base32',
-        token: token,
-        window: 2 // Allow 2 time steps before/after for clock drift
-      });
-
-      if (!verified) {
-        return res.status(400).json({ message: 'Invalid verification code' });
-      }
-
-      // Enable 2FA
-      await db.update(users)
-        .set({ 
-          mfaEnabled: true,
-          updatedAt: new Date()
-        })
-        .where(eq(users.id, user.id));
-
-      res.json({ 
-        message: '2FA enabled successfully',
-        enabled: true
-      });
-    } catch (error) {
-      console.error('2FA verification error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  });
-
-  // Disable 2FA
-  app.post('/api/auth/2fa/disable', verifyToken, async (req: any, res) => {
-    try {
-      const { token, password } = req.body;
-      
-      const user = await storage.getUser(req.user.id);
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-
-      if (!user.mfaEnabled) {
-        return res.status(400).json({ message: '2FA is not enabled' });
-      }
-
-      // Verify either 2FA token or password
-      let verified = false;
-      
-      if (token && token.length === 6) {
-        // Verify 2FA token
-        verified = speakeasy.totp.verify({
-          secret: user.mfaSecret,
-          encoding: 'base32',
-          token: token,
-          window: 2
-        });
-      } else if (password) {
-        // Verify password
-        verified = await bcrypt.compare(password, user.password);
-      }
-
-      if (!verified) {
-        return res.status(400).json({ message: 'Invalid verification code or password' });
-      }
-
-      // Disable 2FA
-      await db.update(users)
-        .set({ 
-          mfaEnabled: false,
-          mfaSecret: null,
-          updatedAt: new Date()
-        })
-        .where(eq(users.id, user.id));
-
-      res.json({ 
-        message: '2FA disabled successfully',
-        enabled: false
-      });
-    } catch (error) {
-      console.error('2FA disable error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  });
-
-  // Admin toggle 2FA for any user
-  app.patch('/api/users/:id/2fa/toggle', verifyToken, async (req: any, res) => {
-    try {
-      if (!hasAdminPrivileges(req.user)) {
-        return res.status(403).json({ message: 'Admin access required' });
-      }
-
-      const userId = parseInt(req.params.id);
-      const { enabled } = req.body;
-
-      if (typeof enabled !== 'boolean') {
-        return res.status(400).json({ message: 'enabled field must be a boolean' });
-      }
-
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-
-      // Update user's 2FA status
-      await db.update(users)
-        .set({ 
-          mfaEnabled: enabled,
-          // If disabling 2FA, also clear the secret
-          mfaSecret: enabled ? user.mfaSecret : null,
-          updatedAt: new Date()
-        })
-        .where(eq(users.id, userId));
-
-      res.json({ 
-        message: `2FA ${enabled ? 'enabled' : 'disabled'} for user ${user.email}`,
-        enabled: enabled
-      });
-    } catch (error) {
-      console.error('Admin 2FA toggle error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  });
 
   // User management routes
   app.get('/api/users', verifyToken, cacheAdminData(300), async (req: any, res) => {
@@ -3730,7 +3535,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Video conferencing routes are now handled by daily-video-routes.ts
   // ===== ENHANCED UPLOAD SYSTEM ROUTES (VULTR-ENABLED) =====
   
-  // Professional signature upload with Vultr cloud storage
+  // Professional signature upload with base64 storage (no URL expiration)
   app.post('/api/uploads/signature', verifyToken, 
     upload.single('signature'), async (req: any, res) => {
       try {
@@ -3744,34 +3549,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ error: 'sessionId and participantId are required' });
         }
 
-        // Upload signature to Vultr
+        // Convert signature to base64 for reliable storage (no URL expiration issues)
+        const mimeType = req.file.mimetype || 'image/png';
+        const base64Data = req.file.buffer.toString('base64');
+        const base64DataUrl = `data:${mimeType};base64,${base64Data}`;
+
+        // Upload to Vultr/local storage as optional backup (non-critical)
         const { VultrUploadHandler } = await import('./vultr-upload-handler');
         
-        const uploadResult = await VultrUploadHandler.handleSignatureUpload(
-          req.file.buffer,
-          req.file.originalname,
-          sessionId,
-          parseInt(participantId),
-          signatureType
-        );
+        let storageBackup = null;
+        let storageType = 'base64';
+        
+        try {
+          const uploadResult = await VultrUploadHandler.handleSignatureUpload(
+            req.file.buffer,
+            req.file.originalname,
+            sessionId,
+            parseInt(participantId),
+            signatureType
+          );
 
-        if (!uploadResult.success) {
-          return res.status(500).json({ 
-            error: `Failed to upload signature: ${uploadResult.error}`,
-            code: 'vultr_upload_failed'
-          });
+          if (uploadResult.success) {
+            storageBackup = {
+              fileKey: uploadResult.fileKey,
+              backupUrl: uploadResult.signedUrl || uploadResult.fileUrl
+            };
+            storageType = uploadResult.fileKey?.startsWith('/uploads/') ? 'base64+local' : 'base64+vultr';
+            console.log(`✅ Signature backup saved to ${storageType}: ${req.file.originalname}`);
+          }
+        } catch (backupError) {
+          console.warn('⚠️ Signature backup upload failed (non-critical):', backupError);
         }
 
-        console.log(`✅ Uploaded signature to Vultr: ${req.file.originalname} → ${uploadResult.fileKey}`);
+        console.log(`✅ Signature converted to base64: ${req.file.originalname} (${base64Data.length} bytes)`);
 
         res.json({
           success: true,
-          message: 'Signature uploaded successfully to Vultr',
-          fileKey: uploadResult.fileKey,
-          fileUrl: uploadResult.signedUrl,
-          size: uploadResult.size,
-          storageType: 'vultr',
-          signatureType
+          message: 'Signature uploaded successfully as base64',
+          fileKey: storageBackup?.fileKey || 'base64-only',
+          fileUrl: base64DataUrl, // Primary: base64 data URL that never expires
+          size: req.file.size,
+          storageType,
+          signatureType,
+          metadata: storageBackup ? { backup: storageBackup } : undefined
         });
       } catch (error) {
         console.error('Signature upload error:', error);
@@ -6819,34 +6639,61 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         return res.status(404).json({ message: 'Audit trail not found. Please generate the audit trail first.', canRegenerate: true });
       }
 
-      // Check if file exists - handle both absolute and relative paths
-      const fs = await import('fs/promises');
-      const path = await import('path');
+      const reportPath = auditInfo.reportPath;
       
-      let fullPath = auditInfo.reportPath;
-      if (!path.isAbsolute(auditInfo.reportPath)) {
-        fullPath = path.resolve(auditInfo.reportPath);
-      }
+      // Check if this is a Vultr key (production/documents/... or development/documents/...) or local path
+      const isVultrKey = reportPath.startsWith('production/') || reportPath.startsWith('development/');
       
-      try {
-        await fs.access(fullPath);
+      if (isVultrKey) {
+        // Handle Vultr-stored audit trail
+        try {
+          const { cloudStorage } = await import('./lib/cloud-storage-service');
+          
+          // Generate a signed URL for download
+          const signedUrl = await cloudStorage.getSignedUrl(reportPath, 300); // 5 minutes
+          
+          // Redirect to the signed URL for download
+          res.redirect(signedUrl);
+          
+          console.log(`✅ Audit trail downloaded from Vultr for job ${jobId}`);
+          
+        } catch (vultrError) {
+          console.error('Failed to download from Vultr:', vultrError);
+          return res.status(500).json({ 
+            message: 'Failed to download audit trail from cloud storage.',
+            canRegenerate: true 
+          });
+        }
+      } else {
+        // Handle local file system audit trail (legacy)
+        const fs = await import('fs/promises');
+        const path = await import('path');
         
-        // Set headers for PDF download
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="job_${jobId}_audit_trail.pdf"`);
+        let fullPath = reportPath;
+        if (!path.isAbsolute(reportPath)) {
+          fullPath = path.resolve(reportPath);
+        }
         
-        // Stream the file
-        const fileBuffer = await fs.readFile(fullPath);
-        res.send(fileBuffer);
-        
-        console.log(`✅ Audit trail downloaded for job ${jobId}`);
-        
-      } catch (fileError) {
-        console.error('Audit trail file not found:', fileError);
-        return res.status(404).json({ 
-          message: 'Audit trail file not found on disk. The file may have been moved or deleted.',
-          canRegenerate: true 
-        });
+        try {
+          await fs.access(fullPath);
+          
+          // Set headers for PDF download
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Content-Disposition', `attachment; filename="job_${jobId}_audit_trail.pdf"`);
+          
+          // Stream the file
+          const fileBuffer = await fs.readFile(fullPath);
+          res.send(fileBuffer);
+          
+          console.log(`✅ Audit trail downloaded from local storage for job ${jobId}`);
+          
+        } catch (fileError) {
+          console.error('Audit trail file not found:', fileError);
+          return res.status(404).json({ 
+            message: 'Audit trail file not found on disk. The file may have been moved or deleted.',
+            canRegenerate: true 
+          });
+        }
       }
       
     } catch (error) {
@@ -11057,12 +10904,23 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         );
 
         if (needsDefaultImage) {
+          console.log(`🔍 Tag ${tagId} needs default image. Type: ${tag.tagType}, AssignedUserId: ${tag.assignedUserId}, RequestUserId: ${req.user.id}`);
           try {
             const { ProfileAutoFillService } = await import('./services/ProfileAutoFillService');
             const assignedUserId = tag.assignedUserId || req.user.id;
+            console.log(`📞 Calling ProfileAutoFillService for user ${assignedUserId}, tagType ${tag.tagType}`);
             const auto = await ProfileAutoFillService.getTagAutoFillData(tag.tagType, assignedUserId, sessionId);
 
+            console.log(`📋 Auto-fill result:`, {
+              success: auto?.success,
+              hasContent: !!auto?.content,
+              contentLength: auto?.content?.length || 0,
+              contentPreview: auto?.content?.substring(0, 100),
+              message: auto?.message
+            });
+
             if (auto?.success && typeof auto.content === 'string' && auto.content.length > 0) {
+              console.log(`✅ Using auto-filled ${tag.tagType} for tag ${tagId}`);
               structuredContentData = {
                 ...(auto.contentData || {}),
                 type: tag.tagType === 'S' ? 'signature' : tag.tagType === 'I' ? 'initials' : 'seal',
@@ -11073,12 +10931,14 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
               finalContent = auto.content;
               finalContentType = 'image';
             } else {
+              console.warn(`⚠️ Auto-fill failed or returned empty content for tag ${tagId}. Falling back to empty value.`);
               // Fallback: keep original structured object
               structuredContentData = contentObj;
               finalContent = contentObj.value || JSON.stringify(contentObj);
               finalContentType = contentObj.type || contentType || 'text';
             }
           } catch (e) {
+            console.error(`❌ Error during auto-fill for tag ${tagId}:`, e);
             // On any error, keep original structured object
             structuredContentData = contentObj;
             finalContent = contentObj.value || JSON.stringify(contentObj);

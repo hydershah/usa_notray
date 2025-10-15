@@ -355,6 +355,7 @@ export class AuditTrailService {
   
   /**
    * Generate PDF audit trail report
+   * Returns Vultr S3 key if uploaded to cloud, or local path as fallback
    */
   private static async generateAuditTrailPDF(reportData: AuditTrailReportData): Promise<string> {
     const pdfDoc = await PDFDocument.create();
@@ -780,7 +781,48 @@ export class AuditTrailService {
     // Save PDF
     const pdfBytes = await pdfDoc.save();
     
-    // Create reports directory if it doesn't exist
+    const reportFileName = `job_${reportData.job.id}_audit_trail_${Date.now()}.pdf`;
+    
+    // Try to upload to Vultr first
+    try {
+      const { cloudStorage } = await import('../lib/cloud-storage-service');
+      const { VultrFileOrganizer } = await import('../lib/vultr-file-organizer');
+      
+      // Check if Vultr is accessible
+      const bucketStats = await cloudStorage.getBucketStats();
+      
+      if (bucketStats.isAccessible) {
+        // Generate organized Vultr key for audit trail
+        const organized = VultrFileOrganizer.generateOrganizedKey({
+          fileType: 'documents',
+          originalFilename: reportFileName,
+          userId: reportData.job.userId,
+          jobId: reportData.job.id,
+          userRole: 'system' // Audit trails are system-generated
+        });
+        
+        // Upload to Vultr
+        const uploadResult = await cloudStorage.uploadFile(Buffer.from(pdfBytes), organized.vultrKey, {
+          contentType: 'application/pdf',
+          metadata: {
+            originalFilename: reportFileName,
+            jobId: reportData.job.id.toString(),
+            documentType: 'audit_trail',
+            generatedAt: new Date().toISOString(),
+          },
+          acl: 'private',
+        });
+        
+        console.log(`✅ Uploaded audit trail to Vultr: ${organized.vultrKey}`);
+        
+        // Return the Vultr key (not the full URL)
+        return organized.vultrKey;
+      }
+    } catch (vultrError) {
+      console.warn('⚠️ Failed to upload audit trail to Vultr, falling back to local storage:', vultrError);
+    }
+    
+    // Fallback to local storage
     const fs = await import('fs/promises');
     const path = await import('path');
     const reportsDir = path.resolve('uploads/audit-trails');
@@ -791,11 +833,10 @@ export class AuditTrailService {
       // Directory might already exist
     }
     
-    const reportFileName = `job_${reportData.job.id}_audit_trail_${Date.now()}.pdf`;
     const reportPath = path.join(reportsDir, reportFileName);
-    
     await fs.writeFile(reportPath, pdfBytes);
     
+    console.log(`✅ Saved audit trail locally: ${reportPath}`);
     return reportPath;
   }
   
@@ -846,7 +887,9 @@ export class AuditTrailService {
   static async getAuditTrailReport(jobId: number): Promise<{
     exists: boolean;
     reportPath?: string;
+    signedUrl?: string;
     generatedAt?: Date;
+    storageType?: 'vultr' | 'local';
   }> {
     const [job] = await db
       .select({
@@ -861,10 +904,26 @@ export class AuditTrailService {
       return { exists: false };
     }
     
+    const reportPath = job.auditTrailReportPath;
+    const isVultrKey = reportPath.startsWith('production/') || reportPath.startsWith('development/');
+    
+    // If it's a Vultr key, generate a signed URL
+    let signedUrl: string | undefined;
+    if (isVultrKey) {
+      try {
+        const { cloudStorage } = await import('../lib/cloud-storage-service');
+        signedUrl = await cloudStorage.getSignedUrl(reportPath, 7200); // 2 hours
+      } catch (error) {
+        console.warn('⚠️ Failed to generate signed URL for audit trail:', error);
+      }
+    }
+    
     return {
       exists: true,
       reportPath: job.auditTrailReportPath,
-      generatedAt: job.auditTrailGeneratedAt || undefined
+      signedUrl,
+      generatedAt: job.auditTrailGeneratedAt || undefined,
+      storageType: isVultrKey ? 'vultr' : 'local'
     };
   }
   
