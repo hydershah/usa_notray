@@ -918,8 +918,9 @@ export class LiveSigningSessionService {
             console.log(`📝 Found ${jobSigners.length} signers for job ${session.jobId}`);
             
             for (const signer of jobSigners) {
-              // Find the actual user ID by email
+              // Find the actual user ID and role by email
               let actualUserId = signer.id; // Default fallback
+              let userRole = null;
               const [signerUser] = await db
                 .select()
                 .from(users)
@@ -928,7 +929,36 @@ export class LiveSigningSessionService {
               
               if (signerUser) {
                 actualUserId = signerUser.id;
-                console.log(`🔗 Mapped signer "${signer.signerName}" (${signer.signerEmail}) to user ID ${actualUserId}`);
+                userRole = signerUser.role;
+                console.log(`🔗 Mapped signer "${signer.signerName}" (${signer.signerEmail}) to user ID ${actualUserId} with role ${userRole}`);
+                
+                // CRITICAL FIX: Check if this user is a title_company or notary
+                if (userRole === 'title_company' || userRole === 'notary') {
+                  // Check if they have an explicit jobParticipants entry for this job
+                  const { jobParticipants } = await import("../../../shared/schema");
+                  const [participantEntry] = await db
+                    .select()
+                    .from(jobParticipants)
+                    .where(and(
+                      eq(jobParticipants.jobId, session.jobId),
+                      eq(jobParticipants.userId, signerUser.id),
+                      or(
+                        eq(jobParticipants.jobSpecificRole, 'signer'),
+                        eq(jobParticipants.jobSpecificRole, 'witness')
+                      )
+                    ))
+                    .limit(1);
+                  
+                  if (!participantEntry) {
+                    // This title_company/notary was NOT explicitly invited as signer/witness
+                    // Skip them - they should only act in their primary role
+                    console.log(`⏭️ Skipping ${userRole} "${signer.signerName}" - not explicitly invited as signer/witness`);
+                    continue;
+                  } else {
+                    // They have an explicit entry - add them as signer with special label
+                    console.log(`🎭 ${userRole} "${signer.signerName}" is explicitly acting as signer`);
+                  }
+                }
               } else {
                 console.warn(`⚠️ No user found for signer email: ${signer.signerEmail}, using signer ID ${signer.id}`);
               }

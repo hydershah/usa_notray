@@ -238,7 +238,7 @@ export class VultrUploadHandler {
   }
 
   /**
-   * Handle notary stamp uploads to Vultr
+   * Handle notary stamp uploads with LOCAL storage as primary, Vultr as fallback
    */
   static async handleNotaryStampUpload(
     fileBuffer: Buffer,
@@ -246,39 +246,72 @@ export class VultrUploadHandler {
     notaryId: number,
     stampData: any = {}
   ): Promise<VultrUploadResult> {
+    // Try LOCAL storage FIRST
     try {
-      const sessionId = `notary-stamp-${notaryId}`;
+      const uploadsDir = path.join(process.cwd(), 'uploads', 'stamps');
       
-      const uploadResult = await handleCloudFileUpload(
-        fileBuffer,
-        originalFilename,
-        'stamp',
-        sessionId,
-        notaryId,
-        { stampType: 'notary', ...stampData }
-      );
-
-      console.log(`✅ Uploaded notary stamp to Vultr: ${originalFilename}`);
-
+      // Ensure directory exists
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      
+      // Generate secure filename
+      const timestamp = Date.now();
+      const sanitizedFilename = originalFilename.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const localFilename = `notary-${notaryId}-${timestamp}-${sanitizedFilename}`;
+      const localPath = path.join(uploadsDir, localFilename);
+      
+      // Write file to local storage
+      fs.writeFileSync(localPath, fileBuffer);
+      
+      console.log(`✅ Notary stamp saved locally: ${localFilename}`);
+      
       return {
         success: true,
-        fileKey: uploadResult.key,
-        fileUrl: uploadResult.url,
-        signedUrl: uploadResult.signedUrl,
-        size: uploadResult.size
+        fileKey: `/uploads/stamps/${localFilename}`,
+        fileUrl: `/uploads/stamps/${localFilename}`,
+        signedUrl: `/uploads/stamps/${localFilename}`,
+        size: fileBuffer.length
       };
+      
+    } catch (localError) {
+      console.warn('⚠️ Local storage failed, using Vultr fallback:', localError);
+      
+      // FALLBACK to Vultr cloud storage
+      try {
+        const sessionId = `notary-stamp-${notaryId}`;
+        
+        const uploadResult = await handleCloudFileUpload(
+          fileBuffer,
+          originalFilename,
+          'stamp',
+          sessionId,
+          notaryId,
+          { stampType: 'notary', ...stampData }
+        );
 
-    } catch (error) {
-      console.error('Notary stamp upload failed:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Upload failed'
-      };
+        console.log(`✅ Uploaded notary stamp to Vultr (fallback): ${originalFilename}`);
+
+        return {
+          success: true,
+          fileKey: uploadResult.key,
+          fileUrl: uploadResult.url,
+          signedUrl: uploadResult.signedUrl,
+          size: uploadResult.size
+        };
+
+      } catch (vultrError) {
+        console.error('❌ Both local and Vultr stamp upload failed:', vultrError);
+        return {
+          success: false,
+          error: vultrError instanceof Error ? vultrError.message : 'Upload failed'
+        };
+      }
     }
   }
 
   /**
-   * Handle signature uploads to Vultr
+   * Handle signature uploads with LOCAL storage as primary, Vultr as fallback
    */
   static async handleSignatureUpload(
     fileBuffer: Buffer,
@@ -287,37 +320,71 @@ export class VultrUploadHandler {
     participantId: number,
     signatureType: 'signature' | 'initial' = 'signature'
   ): Promise<VultrUploadResult> {
+    // Try LOCAL storage FIRST
     try {
-      const uploadResult = await handleCloudFileUpload(
-        fileBuffer,
-        originalFilename,
-        'signature',
-        sessionId,
-        participantId,
-        { signatureType, participantId }
-      );
-
-      console.log(`✅ Uploaded ${signatureType} to Vultr: ${originalFilename}`);
-
+      const uploadsDir = path.join(process.cwd(), 'uploads', 'signatures');
+      
+      // Ensure directory exists
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      
+      // Generate secure filename
+      const timestamp = Date.now();
+      const sanitizedFilename = originalFilename.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const localFilename = `${signatureType}-${sessionId}-${participantId}-${timestamp}-${sanitizedFilename}`;
+      const localPath = path.join(uploadsDir, localFilename);
+      
+      // Write file to local storage
+      fs.writeFileSync(localPath, fileBuffer);
+      
+      console.log(`✅ Signature saved locally: ${localFilename}`);
+      
       return {
         success: true,
-        fileKey: uploadResult.key,
-        fileUrl: uploadResult.url,
-        signedUrl: uploadResult.signedUrl,
-        size: uploadResult.size
+        fileKey: `/uploads/signatures/${localFilename}`,
+        fileUrl: `/uploads/signatures/${localFilename}`,
+        signedUrl: `/uploads/signatures/${localFilename}`,
+        size: fileBuffer.length
       };
+      
+    } catch (localError) {
+      console.warn('⚠️ Local storage failed, using Vultr fallback:', localError);
+      
+      // FALLBACK to Vultr cloud storage
+      try {
+        const uploadResult = await handleCloudFileUpload(
+          fileBuffer,
+          originalFilename,
+          'signature',
+          sessionId,
+          participantId,
+          { signatureType, participantId }
+        );
 
-    } catch (error) {
-      console.error('Signature upload failed:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Upload failed'
-      };
+        console.log(`✅ Uploaded ${signatureType} to Vultr (fallback): ${originalFilename}`);
+
+        return {
+          success: true,
+          fileKey: uploadResult.key,
+          fileUrl: uploadResult.url,
+          signedUrl: uploadResult.signedUrl,
+          size: uploadResult.size
+        };
+
+      } catch (vultrError) {
+        console.error('❌ Both local and Vultr signature upload failed:', vultrError);
+        return {
+          success: false,
+          error: vultrError instanceof Error ? vultrError.message : 'Upload failed'
+        };
+      }
     }
   }
 
   /**
    * Get file access URL (with caching optimization)
+   * Detects local vs Vultr files and returns appropriate URL
    */
   static async getFileUrl(
     fileKey: string, 
@@ -327,6 +394,18 @@ export class VultrUploadHandler {
     cached: boolean;
   }> {
     try {
+      // Check if this is a local file path
+      if (fileKey.startsWith('/uploads/') || fileKey.startsWith('uploads/')) {
+        // Local file - return the path directly
+        const localUrl = fileKey.startsWith('/') ? fileKey : `/${fileKey}`;
+        console.log(`📁 Local file URL: ${localUrl}`);
+        return {
+          url: localUrl,
+          cached: false
+        };
+      }
+      
+      // Vultr file - use optimized storage to get signed URL
       const fileAccess = await optimizedStorage.getOptimizedFileUrl(fileKey, expiresInHours);
       
       return {
@@ -438,14 +517,19 @@ export function createVultrUploadMiddleware(uploadType: 'document' | 'signature'
       }
 
       if (result.success) {
+        // Detect storage type based on fileKey pattern
+        const isLocal = result.fileKey?.startsWith('/uploads/') || result.fileKey?.startsWith('uploads/');
+        const storageType = isLocal ? 'local' : 'vultr-fallback';
+        const storageLocation = isLocal ? 'local storage' : 'Vultr (fallback)';
+        
         res.json({
           success: true,
-          message: `${uploadType} uploaded successfully to Vultr`,
+          message: `${uploadType} uploaded successfully to ${storageLocation}`,
           fileKey: result.fileKey,
           fileUrl: result.fileUrl,
           signedUrl: result.signedUrl,
           size: result.size,
-          storageType: 'vultr'
+          storageType
         });
       } else {
         res.status(500).json({

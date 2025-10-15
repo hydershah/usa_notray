@@ -24,7 +24,9 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiRequest } from '../../lib/queryClient';
-import { ParticipantRoleSummary, RoleAssignmentRequest } from '../../../shared/types';
+import { ParticipantRoleSummary, RoleAssignmentRequest } from '@shared/types';
+import { VerificationToggleButton } from './VerificationToggleButton';
+import { useAuth } from '@/hooks/use-auth';
 
 interface EnhancedSignerFormData {
   signerName: string;
@@ -119,7 +121,7 @@ export function EnhancedJobSignersManager({
   canEdit = true,
   showDualRoleOptions = true 
 }: EnhancedJobSignersManagerProps) {
-  const { toast } = useToast();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
 
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -541,6 +543,17 @@ export function EnhancedJobSignersManager({
 
                   {canEdit && (
                     <div className="flex items-center space-x-2">
+                      {participant.userId && (
+                        <VerificationToggleButton
+                          userId={participant.userId}
+                          jobId={jobId}
+                          currentUserRole={user?.role || 'user'}
+                          isVerified={participant.verificationStatus === 'verified' || participant.idVerificationCompleted || false}
+                          signerName={`${participant.firstName} ${participant.lastName}`}
+                          onToggleComplete={() => refetch()}
+                          compact={true}
+                        />
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"

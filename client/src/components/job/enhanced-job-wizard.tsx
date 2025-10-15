@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
+import { VerificationToggleButton } from './VerificationToggleButton';
 import { 
   Users, Mail, CheckCircle, Clock, User, 
   ExternalLink, Copy, Send, Eye
@@ -15,6 +17,7 @@ interface EnhancedJobWizardProps {
 }
 
 export function EnhancedJobWizard({ jobData, signers, onComplete }: EnhancedJobWizardProps) {
+  const { user } = useAuth();
   const [invitationsSent, setInvitationsSent] = useState(false);
 
   const handleSendInvitations = async () => {
@@ -118,6 +121,19 @@ export function EnhancedJobWizard({ jobData, signers, onComplete }: EnhancedJobW
                     </div>
                     
                     <div className="flex items-center space-x-2">
+                      {signer.userId && jobData?.id && (
+                        <VerificationToggleButton
+                          userId={signer.userId}
+                          jobId={jobData.id}
+                          currentUserRole={user?.role || 'user'}
+                          isVerified={signer.isVerified || signer.isVerificationBypassed || signer.notaryVerificationBypassed || false}
+                          signerName={signer.signerName}
+                          onToggleComplete={() => {
+                            // Note: This is in a wizard context, parent should handle refresh
+                          }}
+                          compact={true}
+                        />
+                      )}
                       <Badge>{signer.signerRole}</Badge>
                       
                       {invitationsSent ? (

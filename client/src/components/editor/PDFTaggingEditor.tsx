@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useState, useRef, useMemo, useImperative
 import { PDFViewer } from './PDFViewer';
 import { TaggingToolbar } from './TaggingToolbar';
 import { useLocation } from 'wouter';
-import { Home } from 'lucide-react';
+import { Home, CheckCircle, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 import { useEditorStore } from '../../hooks/editor/useEditorStore';
 import { HotkeyHandler } from './HotkeyHandler';
@@ -1651,6 +1652,121 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
     }
   }, [batchSaveChanges, onSessionComplete]);
 
+  // Handle complete button click
+  const handleComplete = useCallback(async () => {
+    if (isCompleting) return;
+    
+    setIsCompleting(true);
+    
+    try {
+      if (!sessionId) {
+        throw new Error('No session ID available');
+      }
+      
+      // First, save any pending changes
+      await batchSaveChanges();
+      
+      // Check if this is a live signing session by checking if we have a job ID
+      const jobIdMatch = sessionId.match(/^\d+$/) || window.location.pathname.match(/\/jobs\/(\d+)/);
+      const jobId = jobIdMatch ? (sessionId.match(/^\d+$/) ? sessionId : jobIdMatch[1]) : null;
+      
+      // For live signing sessions, check recording status
+      if (jobId) {
+        try {
+          const recordingResponse = await fetch(`/api/jobs/${jobId}/recording-details`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          });
+          
+          if (recordingResponse.ok) {
+            const recordingData = await recordingResponse.json();
+            if (!recordingData.fileUrl && !recordingData.metadata?.recordingId) {
+              const confirmCompletion = window.confirm(
+                '⚠️ Recording Warning\n\nNo session recording was detected for this job. For compliance purposes, live signing sessions should be recorded.\n\nDo you want to complete the session anyway?'
+              );
+              if (!confirmCompletion) {
+                setIsCompleting(false);
+                return;
+              }
+            }
+          }
+        } catch (recordingError) {
+          console.warn('Could not check recording status:', recordingError);
+        }
+      }
+      
+      const response = await fetch(`/api/editor/session/${sessionId}/complete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ force: false })
+      });
+      
+      const result = await response.json();
+      
+      if (!response.ok) {
+        if (result.canForce) {
+          if (window.confirm(
+            `${result.message}\n\nWould you like to complete the session anyway? This will mark all incomplete tags as "Not Required".`
+          )) {
+            const forceResponse = await fetch(`/api/editor/session/${sessionId}/complete`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+              },
+              body: JSON.stringify({ force: true })
+            });
+            
+            const forceResult = await forceResponse.json();
+            
+            if (forceResponse.ok) {
+              console.log('Session force completed successfully');
+              toast({
+                title: "Session Completed",
+                description: "The tagging session has been completed successfully."
+              });
+              if (onSessionComplete) {
+                onSessionComplete();
+              } else {
+                setLocation('/dashboard');
+              }
+            } else {
+              throw new Error(forceResult.error || 'Failed to force complete session');
+            }
+          } else {
+            setIsCompleting(false);
+          }
+        } else {
+          throw new Error(result.error || 'Failed to complete session');
+        }
+      } else {
+        console.log('Session completed successfully');
+        toast({
+          title: "Session Completed",
+          description: "The tagging session has been completed successfully."
+        });
+        if (onSessionComplete) {
+          onSessionComplete();
+        } else {
+          setLocation('/dashboard');
+        }
+      }
+    } catch (error) {
+      console.error('Session completion error:', error);
+      toast({
+        title: "Completion Failed",
+        description: error instanceof Error ? error.message : 'Failed to complete session',
+        variant: "destructive"
+      });
+    } finally {
+      setIsCompleting(false);
+    }
+  }, [isCompleting, sessionId, onSessionComplete, batchSaveChanges, toast, setLocation]);
+
   // Notify parent of tag changes
   useEffect(() => {
     if (onTagsChanged) {
@@ -1700,6 +1816,34 @@ export const PDFTaggingEditor = React.forwardRef<PDFTaggingEditorHandle, PDFTagg
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
+      {/* Header with action buttons - Only shown in tagging mode */}
+      {mode === 'tagging' && (
+        <div className="bg-white border-b px-4 py-2 flex items-center justify-end">
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => setLocation('/dashboard')}
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-1 px-3 py-1.5 text-sm"
+            >
+              <Home className="h-3 w-3" />
+              <span>Dashboard</span>
+            </Button>
+            
+            <Button
+              onClick={handleComplete}
+              disabled={isCompleting}
+              size="sm"
+              className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="flex items-center gap-1">
+                {isCompleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
+                <span>{isCompleting ? 'Completing...' : 'Complete'}</span>
+              </div>
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Main content - Two column layout (no video) */}
       <div className="flex-1 flex overflow-hidden">

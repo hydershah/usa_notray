@@ -175,6 +175,18 @@ import {
 import { ultraCache, CachePresets } from './lib/ultra-fast-cache.js';
 export async function registerRoutes(app: Express): Promise<Server> {
   
+  // Initialize upload directories for local signature and stamp storage
+  const uploadsDir = path.join(process.cwd(), 'uploads');
+  const signaturesDir = path.join(uploadsDir, 'signatures');
+  const stampsDir = path.join(uploadsDir, 'stamps');
+
+  [uploadsDir, signaturesDir, stampsDir].forEach(dir => {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+      console.log(`📁 Created directory: ${dir}`);
+    }
+  });
+  
   // Root route handler removed - static file middleware will handle the root path
 
   app.get('/favicon.ico', (req, res) => {
@@ -186,6 +198,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Add audit logging middleware to all routes
   app.use((req: any, res: any, next: any) => {
     auditLoggingService.auditMiddleware()(req, res, next);
+  });
+
+  // Serve signature and stamp files with authentication
+  app.use('/uploads/signatures', verifyToken, (req, res, next) => {
+    const filePath = path.join(process.cwd(), 'uploads', 'signatures', path.basename(req.path));
+    res.sendFile(filePath, (err) => {
+      if (err) {
+        console.error('Error serving signature file:', err);
+        res.status(404).json({ error: 'File not found' });
+      }
+    });
+  });
+  
+  app.use('/uploads/stamps', verifyToken, (req, res, next) => {
+    const filePath = path.join(process.cwd(), 'uploads', 'stamps', path.basename(req.path));
+    res.sendFile(filePath, (err) => {
+      if (err) {
+        console.error('Error serving stamp file:', err);
+        res.status(404).json({ error: 'File not found' });
+      }
+    });
   });
 
   // Authentication routes
@@ -3854,9 +3887,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const base64Data = req.file.buffer.toString('base64');
         const stampDataUrl = `data:${mimeType};base64,${base64Data}`;
         
-        // Optional: Upload to Vultr as backup
-        let vultrKey = null;
-        let vultrUrl = null;
+        // Upload stamp file to local storage (with Vultr fallback)
+        let storageKey = null;
+        let storageUrl = null;
+        let storageType = 'none';
         
         try {
           const uploadResult = await VultrUploadHandler.handleNotaryStampUpload(
@@ -3872,12 +3906,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           );
 
           if (uploadResult.success && uploadResult.fileKey) {
-            vultrKey = uploadResult.fileKey;
-            vultrUrl = uploadResult.signedUrl || uploadResult.fileUrl;
-            console.log(`✅ Backed up notary stamp to Vultr: ${req.file.originalname} → ${uploadResult.fileKey}`);
+            storageKey = uploadResult.fileKey;
+            storageUrl = uploadResult.signedUrl || uploadResult.fileUrl;
+            storageType = uploadResult.fileKey.startsWith('/uploads/') ? 'local' : 'vultr-fallback';
+            console.log(`✅ Saved notary stamp to ${storageType}: ${req.file.originalname} → ${uploadResult.fileKey}`);
           }
-        } catch (vultrError) {
-          console.warn('Vultr backup upload failed (non-critical):', vultrError);
+        } catch (uploadError) {
+          console.warn('Stamp file upload failed (non-critical):', uploadError);
         }
 
         // Create notary stamp record in database using base64 data
@@ -3895,20 +3930,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
             message: 'Notary stamp uploaded successfully',
             stampData: stampDataUrl,
             size: req.file.size,
-            storageType: 'base64',
+            storageType: storageType || 'base64',
             stampId: insertResult.rows[0]?.id,
-            vultrKey: vultrKey,
-            vultrUrl: vultrUrl,
+            fileKey: storageKey,
+            fileUrl: storageUrl,
             note: 'Stamp requires admin approval before activation'
           });
         } catch (dbError) {
           console.error('Database insertion failed:', dbError);
           // Try to clean up the uploaded file if database insertion fails
-          if (vultrKey) {
+          if (storageKey) {
             try {
-              const { cloudStorage } = await import('./lib/cloud-storage-service');
-              await cloudStorage.deleteFile(vultrKey);
-              console.log(`🧹 Cleaned up orphaned file: ${vultrKey}`);
+              // Only clean up Vultr files, not local files
+              if (!storageKey.startsWith('/uploads/')) {
+                const { cloudStorage } = await import('./lib/cloud-storage-service');
+                await cloudStorage.deleteFile(storageKey);
+                console.log(`🧹 Cleaned up orphaned Vultr file: ${storageKey}`);
+              } else {
+                // Clean up local file
+                const fs = await import('fs');
+                const localPath = path.join(process.cwd(), storageKey);
+                if (fs.existsSync(localPath)) {
+                  fs.unlinkSync(localPath);
+                  console.log(`🧹 Cleaned up orphaned local file: ${storageKey}`);
+                }
+              }
             } catch (cleanupError) {
               console.error('Failed to cleanup orphaned file:', cleanupError);
             }
@@ -4246,6 +4292,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const fileId = req.params[0]; // Get the full path after the type
       console.log(`🔍 File request: type=${type}, fileId=${fileId}`);
       console.log(`👤 User: ${req.user?.id} (${req.user?.role})`);
+      
+      // Check if this is a LOCAL file (signatures and stamps are now stored locally)
+      const isLocalFile = fileId.startsWith('/uploads/') || fileId.startsWith('uploads/');
+      
+      if (isLocalFile && ['notary-stamp', 'signature'].includes(type)) {
+        // Serve LOCAL signature/stamp file
+        console.log(`📁 Serving LOCAL file: ${fileId}`);
+        const localPath = path.join(process.cwd(), fileId.startsWith('/') ? fileId.substring(1) : fileId);
+        
+        // Check if file exists
+        if (!fs.existsSync(localPath)) {
+          console.error(`❌ Local file not found: ${localPath}`);
+          return res.status(404).json({ error: 'File not found' });
+        }
+        
+        console.log(`✅ Serving local file from: ${localPath}`);
+        return res.sendFile(localPath);
+      }
       
       // For Vultr-stored files (stamps, signatures, documents)
       if (['notary-stamp', 'signature', 'document', 'signer-document'].includes(type)) {
@@ -7660,6 +7724,188 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
 
   registerFeeRoutes(app);
   registerAdminVerificationRoutes(app);
+  
+  // Quick verification toggle endpoint for notaries and admins
+  app.post('/api/verification/toggle/:userId/:jobId', verifyToken, async (req: any, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const jobId = parseInt(req.params.jobId);
+      const { action, signerName } = req.body;
+      const currentUser = req.user;
+
+      // Verify user role - only notary or admin
+      if (currentUser.role !== 'notary' && currentUser.role !== 'admin') {
+        return res.status(403).json({ error: 'Only notaries and admins can toggle verification' });
+      }
+
+      if (isNaN(userId) || isNaN(jobId)) {
+        return res.status(400).json({ error: 'Invalid user ID or job ID' });
+      }
+
+      // Get user's current verification status
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const isVerified = user.isVerified && user.verificationStatus === 'approved';
+      const toggleAction = action || (isVerified ? 'revoke' : 'bypass');
+      const reason = `Quick verification toggle by ${currentUser.fullName || currentUser.username}`;
+
+      if (toggleAction === 'revoke') {
+        // Revoke verification - clear BOTH EVS and bypass fields
+        await db
+          .update(users)
+          .set({
+            isVerified: false,
+            verificationStatus: 'pending',
+            // Clear EVS fields
+            evsTransactionId: null,
+            evsVerificationConfidence: null,
+            evsVerifiedAt: null,
+            evsExtractedFirstName: null,
+            evsExtractedLastName: null,
+            evsExtractedDateOfBirth: null,
+            evsFaceMatchResult: null,
+            evsFaceMatchConfidence: null,
+            evsLivenessScore: null,
+            verificationImageFrontUrl: null,
+            verificationImageBackUrl: null,
+            verificationImageSelfieUrl: null,
+            verificationRetryCount: 0,
+            // Clear bypass fields
+            isVerificationBypassed: false,
+            verificationBypassReason: null,
+            verificationBypassedBy: null,
+            verificationBypassedAt: null,
+          })
+          .where(eq(users.id, userId));
+
+        // Clear job participants verification fields if exists
+        const [participant] = await db
+          .select()
+          .from(jobParticipants)
+          .where(and(eq(jobParticipants.userId, userId), eq(jobParticipants.jobId, jobId)))
+          .limit(1);
+
+        if (participant) {
+          await db
+            .update(jobParticipants)
+            .set({
+              idVerificationCompleted: false,
+              idVerificationCompletedAt: null,
+              idVerificationBypassReason: null,
+              idVerificationBypassedBy: null,
+              idVerificationBypassedAt: null,
+            })
+            .where(eq(jobParticipants.id, participant.id));
+        }
+
+        // Log the revocation (optional - don't fail if table doesn't exist)
+        if (currentUser.role === 'notary') {
+          try {
+            await db.execute(sql`
+              INSERT INTO notary_verification_bypass_log (
+                job_id,
+                participant_id,
+                notary_id,
+                action,
+                reason,
+                previous_verification_status
+              ) VALUES (
+                ${jobId},
+                ${userId},
+                ${currentUser.id},
+                'revoke_kyc',
+                ${reason},
+                ${user.verificationStatus || 'unknown'}
+              )
+            `);
+          } catch (logError) {
+            console.log('Note: Could not log to notary_verification_bypass_log (table may not exist)', logError);
+          }
+        }
+
+        res.json({ 
+          success: true, 
+          message: `Verification revoked for ${signerName}`,
+          isVerified: false
+        });
+      } else {
+        // Bypass verification
+        await db
+          .update(users)
+          .set({
+            isVerified: true,
+            verificationStatus: 'approved',
+            isVerificationBypassed: true,
+            verificationBypassReason: reason,
+            verificationBypassedBy: currentUser.id,
+            verificationBypassedAt: new Date(),
+          })
+          .where(eq(users.id, userId));
+
+        // Update job participants table if exists
+        const [participant] = await db
+          .select()
+          .from(jobParticipants)
+          .where(and(eq(jobParticipants.userId, userId), eq(jobParticipants.jobId, jobId)))
+          .limit(1);
+
+        if (participant) {
+          await db
+            .update(jobParticipants)
+            .set({
+              idVerificationCompleted: true,
+              idVerificationCompletedAt: new Date(),
+              idVerificationBypassReason: reason,
+              idVerificationBypassedBy: currentUser.id,
+              idVerificationBypassedAt: new Date(),
+            })
+            .where(eq(jobParticipants.id, participant.id));
+        }
+
+        // Log the bypass (optional - don't fail if table doesn't exist)
+        if (currentUser.role === 'notary') {
+          try {
+            await db.execute(sql`
+              INSERT INTO notary_verification_bypass_log (
+                job_id,
+                participant_id,
+                notary_id,
+                action,
+                reason,
+                previous_verification_status
+              ) VALUES (
+                ${jobId},
+                ${userId},
+                ${currentUser.id},
+                'bypass_verification',
+                ${reason},
+                ${user.verificationStatus || 'pending'}
+              )
+            `);
+          } catch (logError) {
+            console.log('Note: Could not log to notary_verification_bypass_log (table may not exist)', logError);
+          }
+        }
+
+        res.json({ 
+          success: true, 
+          message: `Verification bypassed for ${signerName}`,
+          isVerified: true
+        });
+      }
+    } catch (error) {
+      console.error('Toggle verification error:', error);
+      res.status(500).json({ error: 'Failed to toggle verification status' });
+    }
+  });
   
   // Register participant payment routes
   const { registerParticipantPaymentRoutes } = await import('./routes/participant-payment-routes');

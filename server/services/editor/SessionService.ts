@@ -299,8 +299,9 @@ export class SessionService {
         console.log(`📝 Found ${jobSigners.length} signers for job ${jobId}`);
         
         for (const signer of jobSigners) {
-          // Find the actual user ID by email
+          // Find the actual user ID and role by email
           let actualUserId = null;
+          let userRole = null;
           const [signerUser] = await db
             .select()
             .from(users)
@@ -309,12 +310,43 @@ export class SessionService {
           
           if (signerUser) {
             actualUserId = signerUser.id.toString();
-            console.log(`🔗 Mapped signer "${signer.signerName}" (${signer.signerEmail}) to user ID ${actualUserId}`);
+            userRole = signerUser.role;
+            console.log(`🔗 Mapped signer "${signer.signerName}" (${signer.signerEmail}) to user ID ${actualUserId} with role ${userRole}`);
+            
+            // CRITICAL FIX: Check if this user is a title_company or notary
+            if (userRole === 'title_company' || userRole === 'notary') {
+              // Check if they have an explicit jobParticipants entry for this job
+              const { jobParticipants } = await import("../../../shared/schema");
+              const [participantEntry] = await db
+                .select()
+                .from(jobParticipants)
+                .where(and(
+                  eq(jobParticipants.jobId, jobId),
+                  eq(jobParticipants.userId, signerUser.id),
+                  or(
+                    eq(jobParticipants.jobSpecificRole, 'signer'),
+                    eq(jobParticipants.jobSpecificRole, 'witness')
+                  )
+                ))
+                .limit(1);
+              
+              if (!participantEntry) {
+                // This title_company/notary was NOT explicitly invited as signer/witness
+                // Skip them - they should only act in their primary role
+                console.log(`⏭️ Skipping ${userRole} "${signer.signerName}" - not explicitly invited as signer/witness`);
+                continue;
+              } else {
+                // They have an explicit entry - skip here, they'll be added by dual role logic
+                console.log(`🎭 Skipping ${userRole} "${signer.signerName}" here - will be added by dual role logic`);
+                continue;
+              }
+            }
           } else {
             console.warn(`⚠️ No user found for signer email: ${signer.signerEmail}`);
             actualUserId = signer.id.toString(); // Fallback to signer ID
           }
           
+          // Only add if they're not a title_company/notary, or if we couldn't find their user record
           signerIndex++;
           participants.push({
             id: `participant_signer_${signer.id}`,
@@ -347,6 +379,11 @@ export class SessionService {
             or(
               eq(jobParticipants.jobSpecificRole, 'signer'),
               eq(jobParticipants.jobSpecificRole, 'witness')
+            ),
+            // CRITICAL FIX: Only select title companies and notaries for dual role logic
+            or(
+              eq(users.role, 'title_company'),
+              eq(users.role, 'notary')
             )
           ));
         

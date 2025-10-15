@@ -29,12 +29,14 @@ import {
 } from '@/components/ui/form';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
 import { apiRequest } from '@/lib/queryClient';
 import { ArrowLeft, ArrowRight, Plus, Trash2, Upload, FileText, CheckCircle, AlertCircle, User as UserIcon, Clock } from 'lucide-react';
 import { type TitleCompany, type ClosingType, type User } from '@shared/types';
 import { NotaryAvailabilitySelector } from './notary-availability-selector';
 import { MainLayout } from '@/components/layout/main-layout';
 import { JobCreationProgress } from './JobCreationProgress';
+import { VerificationToggleButton } from './VerificationToggleButton';
 
 // Add props to support single-page rendering
 interface JobWizardProps {
@@ -152,6 +154,7 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
 
   // Random notary assignment states
@@ -2396,7 +2399,8 @@ function JobWizardInternal({ singlePage = false }: JobWizardProps) {
                                     <p className="text-sm text-gray-600">{signer.signerEmail}</p>
                                   </div>
                                 </div>
-                                <div className="text-right">
+                                <div className="text-right flex flex-col items-end gap-1">
+                                  {/* Note: Toggle button would appear here after job creation when userId is available */}
                                   <Badge variant="outline">{signer.signerRole}</Badge>
                                   <p className="text-xs text-gray-500 mt-1">{signer.signerPhoneNumber}</p>
                                 </div>

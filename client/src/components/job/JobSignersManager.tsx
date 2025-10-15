@@ -25,6 +25,7 @@ import {
   Eye,
   RefreshCw
 } from 'lucide-react';
+import { VerificationToggleButton } from './VerificationToggleButton';
 
 interface JobSignersManagerProps {
   jobId: number;
@@ -503,6 +504,17 @@ export function JobSignersManager({ jobId, onSignersUpdated }: JobSignersManager
                     {canEditSigners && (
                       <TableCell>
                         <div className="flex items-center space-x-2">
+                          {signer.userId && (
+                            <VerificationToggleButton
+                              userId={signer.userId}
+                              jobId={jobId}
+                              currentUserRole={user?.role || 'user'}
+                              isVerified={signer.guestVerificationStatus === 'verified' || signer.isVerified || signer.isVerificationBypassed || signer.notaryVerificationBypassed || false}
+                              signerName={signer.signerName}
+                              onToggleComplete={() => refetch()}
+                              compact={true}
+                            />
+                          )}
                           <Button
                             size="sm"
                             variant="outline"

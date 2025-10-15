@@ -113,7 +113,19 @@ async function addDefaultParticipants() {
           
           // Check if user already exists with any role
           const existingUser = await findExistingUser(client, job.creator_email);
-          let signerUserId = existingUser?.id;
+          
+          // CRITICAL FIX: Skip adding title companies and notaries as signers
+          // They should only act in their primary role unless explicitly invited
+          if (existingUser && (existingUser.role === 'title_company' || existingUser.role === 'notary')) {
+            console.log(`   ⏭️ Skipping job creator ${job.creator_email} - they are a ${existingUser.role} and should not be auto-added as signer`);
+            participantsAdded = 0; // Reset to trigger placeholder creation if needed
+            // Skip to next strategy
+            if (participantsAdded === 0) {
+              // Continue to Strategy 2
+            }
+          } else {
+            // Proceed with adding as signer
+            let signerUserId = existingUser?.id;
 
           // If no user exists, create one with unique email
           if (!signerUserId) {
@@ -175,6 +187,7 @@ async function addDefaultParticipants() {
           }
 
           participantsAdded++;
+          } // Close else block for non-title-company/notary users
         }
 
         // Strategy 2: Add a generic placeholder signer if no creator info

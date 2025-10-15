@@ -11,24 +11,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
 import { 
-  Shield, 
+  Shield,
   Eye, 
   CheckCircle, 
   XCircle, 
   AlertCircle, 
-  User,
-  FileText,
   Camera,
-  CreditCard,
   Clock,
-  UserCheck,
-  UserX,
   AlertTriangle,
   Loader2
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { VerificationToggleButton } from './VerificationToggleButton';
 
 interface SignerVerificationManagerProps {
   jobId: number;
@@ -96,12 +91,6 @@ export function SignerVerificationManager({
     selfie?: VerificationImage;
   }>({});
   const [loadingImages, setLoadingImages] = useState(false);
-  const [bypassDialog, setBypassDialog] = useState<{
-    open: boolean;
-    action: 'bypass' | 'revoke';
-  }>({ open: false, action: 'bypass' });
-  const [bypassReason, setBypassReason] = useState('');
-  const [processingBypass, setProcessingBypass] = useState(false);
 
   const isNotary = currentUserRole === 'notary';
   const isAdmin = currentUserRole === 'admin';
@@ -170,88 +159,6 @@ export function SignerVerificationManager({
     }
   };
 
-  const handleBypassVerification = async () => {
-    if (!bypassReason.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Please provide a reason for the bypass"
-      });
-      return;
-    }
-
-    try {
-      setProcessingBypass(true);
-      
-      let endpoint;
-      if (bypassDialog.action === 'bypass') {
-        endpoint = `/api/notary/bypass-verification/${signer.userId}/${jobId}`;
-      } else {
-        // For revoke, determine the correct endpoint based on verification type
-        if (verificationData?.evs_transaction_id || verificationData?.evs_verified_at) {
-          // Has EVS verification - use revoke-kyc
-          endpoint = `/api/notary/revoke-kyc/${signer.userId}/${jobId}`;
-        } else if (verificationData?.notary_verification_bypassed) {
-          // Has notary bypass - use remove-bypass
-          endpoint = `/api/notary/remove-bypass/${signer.userId}/${jobId}`;
-        } else if (verificationData?.is_verification_bypassed) {
-          // Has admin bypass - admins can remove it directly
-          endpoint = `/api/admin/remove-verification-bypass/${signer.userId}`;
-        } else {
-          // Fallback - use remove-bypass
-          endpoint = `/api/notary/remove-bypass/${signer.userId}/${jobId}`;
-        }
-      }
-
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ reason: bypassReason })
-      });
-
-      if (response.ok) {
-        toast({
-          title: "Success",
-          description: bypassDialog.action === 'bypass' 
-            ? "Verification bypassed successfully" 
-            : (verificationData?.evs_transaction_id || verificationData?.evs_verified_at)
-              ? "KYC verification revoked successfully"
-              : "Bypass removed successfully"
-        });
-        
-        // Refresh verification data
-        await fetchVerificationData();
-        
-        // Close dialog
-        setBypassDialog({ open: false, action: 'bypass' });
-        setBypassReason('');
-        
-        // Notify parent component
-        if (onVerificationUpdate) {
-          onVerificationUpdate();
-        }
-      } else {
-        const error = await response.json();
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: error.error || "Failed to update verification status"
-        });
-      }
-    } catch (error) {
-      console.error('Error updating verification status:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to update verification status"
-      });
-    } finally {
-      setProcessingBypass(false);
-    }
-  };
 
   const getVerificationStatus = () => {
     if (!verificationData) return null;
@@ -497,128 +404,17 @@ export function SignerVerificationManager({
         <Alert className="bg-blue-50 border-blue-200">
           <AlertDescription className="text-xs text-gray-600">
             {canManageVerification 
-              ? "Signer hasn't accepted invitation yet. You can pre-approve them to skip ID verification when they join."
+              ? "Signer hasn't accepted invitation yet. Verification can be managed once they register."
               : "Signer hasn't accepted their invitation yet."}
           </AlertDescription>
         </Alert>
-
-        {canManageVerification && (
-          <Dialog open={bypassDialog.open} onOpenChange={(open) => setBypassDialog({ open, action: 'bypass' })}>
-            <DialogTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-green-300 text-blue-600 hover:bg-green-50 w-full"
-              >
-                <UserCheck className="h-3 w-3 mr-1" />
-                Pre-Approve (Skip ID Verification)
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Pre-Approve Signer</DialogTitle>
-                <DialogDescription>
-                  Mark {signer.signerName} as pre-approved to skip ID verification when they join this job.
-                </DialogDescription>
-              </DialogHeader>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium">Reason for pre-approval:</label>
-                  <Textarea
-                    value={bypassReason}
-                    onChange={(e) => setBypassReason(e.target.value)}
-                    placeholder="E.g., Verified in person, Known client, etc."
-                    className="mt-1"
-                  />
-                </div>
-                
-                <div className="flex justify-end space-x-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setBypassDialog({ open: false, action: 'bypass' });
-                      setBypassReason('');
-                    }}
-                    disabled={processingBypass}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={async () => {
-                      if (!bypassReason.trim()) {
-                        toast({
-                          variant: "destructive",
-                          title: "Error",
-                          description: "Please provide a reason"
-                        });
-                        return;
-                      }
-
-                      try {
-                        setProcessingBypass(true);
-                        const response = await fetch(`/api/notary/signer/${signer.id}/bypass-verification`, {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${localStorage.getItem('token')}`
-                          },
-                          body: JSON.stringify({ reason: bypassReason.trim() })
-                        });
-
-                        if (response.ok) {
-                          toast({
-                            title: "Success",
-                            description: "Signer pre-approved successfully"
-                          });
-                          setBypassDialog({ open: false, action: 'bypass' });
-                          setBypassReason('');
-                          onVerificationUpdate?.();
-                        } else {
-                          const error = await response.json();
-                          toast({
-                            variant: "destructive",
-                            title: "Error",
-                            description: error.error || "Failed to pre-approve signer"
-                          });
-                        }
-                      } catch (error) {
-                        toast({
-                          variant: "destructive",
-                          title: "Error",
-                          description: "Failed to pre-approve signer"
-                        });
-                      } finally {
-                        setProcessingBypass(false);
-                      }
-                    }}
-                    disabled={!bypassReason.trim() || processingBypass}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    {processingBypass ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Processing...
-                      </>
-                    ) : (
-                      <>
-                        <UserCheck className="h-4 w-4 mr-2" />
-                        Confirm Pre-Approval
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-        )}
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
-      {/* First Row: Verification Status Badge */}
+      {/* First Row: Verification Status Badge and Toggle Button */}
       <div className="flex items-center justify-between">
         <div>
           {loading ? (
@@ -638,11 +434,32 @@ export function SignerVerificationManager({
             </Badge>
           )}
         </div>
+        
+        {/* Single Toggle Button */}
+        {signer.userId && !loading && (
+          <VerificationToggleButton
+            userId={signer.userId}
+            jobId={jobId}
+            currentUserRole={currentUserRole}
+            isVerified={
+              (verificationData?.is_verified && verificationData?.verification_status === 'approved') ||
+              verificationData?.is_verification_bypassed ||
+              verificationData?.notary_verification_bypassed
+            }
+            signerName={signer.signerName}
+            onToggleComplete={async () => {
+              await fetchVerificationData();
+              if (onVerificationUpdate) {
+                onVerificationUpdate();
+              }
+            }}
+            compact={false}
+          />
+        )}
       </div>
 
       {/* Bypass Information */}
       {verificationData && (verificationData.is_verification_bypassed || verificationData.notary_verification_bypassed) && (
-        <>
           <div className="text-xs text-gray-600 bg-amber-50 p-2 rounded border border-amber-200">
             {verificationData.is_verification_bypassed && (
               <div>
@@ -661,34 +478,8 @@ export function SignerVerificationManager({
               </div>
             )}
           </div>
-          
-          {/* Revoke Button - Shown immediately after bypass info for better visibility */}
-          {canManageVerification && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-red-300 text-red-600 hover:bg-red-50 w-full mt-2"
-              onClick={() => setBypassDialog({ open: true, action: 'revoke' })}
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                  Loading...
-                </>
-              ) : (
-                <>
-                  <UserX className="h-3 w-3 mr-1" />
-                  Revoke Verification
-                </>
-              )}
-            </Button>
-          )}
-        </>
       )}
 
-      {/* Second Row: Action Buttons */}
-      <div className="flex items-center gap-2 flex-wrap">
         {/* View Documents Button */}
         <Dialog open={showDocuments} onOpenChange={setShowDocuments}>
           <DialogTrigger asChild>
@@ -745,166 +536,6 @@ export function SignerVerificationManager({
             </div>
           </DialogContent>
         </Dialog>
-
-        {/* Bypass/Revoke Buttons - Only for Notaries and Admins */}
-        {canManageVerification && (
-          <>
-            {/* Bypass Button - Show ONLY if user is NOT verified AND NOT bypassed */}
-            {!verificationData?.is_verified && !verificationData?.is_verification_bypassed && !verificationData?.notary_verification_bypassed && (
-              <Dialog open={bypassDialog.open && bypassDialog.action === 'bypass'} onOpenChange={(open) => setBypassDialog({ open, action: 'bypass' })}>
-                <DialogTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-green-300 text-blue-600 hover:bg-green-50"
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                        Loading...
-                      </>
-                    ) : (
-                      <>
-                        <UserCheck className="h-3 w-3 mr-1" />
-                        Bypass
-                      </>
-                    )}
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Bypass Verification</DialogTitle>
-                    <DialogDescription>
-                      Are you sure you want to bypass verification for {signer.signerName}? 
-                      This will mark them as verified without completing the standard verification process.
-                    </DialogDescription>
-                  </DialogHeader>
-                  
-                  <div className="space-y-4">
-                    <div>
-                      <label className="text-sm font-medium">Reason for bypass:</label>
-                      <Textarea
-                        value={bypassReason}
-                        onChange={(e) => setBypassReason(e.target.value)}
-                        placeholder="Please provide a reason for bypassing verification..."
-                        className="mt-1"
-                      />
-                    </div>
-                    
-                    <div className="flex justify-end space-x-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setBypassDialog({ open: false, action: 'bypass' });
-                          setBypassReason('');
-                        }}
-                        disabled={processingBypass}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={handleBypassVerification}
-                        disabled={!bypassReason.trim() || processingBypass}
-                        className="bg-green-600 hover:bg-green-700"
-                      >
-                        {processingBypass ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Processing...
-                          </>
-                        ) : (
-                          <>
-                            <UserCheck className="h-4 w-4 mr-2" />
-                            Confirm Bypass
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            )}
-
-            {/* Revoke Button - Show only if user IS verified (either EVS or bypassed) */}
-            {(verificationData?.is_verified || verificationData?.is_verification_bypassed || verificationData?.notary_verification_bypassed) && (
-              <Dialog open={bypassDialog.open && bypassDialog.action === 'revoke'} onOpenChange={(open) => setBypassDialog({ open, action: 'revoke' })}>
-                <DialogTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-red-300 text-red-600 hover:bg-red-50"
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                        Loading...
-                      </>
-                    ) : (
-                      <>
-                        <UserX className="h-3 w-3 mr-1" />
-                        Revoke
-                      </>
-                    )}
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Revoke KYC Verification</DialogTitle>
-                    <DialogDescription>
-                      Are you sure you want to revoke the KYC verification for {signer.signerName}? 
-                      This will invalidate their current verification status and they will need to complete verification again.
-                    </DialogDescription>
-                  </DialogHeader>
-                  
-                  <div className="space-y-4">
-                    <div>
-                      <label className="text-sm font-medium">Reason for revoking KYC verification:</label>
-                      <Textarea
-                        value={bypassReason}
-                        onChange={(e) => setBypassReason(e.target.value)}
-                        placeholder="Please provide a reason for revoking KYC verification..."
-                        className="mt-1"
-                      />
-                    </div>
-                    
-                    <div className="flex justify-end space-x-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setBypassDialog({ open: false, action: 'revoke' });
-                          setBypassReason('');
-                        }}
-                        disabled={processingBypass}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={handleBypassVerification}
-                        disabled={!bypassReason.trim() || processingBypass}
-                        className="bg-red-600 hover:bg-red-700"
-                      >
-                        {processingBypass ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Processing...
-                          </>
-                        ) : (
-                          <>
-                            <UserX className="h-4 w-4 mr-2" />
-                            Confirm Revoke
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            )}
-          </>
-        )}
-      </div>
     </div>
   );
 } 

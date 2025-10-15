@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRoute, useLocation } from 'wouter';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/use-auth';
 import { MainLayout } from '@/components/layout/main-layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -45,6 +45,7 @@ export default function JobDetailsPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const jobId = params?.id ? parseInt(params.id) : null;
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [downloadingPackage, setDownloadingPackage] = useState(false);
@@ -613,7 +614,9 @@ export default function JobDetailsPage() {
                           <p className="font-semibold text-gray-900">{signer.signerName}</p>
                           <p className="text-sm text-gray-600 capitalize">{signer.signerRole}</p>
                         </div>
-                        <Badge variant="outline" className="text-xs">Signer {index + 1}</Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs">Signer {index + 1}</Badge>
+                        </div>
                       </div>
                       {(signer.signerEmail || signer.signerPhone) && (
                         <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-3">
@@ -652,8 +655,8 @@ export default function JobDetailsPage() {
                           }}
                           currentUserRole={user?.role || 'user'}
                           onVerificationUpdate={() => {
-                            // Refresh job data after verification update
-                            window.location.reload();
+                            // Refresh job data after verification update without full page reload
+                            queryClient.invalidateQueries({ queryKey: ['job', job.id] });
                           }}
                         />
                       </div>
