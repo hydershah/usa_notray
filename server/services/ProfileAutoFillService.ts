@@ -158,15 +158,107 @@ export class ProfileAutoFillService {
    */
   static async getUserSignatures(userId: number): Promise<any[]> {
     try {
+      console.log(`📝 getUserSignatures called for userId: ${userId}`);
       const signatures = await db
         .select()
         .from(userSignatures)
         .where(eq(userSignatures.userId, userId));
       
+      console.log(`📊 Found ${signatures.length} signatures for user ${userId}:`, 
+        signatures.map(s => ({
+          id: s.id,
+          type: s.signatureType,
+          isDefault: s.isDefault,
+          hasImageUrl: !!s.imageUrl,
+          imageUrlLength: s.imageUrl?.length || 0,
+          startsWithData: s.imageUrl?.startsWith('data:') || false
+        }))
+      );
+      
       return signatures;
     } catch (error) {
       console.error('Failed to get user signatures:', error);
       return [];
+    }
+  }
+
+  /**
+   * 🚀 PERFORMANCE OPTIMIZED: Get ONLY the first active stamp for a user
+   * This avoids fetching and generating signed URLs for all stamps when only one is needed
+   */
+  private static async getFirstActiveStamp(userId: number): Promise<{ id: number; stampType: string; stampData: string; isActive: boolean; } | null> {
+    try {
+      console.log(`🔍 Querying first stamp for notary ID: ${userId}`);
+      
+      // Query for ONLY the first active stamp
+      const stampRecords = await db.execute(sql`
+        SELECT 
+          id,
+          notary_id as "notaryId",
+          stamp_type as "stampType",
+          stamp_data as "stampData", 
+          is_active as "isActive",
+          created_at as "createdAt",
+          updated_at as "updatedAt"
+        FROM notary_stamps 
+        WHERE notary_id = ${userId}
+        AND is_active = true
+        ORDER BY created_at DESC
+        LIMIT 1
+      `);
+      
+      const stamp = stampRecords.rows?.[0] as any;
+      
+      if (!stamp) {
+        console.log(`❌ No active stamps found for notary ${userId}`);
+        return null;
+      }
+      
+      console.log(`✅ Stamp ${stamp.id}: Using base64 data directly`);
+      
+      let imageUrl = '';
+      
+      if (stamp?.stampData && typeof stamp.stampData === 'string') {
+        // Check if it's base64 data or Vultr key
+        if (stamp.stampData.startsWith('data:image/')) {
+          // Already base64 data, use directly
+          imageUrl = stamp.stampData;
+          console.log(`✅ Stamp ${stamp.id}: Using base64 data directly`);
+        } else {
+          // It's a Vultr object key or URL - generate signed URL
+          const { VultrUploadHandler } = await import('../vultr-upload-handler');
+          
+          try {
+            // Extract the key from the stampData
+            let key = stamp.stampData;
+            
+            // If it's already a full URL, extract the key
+            if (key.includes('vultrobjects.com')) {
+              const url = new URL(key);
+              key = url.pathname.replace(/^\//, ''); // Remove leading slash
+            }
+            
+            // Generate long-lived signed URL (24 hours)
+            const signedUrl = await VultrUploadHandler.getFileUrl(key, 24);
+            imageUrl = signedUrl.url;
+            console.log(`✅ Stamp ${stamp.id}: Generated signed URL from key: ${key.substring(0, 50)}...`);
+          } catch (error) {
+            console.error(`❌ Failed to get signed URL for stamp ${stamp.id}:`, error);
+            // Fallback to original stampData
+            imageUrl = stamp.stampData;
+          }
+        }
+      }
+      
+      return {
+        id: stamp.id,
+        stampType: stamp.stampType || 'notary',
+        stampData: imageUrl,
+        isActive: stamp.isActive || false
+      };
+    } catch (error) {
+      console.error('Failed to fetch first notary stamp:', error);
+      return null;
     }
   }
 
@@ -759,7 +851,7 @@ export class ProfileAutoFillService {
           message: 'Text tags use inline editing, not auto-fill'
         };
       
-      case 'E': // Seal/Stamp - Auto-apply first available stamp
+      case 'E': // Seal/Stamp - Auto-apply first available stamp (optimized)
         if (!isNotary) {
           return {
             success: false,
@@ -770,25 +862,23 @@ export class ProfileAutoFillService {
           };
         }
         
-        // Get available stamps and auto-apply the first one
-        const activeStamps = profile.stamps.filter(stamp => stamp.isActive);
+        // 🚀 PERFORMANCE FIX: Fetch ONLY the first active stamp instead of all stamps
+        // This avoids unnecessary Vultr API calls for unused stamps
+        const firstActiveStamp = await this.getFirstActiveStamp(profile.id);
         
-        if (activeStamps.length > 0) {
-          // Auto-apply the first active stamp
-          const firstStamp = activeStamps[0];
+        if (firstActiveStamp) {
           return {
             success: true,
-            content: firstStamp.stampData,
+            content: firstActiveStamp.stampData,
             contentType: 'image',
             contentData: {
               type: 'stamp',
-              value: firstStamp.stampData,
-              stampType: firstStamp.stampType,
-              stampId: firstStamp.id,
-              availableStamps: activeStamps // Include other available stamps for future selection
+              value: firstActiveStamp.stampData,
+              stampType: firstActiveStamp.stampType,
+              stampId: firstActiveStamp.id
             },
             source: 'profile_auto_fill',
-            message: `Auto-applied notary stamp: ${firstStamp.stampType} (${activeStamps.length} available)`
+            message: `Auto-applied notary stamp: ${firstActiveStamp.stampType}`
           };
         } else {
           return {

@@ -5078,6 +5078,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // VULTR ONLY - All documents are stored in Vultr cloud storage
       const filePath = document.filePath;
       
+      // Check if this is a local file path or Vultr key
+      const isLocalFile = filePath.startsWith('/') || filePath.startsWith('uploads/');
+      
+      if (isLocalFile) {
+        // Serve local file directly
+        console.log(`📁 Serving local file for download: ${filePath}`);
+        
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        
+        try {
+          // Check if file exists
+          await fs.access(filePath);
+          
+          // Check if this is a signed PDF request
+          const isSigned = req.query.signed === 'true';
+          const timestamp = req.query.timestamp;
+          
+          // Set appropriate headers for download
+          const filename = isSigned 
+            ? `SIGNED_${timestamp}_${document.originalName}` 
+            : document.originalName;
+            
+          res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+          res.setHeader('Content-Type', document.mimeType);
+          res.setHeader('X-Served-From', 'local-storage');
+          
+          if (isSigned) {
+            res.setHeader('X-Document-Status', 'signed');
+            res.setHeader('X-Signing-Timestamp', timestamp || new Date().toISOString());
+          }
+          
+          // Serve the file
+          return res.sendFile(path.resolve(filePath));
+        } catch (fileError) {
+          console.error(`Local file not found: ${filePath}`);
+          return res.status(404).json({ message: 'File not found' });
+        }
+      }
+      
+      // Vultr file - generate signed URL
       try {
         const { cloudStorage } = await import('./lib/cloud-storage-service');
         
@@ -5500,9 +5541,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.redirect(302, cachedPreview.signedUrl);
         }
         
-        // 💥 STEP 2: Generate new signed URL (only when cache miss)
+        // 💥 STEP 2: Generate new signed URL or serve local file (only when cache miss)
         console.log(`🔍 CACHE MISS: Generating new signed URL for ${document.originalName}`);
         
+        // Check if this is a local file path or Vultr key
+        const isLocalFile = filePath.startsWith('/') || filePath.startsWith('uploads/');
+        
+        if (isLocalFile) {
+          // Serve local file directly
+          console.log(`📁 Serving local file: ${filePath}`);
+          
+          const fs = await import('fs/promises');
+          const path = await import('path');
+          
+          try {
+            // Check if file exists
+            await fs.access(filePath);
+            
+            // Serve the file
+            res.setHeader('Content-Type', document.mimeType);
+            res.setHeader('Content-Disposition', 'inline');
+            res.setHeader('Cache-Control', 'private, max-age=1800'); // 30 minute cache
+            res.setHeader('X-Served-From', 'local-storage');
+            
+            return res.sendFile(path.resolve(filePath));
+          } catch (fileError) {
+            console.error(`Local file not found: ${filePath}`);
+            return res.status(404).json({ message: 'File not found' });
+          }
+        }
+        
+        // Vultr file - generate signed URL
         const { cloudStorage } = await import('./lib/cloud-storage-service');
         
         // 🚀 OPTIMIZATION: Skip file existence check - saves 1 network call
@@ -9673,67 +9742,46 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
               const processedDocs = await pdfProcessor.processCompletedDocument(actualSessionId);
               
               if (processedDocs && processedDocs.length > 0) {
-                console.log(`📄 Processing ${processedDocs.length} signed documents for upload`);
+                console.log(`📄 Processing ${processedDocs.length} signed documents for local storage`);
+                
+                const fs = await import('fs/promises');
+                const path = await import('path');
+                const uploadsDir = path.resolve('uploads/signed');
+                
+                // Ensure uploads directory exists
+                await fs.mkdir(uploadsDir, { recursive: true });
                 
                 // Process each signed document separately
                 for (const processedDoc of processedDocs) {
-                  // Upload signed PDF to Vultr cloud storage
                   try {
-                    const { VultrUploadHandler } = await import('./vultr-upload-handler');
-                    
-                    // Upload to Vultr with proper organization
-                    const uploadResult = await VultrUploadHandler.handleJobDocumentUpload(
-                      processedDoc.buffer,
-                      processedDoc.fileName,
-                      session.jobId,
-                      req.user.id,
-                      {
-                        documentType: 'signed_document',
-                        isRequired: false,
-                        sessionId: actualSessionId,
-                        signedAt: new Date().toISOString(),
-                        originalDocumentId: processedDoc.originalDocumentId,
-                        originalFileName: processedDoc.originalFileName
-                      }
-                    );
-                    
-                    if (uploadResult.success) {
-                      console.log(`✅ Generated signed document: ${processedDoc.fileName} (${processedDoc.fileSize} bytes)`);
-                      console.log(`📁 Vultr location: ${uploadResult.fileKey}`);
-                      console.log(`📊 Original document: ${processedDoc.originalFileName}`);
-                      
-                      // Also save to local uploads directory as backup
-                      const fs = await import('fs/promises');
-                      const path = await import('path');
-                      const uploadsDir = path.resolve('uploads/signed');
-                      
-                      try {
-                        await fs.mkdir(uploadsDir, { recursive: true });
-                        const localPath = path.join(uploadsDir, processedDoc.fileName);
-                        await fs.writeFile(localPath, processedDoc.buffer);
-                        console.log(`📁 Local backup saved: ${processedDoc.fileName}`);
-                      } catch (localError) {
-                        console.warn(`Failed to save local backup for ${processedDoc.fileName}:`, localError);
-                        // Don't fail on local backup error
-                      }
-                      
-                    } else {
-                      throw new Error(`Failed to upload signed PDF ${processedDoc.fileName}: ${uploadResult.error}`);
-                    }
-                    
-                  } catch (uploadError) {
-                    console.error(`❌ Failed to upload signed PDF ${processedDoc.fileName} to Vultr:`, uploadError);
-                    
-                    // Fallback: Save to local uploads directory only
-                    const fs = await import('fs/promises');
-                    const path = await import('path');
-                    const uploadsDir = path.resolve('uploads/signed');
-                    
-                    await fs.mkdir(uploadsDir, { recursive: true });
+                    // Save signed PDF to local storage (PRIMARY METHOD)
                     const signedFilePath = path.join(uploadsDir, processedDoc.fileName);
                     await fs.writeFile(signedFilePath, processedDoc.buffer);
                     
-                    console.log(`📁 Fallback: Saved signed PDF locally: ${processedDoc.fileName}`);
+                    console.log(`✅ Generated signed document: ${processedDoc.fileName} (${processedDoc.fileSize} bytes)`);
+                    console.log(`📁 Local storage: ${signedFilePath}`);
+                    console.log(`📊 Original document: ${processedDoc.originalFileName}`);
+                    
+                    // Create database record for the signed document
+                    await db.insert(jobDocuments).values({
+                      jobId: session.jobId,
+                      fileName: processedDoc.fileName,
+                      originalName: processedDoc.originalFileName || processedDoc.fileName,
+                      filePath: signedFilePath,
+                      fileSize: processedDoc.fileSize,
+                      mimeType: 'application/pdf',
+                      documentType: 'signed_document',
+                      status: 'completed',
+                      uploadedBy: req.user.id,
+                      isRequired: false,
+                      signaturePages: []
+                    });
+                    
+                    console.log(`✅ Database record created for signed document: ${processedDoc.fileName}`);
+                    
+                  } catch (saveError) {
+                    console.error(`❌ Failed to save signed PDF ${processedDoc.fileName}:`, saveError);
+                    throw saveError; // Propagate error to outer catch
                   }
                 }
                 

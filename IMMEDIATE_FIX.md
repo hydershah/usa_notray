@@ -157,3 +157,6 @@ if (!hasEnableButton && has2FASection && hasDisabledBadge) {
 
 The button IS in the code (line 344-346 of TwoFactorAuth.tsx) and WILL appear once cache is cleared! 🎉
 
+
+
+

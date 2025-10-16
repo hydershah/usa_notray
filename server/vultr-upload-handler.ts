@@ -31,116 +31,60 @@ export class VultrUploadHandler {
     metadata: any = {}
   ): Promise<VultrUploadResult> {
     try {
-      // Handle temporary uploads (jobId = 0) for job requests
-      const sessionId = jobId === 0 ? 
-        (metadata.tempSessionId || `temp-${Date.now()}-${Math.random().toString(36).substring(7)}`) : 
-        `job-${jobId}`;
+      // USE LOCAL STORAGE DIRECTLY (no Vultr upload)
+      console.log(`📁 Saving document to local storage: ${originalFilename}`);
       
-      // Enhanced metadata for intelligent organization
-      const enhancedMetadata = {
-        ...metadata,
-        jobId,
-        userRole: metadata.userRole || 'user', // Default to 'user' if not specified
-        documentType: metadata.documentType || 'original'
-      };
+      // Ensure uploads directory exists
+      const uploadsDir = path.join(process.cwd(), 'uploads', 'documents');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
       
-      const uploadResult = await handleCloudFileUpload(
-        fileBuffer,
-        originalFilename,
-        'document',
-        sessionId,
-        userId,
-        enhancedMetadata
-      );
-
+      // Generate local file path
+      const timestamp = Date.now();
+      const sanitizedFilename = originalFilename.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const localFilename = jobId === 0 ? 
+        `temp-${timestamp}-${sanitizedFilename}` : 
+        `job-${jobId}-${timestamp}-${sanitizedFilename}`;
+      const localPath = path.join(uploadsDir, localFilename);
+      
+      // Write file to local storage
+      fs.writeFileSync(localPath, fileBuffer);
+      
       // Only create database record if jobId is not 0 (temporary upload)
       if (jobId !== 0) {
-        // Create job document record in database with Vultr key
+        // Create job document record with local path
         await db.insert(jobDocuments).values({
           jobId,
           fileName: originalFilename,
           originalName: originalFilename,
-          filePath: uploadResult.key, // Store organized Vultr key
-          fileSize: uploadResult.size,
+          filePath: localPath, // Store local path
+          fileSize: fileBuffer.length,
           mimeType: this.getContentType(originalFilename),
-          documentType: enhancedMetadata.documentType,
+          documentType: metadata.documentType || 'original',
           status: 'uploaded',
           uploadedBy: userId,
           isRequired: metadata.isRequired || false,
           signaturePages: []
         });
       }
-
-      console.log(`✅ Uploaded ${jobId === 0 ? 'temporary' : 'job'} document to Vultr: ${originalFilename}`);
-      console.log(`📁 Organized path: ${uploadResult.organizedPath?.folder}/${uploadResult.organizedPath?.filename}`);
-
+      
+      console.log(`✅ Saved ${jobId === 0 ? 'temporary' : 'job'} document locally: ${localFilename}`);
+      
       return {
         success: true,
-        fileKey: uploadResult.key,
-        fileUrl: uploadResult.url,
-        signedUrl: uploadResult.signedUrl,
-        size: uploadResult.size
+        fileKey: localPath,
+        fileUrl: `/uploads/documents/${localFilename}`, // Local URL
+        signedUrl: `/uploads/documents/${localFilename}`,
+        size: fileBuffer.length
       };
 
     } catch (error) {
-      console.error('Job document upload failed:', error);
-      
-      // FALLBACK: Save to local storage if Vultr fails
-      console.warn('🔄 Vultr upload failed, falling back to local storage...');
-      
-      try {
-        // Ensure uploads directory exists
-        const uploadsDir = path.join(process.cwd(), 'uploads');
-        if (!fs.existsSync(uploadsDir)) {
-          fs.mkdirSync(uploadsDir, { recursive: true });
-        }
-        
-        // Generate local file path
-        const timestamp = Date.now();
-        const sanitizedFilename = originalFilename.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const localFilename = jobId === 0 ? 
-          `temp-${timestamp}-${sanitizedFilename}` : 
-          `job-${jobId}-${timestamp}-${sanitizedFilename}`;
-        const localPath = path.join(uploadsDir, localFilename);
-        
-        // Write file to local storage
-        fs.writeFileSync(localPath, fileBuffer);
-        
-        // Only create database record if jobId is not 0 (temporary upload)
-        if (jobId !== 0) {
-          // Create job document record with local path
-          await db.insert(jobDocuments).values({
-            jobId,
-            fileName: originalFilename,
-            originalName: originalFilename,
-            filePath: localPath, // Store local path as fallback
-            fileSize: fileBuffer.length,
-            mimeType: this.getContentType(originalFilename),
-            documentType: metadata.documentType || 'original',
-            status: 'uploaded_local', // Mark as local fallback
-            uploadedBy: userId,
-            isRequired: metadata.isRequired || false,
-            signaturePages: []
-          });
-        }
-        
-        console.log(`✅ Fallback: Saved ${jobId === 0 ? 'temporary' : 'job'} document locally: ${localFilename}`);
-        
-        return {
-          success: true,
-          fileKey: localPath,
-          fileUrl: `/uploads/${localFilename}`, // Local URL
-          signedUrl: `/uploads/${localFilename}`,
-          size: fileBuffer.length
-        };
-        
-      } catch (fallbackError) {
-        console.error('❌ Local fallback also failed:', fallbackError);
-        return {
-          success: false,
-          error: `Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-        };
-      }
+      console.error('❌ Local document upload failed:', error);
+      return {
+        success: false,
+        error: `Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
     }
   }
 
