@@ -899,6 +899,7 @@ export class AuditTrailService {
       sessionId: entry.sessionId!,
       userId: entry.userId!,
       userRole: entry.userRole!,
+      action: entry.eventType!, // 🔧 FIX: Database requires 'action' field (legacy column)
       eventType: entry.eventType!,
       timestamp: new Date(),
       documentId: entry.documentId,
