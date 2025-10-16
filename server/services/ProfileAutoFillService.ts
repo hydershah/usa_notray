@@ -183,6 +183,48 @@ export class ProfileAutoFillService {
   }
 
   /**
+   * 🚀 PERFORMANCE OPTIMIZED: Get ONLY the first signature/initials for a user
+   * Avoids fetching all signatures when only one is needed
+   */
+  private static async getFirstActiveSignature(userId: number, signatureType: 'signature' | 'initials'): Promise<any | null> {
+    try {
+      console.log(`🔍 Querying first ${signatureType} for user ID: ${userId}`);
+      
+      // Query for ONLY the first default signature, or first signature if no default
+      const signatureRecords = await db.execute(sql`
+        SELECT 
+          id,
+          user_id as "userId",
+          signature_type as "signatureType",
+          image_url as "imageUrl",
+          name,
+          type,
+          is_default as "isDefault",
+          created_at as "createdAt"
+        FROM user_signatures 
+        WHERE user_id = ${userId}
+        AND signature_type = ${signatureType}
+        ORDER BY is_default DESC, created_at DESC
+        LIMIT 1
+      `);
+      
+      const signature = signatureRecords.rows?.[0] as any;
+      
+      if (!signature || !signature.imageUrl) {
+        console.log(`❌ No ${signatureType} found for user ${userId}`);
+        return null;
+      }
+      
+      console.log(`✅ ${signatureType} ${signature.id}: Retrieved successfully (${signature.imageUrl.length} bytes)`);
+      
+      return signature;
+    } catch (error) {
+      console.error(`Failed to fetch first ${signatureType}:`, error);
+      return null;
+    }
+  }
+
+  /**
    * 🚀 PERFORMANCE OPTIMIZED: Get ONLY the first active stamp for a user
    * This avoids fetching and generating signed URLs for all stamps when only one is needed
    */
@@ -209,51 +251,18 @@ export class ProfileAutoFillService {
       
       const stamp = stampRecords.rows?.[0] as any;
       
-      if (!stamp) {
+      if (!stamp || !stamp.stampData) {
         console.log(`❌ No active stamps found for notary ${userId}`);
         return null;
       }
       
-      console.log(`✅ Stamp ${stamp.id}: Using base64 data directly`);
-      
-      let imageUrl = '';
-      
-      if (stamp?.stampData && typeof stamp.stampData === 'string') {
-        // Check if it's base64 data or Vultr key
-        if (stamp.stampData.startsWith('data:image/')) {
-          // Already base64 data, use directly
-          imageUrl = stamp.stampData;
-          console.log(`✅ Stamp ${stamp.id}: Using base64 data directly`);
-        } else {
-          // It's a Vultr object key or URL - generate signed URL
-          const { VultrUploadHandler } = await import('../vultr-upload-handler');
-          
-          try {
-            // Extract the key from the stampData
-            let key = stamp.stampData;
-            
-            // If it's already a full URL, extract the key
-            if (key.includes('vultrobjects.com')) {
-              const url = new URL(key);
-              key = url.pathname.replace(/^\//, ''); // Remove leading slash
-            }
-            
-            // Generate long-lived signed URL (24 hours)
-            const signedUrl = await VultrUploadHandler.getFileUrl(key, 24);
-            imageUrl = signedUrl.url;
-            console.log(`✅ Stamp ${stamp.id}: Generated signed URL from key: ${key.substring(0, 50)}...`);
-          } catch (error) {
-            console.error(`❌ Failed to get signed URL for stamp ${stamp.id}:`, error);
-            // Fallback to original stampData
-            imageUrl = stamp.stampData;
-          }
-        }
-      }
+      // 🚀 PERFORMANCE: Stamps are stored as base64 - use directly
+      console.log(`✅ Stamp ${stamp.id}: Using base64 data directly (${stamp.stampData.length} bytes)`);
       
       return {
         id: stamp.id,
         stampType: stamp.stampType || 'notary',
-        stampData: imageUrl,
+        stampData: stamp.stampData, // Use directly - should be base64
         isActive: stamp.isActive || false
       };
     } catch (error) {
@@ -443,9 +452,6 @@ export class ProfileAutoFillService {
       isNotary = isNotary || hasNotaryPrivileges(userWithPrivileges);
     }
     
-    // Fetch user signatures once for all signature-related cases
-    const userSignatures = await this.getUserSignatures(profile.id);
-    
     switch (tagType) {
       case 'S': // Signature
         // First check for signature in users table
@@ -464,63 +470,48 @@ export class ProfileAutoFillService {
           };
         } 
         
-        // Check userSignatures table for uploaded signatures
-        console.log('🔍 Checking userSignatures for signature data:', {
-          userSignaturesCount: userSignatures.length,
-          signatures: userSignatures.map(sig => ({
-            id: sig.id,
-            signatureType: sig.signatureType,
-            hasImageUrl: !!sig.imageUrl,
-            imageUrlLength: sig.imageUrl?.length || 0,
-            isDefault: sig.isDefault
-          }))
-        });
-        
-        // Look for default signature first, then any signature
-        let signatureRecord = userSignatures.find(sig => 
-          sig.signatureType === 'signature' && sig.isDefault
-        );
-        
-        if (!signatureRecord) {
-          signatureRecord = userSignatures.find(sig => sig.signatureType === 'signature');
-        }
+        // 🚀 PERFORMANCE: Fetch ONLY the first signature (not all signatures)
+        const signatureRecord = await ProfileAutoFillService.getFirstActiveSignature(profile.id, 'signature');
         
         if (signatureRecord && signatureRecord.imageUrl) {
-          // Ensure long-lived access URL for stored key
-          try {
-            const raw = signatureRecord.imageUrl;
-            if (!raw.startsWith('data:image/')) {
+          // Check if it's base64 or Vultr URL
+          let imageUrl = signatureRecord.imageUrl;
+          
+          // If not base64, might be Vultr key - generate signed URL
+          if (!imageUrl.startsWith('data:image/')) {
+            try {
               let key: string | null = null;
-              if (/^https?:\/\//i.test(raw) && raw.includes('vultrobjects.com')) {
-                const url = new URL(raw);
+              if (/^https?:\/\//i.test(imageUrl) && imageUrl.includes('vultrobjects.com')) {
+                const url = new URL(imageUrl);
                 key = url.pathname.replace(/^\//, '');
-              } else if (!/^https?:\/\//i.test(raw)) {
-                key = raw;
+              } else if (!/^https?:\/\//i.test(imageUrl)) {
+                key = imageUrl;
               }
               if (key) {
                 const { VultrUploadHandler } = await import('../vultr-upload-handler');
                 const access = await VultrUploadHandler.getFileUrl(key, 24 * 30);
-                signatureRecord.imageUrl = access.url;
+                imageUrl = access.url;
               }
+            } catch (e) {
+              console.warn('Failed to generate Vultr URL, using original:', e);
             }
-          } catch (e) {
-            // Non-blocking
           }
+          
           console.log('✅ Found signature in userSignatures table:', {
             id: signatureRecord.id,
             name: signatureRecord.name,
             type: signatureRecord.type,
-            hasImageUrl: !!signatureRecord.imageUrl,
+            hasImageUrl: !!imageUrl,
             isDefault: signatureRecord.isDefault
           });
           
           return {
             success: true,
-            content: signatureRecord.imageUrl,
+            content: imageUrl,
             contentType: 'image',
             contentData: {
               type: 'signature',
-              value: signatureRecord.imageUrl,
+              value: imageUrl,
               signatureType: signatureRecord.type || 'uploaded'
             },
             source: 'profile_auto_fill',
@@ -603,60 +594,48 @@ export class ProfileAutoFillService {
           };
         } 
         
-        // Check userSignatures table for uploaded initials
-        console.log('🔍 Checking userSignatures for initials data:', {
-          userSignaturesCount: userSignatures.length,
-          initials: userSignatures.filter(sig => sig.signatureType === 'initials').map(sig => ({
-            id: sig.id,
-            signatureType: sig.signatureType,
-            hasImageUrl: !!sig.imageUrl,
-            imageUrlLength: sig.imageUrl?.length || 0,
-            isDefault: sig.isDefault
-          }))
-        });
-        
-        // Look for default initials first, then any initials
-        let initialsRecord = userSignatures.find(sig => 
-          sig.signatureType === 'initials' && sig.isDefault
-        );
-        
-        if (!initialsRecord) {
-          initialsRecord = userSignatures.find(sig => sig.signatureType === 'initials');
-        }
+        // 🚀 PERFORMANCE: Fetch ONLY the first initials (not all initials)
+        const initialsRecord = await ProfileAutoFillService.getFirstActiveSignature(profile.id, 'initials');
         
         if (initialsRecord && initialsRecord.imageUrl) {
-          try {
-            const raw = initialsRecord.imageUrl;
-            if (!raw.startsWith('data:image/')) {
+          // Check if it's base64 or Vultr URL
+          let imageUrl = initialsRecord.imageUrl;
+          
+          // If not base64, might be Vultr key - generate signed URL
+          if (!imageUrl.startsWith('data:image/')) {
+            try {
               let key: string | null = null;
-              if (/^https?:\/\//i.test(raw) && raw.includes('vultrobjects.com')) {
-                const url = new URL(raw);
+              if (/^https?:\/\//i.test(imageUrl) && imageUrl.includes('vultrobjects.com')) {
+                const url = new URL(imageUrl);
                 key = url.pathname.replace(/^\//, '');
-              } else if (!/^https?:\/\//i.test(raw)) {
-                key = raw;
+              } else if (!/^https?:\/\//i.test(imageUrl)) {
+                key = imageUrl;
               }
               if (key) {
                 const { VultrUploadHandler } = await import('../vultr-upload-handler');
                 const access = await VultrUploadHandler.getFileUrl(key, 24 * 30);
-                initialsRecord.imageUrl = access.url;
+                imageUrl = access.url;
               }
+            } catch (e) {
+              console.warn('Failed to generate Vultr URL, using original:', e);
             }
-          } catch (e) {}
+          }
+          
           console.log('✅ Found initials in userSignatures table:', {
             id: initialsRecord.id,
             name: initialsRecord.name,
             type: initialsRecord.type,
-            hasImageUrl: !!initialsRecord.imageUrl,
+            hasImageUrl: !!imageUrl,
             isDefault: initialsRecord.isDefault
           });
           
           return {
             success: true,
-            content: initialsRecord.imageUrl,
+            content: imageUrl,
             contentType: 'image',
             contentData: {
               type: 'initials',
-              value: initialsRecord.imageUrl,
+              value: imageUrl,
               signatureType: initialsRecord.type || 'uploaded'
             },
             source: 'profile_auto_fill',

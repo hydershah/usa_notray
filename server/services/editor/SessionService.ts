@@ -85,45 +85,61 @@ export class SessionService {
       if (existingSession.length) {
         const session = existingSession[0];
         
-              // For tagging sessions: Always return existing session (even if completed)
-      // This allows users to continue editing their tagged document
-      if (request.sessionType === 'tagging' && session.status !== 'cancelled') {
-        // If session is completed, reactivate it for continued editing
-        if (session.status === 'completed') {
-          await db
-            .update(editorSessions)
-            .set({ 
-              status: 'active',
-              updatedAt: new Date()
-            })
-            .where(eq(editorSessions.id, session.id));
+        // For tagging sessions: Always return existing session (even if completed)
+        // This allows users to continue editing their tagged document
+        if (request.sessionType === 'tagging' && session.status !== 'cancelled') {
+          // If session is completed, reactivate it for continued editing
+          if (session.status === 'completed') {
+            await db
+              .update(editorSessions)
+              .set({ 
+                status: 'active',
+                updatedAt: new Date()
+              })
+              .where(eq(editorSessions.id, session.id));
+            
+            console.log(`🔄 Reactivated completed tagging session: ${session.sessionId} for continued editing`);
+            
+            // Return updated session data
+            const updatedSession = { ...session, status: 'active' as const };
+            return this.convertToEditorSessionData(updatedSession);
+          }
           
-          console.log(`🔄 Reactivated completed tagging session: ${session.sessionId} for continued editing`);
-          
-          // Return updated session data
-          const updatedSession = { ...session, status: 'active' as const };
-          return this.convertToEditorSessionData(updatedSession);
-        }
-        
-        console.log(`🔄 Returning existing tagging session: ${session.sessionId} (status: ${session.status})`);
-        return this.convertToEditorSessionData(session);
-      }
-        
-        // For notary sessions: Only return if in progress
-        if (request.sessionType === 'notary' && session.status === 'active') {
-          console.log(`🔄 Returning existing notary session: ${session.sessionId}`);
-          
-          // CRITICAL FIX: Ensure tags are available for ALL users accessing the notary session
-          // This is essential for signers who join after the notary
-          const { LiveSigningSessionService } = await import('../session/LiveSigningSessionService');
-          await (LiveSigningSessionService as any).ensureTagsForLiveSession(session, request.notaryId);
-          
+          console.log(`🔄 Returning existing tagging session: ${session.sessionId} (status: ${session.status})`);
           return this.convertToEditorSessionData(session);
         }
         
-        // For completed notary sessions, create a new one
-        if (request.sessionType === 'notary' && session.status === 'completed') {
-          console.log(`✨ Creating new notary session (previous completed)`);
+        // CRITICAL FIX: For notary/signing sessions - Return existing session unless completed or cancelled
+        // This ensures: 1) Signers join notary's session, 2) Accidentally closed sessions can resume
+        if (request.sessionType === 'notary') {
+          // Allow resuming preparing, active, or cancelled sessions (unless completed)
+          if (session.status !== 'completed') {
+            // Reactivate if cancelled (accidental closure recovery)
+            if (session.status === 'cancelled') {
+              await db
+                .update(editorSessions)
+                .set({ 
+                  status: 'active',
+                  updatedAt: new Date()
+                })
+                .where(eq(editorSessions.id, session.id));
+              
+              console.log(`🔄 Reactivated cancelled notary session: ${session.sessionId} (accidental closure recovery)`);
+              session.status = 'active';
+            }
+            
+            console.log(`🔄 Returning existing notary session: ${session.sessionId} (status: ${session.status}) - ensuring signers join same session`);
+            
+            // CRITICAL FIX: Ensure tags are available for ALL users accessing the notary session
+            // This is essential for signers who join after the notary
+            const { LiveSigningSessionService } = await import('../session/LiveSigningSessionService');
+            await (LiveSigningSessionService as any).ensureTagsForLiveSession(session, request.notaryId);
+            
+            return this.convertToEditorSessionData(session);
+          }
+          
+          // Only create new session if previous one is completed
+          console.log(`✨ Creating new notary session (previous session was completed)`);
           // Continue to create new session below
         }
       }

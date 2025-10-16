@@ -22,6 +22,11 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
     const saved = localStorage.getItem('hotkey-shortcuts-collapsed');
     return saved === 'true';
   });
+  
+  // Track if user explicitly selected someone with backtick/numbers
+  // This helps us know when to default to notary vs respect user selection
+  const [explicitUserSelection, setExplicitUserSelection] = useState(false);
+  
   const {
     mode,
     participants,
@@ -92,6 +97,9 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
     if (key === '`' || key === '~' || key === '0') {
       event.preventDefault();
       
+      // Mark this as an explicit user selection
+      setExplicitUserSelection(true);
+      
       // If no tag type is currently selected, auto-select 'A' (Name tag) when switching to notary
       const shouldAutoSelectNameTag = !selectedTagType;
       
@@ -122,6 +130,9 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
     if (/^[1-8]$/.test(key)) {
       event.preventDefault();
       const userIndex = parseInt(key);
+      
+      // Mark this as an explicit user selection
+      setExplicitUserSelection(true);
       
       // If no tag type is currently selected, auto-select 'A' (Name tag) when switching users
       const shouldAutoSelectNameTag = !selectedTagType;
@@ -179,14 +190,30 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
           return;
         }
 
-        // Only default to notary if NO user is currently selected
-        // If a user is already selected, respect that selection
-        if (!selectedUser) {
-          const notary = participants.find(p => p.userType === 'notary');
-          if (notary) {
+        // Define notary-specific tags
+        const notaryOnlyTags: TagType[] = ['N', 'X', 'O', 'E', 'W'];
+        
+        // Default to notary UNLESS user explicitly selected a signer with 1-9 keys
+        // The logic:
+        // 1. If user pressed backtick/1-9 (explicitUserSelection = true), respect that selection
+        // 2. Otherwise, always default to notary
+        // 3. After handling the tag key, reset explicitUserSelection so next tag defaults to notary
+        const notary = participants.find(p => p.userType === 'notary');
+        
+        // For notary-only tags (N, X, O, E, W), ALWAYS force select notary
+        if (notaryOnlyTags.includes(tagType) && notary) {
+          setSelectedUser(notary);
+        } 
+        // For other tags, respect explicit signer selection, otherwise default to notary
+        else if (notary) {
+          // Only keep signer if they were explicitly selected AND the selection is still active
+          if (!(explicitUserSelection && selectedUser?.userType === 'signer')) {
             setSelectedUser(notary);
           }
         }
+        
+        // Reset explicit selection flag - next tag key press will default to notary
+        setExplicitUserSelection(false);
         
         // Check if current user has permission for this tag type
         const effectiveUserType = selectedUser?.userType || 'notary';
@@ -314,7 +341,8 @@ export const HotkeyHandler: React.FC<HotkeyHandlerProps> = ({
     setCurrentPage,
     handleTagPlacement,
     onUserSwitch,
-    onTagTypeSelect
+    onTagTypeSelect,
+    explicitUserSelection
   ]);
 
   // Helper function to move selected tag

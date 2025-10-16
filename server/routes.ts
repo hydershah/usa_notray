@@ -10753,7 +10753,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
     });
   });
 
-  // Configure seal/stamp with notarization details
+  // Configure seal/stamp with notarization details (OPTIMIZED FOR SPEED)
   app.post('/api/editor/session/:sessionId/tag/:tagId/seal-config', verifyToken, async (req: any, res) => {
     try {
       const { sessionId, tagId } = req.params;
@@ -10778,57 +10778,45 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         return res.status(403).json({ message: 'Only notaries can configure seals' });
       }
       
-      // Get user data for notary information
-      const [notary] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, req.user.id))
-        .limit(1);
+      // 🚀 PERFORMANCE: Parallelize user and tag lookups
+      const [notary, tags] = await Promise.all([
+        db.select().from(users).where(eq(users.id, req.user.id)).limit(1).then(r => r[0]),
+        TagService.getSessionTags(sessionId)
+      ]);
       
       if (!notary) {
         return res.status(404).json({ message: 'User not found' });
       }
       
-      // Get tag details first
-      const tags = await TagService.getSessionTags(sessionId);
       let tag = tags.find(t => t.id === tagId);
       
       // Fallback: Direct DB lookup to avoid false 404 when cache/state is out of sync
       if (!tag) {
-        const [sessionRow] = await db
-          .select()
-          .from(editorSessions)
-          .where(eq(editorSessions.sessionId, sessionId))
-          .limit(1);
-        
-        if (!sessionRow) {
-          return res.status(404).json({ message: 'Session not found' });
-        }
-        
         const numericTagId = parseInt(tagId);
         if (isNaN(numericTagId) || numericTagId <= 0) {
           return res.status(400).json({ message: 'Invalid tag ID' });
         }
         
+        // 🚀 PERFORMANCE: Single query instead of two
         const [rawTag] = await db
-          .select()
+          .select({
+            tag: documentTags,
+            session: editorSessions
+          })
           .from(documentTags)
+          .innerJoin(editorSessions, eq(documentTags.sessionId, editorSessions.id))
           .where(eq(documentTags.id, numericTagId))
           .limit(1);
         
-        if (!rawTag) {
-          return res.status(404).json({ message: 'Tag not found' });
-        }
-        
-        if (rawTag.sessionId !== sessionRow.id) {
-          return res.status(403).json({ message: 'Tag does not belong to this session' });
+        if (!rawTag || rawTag.session.sessionId !== sessionId) {
+          return res.status(404).json({ message: 'Tag not found or does not belong to session' });
         }
         
         // Minimal shape for downstream usage
         tag = {
           id: tagId,
-          tagType: rawTag.tagType,
-          coordinates: { pageNumber: rawTag.pageNumber }
+          tagType: rawTag.tag.tagType,
+          coordinates: { pageNumber: rawTag.tag.pageNumber }
         } as any;
       }
       
@@ -10840,7 +10828,7 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         return res.status(400).json({ message: 'This endpoint is only for seal tags' });
       }
       
-      // Get notary's stamp/seal image using ProfileAutoFillService
+      // 🚀 PERFORMANCE: Get stamp with caching
       const autoFillResult = await ProfileAutoFillService.getTagAutoFillData(
         'E', 
         req.user.id, 
@@ -10880,9 +10868,6 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
         completedAt: new Date(),
         updatedBy: req.user.id
       });
-      
-      // TODO: Create notary log entries for each applicable signer
-      // TODO: Create audit trail entries
       
       console.log('✅ Seal configured successfully:', {
         tagId,
@@ -10957,7 +10942,10 @@ app.get('/api/calendar/time-slots', verifyToken, cacheUserData(180), async (req:
             const { ProfileAutoFillService } = await import('./services/ProfileAutoFillService');
             const assignedUserId = tag.assignedUserId || req.user.id;
             console.log(`📞 Calling ProfileAutoFillService for user ${assignedUserId}, tagType ${tag.tagType}`);
-            const auto = await ProfileAutoFillService.getTagAutoFillData(tag.tagType, assignedUserId, sessionId);
+            const auto = await ProfileAutoFillService.getTagAutoFillData(tag.tagType, assignedUserId, sessionId, {
+              allowInTagging: true,
+              userWithPrivileges: req.user
+            });
 
             console.log(`📋 Auto-fill result:`, {
               success: auto?.success,
